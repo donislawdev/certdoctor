@@ -1,0 +1,39 @@
+# Line endings are normalized so that the same commit produces the same bytes
+# on every machine. Without this, a Windows checkout and a Linux checkout differ,
+# which breaks byte-for-byte comparison of golden files and makes the verbatim
+# LICENSE text depend on who cloned it.
+
+* text=auto eol=lf
+
+# Go sources and everything we compare byte-for-byte.
+*.go        text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+
+# The license text must stay exactly as published. Treat it as content we do not
+# touch rather than as a file to normalize.
+LICENSE     text eol=lf
+
+# Testbed golden data. These are the fixtures the end-to-end guards compare
+# against, so a stray CRLF here turns a passing guard into a failing one for
+# reasons that have nothing to do with the product.
+testbed/**/expected/**  text eol=lf
+
+# Windows-only scripts keep CRLF, because some Windows shells refuse LF.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary, never normalized.
+*.png       binary
+*.gif       binary
+*.ico       binary
+*.exe       binary
+*.der       binary
+*.p12       binary
+*.pfx       binary
+*.jks       binary
