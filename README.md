@@ -8,7 +8,13 @@ certdoctor walks the whole path in one command - DNS, proxy and PAC, TCP, TLS - 
 
 ## Status: early development. Nothing is diagnosed yet.
 
-**There is a `certdoctor` command and it assesses nothing.** It writes one line to standard error saying so, writes nothing at all to standard output, and exits with the code that means "could not assess". What the repository holds today is the foundation - the status vocabulary, the exit code table, the appearance dictionary and the guards that police all three - plus CI. **There is nothing useful to install and nothing useful to run.**
+**There is a `certdoctor` command, it prints a complete report, and every line of that report says it could not assess anything.** You get the real artefact - a one sentence verdict, a row for each of the eight layers, and the notes saying what was held back - except that every layer reads `UNKNOWN` with a reason, the verdict is that nothing could be assessed yet, and the run exits with the code that means exactly that.
+
+That is the point rather than an accident. `UNKNOWN` is the correct status for "not built yet", so there is no moment in this program's life at which it claims to have checked something it has not.
+
+What the repository holds today is the whole path from the command line to the exit code: argument parsing, the orchestrator and its time budget, the terminal renderer, `--json` with a schema and a validator that runs before anything is printed, `--out` with an atomic write, and the credential masking that must exist before any layer dumps its first environment variable. Under that sits the foundation - the status vocabulary, the exit code table, the appearance dictionary, and the guards that police all three - plus CI.
+
+**What is missing is every diagnostic layer.** Nothing resolves a name, opens a socket, reads a certificate or looks inside a trust store. **There is nothing useful to install and nothing useful to run.**
 
 Everything below describes what certdoctor is being built to do, not what it does today. This section will be removed when the first release ships. Until then, treat every capability on this page as a plan.
 

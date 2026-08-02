@@ -96,6 +96,41 @@ func TestAPathToATrustStoreIsNotTreatedAsASecret(t *testing.T) {
 	}
 }
 
+// TestAHostIsMaskedEvenWhenACredentialStandsInFrontOfIt closes a hole the
+// mutation register found, and it is worth saying how it stayed open.
+//
+// The rule that hands out pseudonyms has to step OVER user info to reach the
+// host. A version that stopped at the at sign left the host untouched, so
+// --redact returned an internal proxy name into a report somebody was about to
+// paste into a ticket - which is the one thing --redact exists to prevent.
+//
+// Every property this package had still passed, and that is the instructive
+// part: masking is idempotent whether or not the host was touched, because the
+// credential rule normalises the same text on the second pass either way. A
+// property that holds over every input can still hold over an output that is
+// wrong.
+func TestAHostIsMaskedEvenWhenACredentialStandsInFrontOfIt(t *testing.T) {
+	leaks := []string{"proxy.corp.example", "registry.internal"}
+	cases := []string{
+		"http://user:haslo@proxy.corp.example:8080",
+		"https://sometoken@registry.internal/v1",
+		// The already masked shape, because a report gets masked again by
+		// whoever quotes it.
+		"https://" + Placeholder + "@proxy.corp.example:8080",
+	}
+	for _, value := range cases {
+		got := New(Everything).Text(value)
+		for _, name := range leaks {
+			if strings.Contains(got, name) {
+				t.Errorf("--redact left a host name standing behind user info:\n  in:  %s\n  out: %s", value, got)
+			}
+		}
+		if !strings.Contains(got, "host-") {
+			t.Errorf("no pseudonym was handed out at all:\n  in:  %s\n  out: %s", value, got)
+		}
+	}
+}
+
 // TestMaskingIsIdempotent is property 2 from the standard of code. Without it a
 // second pass turns a masked report into rubbish, and reports pass through more
 // than one hand.

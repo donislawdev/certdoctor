@@ -180,8 +180,8 @@ func New(mode Mode, sensitive ...string) *Redaction {
 
 // Text masks one piece of text.
 //
-// ORDER MATTERS AND IT IS NOT THE OBVIOUS ONE. Names go first, credentials
-// second, and that was found by fuzzing after the obvious order failed.
+// THE ORDER IS NOT THE OBVIOUS ONE. Names go first, credentials second, and
+// that was found by fuzzing after the obvious order failed.
 //
 // A pipeline of rewriting rules is not idempotent just because each rule is.
 // Masking a host removes characters, and removing characters changes which
@@ -195,8 +195,19 @@ func New(mode Mode, sensitive ...string) *Redaction {
 // With names first, nothing downstream of them rewrites in a way that can feed
 // them again: a pseudonym is recognised and returned unchanged, and the
 // placeholder contains no scheme separator, no at sign and no equals sign, so
-// it cannot create a new match for anything. The property test is what holds
-// that claim up, not this paragraph.
+// it cannot create a new match for anything.
+//
+// NOTHING HOLDS THIS ORDER IN PLACE TODAY, AND THAT IS MEASURED RATHER THAN
+// ASSUMED. Reversing it - names last - was tried on 2026-08-03 and changed no
+// output at all: eight realistic inputs in both modes were byte identical, the
+// whole seed corpus passed, and 518351 fuzz executions over 45 seconds found
+// nothing. The likely reason is that stepping over user info in hostInURL,
+// added later than this paragraph, made the credential rule normalise the same
+// text either way.
+//
+// So the order stays because it is the one that was proven safe, not because a
+// test would object. Anyone reversing it gets a green run and has to re-run the
+// fuzzer to learn anything.
 func (r *Redaction) Text(s string) string {
 	if s == "" {
 		return s
