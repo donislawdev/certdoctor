@@ -1,26 +1,93 @@
-// Command certdoctor diagnoses why this machine or this container cannot reach a
-// given URL.
+// Command certdoctor works out why this machine, or this container, cannot
+// reach a given URL.
 //
-// Nothing is diagnosed yet. This entry point exists so that the release build
-// produces an artefact CI can prove is statically linked - a check that cannot
-// be written against a build that emits no binary.
+// Nothing is diagnosed yet, and the program says so rather than implying
+// otherwise. Every diagnostic layer reports that it could not be assessed, the
+// verdict says the same in one sentence, and the run ends with the code that
+// means exactly that. There is no point in this program's life at which it
+// claims to have checked something it has not.
 //
-// What it does today it does honestly: it assesses nothing and says so, on the
-// log channel, and ends with the code that means "could not assess". There is no
-// point at which this program claims to have checked something it has not.
+// This file is wiring and nothing else. It gathers the outside world into one
+// value, hands it to the command line, and turns the answer into an exit status.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"runtime"
+	"time"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/output"
+	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
 func main() {
-	// Standard output is the report channel and it stays empty. A script that
-	// redirected it must end up with an empty file rather than half a report.
-	// Standard error is the log channel.
-	fmt.Fprintln(os.Stderr, "certdoctor: nothing is implemented yet, so nothing about this machine has been assessed")
-	os.Exit(exitcode.Inconclusive.Int())
+	os.Exit(mainCode().Int())
+}
+
+// mainCode is main with a return value.
+func mainCode() exitcode.Code {
+	// Only the interrupt is caught. A termination signal is left to its default
+	// handling on purpose: the table has separate codes for "stopped by the
+	// user" and "stopped by the system", and catching both here would give us
+	// one context cancellation with no way to tell them apart - so every
+	// termination would be reported as an interrupt, which is a wrong answer
+	// rather than a missing one.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	return guarded(ctx, os.Args[1:], liveEnvironment())
+}
+
+// guarded runs the command line and turns a panic into a code from the table.
+//
+// WHY IT EXISTS. Without it a panic anywhere in this program ends the process
+// with the Go runtime's own status of 2, which in this tool's table means
+// USAGE - so an internal failure would reach a pipeline as the user having
+// typed the command wrongly. Every ending has to carry a code from the table
+// and mean it.
+//
+// This catches a defect in our code. It is not a way to survive bad input:
+// everything arriving from outside is data, and data that is not understood
+// produces an unknown with a reason, never a panic and never a recovery.
+//
+// Nothing reaches standard output on this path. A run that panicked has no
+// report, and a partial one is worse than none.
+func guarded(ctx context.Context, args []string, env environment) (code exitcode.Code) {
+	defer func() {
+		if panicked := recover(); panicked != nil {
+			fmt.Fprintf(env.stderr, "%s: internal failure, no report was produced: %v\n", toolName, panicked)
+			code = exitcode.Runtime
+		}
+	}()
+	return execute(ctx, args, env)
+}
+
+// liveEnvironment is the real outside world. Every field here is a seam a test
+// fills with something inert.
+func liveEnvironment() environment {
+	return environment{
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+		capability: func(noColorRequested bool) render.Capability {
+			return render.DetectCapability(os.Stdout, os.LookupEnv, noColorRequested)
+		},
+		now: time.Now,
+		platform: report.Platform{
+			OS:   runtime.GOOS,
+			Arch: runtime.GOARCH,
+			// Nothing detects a container yet. Left undetermined rather than
+			// answered, with a note in the report saying which.
+			Container: report.NotDetermined,
+		},
+		// Nothing establishes the privilege level yet either. Claiming "user"
+		// would be a measurement nobody took, and comparing two reports depends
+		// on this field meaning something.
+		privilege: report.PrivilegeUnknown,
+		writeFile: output.WriteFile,
+	}
 }

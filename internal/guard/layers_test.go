@@ -35,11 +35,26 @@ var layerMap = []layerRule{
 		mayImportBelow: nil,
 	},
 	{
-		// Wiring. It is allowed to see every layer because that is its job.
+		// Wiring. It is allowed to see every layer because that is its job, and
+		// it is the only thing allowed to reach the module root package.
 		location:       "cmd/",
 		mayImportBelow: []string{"internal/core/", "internal/app/", "internal/adapter/"},
+		mayImportRoot:  true,
 	},
 }
+
+// rootRule covers the package sitting directly in the module root.
+//
+// It is not in layerMap because it cannot be described by a path prefix: an
+// empty prefix matches every file in the tree, which would turn the "outside
+// the declared layer map" finding into something that can never fire.
+//
+// Why such a package exists at all: Go's embed directive cannot reach a parent
+// directory, so the licence text at the repository root can only be embedded by
+// a package beside it. That package carries the licence and the version and
+// must stay a leaf - it imports nothing of ours, and only the entry point
+// imports it.
+var rootRule = layerRule{location: "", mayImportBelow: nil}
 
 // intraLayerEdges lists the imports allowed BETWEEN packages of the same layer.
 //
@@ -55,7 +70,22 @@ var layerMap = []layerRule{
 // The exception list lives here rather than in prose, so that adding an edge in
 // code without declaring it is visible. A sideways edge is sometimes right - it
 // is never accidental.
-var intraLayerEdges = map[string][]string{}
+var intraLayerEdges = map[string][]string{
+	// The report is the structure assembled out of the core's three closed
+	// vocabularies, so the arrow runs from it to them and can never run back:
+	// none of the three knows a report exists.
+	//
+	// The alternative was one flat core package holding vocabularies and
+	// structure together, which needs no declaration and gives up the thing the
+	// declaration buys - the day somebody makes status depend on report, that
+	// is a cycle the compiler catches, and the day somebody makes exitcode
+	// depend on layer, this list is what catches it.
+	"internal/core/report": {
+		"internal/core/status",
+		"internal/core/layer",
+		"internal/core/exitcode",
+	},
+}
 
 // coreForbiddenStdlib keeps the core a pure function of evidence: no network, no
 // subprocess, no filesystem, no environment. Assessment has to be testable on
@@ -80,6 +110,20 @@ type layerRule struct {
 	location        string
 	mayImportBelow  []string
 	forbiddenStdlib []string
+	// mayImportRoot allows the module root package. It is a separate flag
+	// rather than an entry in mayImportBelow because that list is matched by
+	// prefix, and the root package's path is the module path itself - an empty
+	// prefix, which would match everything and silence the whole check.
+	mayImportRoot bool
+}
+
+// describe names a layer in a finding. The module root has no path prefix to
+// name it by.
+func (r layerRule) describe() string {
+	if r.location == "" {
+		return "the module root package"
+	}
+	return r.location
 }
 
 // TestLayerImportDirection is the guard for "nothing points upwards".
@@ -133,6 +177,53 @@ func TestDeclaringASidewaysEdgeSilencesIt(t *testing.T) {
 	requireNoFindings(t, checkLayerDirection(tr), "a declared sideways edge")
 }
 
+// TestTheModuleRootPackageMayNotReachIntoTheTree covers the leaf rule. The
+// package beside LICENSE exists because embed cannot reach a parent directory,
+// and for no other reason - the moment it imports part of the tree it becomes a
+// wiring layer that no rule describes and that sits below every other one.
+func TestTheModuleRootPackageMayNotReachIntoTheTree(t *testing.T) {
+	tr := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "root_reaches_in.go", "license.go")},
+	}
+	requireFinding(t, checkLayerDirection(tr), "the module root package may not import")
+}
+
+// TestOnlyTheEntryPointMayImportTheModuleRootPackage covers the branch that is
+// invisible to the prefix test: the root package's import path is the module
+// path itself, so without a case of its own it reads as somebody else's library
+// and passes every check silently.
+func TestOnlyTheEntryPointMayImportTheModuleRootPackage(t *testing.T) {
+	forbidden := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "imports_the_module_root.go", "internal/core/status/planted.go")},
+	}
+	requireFinding(t, checkLayerDirection(forbidden), "may not import the module root package")
+
+	allowed := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "imports_the_module_root.go", "cmd/certdoctor/planted.go")},
+	}
+	requireNoFindings(t, checkLayerDirection(allowed), "the entry point importing the module root package")
+}
+
+// TestAFileInTheModuleRootIsNotReportedAsUnmapped is the other half of the root
+// rule. Without it the rule could be written to cover nothing and the guard
+// would look identical from the outside.
+func TestAFileInTheModuleRootIsNotReportedAsUnmapped(t *testing.T) {
+	tr := mustLoadModule(t)
+	seen := false
+	for _, sf := range tr.files {
+		if !strings.Contains(sf.rel, "/") {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatal("no file sits in the module root, so this test proves nothing about the rule that covers them")
+	}
+	requireNoFindings(t, checkLayerDirection(tr), "the module root")
+}
+
 // checkLayerDirection reports every declared import that crosses a layer
 // boundary in the wrong direction, plus every package the layer map does not
 // cover.
@@ -143,8 +234,6 @@ func TestDeclaringASidewaysEdgeSilencesIt(t *testing.T) {
 // this catches.
 func checkLayerDirection(tr tree) []Finding {
 	var findings []Finding
-	internalPrefix := tr.modulePath + "/"
-
 	for _, sf := range tr.files {
 		rule, ok := ruleFor(sf.rel)
 		if !ok {
@@ -155,47 +244,96 @@ func checkLayerDirection(tr tree) []Finding {
 			})
 			continue
 		}
-
-		fromPackage := path.Dir(sf.rel)
-		for _, imp := range importsOf(sf) {
-			if inside, isOurs := strings.CutPrefix(imp.path, internalPrefix); isOurs {
-				if strings.HasPrefix(inside, rule.location) {
-					if !edgeAllowed(fromPackage, inside) {
-						findings = append(findings, Finding{
-							File: sf.rel,
-							Line: imp.line,
-							Detail: fmt.Sprintf(
-								"sideways import %s -> %s inside %s - declare it in intraLayerEdges or do not make it",
-								fromPackage, inside, rule.location),
-						})
-					}
-					continue
-				}
-				if !hasAnyPrefix(inside, rule.mayImportBelow) {
-					findings = append(findings, Finding{
-						File:   sf.rel,
-						Line:   imp.line,
-						Detail: fmt.Sprintf("%s may not import %s - that points upwards", rule.location, imp.path),
-					})
-				}
-				continue
-			}
-			for _, forbidden := range rule.forbiddenStdlib {
-				if imp.path == forbidden {
-					findings = append(findings, Finding{
-						File:   sf.rel,
-						Line:   imp.line,
-						Detail: fmt.Sprintf("%s may not import %q - the core is a pure function of evidence", rule.location, imp.path),
-					})
-				}
-			}
-		}
+		findings = append(findings, checkImportsOf(tr, sf, rule)...)
 	}
 	return sortFindings(findings)
 }
 
+// checkImportsOf sorts one file's imports into the three cases that need
+// different rules: the module root package, something else of ours, and the
+// standard library.
+func checkImportsOf(tr tree, sf sourceFile, rule layerRule) []Finding {
+	var findings []Finding
+	internalPrefix := tr.modulePath + "/"
+
+	for _, imp := range importsOf(sf) {
+		// The module root package's import path is the module path itself, with
+		// no trailing slash, so the prefix test below cannot see it. Left
+		// unhandled it would be mistaken for a third party import and pass
+		// every check.
+		if imp.path == tr.modulePath {
+			if !rule.mayImportRoot {
+				findings = append(findings, Finding{
+					File: sf.rel,
+					Line: imp.line,
+					Detail: fmt.Sprintf(
+						"%s may not import the module root package - that package carries the embedded licence and the version, and only the entry point wires it in",
+						rule.describe()),
+				})
+			}
+			continue
+		}
+		if inside, isOurs := strings.CutPrefix(imp.path, internalPrefix); isOurs {
+			findings = append(findings, checkOurImport(sf, rule, inside, imp)...)
+			continue
+		}
+		for _, forbidden := range rule.forbiddenStdlib {
+			if imp.path == forbidden {
+				findings = append(findings, Finding{
+					File:   sf.rel,
+					Line:   imp.line,
+					Detail: fmt.Sprintf("%s may not import %q - the core is a pure function of evidence", rule.location, imp.path),
+				})
+			}
+		}
+	}
+	return findings
+}
+
+// checkOurImport judges one import of another package in this module: sideways,
+// downwards, or upwards.
+func checkOurImport(sf sourceFile, rule layerRule, inside string, imp declaredImport) []Finding {
+	if rule.location == "" {
+		return []Finding{{
+			File: sf.rel,
+			Line: imp.line,
+			Detail: fmt.Sprintf(
+				"the module root package may not import %s - it carries the embedded licence and nothing else, and a leaf that reaches into the tree is a second wiring layer nobody declared",
+				imp.path),
+		}}
+	}
+
+	fromPackage := path.Dir(sf.rel)
+	if strings.HasPrefix(inside, rule.location) {
+		if !edgeAllowed(fromPackage, inside) {
+			return []Finding{{
+				File: sf.rel,
+				Line: imp.line,
+				Detail: fmt.Sprintf(
+					"sideways import %s -> %s inside %s - declare it in intraLayerEdges or do not make it",
+					fromPackage, inside, rule.location),
+			}}
+		}
+		return nil
+	}
+	if !hasAnyPrefix(inside, rule.mayImportBelow) {
+		return []Finding{{
+			File:   sf.rel,
+			Line:   imp.line,
+			Detail: fmt.Sprintf("%s may not import %s - that points upwards", rule.describe(), imp.path),
+		}}
+	}
+	return nil
+}
+
 // ruleFor returns the most specific rule covering a file.
 func ruleFor(rel string) (layerRule, bool) {
+	// A file with no directory component sits in the module root. It is matched
+	// here rather than by prefix, because the prefix that would match it is the
+	// empty one and that matches everything.
+	if !strings.Contains(rel, "/") {
+		return rootRule, true
+	}
 	var best layerRule
 	found := false
 	for _, rule := range layerMap {

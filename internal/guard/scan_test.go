@@ -34,6 +34,9 @@ func TestScannedTreeCoversTheModule(t *testing.T) {
 	for _, want := range []string{
 		"internal/core/status/status.go",
 		"internal/core/exitcode/code.go",
+		"internal/core/layer/layer.go",
+		"internal/core/report/report.go",
+		"internal/app/run/run.go",
 		"internal/adapter/render/appearance.go",
 		"internal/guard/scan.go",
 		"cmd/certdoctor/main.go",
