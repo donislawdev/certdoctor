@@ -56,6 +56,62 @@ func TestAFailedWriteLeavesTheDirectoryAsItWas(t *testing.T) {
 	}
 }
 
+// TestAFailedRenameLeavesNoTemporaryFileBehind covers the branch that decides
+// whether this tool litters somebody's directory.
+//
+// WHY IT WAS MISSING AND HOW IT WAS FOUND. Every guard in the repository was
+// green while the failure branches of the only function allowed to write a file
+// had never been executed - the package sat at the lowest coverage in the tree
+// and nobody had looked. The write guard cannot see this: it scans the
+// allowlist statically and has no opinion about whether a file is cleaned up
+// afterwards.
+//
+// The rename is made to fail by pointing it at an existing DIRECTORY, which
+// both platforms refuse, rather than by any trick with permissions that would
+// behave differently on one of them.
+func TestAFailedRenameLeavesNoTemporaryFileBehind(t *testing.T) {
+	directory := t.TempDir()
+	occupied := filepath.Join(directory, "report.txt")
+	if err := os.Mkdir(occupied, 0o755); err != nil {
+		t.Fatalf("setting the destination up as a directory failed: %v", err)
+	}
+
+	if err := WriteFile(occupied, []byte("x")); err == nil {
+		t.Fatal("renaming onto a directory reported success")
+	}
+
+	// The directory we created is expected to still be there. Anything else is
+	// a temporary file this program failed to clean up after itself.
+	for _, name := range namesIn(t, directory) {
+		if name != "report.txt" {
+			t.Errorf("a failed write left %q behind - certdoctor creates exactly one file and only where it was told", name)
+		}
+	}
+}
+
+// TestFinishReportsAFailureRatherThanReturningNil reaches the inner function
+// directly, because a handle that has already been closed is the only way to
+// make a write fail that behaves the same on every platform.
+//
+// The value is narrow and worth stating: it proves the error paths return an
+// error at all. A version that closed the handle and returned nil would leave
+// WriteFile renaming a file whose contents never arrived - the exact outcome
+// the sync in that function exists to rule out.
+func TestFinishReportsAFailureRatherThanReturningNil(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "already-closed")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("creating the file failed: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("closing it failed: %v", err)
+	}
+
+	if err := finish(file, []byte("x")); err == nil {
+		t.Error("writing through a closed handle reported success")
+	}
+}
+
 // TestTheFailureSaysWhichPathItWas keeps the message useful. A person who
 // pointed the tool at an unwritable place needs to see which place.
 func TestTheFailureSaysWhichPathItWas(t *testing.T) {

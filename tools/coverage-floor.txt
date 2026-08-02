@@ -1,0 +1,44 @@
+# Coverage floors, one line per package: <import path> <percent, or none>.
+#
+# THE ONLY PLACE THIS NUMBER LIVES. It is deliberately not repeated in any
+# document, because a number kept in two places starts disagreeing with itself
+# the first time one of them is edited.
+#
+# HOW A FLOOR IS SET: the measured value rounded DOWN to a whole percent. The
+# slack is there so an ordinary edit does not turn the gate red for a tenth of
+# a point, and it is small enough that a branch quietly going untested still
+# shows up.
+#
+# 🔴 A FLOOR ONLY EVER RISES. Lowering one to turn a red run green is the owner's
+# decision, not a way to get unblocked - the same rule the size ratchet follows.
+# Raising one after coverage improves is ordinary work and welcome.
+#
+# 🔴 EVERY PACKAGE MUST APPEAR HERE. A package with no line is a finding, not a
+# package with no floor. Without that rule the gate would quietly stop covering
+# the tree as new directories appear, which is exactly how the layer guard would
+# have failed if it did not report packages outside its map.
+#
+# WHAT THIS NUMBER IS NOT. Coverage measures which statements ran, never whether
+# anything was asserted about them. A hundred percent with tests that stay green
+# when the behaviour is broken is worth less than seventy with tests checked by
+# the mutation register. This gate is a floor under the mutation register, not a
+# substitute for it.
+#
+# WHY IT EXISTS AT ALL, measured on 2026-08-03: internal/adapter/output sat at
+# 54.5 percent while every guard in the repository was green, and the statements
+# nobody had ever executed were the ones that clean up after a failed write -
+# that is, the ones deciding whether this tool leaves litter in somebody's
+# directory. Nothing reported it. Somebody had to go and look.
+
+github.com/donislawdev/certdoctor none
+github.com/donislawdev/certdoctor/cmd/certdoctor 90
+github.com/donislawdev/certdoctor/internal/adapter/output 72
+github.com/donislawdev/certdoctor/internal/adapter/privilege 87
+github.com/donislawdev/certdoctor/internal/adapter/render 79
+github.com/donislawdev/certdoctor/internal/app/run 100
+github.com/donislawdev/certdoctor/internal/core/exitcode 100
+github.com/donislawdev/certdoctor/internal/core/layer 94
+github.com/donislawdev/certdoctor/internal/core/redact 94
+github.com/donislawdev/certdoctor/internal/core/report 87
+github.com/donislawdev/certdoctor/internal/core/status 82
+github.com/donislawdev/certdoctor/internal/guard 84

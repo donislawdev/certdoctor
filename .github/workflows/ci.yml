@@ -94,6 +94,22 @@ jobs:
         shell: bash
         run: go test -count=1 ./...
 
+      # WHY THIS RUNS ON WINDOWS AND NOT ON LINUX, which is the opposite of the
+      # obvious choice. The floors in tools/coverage-floor.txt were MEASURED on
+      # Windows, and coverage genuinely differs between the two: the privilege
+      # package compiles a different file on each platform, and one test in the
+      # output package is skipped where file mode bits are not the mechanism.
+      # Running the gate against floors measured somewhere else would fail for a
+      # reason that has nothing to do with the change being tested, and a gate
+      # that fails for unrelated reasons is a gate people learn to ignore.
+      #
+      # The Linux figures have NOT been measured. Until they are, this gate
+      # speaks for one platform and says so rather than implying both.
+      - name: coverage is at or above its floor
+        if: runner.os == 'Windows'
+        shell: bash
+        run: bash tools/coverage-gate.sh
+
   release-build:
     name: release build, static
     runs-on: ubuntu-latest
