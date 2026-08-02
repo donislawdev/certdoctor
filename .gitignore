@@ -10,6 +10,20 @@
 /PLAN.md
 /BACKLOG.md
 
+# The technical changelog joined the block above on 2026-08-02, by the owner's
+# decision. It stays in English despite now sitting outside the repository -
+# the place criterion permits the owner's language, it does not demand it, and
+# this file is half test names and type names either way.
+#
+# It was tracked before that date, so it remains in the history and can be read
+# there. That was known and accepted.
+#
+# Consequence worth knowing before removing this line: a public clone now has no
+# record of what was measured and why, beyond the comments in the code. Putting
+# the line back does not merely add a file - it publishes the whole measurement
+# log at once. See docs/00 section F.
+/CHANGELOG-DEV.md
+
 # --- Development tooling and measurement rigs. Never shipped, never a CI dependency. ---
 # Not to be confused with /tools/, which IS tracked and IS a CI dependency.
 /internal_tools/
