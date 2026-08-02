@@ -6,9 +6,9 @@ certdoctor walks the whole path in one command - DNS, proxy and PAC, TCP, TLS - 
 
 ---
 
-## Status: planning. There is no code yet.
+## Status: early development. Nothing is diagnosed yet.
 
-**This repository currently contains the license, this README, a security policy and two changelogs. There is nothing to install and nothing to run.**
+**There is a `certdoctor` command and it assesses nothing.** It writes one line to standard error saying so, writes nothing at all to standard output, and exits with the code that means "could not assess". What the repository holds today is the foundation - the status vocabulary, the exit code table, the appearance dictionary and the guards that police all three - plus CI. **There is nothing useful to install and nothing useful to run.**
 
 Everything below describes what certdoctor is being built to do, not what it does today. This section will be removed when the first release ships. Until then, treat every capability on this page as a plan.
 

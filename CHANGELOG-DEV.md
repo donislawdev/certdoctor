@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **The README claimed there was no code.** It said the repository held only documents and that there was nothing to run, which stopped being true the moment the entry point existed. The status section now says what the command actually does, which is nothing, and says it in those words.
 - **`.gitignore` excluded the program's entry point.** The unanchored pattern `certdoctor`, meant for a build artefact, also matched the directory `cmd/certdoctor/`, so the main package would never have been committed and a fresh clone would have had nothing to build. Found with `git check-ignore` while adding that directory. Both binary names are now anchored to the repository root and the file carries a warning saying why they must stay that way.
 
 ### Changed
