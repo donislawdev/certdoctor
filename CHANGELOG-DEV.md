@@ -14,6 +14,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Repository initialized. GPL-3.0 license text, README, security policy and both changelogs.
 - `.gitignore` written **before** the repository existed, so that the untracked planning documents were never at risk of a first commit picking them up. It carries two warnings in the file itself - one that removing an entry publishes internal notes rather than merely adding files, and one that the testbed's expected verdicts are guard fixtures and must **not** be swept up by a pattern for generated files.
+- **Status vocabulary** in `internal/core/status`: exactly four statuses and five reasons for `UNKNOWN`, both closed lists and both public contracts. The zero value of a status is deliberately invalid, so a forgotten assignment fails a check instead of reading as a pass.
+- **Exit code registry** in `internal/core/exitcode`: the complete table of nine, frozen from the first version because adding a code after release would change what somebody else's pipeline sees with no change on their side. A warning on its own keeps the exit code at success.
+- **Appearance dictionary** in `internal/adapter/render`: the single place allowed to contain an escape sequence or a glyph. Colours are the four basic terminal colours rather than fixed shades, so a light background, a dark background and a high-contrast setting are handled by the reader's own terminal theme instead of by our guess. The zero value of both the colour mode and the glyph mode is the safe one, so a forgotten assignment degrades to plain ASCII rather than writing control sequences into a log.
+- **Three structural guards** in `internal/guard`, standing before the code they police: import direction between layers, literal appearance outside the dictionary, and containment of concurrency primitives. Each one has a canary - a fixture with planted violations that the scanner must find - because on a tree this small all three would otherwise pass while blind. A fourth test checks that the scanner read the module at all.
+- **Entry point** `cmd/certdoctor`. It diagnoses nothing yet and says so on the log channel, writes zero bytes to the report channel and ends with the code meaning "could not assess". It exists so the release build produces an artefact whose static linking can be checked.
+- **CI workflow** with two build configurations. Tests run with cgo enabled, and the race detector runs on Linux where the image is known to carry a C compiler. The release build runs with cgo disabled and then proves the result is static from two independent signals: what the linker produced, and the build setting recorded in the binary. Actions are pinned to commit digests rather than moving tags.
+
+### Fixed
+
+- **`.gitignore` excluded the program's entry point.** The unanchored pattern `certdoctor`, meant for a build artefact, also matched the directory `cmd/certdoctor/`, so the main package would never have been committed and a fresh clone would have had nothing to build. Found with `git check-ignore` while adding that directory. Both binary names are now anchored to the repository root and the file carries a warning saying why they must stay that way.
 
 ### Changed
 
@@ -35,7 +45,10 @@ Recorded here because the sessions that produced them no longer exist, and becau
 
 ### Deliberately not done
 
-- **No code.** The stack decision is not permission to start writing, and this is a deliberate ordering.
+- **No diagnostics.** The first slice of work deliberately produces nothing useful: it is structure and the guards that police it. Guards written afterwards would find the rules already broken and would be something to repair rather than something that protects.
+- **The CI workflow has never run.** It only runs after a push, and pushing is a separate decision. What was checked locally is the same set of commands, plus a build made both ways to confirm that the recorded cgo setting really does tell the two configurations apart.
+- **The race detector does not run on Windows in CI.** Whether that runner image exposes a C compiler on PATH was not verified, and a job failing for reasons unrelated to the change teaches people to ignore CI. The Windows job runs the suite without it.
+- **Three guards skip test files.** A test has to be able to write the expected glyph, label or goroutine out in full to have something to compare against. Rendering code disguised as a test would pass all three.
 - **Nothing pushed.** Creating a repository is not permission to publish it.
 - **No measurements on Linux or macOS** beyond a single container run. Every runtime trust-store finding recorded so far is from one Windows machine and is not a claim about any other.
 - **No real interception certificate has been seen.** Detection of TLS inspection currently rests on vendor documentation, not on a sample. This is the largest gap in evidence in the project and only the testbed closes it.

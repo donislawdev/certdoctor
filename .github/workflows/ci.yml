@@ -1,0 +1,130 @@
+# certdoctor CI.
+#
+# TWO BUILD CONFIGURATIONS, AND THE DIFFERENCE MATTERS.
+#
+# The race detector requires cgo and refuses to run without it. The release
+# binary must be built with cgo disabled to stay static, because the container
+# mode depends on a binary that runs where there is no libc to link against.
+# These are two configurations, not a conflict.
+#
+# The trap this file is written against: setting CGO_ENABLED=0 globally, because
+# that is what the release build needs, removes race detection from the whole
+# pipeline. The refusal is loud, so it does not disappear quietly - it
+# disappears together with the step somebody then deletes as "not working".
+# Hence CGO_ENABLED is set per job and never at the top of this file.
+#
+# The release job proves the artefact is static instead of trusting that the
+# variable was set. A cgo-linked binary runs perfectly on a developer machine
+# and fails only in a minimal container, so the failure looks like success
+# exactly where it would be noticed last.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: set up go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # gofmt -l lists unformatted files and still exits 0. Used as a bare step
+      # it would be a green gate that never blocks anything.
+      - name: gofmt
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would rewrite these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        shell: bash
+        run: go vet ./...
+
+      # Race detection runs on Linux, where the image is known to carry a C
+      # compiler. Whether the Windows image exposes one on PATH was NOT verified,
+      # and a job that fails for reasons unrelated to the change teaches people
+      # to ignore CI.
+      - name: test with the race detector
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -count=1 ./...
+
+      - name: test without the race detector
+        if: runner.os != 'Linux'
+        shell: bash
+        run: go test -count=1 ./...
+
+  release-build:
+    name: release build, static
+    runs-on: ubuntu-latest
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: set up go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: build with cgo disabled
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: go build -trimpath -o dist/certdoctor ./cmd/certdoctor
+
+      # Checked in both directions, because the wording of file(1) has changed
+      # between releases and a single positive match could start passing for the
+      # wrong reason.
+      - name: prove the artefact is static
+        shell: bash
+        run: |
+          set -euo pipefail
+          description="$(file dist/certdoctor)"
+          echo "$description"
+          if printf '%s' "$description" | grep -q 'dynamically linked'; then
+            echo "FAIL: the release binary is dynamically linked. It would not run in a minimal container."
+            exit 1
+          fi
+          if ! printf '%s' "$description" | grep -qE 'statically linked|static-pie linked'; then
+            echo "FAIL: file(1) does not describe this binary as static, so the check cannot confirm anything."
+            exit 1
+          fi
+
+      # A second, independent signal. file(1) reports what the linker produced,
+      # this reports what the toolchain was told - two different questions, and
+      # a check that passed both did not pass the same check twice.
+      #
+      # Measured on 2026-08-02 by cross-building this command both ways: the
+      # embedded build settings read CGO_ENABLED=0 and CGO_ENABLED=1
+      # respectively, so this line does discriminate.
+      - name: prove cgo was disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          go version -m dist/certdoctor
+          if ! go version -m dist/certdoctor | grep -q 'CGO_ENABLED=0'; then
+            echo "FAIL: the binary does not record CGO_ENABLED=0."
+            exit 1
+          fi

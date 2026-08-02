@@ -8,4 +8,6 @@ Changes that are not visible from the outside - internal structure, guards, CI, 
 
 ## [Unreleased]
 
-Nothing yet. The repository contains documentation and licensing only - there is no program to run, so there is nothing a user could observe.
+Nothing diagnosable yet, and there has been no release.
+
+There is now a `certdoctor` command, but it assesses nothing. It writes one line to the log channel saying so, writes nothing at all to the report channel, and ends with the exit code that means "could not assess". It exists so that the release build has an artefact to check, not because there is anything to run it against.

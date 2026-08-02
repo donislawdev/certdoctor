@@ -15,10 +15,15 @@
 /internal_tools/
 
 # --- Build output ---
+# WARNING: these two names must stay anchored to the repository root with a
+# leading slash. Unanchored, "certdoctor" also matches the directory
+# cmd/certdoctor/, so the program's entry point silently never gets committed
+# and a fresh clone has no main package to build. Caught by git check-ignore on
+# 2026-08-02, after the pattern had already been in place.
 /dist/
 /build/
-certdoctor
-certdoctor.exe
+/certdoctor
+/certdoctor.exe
 *.exe
 *.dll
 *.so
