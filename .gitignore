@@ -1,0 +1,61 @@
+# certdoctor - .gitignore
+#
+# WARNING: this file is what keeps the Polish planning documents out of the public
+# repository. Removing an entry from the "planning documents" block below does not
+# just add files to the repo - it publishes internal notes. See docs/16 ADR2.
+
+# --- Planning documents. Polish, internal, never published. ---
+/docs/
+/CLAUDE.md
+/PLAN.md
+/BACKLOG.md
+
+# --- Development tooling and measurement rigs. Never shipped, never a CI dependency. ---
+# Not to be confused with /tools/, which IS tracked and IS a CI dependency.
+/internal_tools/
+
+# --- Build output ---
+/dist/
+/build/
+certdoctor
+certdoctor.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# --- Test and coverage artifacts ---
+*.test
+*.out
+coverage.*
+/testbed/**/generated/
+
+# --- Testbed material generated at startup, NEVER committed (docs/16 ADR5) ---
+# Private keys and certificates for the fake corporate CA are produced when the
+# testbed starts. Committing a private key trips secret scanners and is permanent
+# in git history.
+/testbed/**/*.key
+/testbed/**/*.pem
+/testbed/**/*.p12
+/testbed/**/*.pfx
+/testbed/**/*.jks
+/testbed/**/*.crt
+/testbed/**/*.cer
+
+# WARNING - do NOT add a blanket pattern for "anything that looks generated".
+# The testbed's expected verdicts are the guards' golden data. They MUST stay in
+# the repository. Excluding them turns every end-to-end guard green with nothing
+# left to check against. See docs/16 ADR5 and docs/21.
+!/testbed/**/expected/**
+
+# --- Local editor and OS state ---
+.claude/settings.local.json
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Local environment ---
+.env
+*.local
