@@ -3,6 +3,7 @@ package guard
 import (
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,6 +50,84 @@ func TestScannedTreeCoversTheModule(t *testing.T) {
 		if strings.Contains(f.rel, "/testdata/") {
 			t.Errorf("%s was scanned - testdata holds the deliberately broken fixtures", f.rel)
 		}
+	}
+}
+
+// TestLoaderSkipsWhatIsNotOursToPolice exercises the walking rules against a
+// fixture tree.
+//
+// It exists because the rule that matters most - a directory carrying its own
+// go.mod belongs to a different module - is invisible in this repository. The
+// only nested module here lives under internal_tools, which is skipped by name
+// first, so the nested-module branch never runs and a break in it would show up
+// nowhere.
+func TestLoaderSkipsWhatIsNotOursToPolice(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module fixture\n\ngo 1.26\n")
+	write(t, root, "kept.go", "package fixture\n")
+	write(t, root, "kept_test.go", "package fixture\n")
+	write(t, root, "deeper/kept.go", "package deeper\n")
+	write(t, root, "notgo.txt", "package fixture\n")
+	write(t, root, ".git/hidden.go", "package hidden\n")
+	write(t, root, "testdata/fixture.go", "package fixture\n")
+	write(t, root, "internal_tools/tool.go", "package tool\n")
+	write(t, root, "vendor/dep.go", "package dep\n")
+	write(t, root, "nested/go.mod", "module nested\n\ngo 1.26\n")
+	write(t, root, "nested/inner.go", "package inner\n")
+
+	tr, err := loadTree(root, "fixture")
+	if err != nil {
+		t.Fatalf("loading the fixture tree: %v", err)
+	}
+
+	var got []string
+	for _, f := range tr.files {
+		got = append(got, f.rel)
+	}
+	want := []string{"deeper/kept.go", "kept.go", "kept_test.go"}
+	if len(got) != len(want) {
+		t.Fatalf("scanned %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("scanned %v, want %v - order must be stable so findings do not shuffle between runs", got, want)
+		}
+	}
+
+	for _, f := range tr.files {
+		wantTest := f.rel == "kept_test.go"
+		if f.isTest != wantTest {
+			t.Errorf("%s has isTest=%v, want %v - the guards decide what to skip from this flag", f.rel, f.isTest, wantTest)
+		}
+	}
+}
+
+// TestLoaderReportsAParseFailureRatherThanSkippingIt pins the ban on silence. A
+// file the scanner could not read must stop the run, because reporting "clean"
+// about a file nobody looked at is the failure mode this whole package exists to
+// prevent.
+func TestLoaderReportsAParseFailureRatherThanSkippingIt(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module fixture\n\ngo 1.26\n")
+	write(t, root, "broken.go", "package fixture\n\nfunc (\n")
+
+	_, err := loadTree(root, "fixture")
+	if err == nil {
+		t.Fatal("a file that will not parse was skipped silently")
+	}
+	if !strings.Contains(err.Error(), "broken.go") {
+		t.Errorf("the error does not name the file: %v", err)
+	}
+}
+
+func write(t *testing.T, root, rel, content string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("creating the directory for %s: %v", rel, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", rel, err)
 	}
 }
 

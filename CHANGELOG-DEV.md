@@ -21,6 +21,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Entry point** `cmd/certdoctor`. It diagnoses nothing yet and says so on the log channel, writes zero bytes to the report channel and ends with the code meaning "could not assess". It exists so the release build produces an artefact whose static linking can be checked.
 - **CI workflow** with two build configurations. Tests run with cgo enabled, and the race detector runs on Linux where the image is known to carry a C compiler. The release build runs with cgo disabled and then proves the result is static from two independent signals: what the linker produced, and the build setting recorded in the binary. Actions are pinned to commit digests rather than moving tags.
 
+### Changed
+
+- **The guards' tree loader was split into three named steps** - walking, deciding what to descend into, and parsing one file. It was the longest function in the module at 54 lines against a median of 6, which is what the new size report was written to surface. The split also created the seam that made two previously unguarded behaviours testable: skipping a directory that carries its own `go.mod`, and refusing to step silently over a file that will not parse. The first of those was invisible here - the only nested module in this tree sits under a directory that was already skipped by name, so that branch had never once run.
+
 ### Fixed
 
 - **The README claimed there was no code.** It said the repository held only documents and that there was nothing to run, which stopped being true the moment the entry point existed. The status section now says what the command actually does, which is nothing, and says it in those words.

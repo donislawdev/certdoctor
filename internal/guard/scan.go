@@ -62,16 +62,23 @@ var skippedDirs = map[string]bool{
 }
 
 // loadModule parses every Go file belonging to this module.
-//
-// Every failure is returned rather than skipped. A scanner that quietly steps
-// over a file it could not open reports "clean" about a file it never saw, which
-// is forbidden silence dressed up as a pass.
 func loadModule() (tree, error) {
 	root, modulePath, err := findModuleRoot()
 	if err != nil {
 		return tree{}, err
 	}
+	return loadTree(root, modulePath)
+}
 
+// loadTree is loadModule with the root supplied. The split exists so the walking
+// rules can be exercised against a fixture tree rather than only against this
+// repository, where the rule that matters most - skipping a nested module -
+// happens to be masked by a directory that is skipped by name anyway.
+//
+// Every failure is returned rather than skipped. A scanner that quietly steps
+// over a file it could not open reports "clean" about a file it never saw, which
+// is forbidden silence dressed up as a pass.
+func loadTree(root, modulePath string) (tree, error) {
 	fset := token.NewFileSet()
 	var files []sourceFile
 
@@ -80,37 +87,16 @@ func loadModule() (tree, error) {
 			return fmt.Errorf("walking %s: %w", path, err)
 		}
 		if d.IsDir() {
-			if path == root {
-				return nil
-			}
-			if skippedDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			// A directory carrying its own go.mod is a different module. Its
-			// rules are its own and its files are not ours to police.
-			if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
-				return filepath.SkipDir
-			}
-			return nil
+			return descendOrSkip(root, path, d)
 		}
 		if !strings.HasSuffix(d.Name(), ".go") {
 			return nil
 		}
-
-		parsed, parseErr := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		parsed, parseErr := parseSource(fset, root, path)
 		if parseErr != nil {
-			return fmt.Errorf("parsing %s: %w", path, parseErr)
+			return parseErr
 		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return fmt.Errorf("locating %s relative to the module root: %w", path, relErr)
-		}
-		files = append(files, sourceFile{
-			rel:    filepath.ToSlash(rel),
-			isTest: strings.HasSuffix(d.Name(), "_test.go"),
-			fset:   fset,
-			file:   parsed,
-		})
+		files = append(files, parsed)
 		return nil
 	})
 	if walkErr != nil {
@@ -119,6 +105,42 @@ func loadModule() (tree, error) {
 
 	sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
 	return tree{root: root, modulePath: modulePath, files: files}, nil
+}
+
+// descendOrSkip decides what to do with a directory. It returns filepath.SkipDir
+// for anything that is not ours to police.
+func descendOrSkip(root, path string, d os.DirEntry) error {
+	if path == root {
+		return nil
+	}
+	if skippedDirs[d.Name()] {
+		return filepath.SkipDir
+	}
+	// A directory carrying its own go.mod is a different module. Its rules are
+	// its own and its files are not ours to police.
+	if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+// parseSource parses one file and records where it sits relative to the module
+// root, so a finding reads the same on Windows and in a Linux CI log.
+func parseSource(fset *token.FileSet, root, path string) (sourceFile, error) {
+	parsed, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+	if err != nil {
+		return sourceFile{}, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return sourceFile{}, fmt.Errorf("locating %s relative to the module root: %w", path, err)
+	}
+	return sourceFile{
+		rel:    filepath.ToSlash(rel),
+		isTest: strings.HasSuffix(filepath.Base(path), "_test.go"),
+		fset:   fset,
+		file:   parsed,
+	}, nil
 }
 
 // findModuleRoot walks up from the working directory to the directory holding
