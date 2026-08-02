@@ -1,0 +1,18 @@
+# Every module this build is allowed to contain, one per line, exactly as
+# "go list -m all" prints them. Blank lines and lines starting with # are ignored.
+#
+# WHY THIS FILE EXISTS. "A new dependency needs a justification and a licence
+# check" is one of this project's immutable rules, and until this gate existed
+# nothing enforced it. A dependency does not usually arrive by a decision - it
+# arrives as somebody else's transitive import, in a diff that looks like it only
+# touched go.sum.
+#
+# WHAT ADDING A LINE HERE MEANS. It means the licence of that exact version was
+# read at the time of adding, the reference and the date were recorded next to
+# the version, and someone answered the third question of the sieve: what does
+# this dependency do beyond the thing we want from it. Editing this file to make
+# CI green is the same act as editing a golden value for the same reason.
+#
+# The list is currently one line, and that is the whole point of writing it now.
+
+github.com/donislawdev/certdoctor

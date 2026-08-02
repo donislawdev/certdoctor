@@ -61,6 +61,23 @@ jobs:
         shell: bash
         run: go vet ./...
 
+      # A dependency rarely arrives by decision. It arrives as somebody else's
+      # transitive import, in a diff that looks like it only touched go.sum.
+      # This is the only mechanism that makes the rule about new dependencies
+      # something other than prose.
+      - name: dependencies are the declared ones
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(grep -v '^\s*#' tools/expected-modules.txt | grep -v '^\s*$' | sort)"
+          observed="$(go list -m all | sort)"
+          if [ "$expected" != "$observed" ]; then
+            echo "The module list differs from tools/expected-modules.txt."
+            echo "Read that file before changing it - a licence check belongs with the edit."
+            diff <(printf '%s\n' "$expected") <(printf '%s\n' "$observed") || true
+            exit 1
+          fi
+
       # Race detection runs on Linux, where the image is known to carry a C
       # compiler. Whether the Windows image exposes one on PATH was NOT verified,
       # and a job that fails for reasons unrelated to the change teaches people

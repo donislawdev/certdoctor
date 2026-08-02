@@ -2,6 +2,7 @@ package guard
 
 import (
 	"fmt"
+	"path"
 	"strings"
 	"testing"
 )
@@ -15,29 +16,46 @@ import (
 // guard covering less than it claims is worse than no guard.
 var layerMap = []layerRule{
 	{
+		// The innermost layer. Nothing of ours sits below it.
 		location:        "internal/core/",
-		mayImport:       []string{"internal/core/"},
+		mayImportBelow:  nil,
 		forbiddenStdlib: coreForbiddenStdlib,
 	},
 	{
-		location:  "internal/app/",
-		mayImport: []string{"internal/core/", "internal/app/"},
+		location:       "internal/app/",
+		mayImportBelow: []string{"internal/core/"},
 	},
 	{
-		location:  "internal/adapter/",
-		mayImport: []string{"internal/core/", "internal/app/", "internal/adapter/"},
+		location:       "internal/adapter/",
+		mayImportBelow: []string{"internal/core/", "internal/app/"},
 	},
 	{
 		// The guards check the repository, so they depend on nothing in it.
-		location:  "internal/guard/",
-		mayImport: nil,
+		location:       "internal/guard/",
+		mayImportBelow: nil,
 	},
 	{
 		// Wiring. It is allowed to see every layer because that is its job.
-		location:  "cmd/",
-		mayImport: []string{"internal/core/", "internal/app/", "internal/adapter/"},
+		location:       "cmd/",
+		mayImportBelow: []string{"internal/core/", "internal/app/", "internal/adapter/"},
 	},
 }
+
+// intraLayerEdges lists the imports allowed BETWEEN packages of the same layer.
+//
+// 🔴 Sideways edges are forbidden by default, and this is the list of exceptions.
+// It is empty, which is the correct state for four packages.
+//
+// Why the default is a ban rather than a permission. Two adapters importing each
+// other is "the core does not know the interface" broken one floor down: a probe
+// that reaches for the renderer decides how it will look, and the renderer stops
+// being the single place that knows. The layer test would not see it, because
+// the direction is technically not upwards.
+//
+// The exception list lives here rather than in prose, so that adding an edge in
+// code without declaring it is visible. A sideways edge is sometimes right - it
+// is never accidental.
+var intraLayerEdges = map[string][]string{}
 
 // coreForbiddenStdlib keeps the core a pure function of evidence: no network, no
 // subprocess, no filesystem, no environment. Assessment has to be testable on
@@ -60,7 +78,7 @@ var coreForbiddenStdlib = []string{
 
 type layerRule struct {
 	location        string
-	mayImport       []string
+	mayImportBelow  []string
 	forbiddenStdlib []string
 }
 
@@ -88,6 +106,33 @@ func TestLayerGuardDetectsPlantedViolations(t *testing.T) {
 	requireFinding(t, findings, "outside the declared layer map")
 }
 
+// TestSidewaysImportsAreReportedUnlessDeclared covers the edge the direction
+// rule cannot see: two packages of the same layer importing each other points
+// neither up nor down.
+func TestSidewaysImportsAreReportedUnlessDeclared(t *testing.T) {
+	tr := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "layer_sideways.go", "internal/adapter/probe/planted.go")},
+	}
+	requireFinding(t, checkLayerDirection(tr),
+		"sideways import internal/adapter/probe -> internal/adapter/render")
+}
+
+// TestDeclaringASidewaysEdgeSilencesIt proves the exception list is the thing
+// doing the silencing. Without this, the test above would still pass if the
+// check ignored intraLayerEdges entirely and simply reported every same-layer
+// import - and then a declared edge could never be made.
+func TestDeclaringASidewaysEdgeSilencesIt(t *testing.T) {
+	intraLayerEdges["internal/adapter/probe"] = []string{"internal/adapter/render"}
+	defer delete(intraLayerEdges, "internal/adapter/probe")
+
+	tr := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "layer_sideways.go", "internal/adapter/probe/planted.go")},
+	}
+	requireNoFindings(t, checkLayerDirection(tr), "a declared sideways edge")
+}
+
 // checkLayerDirection reports every declared import that crosses a layer
 // boundary in the wrong direction, plus every package the layer map does not
 // cover.
@@ -111,9 +156,22 @@ func checkLayerDirection(tr tree) []Finding {
 			continue
 		}
 
+		fromPackage := path.Dir(sf.rel)
 		for _, imp := range importsOf(sf) {
 			if inside, isOurs := strings.CutPrefix(imp.path, internalPrefix); isOurs {
-				if !hasAnyPrefix(inside, rule.mayImport) {
+				if strings.HasPrefix(inside, rule.location) {
+					if !edgeAllowed(fromPackage, inside) {
+						findings = append(findings, Finding{
+							File: sf.rel,
+							Line: imp.line,
+							Detail: fmt.Sprintf(
+								"sideways import %s -> %s inside %s - declare it in intraLayerEdges or do not make it",
+								fromPackage, inside, rule.location),
+						})
+					}
+					continue
+				}
+				if !hasAnyPrefix(inside, rule.mayImportBelow) {
 					findings = append(findings, Finding{
 						File:   sf.rel,
 						Line:   imp.line,
@@ -146,6 +204,16 @@ func ruleFor(rel string) (layerRule, bool) {
 		}
 	}
 	return best, found
+}
+
+// edgeAllowed reports whether a same-layer import was declared.
+func edgeAllowed(fromPackage, toPackage string) bool {
+	for _, allowed := range intraLayerEdges[fromPackage] {
+		if allowed == toPackage {
+			return true
+		}
+	}
+	return false
 }
 
 func hasAnyPrefix(s string, prefixes []string) bool {
