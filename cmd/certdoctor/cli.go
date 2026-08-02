@@ -101,7 +101,7 @@ func walk(ctx context.Context, o *options, env environment, origin string, reduc
 		LayerBudget: budget(o.probeTimeout),
 		Now:         env.now,
 		Layers:      run.NotImplemented(),
-		Notes:       pendingNotes(o, reduced),
+		Notes:       pendingNotes(o, reduced, env.privilege),
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -213,17 +213,24 @@ var standingNotes = []report.Note{
 		Field:  "run.platform.container",
 		Detail: "certdoctor does not detect containers yet, so this is left empty rather than answered no",
 	},
-	{
-		Kind:   report.NoteUndetermined,
-		Field:  "run.privilege_level",
-		Detail: "certdoctor does not establish its own privilege level yet",
-	},
 }
 
 // pendingNotes is the standing list plus whatever this particular invocation
 // added to it.
-func pendingNotes(o *options, reduced targetReduction) []report.Note {
+func pendingNotes(o *options, reduced targetReduction, privilege report.PrivilegeLevel) []report.Note {
 	notes := append([]report.Note{}, standingNotes...)
+	// An unknown privilege level is a legitimate answer and it is also the one
+	// that makes a later comparison of two reports meaningless, so it is never
+	// left to be noticed in the field alone. When the level IS established this
+	// note disappears - a note that never goes away teaches people to skip
+	// notes, and then the one that mattered goes with them.
+	if privilege == report.PrivilegeUnknown {
+		notes = append(notes, report.Note{
+			Kind:   report.NoteUndetermined,
+			Field:  "run.privilege_level",
+			Detail: "the operating system did not answer when asked what privilege this process runs with, so the level is left unknown rather than guessed",
+		})
+	}
 	if reduced.removed {
 		notes = append(notes, report.Note{
 			Kind:   report.NoteReduced,

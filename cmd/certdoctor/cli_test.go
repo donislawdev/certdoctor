@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
@@ -29,6 +30,15 @@ type harness struct {
 }
 
 func invoke(args ...string) *harness {
+	return invokeAs(report.PrivilegeUnknown, args...)
+}
+
+// invokeAs is invoke with the privilege level the run reports.
+//
+// It exists because the report has to say something different depending on
+// whether that level was established, and a test cannot elevate the process it
+// runs in. The level arrives as a parameter for the same reason the clock does.
+func invokeAs(level report.PrivilegeLevel, args ...string) *harness {
 	h := &harness{written: map[string][]byte{}}
 	h.code = guarded(context.Background(), args, environment{
 		stdout: &h.stdout,
@@ -41,7 +51,7 @@ func invoke(args ...string) *harness {
 		},
 		now:       func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
 		platform:  report.Platform{OS: "testos", Arch: "testarch"},
-		privilege: report.PrivilegeUnknown,
+		privilege: level,
 		writeFile: func(path string, data []byte) error {
 			h.written[path] = data
 			return nil
@@ -210,6 +220,53 @@ func TestAReducedTargetSaysSoAndAnUntouchedOneDoesNot(t *testing.T) {
 	}
 	if out := invoke("https://example.com/", "--json").stdout.String(); strings.Contains(out, `"reduced"`) {
 		t.Error("a bare trailing slash was treated as something worth removing")
+	}
+}
+
+// TestAnUndeterminedPrivilegeLevelIsAnnouncedAndAnEstablishedOneIsNot is the
+// ban on silence applied to a metadata field.
+//
+// "unknown" is a legitimate answer here and it is also the answer that makes a
+// later comparison of two reports meaningless, because certdoctor run as a user
+// and as an administrator sees different trust stores. So it may never be
+// quiet: a run that could not establish its level says so, in the notes and not
+// only in the field.
+//
+// THE SECOND HALF MATTERS AS MUCH AS THE FIRST. A standing note that never goes
+// away teaches people that notes are decoration, and then the one note that
+// mattered is skipped with the rest. This is the shape that erodes on its own,
+// because removing a note is the step nobody remembers.
+func TestAnUndeterminedPrivilegeLevelIsAnnouncedAndAnEstablishedOneIsNot(t *testing.T) {
+	unknown := invokeAs(report.PrivilegeUnknown, "https://example.com", "--json").stdout.String()
+	if !strings.Contains(unknown, `"run.privilege_level"`) {
+		t.Error("the level could not be established and the report does not say so")
+	}
+
+	for _, level := range []report.PrivilegeLevel{report.PrivilegeUser, report.PrivilegeElevated} {
+		out := invokeAs(level, "https://example.com", "--json").stdout.String()
+		if strings.Contains(out, `"run.privilege_level"`) {
+			t.Errorf("level %q was established and the report still announces it was not", level)
+		}
+		if want := `"privilege_level": "` + string(level) + `"`; !strings.Contains(out, want) {
+			t.Errorf("level %q is not in the document", level)
+		}
+	}
+}
+
+// TestTheLiveEnvironmentAsksForTheRealPrivilegeLevel pins the WIRING rather
+// than the rule.
+//
+// Every other test here hands the level in through the harness, which is what
+// makes them runnable anywhere - and it also means a build that stopped asking
+// the operating system and passed a constant instead would leave all of them
+// green, while every report on every machine said "unknown" for ever.
+//
+// ⚠️ On a machine where the question genuinely fails this compares unknown
+// against unknown and proves less. That is accepted: it is a pin on one line of
+// wiring, not a statement about the platform.
+func TestTheLiveEnvironmentAsksForTheRealPrivilegeLevel(t *testing.T) {
+	if got, want := liveEnvironment().privilege, privilege.Level(); got != want {
+		t.Errorf("the wiring reports %q where the platform answers %q", got, want)
 	}
 }
 

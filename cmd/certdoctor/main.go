@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/output"
+	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -84,10 +85,10 @@ func liveEnvironment() environment {
 			// answered, with a note in the report saying which.
 			Container: report.NotDetermined,
 		},
-		// Nothing establishes the privilege level yet either. Claiming "user"
-		// would be a measurement nobody took, and comparing two reports depends
-		// on this field meaning something.
-		privilege: report.PrivilegeUnknown,
+		// Read from the process token on Windows and from the effective user id
+		// elsewhere, by identifier and never by the name of a group. A question
+		// that fails comes back unknown, and the report says so.
+		privilege: privilege.Level(),
 		writeFile: output.WriteFile,
 	}
 }
