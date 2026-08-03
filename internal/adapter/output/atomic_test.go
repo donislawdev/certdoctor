@@ -8,6 +8,40 @@ import (
 	"testing"
 )
 
+// TestADeviceIsRefusedWithAnAnswerRatherThanAFailureFurtherIn covers a
+// destination somebody will reasonably ask for.
+//
+// "Send this nowhere" is an ordinary thing to want, and it used to be answered
+// by whatever the atomic write hit first. Measured on both systems: /dev/null
+// produced "open /dev/.certdoctor-report-...: permission denied", naming a
+// directory the person never mentioned, and NUL produced "Cannot create a file
+// when that file already exists" while they were trying to create one. Both
+// true, neither an answer.
+//
+// The device name is per platform and the behaviour is not. os.Stat reports NUL
+// on Windows and /dev/null elsewhere the same way, as a character device, which
+// is what makes one check enough.
+func TestADeviceIsRefusedWithAnAnswerRatherThanAFailureFurtherIn(t *testing.T) {
+	device := "/dev/null"
+	if runtime.GOOS == "windows" {
+		device = "NUL"
+	}
+
+	err := WriteFile(device, []byte("{\"schema_version\":\"1.0\"}\n"))
+	if err == nil {
+		t.Fatalf("writing a report to %s reported success", device)
+	}
+	for _, want := range []string{"device", "standard output"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the message does not mention %q: %v", want, err)
+		}
+	}
+	// Nothing was created on the way to finding out.
+	if leftovers, _ := filepath.Glob(".certdoctor-report-*"); len(leftovers) > 0 {
+		t.Errorf("refusing a device left files behind: %v", leftovers)
+	}
+}
+
 // TestARemovalThatFailsIsReportedRatherThanSwallowed covers the clean up path
 // after a failed write.
 //

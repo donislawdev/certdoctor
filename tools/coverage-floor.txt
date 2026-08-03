@@ -24,6 +24,14 @@
 # the mutation register. This gate is a floor under the mutation register, not a
 # substitute for it.
 #
+# MEASURED ON LINUX TOO, 2026-08-03, in WSL with the same Go version. Every
+# package came out at or above the floor below, so these numbers are the lower
+# bound of the two platforms rather than a Windows quirk - which is what a floor
+# has to be. Two packages are well above it there and stay at the Windows number
+# on purpose: privilege reaches 100 percent because the file Linux compiles is
+# three lines, and output reaches 78.3 because the test about file mode bits is
+# not skipped where mode bits mean something.
+#
 # WHY IT EXISTS AT ALL, measured on 2026-08-03: internal/adapter/output sat at
 # 54.5 percent while every guard in the repository was green, and the statements
 # nobody had ever executed were the ones that clean up after a failed write -

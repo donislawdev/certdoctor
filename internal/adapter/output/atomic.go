@@ -44,6 +44,9 @@ const reportPermissions = 0o600
 // A failure at any point removes the temporary file and returns. The
 // destination is left exactly as it was.
 func WriteFile(path string, data []byte) error {
+	if err := refuseDevice(path); err != nil {
+		return err
+	}
 	directory := filepath.Dir(path)
 
 	temporary, err := os.CreateTemp(directory, ".certdoctor-report-*")
@@ -59,6 +62,36 @@ func WriteFile(path string, data []byte) error {
 		return errors.Join(fmt.Errorf("moving the finished report to %s: %w", path, err), removeTemporary(name))
 	}
 	return nil
+}
+
+// refuseDevice stops a run that names a device as its destination, and says why.
+//
+// A DEVICE CANNOT BE REPLACED BY A RENAME, which is the whole mechanism here.
+// Asking for one is not unreasonable - "send this nowhere" is an ordinary thing
+// to want - so what it deserves is an answer rather than the failure it used to
+// produce further in. MEASURED on both systems, 2026-08-03:
+//
+//	--out /dev/null   creating a temporary file beside /dev/null:
+//	                  open /dev/.certdoctor-report-2539093753: permission denied
+//	--out NUL         moving the finished report to NUL:
+//	                  Cannot create a file when that file already exists
+//
+// Both are true and neither says what happened. One of them names a directory
+// the person never mentioned and the other says a file exists when they were
+// trying to create one.
+//
+// os.Stat answers the same way on both: NUL and CON on Windows come back as
+// character devices, and so does /dev/null. A path that does not exist yet is
+// the ordinary case and is left alone - the check is only about what is already
+// there.
+func refuseDevice(path string) error {
+	existing, err := os.Stat(path)
+	if err != nil || existing.Mode()&os.ModeDevice == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s is a device rather than a file, and a report is written under a temporary name and renamed into place, which cannot be done to a device. Use - to send the report to standard output, or give a path to a file",
+		path)
 }
 
 // removeTemporary takes the half written file away, and says so when it cannot.

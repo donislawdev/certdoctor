@@ -108,10 +108,19 @@ jobs:
       # reason that has nothing to do with the change being tested, and a gate
       # that fails for unrelated reasons is a gate people learn to ignore.
       #
-      # The Linux figures have NOT been measured. Until they are, this gate
-      # speaks for one platform and says so rather than implying both.
+      # MEASURED ON LINUX TOO, 2026-08-03, and that is why this now runs on both.
+      # Every package came out at or above the floor measured on Windows, two of
+      # them well above it: the privilege package reaches 100 percent there
+      # because the file it compiles is three lines, and the output package
+      # reaches 78.3 because the test about file mode bits is not skipped. The
+      # floors stay at the Windows numbers, since those are the lower ones and a
+      # floor has to hold on the platform that struggles most.
+      #
+      # Running it on both is strictly more cover: a change that leaves Windows
+      # alone and drops Linux is a real signal, and until now nothing would have
+      # seen it.
       - name: coverage is at or above its floor
-        if: runner.os == 'Windows'
+        if: runner.os != 'macOS'
         shell: bash
         run: bash tools/coverage-gate.sh
 
