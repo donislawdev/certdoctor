@@ -261,7 +261,7 @@ func TestAnUndeterminedPrivilegeLevelIsAnnouncedAndAnEstablishedOneIsNot(t *test
 // the operating system and passed a constant instead would leave all of them
 // green, while every report on every machine said "unknown" for ever.
 //
-// ⚠️ On a machine where the question genuinely fails this compares unknown
+// NOTE: On a machine where the question genuinely fails this compares unknown
 // against unknown and proves less. That is accepted: it is a pin on one line of
 // wiring, not a statement about the platform.
 func TestTheLiveEnvironmentAsksForTheRealPrivilegeLevel(t *testing.T) {
@@ -386,6 +386,158 @@ func keysOf(m map[string][]byte) []string {
 
 // documentedSwitch matches a long switch as it is written in help.
 var documentedSwitch = regexp.MustCompile(`--[a-z][a-z0-9-]*`)
+
+// TestAnUnknownSwitchIsNamedRatherThanTheURLBlamed covers a message that
+// pointed at the only correct part of the command line.
+//
+// An unregistered switch consumed nothing, so whatever followed it became the
+// URL and the real URL became an "unexpected extra argument". The person with a
+// typo in a flag name went looking at their address. The same typo also read
+// differently before and after the URL, which is two diagnoses for one mistake.
+func TestAnUnknownSwitchIsNamedRatherThanTheURLBlamed(t *testing.T) {
+	orders := [][]string{
+		{"--unknown-flag", "value", "https://example.com"},
+		{"https://example.com", "--unknown-flag"},
+		{"--unknown-flag=value", "https://example.com"},
+	}
+	for _, args := range orders {
+		h := invoke(args...)
+		if h.code != exitcode.Usage {
+			t.Errorf("%v ended %d, want %d", args, h.code, exitcode.Usage)
+		}
+		if !strings.Contains(h.stderr.String(), "unknown-flag") {
+			t.Errorf("%v: the message does not name the switch: %q", args, h.stderr.String())
+		}
+		if strings.Contains(h.stderr.String(), "extra argument") {
+			t.Errorf("%v: the message blames the URL: %q", args, h.stderr.String())
+		}
+	}
+}
+
+// TestAnExplicitFormatContradictingJSONIsRefused keeps two requests for two
+// different formats from being settled quietly.
+//
+// --format md with --json was already refused. --format terminal with --json
+// was not, because the value alone cannot be told from the default, so --json
+// won and the run produced a document in a form nobody had asked for in those
+// words. The same contradiction had two different answers.
+func TestAnExplicitFormatContradictingJSONIsRefused(t *testing.T) {
+	for _, args := range [][]string{
+		{"--format", "terminal", "--json", "https://example.com"},
+		{"--json", "--format", "terminal", "https://example.com"},
+	} {
+		h := invoke(args...)
+		if h.code != exitcode.Config {
+			t.Errorf("%v ended %d, want %d", args, h.code, exitcode.Config)
+		}
+		if h.stdout.Len() != 0 {
+			t.Errorf("%v printed a report over a contradiction: %q", args, h.stdout.String())
+		}
+	}
+	// The alias on its own is not a contradiction and still has to work.
+	if h := invoke("--json", "https://example.com"); !strings.Contains(h.stdout.String(), `"schema_version"`) {
+		t.Errorf("--json alone stopped producing a document: %q", h.stdout.String())
+	}
+}
+
+// TestTwoMetaSwitchesAreRefusedRatherThanOneBeingDropped is the ban on silence
+// applied to the switches that describe the tool. Each is a complete answer, so
+// two of them are two answers - and the version printed the first in a fixed
+// order and dropped the rest without a word.
+func TestTwoMetaSwitchesAreRefusedRatherThanOneBeingDropped(t *testing.T) {
+	for _, args := range [][]string{
+		{"--version", "--license"},
+		{"--help", "--version"},
+	} {
+		h := invoke(args...)
+		if h.code != exitcode.Config {
+			t.Errorf("%v ended %d, want %d", args, h.code, exitcode.Config)
+		}
+	}
+	if h := invoke("--version"); h.code != exitcode.OK || h.stdout.Len() == 0 {
+		t.Errorf("--version on its own stopped working: code %d, %q", h.code, h.stdout.String())
+	}
+}
+
+// TestABudgetTooShortToHonourIsRefusedRatherThanBecomingNoLimit covers the one
+// value of this flag whose meaning inverted.
+//
+// A duration is a whole number of nanoseconds, so 1e-30 seconds truncated to
+// zero - and zero is the documented way of asking for NO limit. Somebody typing
+// the strictest budget they could imagine got an unlimited run, and the report
+// then said the budget had not been exceeded.
+func TestABudgetTooShortToHonourIsRefusedRatherThanBecomingNoLimit(t *testing.T) {
+	for _, flag := range []string{"--timeout", "--probe-timeout"} {
+		h := invoke("https://example.com", flag, "1e-30")
+		if h.code != exitcode.Config {
+			t.Errorf("%s 1e-30 ended %d, want %d: %q", flag, h.code, exitcode.Config, h.stderr.String())
+		}
+		// Zero still means no limit, and that has to keep working.
+		if h := invoke("https://example.com", flag, "0"); h.code != exitcode.Inconclusive {
+			t.Errorf("%s 0 stopped meaning no limit: %d %q", flag, h.code, h.stderr.String())
+		}
+	}
+}
+
+// TestTheHostIsReportedWithoutRegardToCase keeps one machine from appearing as
+// two.
+//
+// Names in DNS are case insensitive. Left as typed, EXAMPLE.COM and example.com
+// produced two different targets for one machine - two reports that do not
+// compare, a difference --compare would report where nothing changed, and two
+// pseudonyms under --redact for one host.
+func TestTheHostIsReportedWithoutRegardToCase(t *testing.T) {
+	upper := invoke("HTTPS://EXAMPLE.COM/", "--json")
+	lower := invoke("https://example.com/", "--json")
+	if upper.stdout.String() != lower.stdout.String() {
+		t.Errorf("the same machine produced two different reports:\n  %q\n  %q",
+			upper.stdout.String(), lower.stdout.String())
+	}
+}
+
+// TestAnErrorMessageDoesNotReplayWhatTheUserTypedUnescaped closes a way into
+// somebody's terminal.
+//
+// The suggestion in the scheme message pasted the raw argument back with %s.
+// The URL parser refuses ASCII control characters, which is what made this look
+// safe - it does not refuse the ones above them, so a bidirectional override or
+// a zero width character from a URL in a ticket came out unescaped into a
+// console and into a log. This tool's output is evidence in an argument about
+// somebody's network, so forging how it reads is a real harm.
+func TestAnErrorMessageDoesNotReplayWhatTheUserTypedUnescaped(t *testing.T) {
+	// Written as numbers rather than pasted in as characters. A test carrying an
+	// invisible character in its own source is a test nobody can read, and this
+	// file would then be doing the thing it exists to forbid.
+	invisible := []rune{
+		0x202e, // right-to-left override
+		0x200b, // zero width space
+		0x009b, // the eight bit form of the control sequence introducer
+	}
+	for _, char := range invisible {
+		raw := "ftp://ex" + string(char) + "mple.com"
+		h := invoke(raw)
+		if h.code != exitcode.Usage {
+			t.Errorf("%U ended %d, want %d", char, h.code, exitcode.Usage)
+		}
+		if strings.ContainsRune(h.stderr.String(), char) {
+			t.Errorf("%U reached the log unescaped: %q", char, h.stderr.String())
+		}
+	}
+}
+
+// TestWritingAReportToAPathSaysWhereItWent is the ban on silence over the only
+// irreversible thing this program does. A successful --out used to produce
+// nothing on either channel, so a typo in the path and a report written were
+// indistinguishable until somebody went looking for the file.
+func TestWritingAReportToAPathSaysWhereItWent(t *testing.T) {
+	h := invoke("https://example.com", "--out", "report.json", "--json")
+	if h.stdout.Len() != 0 {
+		t.Errorf("a report going to a file also reached standard output: %q", h.stdout.String())
+	}
+	if !strings.Contains(h.stderr.String(), "report.json") {
+		t.Errorf("nothing said where the report went: %q", h.stderr.String())
+	}
+}
 
 // TestEveryFlagIsDocumentedAndEveryDocumentedFlagExists is the cheap guard the
 // CLI rules ask for from the first flag onwards.

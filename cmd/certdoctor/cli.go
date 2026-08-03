@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	certdoctor "github.com/donislawdev/certdoctor"
@@ -173,15 +174,27 @@ func reduceTarget(raw string) (string, targetReduction, *fault) {
 			"%q is not a URL certdoctor can read: %v. Give one like https://example.com", raw, err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		// The suggestion is quoted rather than pasted in. It contains what the
+		// user typed, and %s reproduced that byte for byte onto a terminal:
+		// a bidirectional override or a zero width character in a URL from a
+		// ticket came straight back out, unescaped, into somebody's console and
+		// their log. The parser refuses ASCII control characters, which is why
+		// this looked safe - it does not refuse the ones above them.
 		return "", targetReduction{}, usageFault(
-			"%q has no http:// or https:// scheme. Without one a host name cannot be told from a port number, so write it out: https://%s",
-			raw, raw)
+			"%q has no http:// or https:// scheme. Without one a host name cannot be told from a port number, so write it out, for example %q",
+			raw, "https://"+raw)
 	}
 	if parsed.Host == "" {
 		return "", targetReduction{}, usageFault("%q names no host. Give one like https://example.com", raw)
 	}
 
-	origin := parsed.Scheme + "://" + parsed.Host
+	// The host is lower cased and nothing else is. Names in DNS are case
+	// insensitive, so EXAMPLE.COM and example.com are one machine - and left
+	// alone they became two: two different targets in two reports of the same
+	// run, a difference --compare would report where nothing had changed, and
+	// two different pseudonyms under --redact for one host. A path and a query
+	// are case sensitive and are left exactly as they were.
+	origin := parsed.Scheme + "://" + strings.ToLower(parsed.Host)
 	dropped := parsed.User != nil ||
 		parsed.RawQuery != "" ||
 		parsed.Fragment != "" ||
@@ -294,5 +307,11 @@ func deliver(o *options, env environment, document []byte) *fault {
 	if err := env.writeFile(o.out, document); err != nil {
 		return &fault{exitcode.IO, err.Error()}
 	}
+	// Say where it went. Writing the file was the only thing this run did that
+	// a person cannot see, and it is also the only irreversible thing this
+	// program does - an existing file at that path has just been replaced. A run
+	// that ended in complete silence gave no way to tell a report from a typo
+	// in a path until somebody went looking for the file.
+	fmt.Fprintf(env.stderr, "%s: report written to %s, %d bytes\n", toolName, o.out, len(document))
 	return nil
 }

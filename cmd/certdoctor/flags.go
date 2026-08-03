@@ -34,11 +34,28 @@ const (
 // unreachable.
 const maxBudgetSeconds = 86400
 
+// minBudgetSeconds is the shortest limit that can actually be honoured.
+//
+// The other end of the same defence against arithmetic, and it fails in the
+// worse direction. A duration is a whole number of nanoseconds, so a budget of
+// 1e-30 seconds truncates to zero - and zero is the documented way of asking
+// for NO limit. Somebody typing the strictest budget they could think of got an
+// unlimited run, which is the exact opposite of what they asked for and is
+// silent about it.
+//
+// A millisecond is also below what the clock can resolve on some platforms, and
+// that is said in the message rather than left as a surprise.
+const minBudgetSeconds = 0.001
+
 // options is one parsed command line.
 type options struct {
 	target string
 
-	format    string
+	format string
+	// formatSet says --format was written out on the command line, as opposed
+	// to holding its default. The flag package cannot tell those apart and the
+	// difference decides whether --json contradicts it.
+	formatSet bool
 	jsonAlias bool
 	out       string
 	redact    bool
@@ -189,14 +206,16 @@ var switches = []switchDecl{
 	},
 	{
 		name: "timeout", arg: "<seconds>", group: "budget",
-		summary: fmt.Sprintf("limit for the whole run. Zero means no limit. Defaults to %d", defaultBudgetSeconds),
+		summary: fmt.Sprintf("limit for the whole run in seconds, at least %g. Zero means no limit. Defaults to %d",
+			minBudgetSeconds, defaultBudgetSeconds),
 		bind: func(fs *flag.FlagSet, o *options) {
 			fs.Float64Var(&o.timeout, "timeout", defaultBudgetSeconds, "")
 		},
 	},
 	{
 		name: "probe-timeout", arg: "<seconds>", group: "budget",
-		summary: fmt.Sprintf("limit for one layer. Zero means no limit. Defaults to %d", defaultLayerBudgetSeconds),
+		summary: fmt.Sprintf("limit for one layer in seconds, at least %g. Zero means no limit. Defaults to %d",
+			minBudgetSeconds, defaultLayerBudgetSeconds),
 		bind: func(fs *flag.FlagSet, o *options) {
 			fs.Float64Var(&o.probeTimeout, "probe-timeout", defaultLayerBudgetSeconds, "")
 		},
@@ -256,7 +275,19 @@ func parse(args []string) (*options, *fault) {
 			leftover[0], toolName, toolName)
 	}
 
+	// Asked of the flag set rather than inferred from the value, because the
+	// default and an explicit --format terminal are the same string and mean
+	// different things next to --json.
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "format" {
+			o.formatSet = true
+		}
+	})
+
 	o.target = target
+	if fault := o.checkMetaSwitches(); fault != nil {
+		return nil, fault
+	}
 	if o.showHelp || o.showVersion || o.showLicense {
 		return o, nil
 	}
@@ -291,8 +322,20 @@ func splitTarget(fs *flag.FlagSet, args []string) (string, []string, *fault) {
 			positionalOnly = true
 			continue
 		case len(arg) > 1 && arg[0] == '-':
+			name, inlineValue := switchName(arg)
+			// A switch nobody registered is reported HERE, by name, rather than
+			// left for the parser. Left alone it consumed nothing, so the
+			// argument behind it became the URL and the real URL became an
+			// "unexpected extra argument" - a message pointing at the only
+			// correct part of the line while saying nothing about the wrong
+			// one. The same typo also read differently depending on whether it
+			// stood before or after the URL.
+			if fs.Lookup(name) == nil {
+				return "", nil, usageFault(
+					"%q is not a switch %s knows. Run %s --help to see what is accepted", arg, toolName, toolName)
+			}
 			rest = append(rest, arg)
-			if name, inlineValue := switchName(arg); !inlineValue && takesValue(fs, name) && i+1 < len(args) {
+			if !inlineValue && takesValue(fs, name) && i+1 < len(args) {
 				i++
 				rest = append(rest, args[i])
 			}
@@ -322,8 +365,9 @@ func switchName(arg string) (string, bool) {
 //
 // The flag set exposes this: a boolean switch's value implements IsBoolFlag,
 // and nothing else does. Measured alongside the parsing order on 2026-08-02.
-// An unknown name answers no, which leaves the argument for Parse to reject by
-// name rather than swallowing whatever followed it.
+// An unknown name answers no, and the caller now refuses it before asking - the
+// answer is kept honest anyway, because a function that says "yes" about a
+// switch that does not exist would be wrong even where nobody looks.
 func takesValue(fs *flag.FlagSet, name string) bool {
 	found := fs.Lookup(name)
 	if found == nil {
@@ -349,12 +393,41 @@ func (o *options) check() *fault {
 	return nil
 }
 
+// checkMetaSwitches refuses more than one switch that describes the tool.
+//
+// Each of them is a complete answer on its own, so two of them are two answers
+// and only one can be given. The version handled that by printing the first in a
+// fixed order and dropping the rest without a word - an option accepted and
+// silently ignored, which is the same defect --redact carries a note about.
+func (o *options) checkMetaSwitches() *fault {
+	var asked []string
+	for _, named := range []struct {
+		name  string
+		given bool
+	}{
+		{"--help", o.showHelp}, {"--version", o.showVersion}, {"--license", o.showLicense},
+	} {
+		if named.given {
+			asked = append(asked, named.name)
+		}
+	}
+	if len(asked) > 1 {
+		return configFault("%s each print something different and only one of them can be answered. Use one",
+			strings.Join(asked, " and "))
+	}
+	return nil
+}
+
 func (o *options) checkFormat() *fault {
 	chosen, known := formatFor(o.format)
 	if !known {
 		return usageFault("unknown format %q. Accepted: %s", o.format, strings.Join(formatNames(), ", "))
 	}
-	if o.jsonAlias && o.format != "terminal" && o.format != "json" {
+	// An explicit --format is what makes this a contradiction. Reading the value
+	// alone could not tell "--format terminal" from the default, so --json
+	// quietly won and produced a document nobody on the command line had asked
+	// for in that form.
+	if o.jsonAlias && o.formatSet && o.format != "json" {
 		return configFault(
 			"--json and --format %s ask for two different formats. Use one of them, or --format json",
 			o.format)
@@ -424,6 +497,10 @@ func (o *options) checkBudgets() *fault {
 		case named.seconds < 0:
 			return configFault("%s is negative. Give a value between 0 and %d, where 0 means no limit",
 				named.name, maxBudgetSeconds)
+		case named.seconds > 0 && named.seconds < minBudgetSeconds:
+			return configFault(
+				"%s is shorter than a millisecond, which is too short to be honoured - it would round down to no limit at all. Give 0 if that is what you want, or at least %g",
+				named.name, minBudgetSeconds)
 		case named.seconds > maxBudgetSeconds:
 			return configFault("%s is longer than a day. Give a value between 0 and %d, where 0 means no limit",
 				named.name, maxBudgetSeconds)
