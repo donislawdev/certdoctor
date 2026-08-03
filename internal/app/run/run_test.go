@@ -19,6 +19,14 @@ type fakeClock struct{ at time.Time }
 func (c *fakeClock) now() time.Time          { return c.at }
 func (c *fakeClock) advance(d time.Duration) { c.at = c.at.Add(d) }
 
+// newClock starts at a fixed moment that is deliberately NOT time.Time's zero
+// value. The validator refuses a report with no start time, so a fixture built
+// on the zero clock would be exercising a shape the product is not allowed to
+// produce.
+func newClock() *fakeClock {
+	return &fakeClock{at: time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)}
+}
+
 func baseOptions(clock *fakeClock) Options {
 	return Options{
 		Tool:      report.Tool{Name: "certdoctor", Version: "0.0.0-test"},
@@ -34,11 +42,83 @@ func baseOptions(clock *fakeClock) Options {
 	}
 }
 
+// TestALayerThatBreaksItsContractDegradesAloneRatherThanEndingTheRun is the
+// rule that one probe cannot take the report down with it, checked against the
+// shapes a layer can actually get wrong.
+//
+// This used to be a panic and nothing said so. Folding the statuses asks each
+// one for its severity, and severity refuses a value outside the four - so a
+// layer returning a zero Answer ended the run with no report at all. Seven
+// working layers, the verdict and every note were thrown away because the
+// eighth forgot a field, and the process exited claiming certdoctor itself had
+// broken.
+func TestALayerThatBreaksItsContractDegradesAloneRatherThanEndingTheRun(t *testing.T) {
+	breaches := []struct {
+		name   string
+		answer Answer
+	}{
+		{"nothing filled in at all", Answer{}},
+		{"a status outside the vocabulary", Answer{Status: status.Status("BROKEN"), Reason: status.ReasonTimeout, Detail: "x"}},
+		{"a problem with a reason outside the closed list", Answer{Status: status.Fail, Reason: status.Reason("made_up"), Detail: "x"}},
+		{"a pass still carrying a reason", Answer{Status: status.Pass, Reason: status.ReasonTimeout}},
+		{"a problem with no detail line", Answer{Status: status.Fail, Reason: status.ReasonTimeout}},
+	}
+
+	for _, breach := range breaches {
+		o := baseOptions(newClock())
+		o.Layers[layer.TLS] = func(context.Context) Answer { return breach.answer }
+
+		r, err := Execute(context.Background(), o)
+		if err != nil {
+			t.Fatalf("%s: one broken layer ended the whole walk: %v", breach.name, err)
+		}
+		if err := report.Validate(r); err != nil {
+			t.Fatalf("%s: the resulting report is not valid:\n%v", breach.name, err)
+		}
+		if len(r.Layers) != len(layer.All) {
+			t.Errorf("%s: %d rows, want %d", breach.name, len(r.Layers), len(layer.All))
+		}
+
+		broken := rowFor(t, r, layer.TLS)
+		if broken.Status != status.Unknown || broken.Reason != status.ReasonProbeError {
+			t.Errorf("%s: the broken layer reads %s/%s, want unknown with a probe error",
+				breach.name, broken.Status, broken.Reason)
+		}
+		// The layers either side of it are untouched, which is the whole point.
+		if intact := rowFor(t, r, layer.TCP); intact.Detail != notImplementedDetail {
+			t.Errorf("%s: a working layer was disturbed: %+v", breach.name, intact)
+		}
+		if !noteNames(r.Notes, layer.TLS) {
+			t.Errorf("%s: the layer was degraded and no note says which one or why", breach.name)
+		}
+	}
+}
+
+func rowFor(t *testing.T, r report.Report, id layer.ID) report.LayerResult {
+	t.Helper()
+	for _, row := range r.Layers {
+		if row.ID == id {
+			return row
+		}
+	}
+	t.Fatalf("no row for layer %s", id)
+	return report.LayerResult{}
+}
+
+func noteNames(notes []report.Note, id layer.ID) bool {
+	for _, note := range notes {
+		if note.Kind == report.NoteDegraded && note.Layer == id {
+			return true
+		}
+	}
+	return false
+}
+
 // TestEveryDeclaredLayerGetsARowInRegistryOrder is the ban on silence at the
 // level of the whole report. A layer with no row cannot be told apart from a
 // layer that passed.
 func TestEveryDeclaredLayerGetsARowInRegistryOrder(t *testing.T) {
-	r, err := Execute(context.Background(), baseOptions(&fakeClock{}))
+	r, err := Execute(context.Background(), baseOptions(newClock()))
 	if err != nil {
 		t.Fatalf("the walk failed: %v", err)
 	}
@@ -59,7 +139,7 @@ func TestEveryDeclaredLayerGetsARowInRegistryOrder(t *testing.T) {
 func TestTheRowOrderComesFromTheRegistryAndNotFromTheMap(t *testing.T) {
 	var first []layer.ID
 	for attempt := 0; attempt < 20; attempt++ {
-		r, err := Execute(context.Background(), baseOptions(&fakeClock{}))
+		r, err := Execute(context.Background(), baseOptions(newClock()))
 		if err != nil {
 			t.Fatalf("the walk failed: %v", err)
 		}
@@ -83,7 +163,7 @@ func TestTheRowOrderComesFromTheRegistryAndNotFromTheMap(t *testing.T) {
 // unknown with a reason, the settled verdict, and the code that means "could not
 // assess".
 func TestTheSkeletonIsHonestAboutItself(t *testing.T) {
-	r, err := Execute(context.Background(), baseOptions(&fakeClock{}))
+	r, err := Execute(context.Background(), baseOptions(newClock()))
 	if err != nil {
 		t.Fatalf("the walk failed: %v", err)
 	}
@@ -110,7 +190,7 @@ func TestTheSkeletonIsHonestAboutItself(t *testing.T) {
 // orchestrator ever assembles something the core would refuse, this is where it
 // shows up rather than in front of a user.
 func TestTheAssembledReportPassesValidation(t *testing.T) {
-	r, err := Execute(context.Background(), baseOptions(&fakeClock{}))
+	r, err := Execute(context.Background(), baseOptions(newClock()))
 	if err != nil {
 		t.Fatalf("the walk failed: %v", err)
 	}
@@ -122,7 +202,7 @@ func TestTheAssembledReportPassesValidation(t *testing.T) {
 // TestAMissingLayerFunctionIsALoudFailure covers the defect that would
 // otherwise produce a report with a hole in it.
 func TestAMissingLayerFunctionIsALoudFailure(t *testing.T) {
-	o := baseOptions(&fakeClock{})
+	o := baseOptions(newClock())
 	delete(o.Layers, layer.TLS)
 
 	if _, err := Execute(context.Background(), o); err == nil {
@@ -133,7 +213,7 @@ func TestAMissingLayerFunctionIsALoudFailure(t *testing.T) {
 }
 
 func TestAWalkWithNoClockIsALoudFailure(t *testing.T) {
-	o := baseOptions(&fakeClock{})
+	o := baseOptions(newClock())
 	o.Now = nil
 	if _, err := Execute(context.Background(), o); err == nil {
 		t.Fatal("a walk with no clock produced a report anyway")
@@ -146,7 +226,7 @@ func TestACancelledRunProducesNoReport(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	r, err := Execute(ctx, baseOptions(&fakeClock{}))
+	r, err := Execute(ctx, baseOptions(newClock()))
 	if err == nil {
 		t.Fatal("a cancelled run returned a report")
 	}

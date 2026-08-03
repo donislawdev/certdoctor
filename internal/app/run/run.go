@@ -118,7 +118,11 @@ func Execute(ctx context.Context, o Options) (report.Report, error) {
 			notes = append(notes, budgetSkipNote(id))
 			continue
 		}
-		results = append(results, o.walkOne(ctx, id, walk, remaining))
+		result, broken := o.walkOne(ctx, id, walk, remaining)
+		results = append(results, result)
+		if broken != nil {
+			notes = append(notes, *broken)
+		}
 	}
 
 	return o.assemble(started, results, notes, exceeded), nil
@@ -138,7 +142,7 @@ func (o Options) remaining(started time.Time) time.Duration {
 // The tighter one matters: a layer allowed ten seconds inside a run with two
 // seconds left would spend the run's remaining time and then report a timeout
 // of its own, which reads as a slow machine rather than as a budget we set.
-func (o Options) walkOne(ctx context.Context, id layer.ID, walk Layer, remaining time.Duration) report.LayerResult {
+func (o Options) walkOne(ctx context.Context, id layer.ID, walk Layer, remaining time.Duration) (report.LayerResult, *report.Note) {
 	limit := effectiveLimit(o.LayerBudget, remaining)
 	if limit <= 0 {
 		return resultOf(id, walk(ctx))
@@ -167,14 +171,63 @@ func effectiveLimit(layerBudget, remaining time.Duration) time.Duration {
 	return layerBudget
 }
 
-// resultOf attaches the identifier the registry declared. A layer never gets to
-// say which layer it is.
-func resultOf(id layer.ID, answer Answer) report.LayerResult {
+// resultOf attaches the identifier the registry declared and keeps one layer's
+// mistake from taking the report down with it.
+//
+// A layer never gets to say which layer it is, and it never gets to end the run.
+// An answer that breaks the contract - a status outside the vocabulary, a
+// problem reported without a reason from the closed list, a problem with no
+// detail line - becomes an unknown with a reason, and a note names the layer and
+// what it did.
+//
+// WHY THIS IS NOT LEFT TO PANIC, WHICH IS WHAT USED TO HAPPEN BY ACCIDENT.
+// Assess folds the statuses, folding asks each one for its severity, and
+// severity panics on a value outside the four. So a layer returning a zero
+// Answer ended the entire run with no report at all: seven working layers, the
+// verdict and every note thrown away because the eighth forgot a field. That is
+// the reverse of the rule this product is built on - a probe that cannot answer
+// degrades, and it degrades ALONE. It also meant the validator's own branch for
+// a status outside the vocabulary could never run in production, because the
+// panic always arrived first.
+func resultOf(id layer.ID, answer Answer) (report.LayerResult, *report.Note) {
+	broken := contractBreach(answer)
+	if broken == "" {
+		return report.LayerResult{
+			ID:     id,
+			Status: answer.Status,
+			Reason: answer.Reason,
+			Detail: answer.Detail,
+		}, nil
+	}
+
 	return report.LayerResult{
-		ID:     id,
-		Status: answer.Status,
-		Reason: answer.Reason,
-		Detail: answer.Detail,
+			ID:     id,
+			Status: status.Unknown,
+			Reason: status.ReasonProbeError,
+			Detail: "the layer broke its own contract, so nothing it reported was used",
+		}, &report.Note{
+			Kind:   report.NoteDegraded,
+			Layer:  id,
+			Reason: status.ReasonProbeError,
+			Detail: fmt.Sprintf("layer %s %s - it was recorded as unknown rather than ending the run", id, broken),
+		}
+}
+
+// contractBreach names what is wrong with an answer, or returns empty for one
+// that is well formed. The wording is the note's, so it says what the layer did
+// rather than what this function checked.
+func contractBreach(answer Answer) string {
+	switch {
+	case !answer.Status.Valid():
+		return fmt.Sprintf("answered with the status %q, which is outside the vocabulary", answer.Status)
+	case answer.Status.RequiresReason() && !answer.Reason.Valid():
+		return fmt.Sprintf("reported %s with the reason %q, which is outside the closed list", answer.Status, answer.Reason)
+	case !answer.Status.RequiresReason() && answer.Reason != "":
+		return fmt.Sprintf("reported %s and still carried the reason %q", answer.Status, answer.Reason)
+	case answer.Status.RequiresReason() && answer.Detail == "":
+		return fmt.Sprintf("reported %s without a detail line saying what happened", answer.Status)
+	default:
+		return ""
 	}
 }
 

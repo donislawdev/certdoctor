@@ -55,8 +55,14 @@ func validateRun(r Report, add func(string, ...any)) {
 	if r.Run.Target == "" {
 		add("the report does not say what it was pointed at")
 	}
+	if !r.Run.Platform.Container.Valid() {
+		add("the container field holds %d, which is not one of the three declared values - it would render as null and read as an answer nobody gave", r.Run.Platform.Container)
+	}
 	if r.Run.Duration < 0 {
 		add("the run reports a negative duration of %s", r.Run.Duration)
+	}
+	if r.Run.StartedAt.IsZero() {
+		add("the report does not say when the run started, so it would carry a timestamp from the year one")
 	}
 }
 
@@ -122,6 +128,20 @@ func validateVerdict(r Report, add func(string, ...any)) {
 		add("the verdict carries exit code %s while the rows beneath it call for %s",
 			r.Verdict.ExitCode.Name(), want.ExitCode.Name())
 	}
+	// THE SENTENCE IS COMPARED TOO, and leaving it out was a hole in the one
+	// check this project calls the product's main promise. Status and exit code
+	// were checked, and the sentence - the line a person actually reads - was
+	// not, so a report claiming failures over passing rows would have gone out
+	// as long as the two machine-readable fields agreed. Nothing produces that
+	// today because one function builds both sides; the first verdict that names
+	// a cause will not be built by counting, and this is the check that will be
+	// standing there when it arrives.
+	if r.Verdict.Sentence != want.Sentence {
+		add("the verdict reads %q while the rows beneath it call for %q", r.Verdict.Sentence, want.Sentence)
+	}
+	// Kept alongside the comparison above rather than folded into it. The two
+	// fire together, and this one names the worst case in the words it deserves
+	// instead of leaving a reader to diff two sentences.
 	if r.Verdict.Sentence == everythingPassed && want.Status != status.Pass {
 		add("the verdict reads as complete success over rows that are worst %s", want.Status)
 	}

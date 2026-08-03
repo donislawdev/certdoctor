@@ -10,6 +10,34 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/status"
 )
 
+// TestTheVerdictNamesBothFailuresAndLayersItCouldNotAssess covers the sentence
+// that used to tell half the truth.
+//
+// A run with failures AND layers it could not look at reported only the
+// failures. Every word of it was true and the omission was the expensive part:
+// a reader fixes the two named layers, comes back, and finds three more that
+// were never assessed at all. The exit code says DIAGNOSIS either way, so
+// nothing else in the report carries this.
+func TestTheVerdictNamesBothFailuresAndLayersItCouldNotAssess(t *testing.T) {
+	results := []LayerResult{
+		{ID: layer.Context, Status: status.Fail, Reason: status.ReasonUnparseable, Detail: "x"},
+		{ID: layer.Resolution, Status: status.Fail, Reason: status.ReasonUnparseable, Detail: "x"},
+		{ID: layer.Proxy, Status: status.Unknown, Reason: status.ReasonTimeout, Detail: "x"},
+		{ID: layer.TCP, Status: status.Unknown, Reason: status.ReasonTimeout, Detail: "x"},
+		{ID: layer.TLS, Status: status.Unknown, Reason: status.ReasonTimeout, Detail: "x"},
+		{ID: layer.TrustMatrix, Status: status.Pass},
+		{ID: layer.Containers, Status: status.Pass},
+		{ID: layer.Report, Status: status.Pass},
+	}
+
+	got := Assess(results).Sentence
+	for _, want := range []string{"2 of 8", "3 could not be assessed"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the verdict leaves out %q: %q", want, got)
+		}
+	}
+}
+
 // vocabulary is every status a layer can report. The tests below walk every
 // combination of it rather than a handful of examples, because the fold is a
 // total function and an example test only ever proves the example.

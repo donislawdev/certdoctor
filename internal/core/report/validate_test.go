@@ -3,6 +3,7 @@ package report
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
@@ -25,6 +26,10 @@ func wellFormedReport() Report {
 	return Report{
 		Tool: Tool{Name: "certdoctor", Version: "0.0.0-test"},
 		Run: Run{
+			// A fixed moment rather than the zero time. A report that does not
+			// say when it was taken is refused, so a fixture carrying the zero
+			// value would be testing a shape the product cannot produce.
+			StartedAt:      time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC),
 			Target:         "https://example.com",
 			PrivilegeLevel: PrivilegeUnknown,
 			Platform:       Platform{OS: "testos", Arch: "testarch", Container: NotDetermined},
@@ -53,6 +58,38 @@ func TestValidateAcceptsAWellFormedReport(t *testing.T) {
 	if err := Validate(wellFormedReport()); err != nil {
 		t.Fatalf("a well formed report was refused: %v", err)
 	}
+}
+
+// TestValidateRejectsAVerdictSentenceThatDisagreesWithItsLayers closes the hole
+// in the check this project calls the product's main promise.
+//
+// The status and the exit code were compared against a recomputed fold and the
+// SENTENCE was not - so a report could carry a line claiming failures over rows
+// that all passed, and as long as the two machine readable fields agreed it
+// would be printed. The sentence is the part a person reads.
+func TestValidateRejectsAVerdictSentenceThatDisagreesWithItsLayers(t *testing.T) {
+	r := wellFormedReport()
+	r.Verdict.Sentence = "Failures in 3 of 8 diagnostic layers."
+	requireRejected(t, r, "while the rows beneath it call for")
+}
+
+// TestValidateRejectsAReportThatDoesNotSayWhenItWasTaken keeps a report from
+// carrying a timestamp from the year one, which reads as a real moment to
+// anything that parses it.
+func TestValidateRejectsAReportThatDoesNotSayWhenItWasTaken(t *testing.T) {
+	r := wellFormedReport()
+	r.Run.StartedAt = time.Time{}
+	requireRejected(t, r, "when the run started")
+}
+
+// TestValidateRejectsAContainerFieldOutsideTheThreeValues covers the one field
+// whose invalid value is invisible downstream: anything outside the three
+// renders as null, and null is the legitimate way of saying "nothing
+// established this". An out of range value would quietly become an answer.
+func TestValidateRejectsAContainerFieldOutsideTheThreeValues(t *testing.T) {
+	r := wellFormedReport()
+	r.Run.Platform.Container = Tristate(7)
+	requireRejected(t, r, "not one of the three declared values")
 }
 
 // TestValidateRejectsAVerdictThatDisagreesWithItsLayers is the main promise

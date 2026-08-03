@@ -127,6 +127,16 @@ const (
 // Determined reports whether t carries an answer at all.
 func (t Tristate) Determined() bool { return t == DeterminedFalse || t == DeterminedTrue }
 
+// Valid reports whether t is one of the three declared values.
+//
+// It is a different question from Determined and both are needed. Determined
+// asks whether we have an answer; this asks whether the field means anything at
+// all. A value that crossed a boundary and landed outside the three renders as
+// null, which reads as "nothing established it" - so an invalid value would
+// quietly become a legitimate answer, which is the failure this type exists to
+// prevent.
+func (t Tristate) Valid() bool { return t <= DeterminedTrue }
+
 // LayerResult is one row of the report, one diagnostic layer.
 type LayerResult struct {
 	ID     layer.ID

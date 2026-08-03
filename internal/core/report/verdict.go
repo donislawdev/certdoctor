@@ -105,6 +105,15 @@ func sentenceFor(counts map[status.Status]int, total int) string {
 	switch {
 	case total == 0 || unknown == total:
 		return nothingAssessed
+	// Both numbers, because either one alone is a true sentence that leaves out
+	// the other half. A run with two failures and three layers it could not look
+	// at used to read "Failures in 2 of 8" and stop there - and a reader who
+	// fixes those two comes back to find that three more were never assessed.
+	// The verdict is the line people act on, so an omission there is the ban on
+	// silence broken in the loudest place available.
+	case counts[status.Fail] > 0 && unknown > 0:
+		return fmt.Sprintf("Failures in %d of %d diagnostic layers, and %d could not be assessed.",
+			counts[status.Fail], total, unknown)
 	case counts[status.Fail] > 0:
 		return fmt.Sprintf("Failures in %d of %d diagnostic layers.", counts[status.Fail], total)
 	case unknown > 0:
