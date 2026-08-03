@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,10 +110,54 @@ type switchDecl struct {
 	// people type without thinking and which should not end in a usage error.
 	aliases []string
 	// arg is the placeholder shown in help, empty for a switch taking no value.
-	arg     string
+	arg string
+	// numeric says the value is a number, so a value that is not one can be
+	// refused here rather than by the flag package. See checkNumericValue.
+	numeric bool
 	group   string
 	summary string
 	bind    func(fs *flag.FlagSet, o *options)
+}
+
+// numericSwitches is the set of switch names whose value has to be a number,
+// built from the one declaration rather than listed a second time.
+var numericSwitches = func() map[string]bool {
+	names := map[string]bool{}
+	for _, s := range switches {
+		if s.numeric {
+			names[s.name] = true
+		}
+	}
+	return names
+}()
+
+// checkNumericValue refuses a value that is not a number, in our own words.
+//
+// WHY THIS IS NOT LEFT TO THE FLAG PACKAGE. Its message reads "invalid value
+// \"1,5\" for flag -timeout: parse error", and two things in that sentence are
+// wrong for this program. It names the switch with ONE dash while every line of
+// our help, our documentation and our other messages uses two, so it points at
+// something that looks like a different switch. And "parse error" is the least
+// useful thing to say to somebody whose keyboard puts a comma where this expects
+// a dot - which is the reflex on a Polish, German or French layout and therefore
+// the most likely wrong value this flag will ever be given.
+//
+// The alternative was to rewrite the flag package's message after the fact. That
+// would mean matching on the TEXT of somebody else's error, which is the one
+// thing this project refuses to do anywhere else.
+func checkNumericValue(name, value string) *fault {
+	if !numericSwitches[name] {
+		return nil
+	}
+	if _, err := strconv.ParseFloat(value, 64); err == nil {
+		return nil
+	}
+	if strings.ContainsRune(value, ',') {
+		return usageFault(
+			"--%s was given %q. %s reads a dot as the decimal point, so write --%s %s",
+			name, value, toolName, name, strings.ReplaceAll(value, ",", "."))
+	}
+	return usageFault("--%s was given %q, which is not a number of seconds", name, value)
 }
 
 // formatDecl is one value --format accepts.
@@ -205,7 +250,7 @@ var switches = []switchDecl{
 		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.noColor, "no-color", false, "") },
 	},
 	{
-		name: "timeout", arg: "<seconds>", group: "budget",
+		name: "timeout", arg: "<seconds>", numeric: true, group: "budget",
 		summary: fmt.Sprintf("limit for the whole run in seconds, at least %g. Zero means no limit. Defaults to %d",
 			minBudgetSeconds, defaultBudgetSeconds),
 		bind: func(fs *flag.FlagSet, o *options) {
@@ -213,7 +258,7 @@ var switches = []switchDecl{
 		},
 	},
 	{
-		name: "probe-timeout", arg: "<seconds>", group: "budget",
+		name: "probe-timeout", arg: "<seconds>", numeric: true, group: "budget",
 		summary: fmt.Sprintf("limit for one layer in seconds, at least %g. Zero means no limit. Defaults to %d",
 			minBudgetSeconds, defaultLayerBudgetSeconds),
 		bind: func(fs *flag.FlagSet, o *options) {
@@ -335,8 +380,16 @@ func splitTarget(fs *flag.FlagSet, args []string) (string, []string, *fault) {
 					"%q is not a switch %s knows. Run %s --help to see what is accepted", arg, toolName, toolName)
 			}
 			rest = append(rest, arg)
+			if inlineValue {
+				if fault := checkNumericValue(name, arg[strings.IndexByte(arg, '=')+1:]); fault != nil {
+					return "", nil, fault
+				}
+			}
 			if !inlineValue && takesValue(fs, name) && i+1 < len(args) {
 				i++
+				if fault := checkNumericValue(name, args[i]); fault != nil {
+					return "", nil, fault
+				}
 				rest = append(rest, args[i])
 			}
 			continue

@@ -539,6 +539,44 @@ func TestWritingAReportToAPathSaysWhereItWent(t *testing.T) {
 	}
 }
 
+// TestANumberWrittenWithACommaIsAnsweredWithTheDotItNeeds covers the wrong value
+// this flag is most likely to be given.
+//
+// A Polish, German or French keyboard makes "1,5" the reflex, and the flag
+// package answered it with `invalid value "1,5" for flag -timeout: parse error`
+// - a switch named with one dash where every other line of this program uses
+// two, and "parse error" as the explanation. The person who typed the comma is
+// told nothing about the comma.
+func TestANumberWrittenWithACommaIsAnsweredWithTheDotItNeeds(t *testing.T) {
+	for _, args := range [][]string{
+		{"https://example.com", "--timeout", "1,5"},
+		{"https://example.com", "--timeout=1,5"},
+		{"https://example.com", "--probe-timeout", "2,5"},
+	} {
+		h := invoke(args...)
+		said := h.stderr.String()
+		if h.code != exitcode.Usage {
+			t.Errorf("%v ended %d, want %d", args, h.code, exitcode.Usage)
+		}
+		if !strings.Contains(said, "decimal point") {
+			t.Errorf("%v: the message does not mention the decimal point: %q", args, said)
+		}
+		// The switch is named the way this program names switches everywhere
+		// else, and the message says what to write instead.
+		if !strings.Contains(said, "--timeout 1.5") && !strings.Contains(said, "--probe-timeout 2.5") {
+			t.Errorf("%v: the message does not show the value to write: %q", args, said)
+		}
+	}
+	// A value that is not a number for any other reason still says so, and a
+	// value that IS a number still works.
+	if h := invoke("https://example.com", "--timeout", "abc"); !strings.Contains(h.stderr.String(), "not a number") {
+		t.Errorf("a non-numeric value was not named as such: %q", h.stderr.String())
+	}
+	if h := invoke("https://example.com", "--timeout", "1.5"); h.code != exitcode.Inconclusive {
+		t.Errorf("a perfectly good number was refused: %d %q", h.code, h.stderr.String())
+	}
+}
+
 // TestEveryFlagIsDocumentedAndEveryDocumentedFlagExists is the cheap guard the
 // CLI rules ask for from the first flag onwards.
 //

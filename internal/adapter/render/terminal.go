@@ -50,6 +50,15 @@ func (t Terminal) Render(w io.Writer, r report.Report) error {
 	return err
 }
 
+// writeHeading prints the line that says which build looked at what, when.
+//
+// THE TIMESTAMP IS DELIBERATELY COARSER HERE THAN IN THE MACHINE READABLE
+// REPORT, and the difference is a decision rather than an oversight. The
+// document carries nanoseconds so that two runs inside one second can be put in
+// order by whatever reads them. A person reading a heading cannot use them and
+// has to read past them, so this stops at the second. Both are UTC, and that
+// part is not a preference - a report is written on one machine and read on
+// another.
 func (t Terminal) writeHeading(b *strings.Builder, r report.Report) {
 	fmt.Fprintf(b, "%s %s   %s\n", r.Tool.Name, r.Tool.Version, r.Run.Target)
 	fmt.Fprintf(b, "%s   %s   privilege: %s   took %s\n",

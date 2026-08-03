@@ -30,6 +30,45 @@ func TestTheStartTimeKeepsItsSubSecondPrecision(t *testing.T) {
 	}
 }
 
+// TestTheTimestampDoesNotDependOnTheReaderOrTheWriterTimeZone pins a property
+// that is easy to have and easy to lose.
+//
+// A report is written on one machine and read on another, and it ends up in a
+// ticket next to a report from a third. A timestamp carrying whatever offset the
+// writer's machine happened to be set to would make two runs impossible to order
+// without knowing where each was taken - and the offset is exactly the sort of
+// thing that arrives later, when somebody formats a time without saying UTC.
+//
+// Both renderers are checked, because there are two of them and only one is
+// covered by the schema.
+func TestTheTimestampDoesNotDependOnTheReaderOrTheWriterTimeZone(t *testing.T) {
+	// One instant, written down in a zone nine hours ahead. The UTC rendering of
+	// it is fixed and known.
+	tokyo := time.FixedZone("Asia/Tokyo", 9*60*60)
+	r := everyStatusReport()
+	r.Run.StartedAt = time.Date(2026, 8, 3, 21, 0, 0, 0, tokyo)
+	const wantInstant = "2026-08-03T12:00:00Z"
+
+	document, err := Encode(r)
+	if err != nil {
+		t.Fatalf("encoding failed: %v", err)
+	}
+	if !strings.Contains(string(document), wantInstant) {
+		t.Errorf("the machine readable report did not carry %s:\n%s", wantInstant, firstLinesOf(string(document), 6))
+	}
+	if strings.Contains(string(document), "+09:00") {
+		t.Errorf("the machine readable report carried the writer's offset:\n%s", firstLinesOf(string(document), 6))
+	}
+
+	var screen strings.Builder
+	if err := (Terminal{}).Render(&screen, r); err != nil {
+		t.Fatalf("rendering failed: %v", err)
+	}
+	if !strings.Contains(screen.String(), wantInstant) {
+		t.Errorf("the terminal report did not carry %s:\n%s", wantInstant, firstLinesOf(screen.String(), 3))
+	}
+}
+
 func firstLinesOf(s string, n int) string {
 	lines := strings.SplitN(s, "\n", n+1)
 	if len(lines) > n {
