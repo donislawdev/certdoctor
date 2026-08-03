@@ -8,12 +8,18 @@
 // evidence rather than a verdict.
 //
 // WHAT THIS PACKAGE DELIBERATELY DOES NOT CARRY, and why the absence is the
-// honest choice rather than an oversight: there is no findings list, no evidence
-// object and no trust matrix here yet. No layer produces any of the three today.
-// Declaring them now would put empty shapes into a public contract before
-// anybody knows what belongs in them, and an empty array is a claim - it says
-// "this was looked at and there was nothing". The rule this package follows is
-// the other one: emit exactly what exists, and announce every absence in Notes.
+// honest choice rather than an oversight: there is no evidence object and no
+// trust matrix here. No layer produces either one today. Declaring them now
+// would put empty shapes into a public contract before anybody knows what
+// belongs in them, and an empty array is a claim - it says "this was looked at
+// and there was nothing". The rule this package follows is the other one: emit
+// exactly what exists, and announce every absence in Notes.
+//
+// Findings arrived under that same rule rather than against it. The list is on
+// the layer that produced it, and a layer that has produced nothing carries a
+// nil list, which renders as null rather than as an empty array. The difference
+// between "nobody looked" and "we looked and there was nothing" is the whole
+// reason the field is shaped that way.
 package report
 
 import (
@@ -156,6 +162,16 @@ type LayerResult struct {
 	// run" - which is not true of a layer nobody has written yet. Detail is
 	// where that difference gets told.
 	Detail string
+	// Findings is what this layer established about the machine.
+	//
+	// NIL AND EMPTY ARE DIFFERENT CLAIMS, AND KEEPING THEM APART IS THE WHOLE
+	// POINT OF THE FIELD BEING A SLICE. Nil means nothing looked - the layer is
+	// not written, or the run ran out of budget before it started - and it
+	// renders as null. A slice of length zero means the layer looked and there
+	// was nothing to report, and it renders as an empty array. An empty array is
+	// a claim, so putting one under seven layers nobody has written yet would be
+	// that claim made falsely seven times in every report.
+	Findings []Finding
 }
 
 // Assessed reports whether this layer produced an answer about the machine, as

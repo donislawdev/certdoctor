@@ -173,6 +173,30 @@ func TestTheValidatorRejectsAPlantedDefect(t *testing.T) {
 			},
 			expect: "layers[0]",
 		},
+		{
+			name: "a finding losing the line every surface renders",
+			change: func(d map[string]any) {
+				findings := d["layers"].([]any)[0].(map[string]any)["findings"].([]any)
+				delete(findings[0].(map[string]any), "summary")
+			},
+			expect: "summary",
+		},
+		{
+			name: "a finding body that changed shape",
+			change: func(d map[string]any) {
+				findings := d["layers"].([]any)[0].(map[string]any)["findings"].([]any)
+				findings[0].(map[string]any)["environment_variable"] = "HTTPS_PROXY=http://proxy:8080"
+			},
+			expect: "schema declares an object",
+		},
+		{
+			name: "a findings list that became a single finding",
+			change: func(d map[string]any) {
+				first := d["layers"].([]any)[0].(map[string]any)
+				first["findings"] = first["findings"].([]any)[0]
+			},
+			expect: "schema declares an array",
+		},
 	}
 
 	for _, c := range cases {
@@ -228,6 +252,34 @@ func TestTheSchemaVersionIsTheFirstThingInTheDocument(t *testing.T) {
 		if at := strings.Index(document, later); at >= 0 && at < first {
 			t.Errorf("%s appears before the schema version", later)
 		}
+	}
+}
+
+// TestALayerThatNeverLookedIsNotRenderedAsOneThatFoundNothing is the difference
+// this field was shaped to carry, checked on the document a consumer parses.
+//
+// An empty array says "this was looked at and there was nothing", so emitting
+// one under every layer nobody has written yet would put seven false claims in
+// every report this build produces. Null says nobody looked. The two encode the
+// same way in Go unless something asks first, which is why this is a test and
+// not a comment.
+func TestALayerThatNeverLookedIsNotRenderedAsOneThatFoundNothing(t *testing.T) {
+	document := string(encodedReport(t))
+
+	if !strings.Contains(document, `"findings": null`) {
+		t.Errorf("no layer renders its findings as null, and six of the eight never looked:\n%s", document)
+	}
+	if !strings.Contains(document, `"findings": []`) {
+		t.Errorf("the layer that looked and found nothing does not render an empty array:\n%s", document)
+	}
+	if !strings.Contains(document, `"carried_credentials": true`) {
+		t.Errorf("the fact that a value carried a credential did not reach the document:\n%s", document)
+	}
+	// A variable that is not set has no value, and a null is how that is said.
+	// An empty string there would mean it is set to nothing, which is a different
+	// answer and changes whether some tools proxy at all.
+	if !strings.Contains(document, `"value": null`) {
+		t.Errorf("a variable that is not set does not render a null value:\n%s", document)
 	}
 }
 

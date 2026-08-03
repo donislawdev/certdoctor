@@ -105,6 +105,14 @@ func validateLayerResult(l LayerResult, add func(string, ...any)) {
 	if l.Status.RequiresReason() && l.Detail == "" {
 		add("layer %s reports a problem without a detail line saying what happened", l.ID)
 	}
+	// The findings are checked one by one rather than as a whole, because a
+	// report carrying two malformed ones has two things to fix and a reader who
+	// is told about one of them fixes it and runs again.
+	for i, finding := range l.Findings {
+		if breach := finding.Breach(); breach != "" {
+			add("layer %s finding %d %s", l.ID, i, breach)
+		}
+	}
 }
 
 // validateVerdict recomputes the fold and compares. This is the main promise

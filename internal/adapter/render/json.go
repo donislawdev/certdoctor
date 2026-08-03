@@ -82,6 +82,35 @@ type jsonLayer struct {
 	Status string  `json:"status"`
 	Reason *string `json:"reason"`
 	Detail *string `json:"detail"`
+	// Findings is null when this layer never looked and an array when it did,
+	// including when it looked and found nothing. A consumer counting rows over
+	// a null would otherwise read every unwritten layer as a clean bill of
+	// health.
+	Findings *[]jsonFinding `json:"findings"`
+}
+
+// jsonFinding is the envelope every finding shares plus the body of its kind.
+//
+// The body sits under a key equal to the kind rather than under a fixed "body",
+// and the redundancy is deliberate: this document gets pasted into tickets and
+// has to be readable without the schema next to it.
+type jsonFinding struct {
+	Kind    string `json:"kind"`
+	Summary string `json:"summary"`
+	Source  string `json:"source"`
+	// EnvironmentVariable is null for a finding of any other kind. There is one
+	// other kind today, which is none, so it is never null yet.
+	EnvironmentVariable *jsonEnvironmentVariable `json:"environment_variable"`
+}
+
+type jsonEnvironmentVariable struct {
+	Name string `json:"name"`
+	// Value is null when the variable is not set, and an empty string when it is
+	// set to nothing. Those are different facts: HTTPS_PROXY= switches proxying
+	// off in some tools while an absent HTTPS_PROXY leaves it alone.
+	Value              *string `json:"value"`
+	Set                bool    `json:"set"`
+	CarriedCredentials bool    `json:"carried_credentials"`
 }
 
 type jsonNote struct {
@@ -160,14 +189,57 @@ func layersOf(r report.Report) []jsonLayer {
 	rows := make([]jsonLayer, 0, len(r.Layers))
 	for _, row := range r.Layers {
 		rows = append(rows, jsonLayer{
-			ID:     row.ID.String(),
-			Name:   row.ID.Name(),
-			Status: Label(row.Status),
-			Reason: optional(row.Reason.String()),
-			Detail: optional(row.Detail),
+			ID:       row.ID.String(),
+			Name:     row.ID.Name(),
+			Status:   Label(row.Status),
+			Reason:   optional(row.Reason.String()),
+			Detail:   optional(row.Detail),
+			Findings: findingsOf(row),
 		})
 	}
 	return rows
+}
+
+// findingsOf keeps the difference between a layer that looked and one that did
+// not, which is the difference between an empty array and a null.
+//
+// The pointer is what carries it. Encoding a slice directly would give null for
+// both, because a slice of length zero and a nil slice encode the same way
+// unless something asks first.
+func findingsOf(row report.LayerResult) *[]jsonFinding {
+	if row.Findings == nil {
+		return nil
+	}
+	found := make([]jsonFinding, 0, len(row.Findings))
+	for _, finding := range row.Findings {
+		found = append(found, jsonFinding{
+			Kind:                finding.Kind.String(),
+			Summary:             finding.Summary,
+			Source:              finding.Source.String(),
+			EnvironmentVariable: environmentVariableOf(finding),
+		})
+	}
+	return &found
+}
+
+func environmentVariableOf(finding report.Finding) *jsonEnvironmentVariable {
+	if finding.EnvironmentVariable == nil {
+		return nil
+	}
+	variable := *finding.EnvironmentVariable
+	body := jsonEnvironmentVariable{
+		Name:               variable.Name,
+		Set:                variable.Set,
+		CarriedCredentials: variable.CarriedCredentials,
+	}
+	if variable.Set {
+		// Taken through a local so that the pointer is to this row's value and
+		// not to the loop's, and set even when the value is the empty string -
+		// which is the case this null is meant to be told apart from.
+		value := variable.Value
+		body.Value = &value
+	}
+	return &body
 }
 
 func notesOf(r report.Report) []jsonNote {

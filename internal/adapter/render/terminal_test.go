@@ -78,6 +78,33 @@ func everyStatusReport() report.Report {
 		})
 	}
 
+	// ALL THREE STATES OF A FINDINGS LIST ON ONE PAGE, for the same reason every
+	// status is on it: a difference between "nobody looked" and "we looked and
+	// there was nothing" is invisible one screen at a time. The first layer found
+	// something, the fourth looked and found nothing, and the rest never looked.
+	rows[0].Findings = []report.Finding{
+		{
+			Kind:    report.FindingEnvironmentVariable,
+			Summary: "HTTPS_PROXY is set and carries credentials",
+			Source:  report.SourceDetected,
+			EnvironmentVariable: &report.EnvironmentVariable{
+				Name: "HTTPS_PROXY",
+				// Already masked, because this is what a rendered value looks
+				// like by the time it reaches a renderer.
+				Value:              "http://[redacted]@proxy.corp:8080",
+				Set:                true,
+				CarriedCredentials: true,
+			},
+		},
+		{
+			Kind:                report.FindingEnvironmentVariable,
+			Summary:             "SSL_CERT_FILE is not set",
+			Source:              report.SourceDefault,
+			EnvironmentVariable: &report.EnvironmentVariable{Name: "SSL_CERT_FILE"},
+		},
+	}
+	rows[3].Findings = []report.Finding{}
+
 	return report.Report{
 		Tool: report.Tool{Name: "certdoctor", Version: "0.0.0-test"},
 		Run: report.Run{
@@ -125,9 +152,12 @@ exit 4 DIAGNOSIS
 
 LAYERS
   x FAIL     L0  Context          unrecognized_output  the presented chain does not reach any trust anchor this runtime knows about, and the issuer is local to this machine
+      HTTPS_PROXY is set and carries credentials  detected  http://[redacted]@proxy.corp:8080
+      SSL_CERT_FILE is not set                    default
   ! WARN     L1  Name resolution  access_denied  one of the configured resolvers could not be read
   ? UNKNOWN  L2  Proxy            probe_error  not implemented
   + PASS     L3  TCP
+      nothing was found
   x FAIL     L4  TLS              unrecognized_output  the presented chain does not reach any trust anchor this runtime knows about, and the issuer is local to this machine
   ! WARN     L5  Trust matrix     access_denied  one of the configured resolvers could not be read
   ? UNKNOWN  L6  Containers       probe_error  not implemented
@@ -261,6 +291,70 @@ func TestEveryLayerAndEveryNoteReachesThePage(t *testing.T) {
 	}
 	if !strings.Contains(page.String(), footer) {
 		t.Error("the page does not warn that the report carries internal data")
+	}
+}
+
+// TestEveryFindingReachesThePageWithItsValue is the parity rule at the surface a
+// person actually reads.
+//
+// A finding present in the machine readable document has to be present here too,
+// and for an environment variable the VALUE is the finding - a page showing that
+// HTTPS_PROXY is set without showing what it is set to answers none of the
+// questions it was pasted in to answer. The summary alone would have passed a
+// weaker version of this test.
+func TestEveryFindingReachesThePageWithItsValue(t *testing.T) {
+	source := everyStatusReport()
+	var page bytes.Buffer
+	if err := (Terminal{}).Render(&page, source); err != nil {
+		t.Fatalf("rendering failed: %v", err)
+	}
+
+	for _, row := range source.Layers {
+		for _, finding := range row.Findings {
+			if !strings.Contains(page.String(), finding.Summary) {
+				t.Errorf("layer %s carries a finding summarised %q that never reached the page", row.ID, finding.Summary)
+			}
+			if !strings.Contains(page.String(), finding.Source.String()) {
+				t.Errorf("a finding on %s does not say how strongly it is known", row.ID)
+			}
+			variable := finding.EnvironmentVariable
+			if variable == nil || !variable.Set || variable.Value == "" {
+				continue
+			}
+			if !strings.Contains(page.String(), variable.Value) {
+				t.Errorf("the value of %s is in the report and not on the page", variable.Name)
+			}
+		}
+	}
+}
+
+// TestALayerThatLookedAndFoundNothingSaysSoAndOneThatNeverLookedDoesNot keeps
+// the two apart on the page, the same way the document keeps null apart from an
+// empty array.
+//
+// It is the ban on silence pointed at its own answer: printing nothing for both
+// would let a layer nobody has written read as a clean bill of health, and
+// printing "nothing was found" for both would state a result nobody produced.
+func TestALayerThatLookedAndFoundNothingSaysSoAndOneThatNeverLookedDoesNot(t *testing.T) {
+	looked := everyStatusReport()
+	var withEmpty bytes.Buffer
+	if err := (Terminal{}).Render(&withEmpty, looked); err != nil {
+		t.Fatalf("rendering failed: %v", err)
+	}
+	if got := strings.Count(withEmpty.String(), "nothing was found"); got != 1 {
+		t.Errorf("the page says nothing was found %d times, and exactly one layer looked and found nothing", got)
+	}
+
+	neverLooked := everyStatusReport()
+	for i := range neverLooked.Layers {
+		neverLooked.Layers[i].Findings = nil
+	}
+	var withNil bytes.Buffer
+	if err := (Terminal{}).Render(&withNil, neverLooked); err != nil {
+		t.Fatalf("rendering failed: %v", err)
+	}
+	if strings.Contains(withNil.String(), "nothing was found") {
+		t.Error("a report in which no layer ever looked still claims that nothing was found")
 	}
 }
 

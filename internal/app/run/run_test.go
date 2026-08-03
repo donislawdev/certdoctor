@@ -62,6 +62,26 @@ func TestALayerThatBreaksItsContractDegradesAloneRatherThanEndingTheRun(t *testi
 		{"a problem with a reason outside the closed list", Answer{Status: status.Fail, Reason: status.Reason("made_up"), Detail: "x"}},
 		{"a pass still carrying a reason", Answer{Status: status.Pass, Reason: status.ReasonTimeout}},
 		{"a problem with no detail line", Answer{Status: status.Fail, Reason: status.ReasonTimeout}},
+		// A finding is checked here rather than only in the report validator, and
+		// that is the difference between losing one layer and losing the run: a
+		// malformed finding reaching the validator fails the whole report, so the
+		// process ends with an internal error and prints nothing at all.
+		{"a finding with no body", Answer{
+			Status: status.Pass,
+			Findings: []report.Finding{{
+				Kind:    report.FindingEnvironmentVariable,
+				Summary: "HTTPS_PROXY is set",
+				Source:  report.SourceDetected,
+			}},
+		}},
+		{"a finding that does not say how strongly it is known", Answer{
+			Status: status.Pass,
+			Findings: []report.Finding{{
+				Kind:                report.FindingEnvironmentVariable,
+				Summary:             "HTTPS_PROXY is set",
+				EnvironmentVariable: &report.EnvironmentVariable{Name: "HTTPS_PROXY", Set: true},
+			}},
+		}},
 	}
 
 	for _, breach := range breaches {
@@ -270,6 +290,67 @@ func TestTheWalkDoesNotWriteIntoTheCallersBackingArray(t *testing.T) {
 		if spare[i].Kind != "" || spare[i].Detail != "" {
 			t.Fatalf("the walk wrote %+v into the caller's spare capacity at index %d", spare[i], i)
 		}
+	}
+}
+
+// TestALayerThatNeverLookedIsNotTurnedIntoOneThatFoundNothing is the one
+// property of the findings list that a length comparison cannot see.
+//
+// Nil and a slice of length zero are two different claims - "nobody looked" and
+// "we looked and there was nothing" - and the ordinary way of copying a slice
+// turns the first into the second. Every layer that is not written yet hands
+// back nil, so getting this wrong would put a false claim under seven rows of
+// every report this build produces, and every test counting findings would still
+// pass.
+func TestALayerThatNeverLookedIsNotTurnedIntoOneThatFoundNothing(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Layers[layer.Context] = func(context.Context) Answer {
+		return Answer{Status: status.Pass, Findings: []report.Finding{}}
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+	if looked := rowFor(t, r, layer.Context); looked.Findings == nil {
+		t.Error("a layer that looked and found nothing came back as one that never looked")
+	}
+	if never := rowFor(t, r, layer.TCP); never.Findings != nil {
+		t.Errorf("a layer that never looked came back claiming it found nothing: %#v", never.Findings)
+	}
+}
+
+// TestTheWalkDoesNotHandBackTheLayersOwnFindings keeps the assembly path from
+// rewriting a slice the layer still holds.
+//
+// It costs nothing today and it is the reason masking can rewrite these values
+// in place tomorrow: masking runs here, after the layers have answered, and a
+// layer that kept its own slice would find its evidence altered underneath it.
+func TestTheWalkDoesNotHandBackTheLayersOwnFindings(t *testing.T) {
+	kept := []report.Finding{{
+		Kind:                report.FindingEnvironmentVariable,
+		Summary:             "HTTPS_PROXY is set",
+		Source:              report.SourceDetected,
+		EnvironmentVariable: &report.EnvironmentVariable{Name: "HTTPS_PROXY", Value: "http://proxy:8080", Set: true},
+	}}
+
+	o := baseOptions(newClock())
+	o.Layers[layer.Context] = func(context.Context) Answer {
+		return Answer{Status: status.Pass, Findings: kept}
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+
+	row := rowFor(t, r, layer.Context)
+	if len(row.Findings) != 1 {
+		t.Fatalf("the finding did not survive the walk: %#v", row.Findings)
+	}
+	row.Findings[0].Summary = "rewritten on the assembly path"
+	if kept[0].Summary != "HTTPS_PROXY is set" {
+		t.Error("the report and the layer share one array, so masking the report would alter the layer's evidence")
 	}
 }
 

@@ -102,13 +102,84 @@ func (t Terminal) writeLayers(b *strings.Builder, r report.Report) {
 		if row.Detail != "" {
 			fmt.Fprintf(&line, "  %s", row.Detail)
 		}
-		// A row that ends short of the widest one would otherwise carry the
-		// padding out to the line end. Trailing spaces are invisible until the
-		// report is pasted somewhere that shows them, and then they look like
-		// the tool is careless about everything else too.
-		b.WriteString(strings.TrimRight(line.String(), " "))
-		b.WriteString("\n")
+		writeTrimmed(b, line.String())
+		t.writeFindings(b, row)
 	}
+}
+
+// writeTrimmed ends one assembled line, without the padding that ran off it.
+//
+// A row that stops short of the widest one would otherwise carry its padding out
+// to the line end. Trailing spaces are invisible until the report is pasted
+// somewhere that shows them, and then they look like the tool is careless about
+// everything else too.
+//
+// IT IS ONE FUNCTION BECAUSE THE RULE IS ONE RULE. Two column blocks now end
+// their lines - the layer rows and the findings beneath them - and writing the
+// same trim twice would mean one of them could lose it while the other kept it.
+// It also gave the mutation register two places matching one anchor, which is
+// reported as a skip: a mutation that proves nothing, in the quietest way this
+// register can fail.
+func writeTrimmed(b *strings.Builder, line string) {
+	b.WriteString(strings.TrimRight(line, " "))
+	b.WriteString("\n")
+}
+
+// writeFindings prints what one layer established, underneath its own row.
+//
+// THREE STATES AND ALL THREE ARE VISIBLE HERE. A layer that never looked prints
+// nothing - it has already said so in its row and in the notes, and a line
+// saying "nothing" would read as a result. A layer that looked and found nothing
+// says exactly that, because an absent section reads as a question nobody asked.
+// A layer that found something prints one line per finding.
+//
+// The columns are measured within the layer rather than across the report. Two
+// layers' findings have nothing to do with each other, and one long path from
+// the trust matrix would otherwise set the width for every environment variable
+// in L0.
+func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
+	if row.Findings == nil {
+		return
+	}
+	if len(row.Findings) == 0 {
+		b.WriteString("      nothing was found\n")
+		return
+	}
+
+	summaryWidth, sourceWidth := 0, 0
+	for _, finding := range row.Findings {
+		summaryWidth = max(summaryWidth, widthOf(finding.Summary))
+		sourceWidth = max(sourceWidth, widthOf(finding.Source.String()))
+	}
+
+	for _, finding := range row.Findings {
+		var line strings.Builder
+		fmt.Fprintf(&line, "      %s  %s",
+			pad(finding.Summary, summaryWidth),
+			pad(finding.Source.String(), sourceWidth))
+		if value := findingValue(finding); value != "" {
+			fmt.Fprintf(&line, "  %s", value)
+		}
+		writeTrimmed(b, line.String())
+	}
+}
+
+// findingValue is the part of a finding that only means anything once the kind
+// is known. It is the empty string for a kind this renderer has no handling for,
+// which is how a kind added later still reaches this page through its summary
+// instead of vanishing from it.
+//
+// A CONTRACT FOR WHOEVER PRODUCES A FINDING, because this is where it bites: a
+// variable that is SET TO NOTHING has no value to print, so its summary is the
+// only thing that can say so. The difference between unset and set to nothing
+// decides whether some tools proxy at all, and it must not survive only in the
+// machine readable document.
+func findingValue(finding report.Finding) string {
+	variable := finding.EnvironmentVariable
+	if variable == nil || !variable.Set {
+		return ""
+	}
+	return variable.Value
 }
 
 // writeNotes prints what the run did not do. It prints the heading even when

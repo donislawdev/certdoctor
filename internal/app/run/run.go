@@ -39,6 +39,18 @@ type Answer struct {
 	Status status.Status
 	Reason status.Reason
 	Detail string
+	// Findings is what the layer established about this machine, RAW.
+	//
+	// A layer never masks its own output - ADR18. It hands back what it found
+	// and this package takes the credentials out afterwards, once, in order.
+	// A layer that reached for the masking package would be two goroutines away
+	// from writing to the same unsynchronised map, and a racing map in Go kills
+	// the process with no report at all.
+	//
+	// Nil and empty say different things and the layer chooses which. Nil means
+	// this layer did not look. A slice of length zero means it looked and there
+	// was nothing.
+	Findings []report.Finding
 }
 
 // Layer walks one diagnostic layer.
@@ -193,10 +205,11 @@ func resultOf(id layer.ID, answer Answer) (report.LayerResult, *report.Note) {
 	broken := contractBreach(answer)
 	if broken == "" {
 		return report.LayerResult{
-			ID:     id,
-			Status: answer.Status,
-			Reason: answer.Reason,
-			Detail: answer.Detail,
+			ID:       id,
+			Status:   answer.Status,
+			Reason:   answer.Reason,
+			Detail:   answer.Detail,
+			Findings: copyFindings(answer.Findings),
 		}, nil
 	}
 
@@ -226,9 +239,36 @@ func contractBreach(answer Answer) string {
 		return fmt.Sprintf("reported %s and still carried the reason %q", answer.Status, answer.Reason)
 	case answer.Status.RequiresReason() && answer.Detail == "":
 		return fmt.Sprintf("reported %s without a detail line saying what happened", answer.Status)
-	default:
-		return ""
 	}
+	// The findings are checked HERE and not only in the report validator, and the
+	// difference decides whether a run survives. A malformed finding reaching the
+	// validator fails the whole report, so the process ends with an internal
+	// error and prints nothing - seven working layers thrown away because the
+	// eighth built one row badly. Caught here it costs that one layer.
+	for i, finding := range answer.Findings {
+		if breach := finding.Breach(); breach != "" {
+			return fmt.Sprintf("returned a finding at position %d that %s", i, breach)
+		}
+	}
+	return ""
+}
+
+// copyFindings takes the layer's slice out of the layer's hands, WITHOUT
+// turning a nil into an empty one.
+//
+// Two reasons, and the second is the one that would be found late. The
+// assembly path rewrites these values when it masks them, and rewriting a slice
+// the layer still holds is a defect that only appears once a layer keeps state.
+// And the nil stays nil because nil renders as null and empty renders as an
+// empty array: the ordinary one-line copy would turn "nobody looked" into "we
+// looked and found nothing" in every layer that never ran.
+func copyFindings(findings []report.Finding) []report.Finding {
+	if findings == nil {
+		return nil
+	}
+	copied := make([]report.Finding, len(findings))
+	copy(copied, findings)
+	return copied
 }
 
 func (o Options) assemble(started time.Time, results []report.LayerResult, notes []report.Note, exceeded bool) report.Report {

@@ -173,6 +173,53 @@ func TestValidateRejectsAReasonOutsideTheClosedList(t *testing.T) {
 	requireRejected(t, r, "outside the closed list")
 }
 
+// TestValidateRejectsAMalformedFinding is the union rule checked once more, on
+// the assembled report rather than on the answer a layer handed over.
+//
+// Both checks are needed and they fail differently on purpose. The orchestrator
+// catches this first and degrades that one layer. This is what stands there if a
+// finding ever reaches a report some other way, and it refuses to print at all -
+// which is the right answer for a report nobody can account for.
+func TestValidateRejectsAMalformedFinding(t *testing.T) {
+	r := wellFormedReport()
+	r.Layers[0].Findings = []Finding{{
+		Kind:    FindingEnvironmentVariable,
+		Summary: "HTTPS_PROXY is set",
+		Source:  SourceDetected,
+	}}
+	requireRejected(t, r, "carries no body of that kind")
+}
+
+// TestValidateNamesTheLayerAndThePositionOfABadFinding matters because a layer
+// carrying twenty findings is the ordinary case for L0. "One of them is wrong"
+// would send a reader through the whole list.
+func TestValidateNamesTheLayerAndThePositionOfABadFinding(t *testing.T) {
+	r := wellFormedReport()
+	sound := Finding{
+		Kind:                FindingEnvironmentVariable,
+		Summary:             "HTTPS_PROXY is set",
+		Source:              SourceDetected,
+		EnvironmentVariable: &EnvironmentVariable{Name: "HTTPS_PROXY", Value: "http://proxy:8080", Set: true},
+	}
+	broken := sound
+	broken.Source = Source("guessed")
+	r.Layers[1].Findings = []Finding{sound, broken}
+
+	requireRejected(t, r, "layer L1 finding 1")
+}
+
+// TestValidateAcceptsALayerThatLookedAndFoundNothing pins the empty list as a
+// legitimate answer rather than an oversight. It is the claim "we looked and
+// there was nothing", and refusing it would leave a layer no way to say so.
+func TestValidateAcceptsALayerThatLookedAndFoundNothing(t *testing.T) {
+	r := wellFormedReport()
+	r.Layers[0].Findings = []Finding{}
+
+	if err := Validate(r); err != nil {
+		t.Fatalf("a layer that looked and found nothing was refused: %v", err)
+	}
+}
+
 func TestValidateRejectsANoteWithoutADetail(t *testing.T) {
 	r := wellFormedReport()
 	r.Notes[0].Detail = ""

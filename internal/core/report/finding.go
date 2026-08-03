@@ -1,5 +1,7 @@
 package report
 
+import "fmt"
+
 // FindingKind says what sort of fact a finding carries.
 //
 // The list is closed and has a registry, for the same reason NoteKind does: a
@@ -136,5 +138,86 @@ type EnvironmentVariable struct {
 	// CarriedCredentials records that masking removed something. The fact that a
 	// proxy URL carries credentials is half the answer to "why do I get a 407",
 	// and it is the half that can be said without saying the secret.
+	//
+	// IT IS FILLED IN ON THE ASSEMBLY PATH, NOT BY THE LAYER. Answering it means
+	// asking the masking rules whether they would remove anything, and a layer is
+	// not allowed to reach the masking package - ADR18. The layer hands back the
+	// raw value and the orchestrator answers this alongside masking it, from the
+	// same text, so the two can never disagree.
 	CarriedCredentials bool
+}
+
+// findingBodies says, for each declared kind, whether that kind's body is
+// present in a finding.
+//
+// WHY A TABLE RATHER THAN AN if. The union has one member today and the whole
+// reason it is a union is the second one - a certificate in L4 is a record with
+// a dozen fields. A hand written condition would go on passing when that member
+// arrives, because it would simply not mention it. This is walked against the
+// declared list of kinds, so a kind added without an entry here is a red
+// registry test rather than a body nothing checks.
+var findingBodies = map[FindingKind]func(Finding) bool{
+	FindingEnvironmentVariable: func(f Finding) bool { return f.EnvironmentVariable != nil },
+}
+
+// Breach names what is wrong with a finding, or returns the empty string for one
+// that is well formed. The wording continues a sentence naming the finding, so
+// it says what the finding does rather than what was checked.
+//
+// IT IS USED IN TWO PLACES AND BOTH ARE NEEDED. The orchestrator asks it of an
+// answer a layer just handed over, and degrades that layer alone if it is wrong.
+// The report validator asks it again of the assembled report, before anything is
+// printed. The first keeps one layer's mistake from taking the run down, the
+// second is what stands there if a finding ever reaches a report by some other
+// route.
+func (f Finding) Breach() string {
+	switch {
+	case !f.Kind.Valid():
+		return fmt.Sprintf("carries the kind %q, which is outside the registry", f.Kind)
+	case f.Summary == "":
+		return "carries no summary, and the summary is the one line a surface can render without knowing the kind"
+	case !f.Source.Valid():
+		return fmt.Sprintf("carries the source %q, so it does not say how strongly it is known", f.Source)
+	}
+
+	// Walked in declaration order rather than over the map, so that a finding
+	// with two defects is always described the same way.
+	for _, kind := range AllFindingKinds {
+		present, declared := findingBodies[kind]
+		if !declared {
+			return fmt.Sprintf("is of a kind %q whose body nothing knows how to find", kind)
+		}
+		switch {
+		case kind == f.Kind && !present(f):
+			return fmt.Sprintf("says it is %s and carries no body of that kind", kind)
+		case kind != f.Kind && present(f):
+			return fmt.Sprintf("says it is %s and carries a %s body as well", f.Kind, kind)
+		}
+	}
+	return f.bodyBreach()
+}
+
+// bodyBreach asks the body itself, once the envelope is known to be sound.
+func (f Finding) bodyBreach() string {
+	if f.EnvironmentVariable != nil {
+		return f.EnvironmentVariable.breach()
+	}
+	return ""
+}
+
+// breach refuses the two states that would say something nobody measured.
+//
+// A variable that is not set cannot carry a value and cannot have had anything
+// masked out of it. Either combination renders as an ordinary row and reads as a
+// fact, which is the quiet failure this whole type exists to prevent.
+func (e EnvironmentVariable) breach() string {
+	switch {
+	case e.Name == "":
+		return "carries an environment variable with no name, which would render as a row with nothing in front of it"
+	case !e.Set && e.Value != "":
+		return fmt.Sprintf("says %s is not set and carries a value for it anyway", e.Name)
+	case !e.Set && e.CarriedCredentials:
+		return fmt.Sprintf("says %s is not set and that masking took something out of it", e.Name)
+	}
+	return ""
 }

@@ -59,6 +59,31 @@ var schema = object(map[string]node{
 		"status": text(),
 		"reason": nullable(text()),
 		"detail": nullable(text()),
+		// Null means this layer never looked, an array means it did. The
+		// difference is a claim about the machine, so it is in the contract
+		// rather than left to a reader's charity.
+		//
+		// WHAT THIS DELIBERATELY DOES NOT ENCODE: that the body key has to match
+		// the kind. That is the meaning of a value, and the paragraph at the top
+		// of this file says this checks shape and nothing else. The union rule
+		// itself is enforced twice on the other side - by the orchestrator when
+		// a layer hands a finding over, and by the report validator before
+		// anything is printed. The day a second kind exists, this declaration
+		// grows a second nullable body next to the first, and that is a visible
+		// edit rather than a silent gap.
+		"findings": nullable(array(object(map[string]node{
+			"kind":    text(),
+			"summary": text(),
+			"source":  text(),
+			"environment_variable": nullable(object(map[string]node{
+				"name": text(),
+				// Null when the variable is not set. An empty string means it is
+				// set to nothing, which switches proxying off in some tools.
+				"value":               nullable(text()),
+				"set":                 boolean(),
+				"carried_credentials": boolean(),
+			})),
+		}))),
 	})),
 	"notes": array(object(map[string]node{
 		"kind":   text(),
