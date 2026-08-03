@@ -11,7 +11,7 @@ import (
 // nor any adapter, and the orchestrator takes its ports as parameters rather
 // than importing the things that implement them.
 //
-// A package that matches no prefix here is itself a finding. Without that the
+// A package that matches no prefix here is itself a violation. Without that the
 // map would quietly stop covering the tree as new directories appear, and a
 // guard covering less than it claims is worse than no guard.
 var layerMap = []layerRule{
@@ -47,7 +47,7 @@ var layerMap = []layerRule{
 //
 // It is not in layerMap because it cannot be described by a path prefix: an
 // empty prefix matches every file in the tree, which would turn the "outside
-// the declared layer map" finding into something that can never fire.
+// the declared layer map" violation into something that can never fire.
 //
 // Why such a package exists at all: Go's embed directive cannot reach a parent
 // directory, so the licence text at the repository root can only be embedded by
@@ -58,7 +58,7 @@ var rootRule = layerRule{location: "", mayImportBelow: nil}
 
 // intraLayerEdges lists the imports allowed BETWEEN packages of the same layer.
 //
-// 🔴 Sideways edges are forbidden by default, and this is the list of exceptions.
+// Sideways edges are forbidden by default, and this is the list of exceptions.
 // It is empty, which is the correct state for four packages.
 //
 // Why the default is a ban rather than a permission. Two adapters importing each
@@ -117,7 +117,7 @@ type layerRule struct {
 	mayImportRoot bool
 }
 
-// describe names a layer in a finding. The module root has no path prefix to
+// describe names a layer in a violation. The module root has no path prefix to
 // name it by.
 func (r layerRule) describe() string {
 	if r.location == "" {
@@ -129,7 +129,7 @@ func (r layerRule) describe() string {
 // TestLayerImportDirection is the guard for "nothing points upwards".
 func TestLayerImportDirection(t *testing.T) {
 	tr := mustLoadModule(t)
-	requireNoFindings(t, checkLayerDirection(tr), "layer direction")
+	requireNoViolations(t, checkLayerDirection(tr), "layer direction")
 }
 
 // TestLayerGuardDetectsPlantedViolations is the canary. The tree is small enough
@@ -143,11 +143,11 @@ func TestLayerGuardDetectsPlantedViolations(t *testing.T) {
 			loadFixture(t, "layer_violation.go", "internal/unmapped/planted.go"),
 		},
 	}
-	findings := checkLayerDirection(tr)
+	violations := checkLayerDirection(tr)
 
-	requireFinding(t, findings, "may not import github.com/donislawdev/certdoctor/internal/adapter/render")
-	requireFinding(t, findings, `may not import "os/exec"`)
-	requireFinding(t, findings, "outside the declared layer map")
+	requireViolation(t, violations, "may not import github.com/donislawdev/certdoctor/internal/adapter/render")
+	requireViolation(t, violations, `may not import "os/exec"`)
+	requireViolation(t, violations, "outside the declared layer map")
 }
 
 // TestSidewaysImportsAreReportedUnlessDeclared covers the edge the direction
@@ -158,7 +158,7 @@ func TestSidewaysImportsAreReportedUnlessDeclared(t *testing.T) {
 		modulePath: "github.com/donislawdev/certdoctor",
 		files:      []sourceFile{loadFixture(t, "layer_sideways.go", "internal/adapter/probe/planted.go")},
 	}
-	requireFinding(t, checkLayerDirection(tr),
+	requireViolation(t, checkLayerDirection(tr),
 		"sideways import internal/adapter/probe -> internal/adapter/render")
 }
 
@@ -174,7 +174,7 @@ func TestDeclaringASidewaysEdgeSilencesIt(t *testing.T) {
 		modulePath: "github.com/donislawdev/certdoctor",
 		files:      []sourceFile{loadFixture(t, "layer_sideways.go", "internal/adapter/probe/planted.go")},
 	}
-	requireNoFindings(t, checkLayerDirection(tr), "a declared sideways edge")
+	requireNoViolations(t, checkLayerDirection(tr), "a declared sideways edge")
 }
 
 // TestTheModuleRootPackageMayNotReachIntoTheTree covers the leaf rule. The
@@ -186,7 +186,7 @@ func TestTheModuleRootPackageMayNotReachIntoTheTree(t *testing.T) {
 		modulePath: "github.com/donislawdev/certdoctor",
 		files:      []sourceFile{loadFixture(t, "root_reaches_in.go", "license.go")},
 	}
-	requireFinding(t, checkLayerDirection(tr), "the module root package may not import")
+	requireViolation(t, checkLayerDirection(tr), "the module root package may not import")
 }
 
 // TestOnlyTheEntryPointMayImportTheModuleRootPackage covers the branch that is
@@ -198,13 +198,13 @@ func TestOnlyTheEntryPointMayImportTheModuleRootPackage(t *testing.T) {
 		modulePath: "github.com/donislawdev/certdoctor",
 		files:      []sourceFile{loadFixture(t, "imports_the_module_root.go", "internal/core/status/planted.go")},
 	}
-	requireFinding(t, checkLayerDirection(forbidden), "may not import the module root package")
+	requireViolation(t, checkLayerDirection(forbidden), "may not import the module root package")
 
 	allowed := tree{
 		modulePath: "github.com/donislawdev/certdoctor",
 		files:      []sourceFile{loadFixture(t, "imports_the_module_root.go", "cmd/certdoctor/planted.go")},
 	}
-	requireNoFindings(t, checkLayerDirection(allowed), "the entry point importing the module root package")
+	requireNoViolations(t, checkLayerDirection(allowed), "the entry point importing the module root package")
 }
 
 // TestAFileInTheModuleRootIsNotReportedAsUnmapped is the other half of the root
@@ -221,7 +221,7 @@ func TestAFileInTheModuleRootIsNotReportedAsUnmapped(t *testing.T) {
 	if !seen {
 		t.Fatal("no file sits in the module root, so this test proves nothing about the rule that covers them")
 	}
-	requireNoFindings(t, checkLayerDirection(tr), "the module root")
+	requireNoViolations(t, checkLayerDirection(tr), "the module root")
 }
 
 // checkLayerDirection reports every declared import that crosses a layer
@@ -232,28 +232,28 @@ func TestAFileInTheModuleRootIsNotReportedAsUnmapped(t *testing.T) {
 // build tag, a generated file, or agreement on a string constant. Direction of
 // the import graph is what erodes one innocent line at a time, and that is what
 // this catches.
-func checkLayerDirection(tr tree) []Finding {
-	var findings []Finding
+func checkLayerDirection(tr tree) []Violation {
+	var violations []Violation
 	for _, sf := range tr.files {
 		rule, ok := ruleFor(sf.rel)
 		if !ok {
-			findings = append(findings, Finding{
+			violations = append(violations, Violation{
 				File:   sf.rel,
 				Line:   1,
 				Detail: "this package sits outside the declared layer map - add it to layerMap or move the file",
 			})
 			continue
 		}
-		findings = append(findings, checkImportsOf(tr, sf, rule)...)
+		violations = append(violations, checkImportsOf(tr, sf, rule)...)
 	}
-	return sortFindings(findings)
+	return sortViolations(violations)
 }
 
 // checkImportsOf sorts one file's imports into the three cases that need
 // different rules: the module root package, something else of ours, and the
 // standard library.
-func checkImportsOf(tr tree, sf sourceFile, rule layerRule) []Finding {
-	var findings []Finding
+func checkImportsOf(tr tree, sf sourceFile, rule layerRule) []Violation {
+	var violations []Violation
 	internalPrefix := tr.modulePath + "/"
 
 	for _, imp := range importsOf(sf) {
@@ -263,7 +263,7 @@ func checkImportsOf(tr tree, sf sourceFile, rule layerRule) []Finding {
 		// every check.
 		if imp.path == tr.modulePath {
 			if !rule.mayImportRoot {
-				findings = append(findings, Finding{
+				violations = append(violations, Violation{
 					File: sf.rel,
 					Line: imp.line,
 					Detail: fmt.Sprintf(
@@ -274,12 +274,12 @@ func checkImportsOf(tr tree, sf sourceFile, rule layerRule) []Finding {
 			continue
 		}
 		if inside, isOurs := strings.CutPrefix(imp.path, internalPrefix); isOurs {
-			findings = append(findings, checkOurImport(sf, rule, inside, imp)...)
+			violations = append(violations, checkOurImport(sf, rule, inside, imp)...)
 			continue
 		}
 		for _, forbidden := range rule.forbiddenStdlib {
 			if imp.path == forbidden {
-				findings = append(findings, Finding{
+				violations = append(violations, Violation{
 					File:   sf.rel,
 					Line:   imp.line,
 					Detail: fmt.Sprintf("%s may not import %q - the core is a pure function of evidence", rule.location, imp.path),
@@ -287,14 +287,14 @@ func checkImportsOf(tr tree, sf sourceFile, rule layerRule) []Finding {
 			}
 		}
 	}
-	return findings
+	return violations
 }
 
 // checkOurImport judges one import of another package in this module: sideways,
 // downwards, or upwards.
-func checkOurImport(sf sourceFile, rule layerRule, inside string, imp declaredImport) []Finding {
+func checkOurImport(sf sourceFile, rule layerRule, inside string, imp declaredImport) []Violation {
 	if rule.location == "" {
-		return []Finding{{
+		return []Violation{{
 			File: sf.rel,
 			Line: imp.line,
 			Detail: fmt.Sprintf(
@@ -306,7 +306,7 @@ func checkOurImport(sf sourceFile, rule layerRule, inside string, imp declaredIm
 	fromPackage := path.Dir(sf.rel)
 	if strings.HasPrefix(inside, rule.location) {
 		if !edgeAllowed(fromPackage, inside) {
-			return []Finding{{
+			return []Violation{{
 				File: sf.rel,
 				Line: imp.line,
 				Detail: fmt.Sprintf(
@@ -317,7 +317,7 @@ func checkOurImport(sf sourceFile, rule layerRule, inside string, imp declaredIm
 		return nil
 	}
 	if !hasAnyPrefix(inside, rule.mayImportBelow) {
-		return []Finding{{
+		return []Violation{{
 			File:   sf.rel,
 			Line:   imp.line,
 			Detail: fmt.Sprintf("%s may not import %s - that points upwards", rule.describe(), imp.path),

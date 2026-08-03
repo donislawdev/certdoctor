@@ -44,10 +44,25 @@
 *.dylib
 
 # --- Test and coverage artifacts ---
+#
+# ANCHORED TO THE ROOT, and that is the point rather than tidiness. Unanchored,
+# "*.out" also matches a golden file called help.out in any testdata directory -
+# and the guards' golden data vanishing is precisely the failure the warning at
+# the bottom of this file describes. This repository has already paid for that
+# lesson once, with a pattern that excluded cmd/certdoctor/.
+#
+# "*.test" stays unanchored on purpose: it is the name the Go toolchain gives a
+# compiled test binary, in whichever package directory it was built.
 *.test
-*.out
-coverage.*
+/*.out
+/coverage.*
 /testbed/**/generated/
+
+# Byte-exact backups the mutation register makes beside the file it is editing.
+# They are removed when the run finishes - this line is for the run that does
+# NOT finish, because an interrupted one leaves a copy of a production file
+# sitting next to it and "git add -A" would commit it.
+*.mutbak
 
 # --- Testbed material generated at startup, NEVER committed (docs/16 ADR5) ---
 # Private keys and certificates for the fake corporate CA are produced when the

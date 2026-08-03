@@ -185,6 +185,14 @@ jobs:
   # should stop a pipeline rather than sit in a log. If it turns out to depend
   # on the runner's keychain rather than on the platform, it becomes reporting
   # only - with the reason written down, not silently.
+  #
+  # IT HAS A REVIEW DATE, because "we will change it if it turns out to be
+  # flaky" has no trigger and nobody is reminded. On 2026-09-03, or at the first
+  # failure that is not about the code, decide one of two things: the question
+  # is answered and this job goes away, or it stays and stops blocking. A job
+  # that reddens for reasons unrelated to the change is how a pipeline teaches
+  # people that red means nothing, and that is the most expensive thing in here
+  # to lose.
   macos-anchors:
     name: macos trust anchors
     runs-on: macos-latest
@@ -202,9 +210,29 @@ jobs:
           CGO_ENABLED: "0"
         run: go run .
 
+  # EVERY TARGET THAT WILL BE RELEASED, not just the one the runner happens to
+  # be. This job used to build for Linux alone, so the claim that certdoctor
+  # cross-compiles rested on somebody having tried it by hand once. The packages
+  # that make that claim worth checking are the two split by //go:build -
+  # privilege reads a process token on Windows and an effective user id
+  # elsewhere, render asks the console for its code page on Windows and nothing
+  # anywhere else - and they are exactly the ones a Linux-only build never
+  # compiles.
   release-build:
-    name: release build, static
+    name: release build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
     steps:
       - name: check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -217,12 +245,22 @@ jobs:
         shell: bash
         env:
           CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: go build -trimpath -o dist/certdoctor ./cmd/certdoctor
 
       # Checked in both directions, because the wording of file(1) has changed
       # between releases and a single positive match could start passing for the
       # wrong reason.
+      #
+      # Linux only, and that is a limit rather than an oversight: "statically
+      # linked" is how file(1) describes an ELF binary. A PE or a Mach-O carries
+      # no such wording, so running this on them would either pass for the wrong
+      # reason or fail for one. What the other targets get instead is the second
+      # signal below, which asks the toolchain rather than the linker and works
+      # on every artefact.
       - name: prove the artefact is static
+        if: matrix.goos == 'linux'
         shell: bash
         run: |
           set -euo pipefail

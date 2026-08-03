@@ -54,7 +54,7 @@ var writeFunctions = map[string]bool{
 // nothing.
 func TestNothingOutsideTheAllowlistWrites(t *testing.T) {
 	tr := mustLoadModule(t)
-	requireNoFindings(t, checkWrites(tr), "writes outside the allowlist")
+	requireNoViolations(t, checkWrites(tr), "writes outside the allowlist")
 }
 
 // TestTheWriteAllowlistIsStillOneFileLong restates the size of the list on
@@ -106,10 +106,10 @@ func TestWriteGuardDetectsPlantedViolations(t *testing.T) {
 			loadFixture(t, "writes_loose.go", "internal/adapter/store/planted_test.go"),
 		},
 	}
-	findings := checkWrites(planted)
+	violations := checkWrites(planted)
 
-	requireFinding(t, findings, `"os.WriteFile" writes to disk`)
-	requireFinding(t, findings, "writes without taking a temporary directory")
+	requireViolation(t, violations, `"os.WriteFile" writes to disk`)
+	requireViolation(t, violations, "writes without taking a temporary directory")
 }
 
 // TestATestThatTakesATemporaryDirectoryMayWrite keeps the guard usable. Without
@@ -120,7 +120,7 @@ func TestATestThatTakesATemporaryDirectoryMayWrite(t *testing.T) {
 		modulePath: "github.com/donislawdev/certdoctor",
 		files:      []sourceFile{loadFixture(t, "writes_tempdir.go", "internal/adapter/store/planted_test.go")},
 	}
-	requireNoFindings(t, checkWrites(allowed), "a test writing under its own temporary directory")
+	requireNoViolations(t, checkWrites(allowed), "a test writing under its own temporary directory")
 }
 
 // checkWrites reports filesystem writes: any in production code outside the
@@ -138,8 +138,8 @@ func TestATestThatTakesATemporaryDirectoryMayWrite(t *testing.T) {
 //     CI is what keeps that true.
 //   - os/exec, which can run a program that writes. The layer guard keeps that
 //     out of the core, and nothing keeps it out of an adapter yet.
-func checkWrites(tr tree) []Finding {
-	var findings []Finding
+func checkWrites(tr tree) []Violation {
+	var violations []Violation
 
 	for _, sf := range tr.files {
 		if writeAllowlist[sf.rel] {
@@ -159,20 +159,20 @@ func checkWrites(tr tree) []Finding {
 			line := sf.fset.Position(call.Pos()).Line
 
 			if !sf.isTest {
-				findings = append(findings, Finding{sf.rel, line, fmt.Sprintf(
+				violations = append(violations, Violation{sf.rel, line, fmt.Sprintf(
 					"%q writes to disk - certdoctor diagnoses and never repairs, so the only file it creates is a report at a path the user named",
 					"os."+name)})
 				return true
 			}
 			if !takesTempDir {
-				findings = append(findings, Finding{sf.rel, line, fmt.Sprintf(
+				violations = append(violations, Violation{sf.rel, line, fmt.Sprintf(
 					"%q writes without taking a temporary directory - a test suite is the likeliest source of litter in the working tree",
 					"os."+name)})
 			}
 			return true
 		})
 	}
-	return sortFindings(findings)
+	return sortViolations(violations)
 }
 
 // osCallName returns the function name of a call of the form os.Something.

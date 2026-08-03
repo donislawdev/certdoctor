@@ -93,7 +93,7 @@ func TestLoaderSkipsWhatIsNotOursToPolice(t *testing.T) {
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Fatalf("scanned %v, want %v - order must be stable so findings do not shuffle between runs", got, want)
+			t.Fatalf("scanned %v, want %v - order must be stable so violations do not shuffle between runs", got, want)
 		}
 	}
 
@@ -164,26 +164,26 @@ func loadFixture(t *testing.T, name, pretendRel string) sourceFile {
 	}
 }
 
-func requireNoFindings(t *testing.T, findings []Finding, rule string) {
+func requireNoViolations(t *testing.T, violations []Violation, rule string) {
 	t.Helper()
-	if len(findings) == 0 {
+	if len(violations) == 0 {
 		return
 	}
-	t.Errorf("%s - %d violation(s):", rule, len(findings))
-	for _, f := range findings {
+	t.Errorf("%s - %d violation(s):", rule, len(violations))
+	for _, f := range violations {
 		t.Errorf("  %s", f)
 	}
 }
 
-// requireFinding asserts that the scanner reported a specific violation. The
+// requireViolation asserts that the scanner reported a specific violation. The
 // canaries use it rather than a bare count, because a scanner reporting the
 // right number of the wrong things would pass a count.
-func requireFinding(t *testing.T, findings []Finding, wantDetail string) {
+func requireViolation(t *testing.T, violations []Violation, wantDetail string) {
 	t.Helper()
-	for _, f := range findings {
+	for _, f := range violations {
 		if strings.Contains(f.Detail, wantDetail) {
 			return
 		}
 	}
-	t.Errorf("the scanner did not report %q. It reported: %v", wantDetail, findings)
+	t.Errorf("the scanner did not report %q. It reported: %v", wantDetail, violations)
 }

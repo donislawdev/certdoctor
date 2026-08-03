@@ -12,18 +12,24 @@ import (
 	"strings"
 )
 
-// Finding is one violation of a structural rule. It carries a position an editor
+// Violation is one breach of a structural rule. It carries a position an editor
 // can jump to, because a guard that reports only "something is wrong" costs more
 // to act on than it saves.
-type Finding struct {
-	// File is relative to the module root and uses forward slashes, so a finding
+//
+// IT WAS CALLED Finding, AND THAT NAME NOW BELONGS TO SOMETHING ELSE. A finding
+// in this product is a fact a layer established about the machine being
+// diagnosed - it goes out in the report and it is part of the public contract.
+// One word for two unrelated ideas in one repository is the mistake the glossary
+// strikes out under Result, applied to a name nobody had noticed yet.
+type Violation struct {
+	// File is relative to the module root and uses forward slashes, so a violation
 	// reads the same on Windows and in a Linux CI log.
 	File   string
 	Line   int
 	Detail string
 }
 
-func (f Finding) String() string {
+func (f Violation) String() string {
 	return fmt.Sprintf("%s:%d: %s", f.File, f.Line, f.Detail)
 }
 
@@ -125,7 +131,7 @@ func descendOrSkip(root, path string, d os.DirEntry) error {
 }
 
 // parseSource parses one file and records where it sits relative to the module
-// root, so a finding reads the same on Windows and in a Linux CI log.
+// root, so a violation reads the same on Windows and in a Linux CI log.
 func parseSource(fset *token.FileSet, root, path string) (sourceFile, error) {
 	parsed, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
 	if err != nil {
@@ -222,15 +228,15 @@ func literalValue(lit *ast.BasicLit) string {
 	return lit.Value
 }
 
-func sortFindings(findings []Finding) []Finding {
-	sort.Slice(findings, func(i, j int) bool {
-		if findings[i].File != findings[j].File {
-			return findings[i].File < findings[j].File
+func sortViolations(violations []Violation) []Violation {
+	sort.Slice(violations, func(i, j int) bool {
+		if violations[i].File != violations[j].File {
+			return violations[i].File < violations[j].File
 		}
-		if findings[i].Line != findings[j].Line {
-			return findings[i].Line < findings[j].Line
+		if violations[i].Line != violations[j].Line {
+			return violations[i].Line < violations[j].Line
 		}
-		return findings[i].Detail < findings[j].Detail
+		return violations[i].Detail < violations[j].Detail
 	})
-	return findings
+	return violations
 }

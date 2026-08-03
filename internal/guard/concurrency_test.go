@@ -22,7 +22,7 @@ var concurrencyAllowlist = map[string]bool{}
 // that protects.
 func TestConcurrencyIsContained(t *testing.T) {
 	tr := mustLoadModule(t)
-	requireNoFindings(t, checkConcurrencyContainment(tr), "concurrency outside the orchestrator")
+	requireNoViolations(t, checkConcurrencyContainment(tr), "concurrency outside the orchestrator")
 }
 
 // TestConcurrencyGuardDetectsPlantedViolations is the canary. With zero
@@ -32,7 +32,7 @@ func TestConcurrencyGuardDetectsPlantedViolations(t *testing.T) {
 		modulePath: "github.com/donislawdev/certdoctor",
 		files:      []sourceFile{loadFixture(t, "concurrency_violation.go", "internal/adapter/probe/planted.go")},
 	}
-	findings := checkConcurrencyContainment(planted)
+	violations := checkConcurrencyContainment(planted)
 
 	for _, want := range []string{
 		"go statement",
@@ -43,7 +43,7 @@ func TestConcurrencyGuardDetectsPlantedViolations(t *testing.T) {
 		`import of "sync"`,
 		`import of "sync/atomic"`,
 	} {
-		requireFinding(t, findings, want)
+		requireViolation(t, violations, want)
 	}
 }
 
@@ -56,7 +56,7 @@ func TestConcurrencyAllowsWaitingForCancellation(t *testing.T) {
 		modulePath: "github.com/donislawdev/certdoctor",
 		files:      []sourceFile{loadFixture(t, "concurrency_cancellation.go", "internal/adapter/probe/waiting.go")},
 	}
-	requireNoFindings(t, checkConcurrencyContainment(allowed),
+	requireNoViolations(t, checkConcurrencyContainment(allowed),
 		"waiting for cancellation must not count as concurrency")
 }
 
@@ -70,24 +70,24 @@ func TestMixedSelectIsStillReported(t *testing.T) {
 		modulePath: "github.com/donislawdev/certdoctor",
 		files:      []sourceFile{loadFixture(t, "concurrency_mixed.go", "internal/adapter/probe/planted.go")},
 	}
-	findings := checkConcurrencyContainment(planted)
+	violations := checkConcurrencyContainment(planted)
 
-	requireFinding(t, findings, "select statement")
-	requireFinding(t, findings, "channel receive")
-	requireFinding(t, findings, "channel type")
+	requireViolation(t, violations, "select statement")
+	requireViolation(t, violations, "channel receive")
+	requireViolation(t, violations, "channel type")
 
 	// The fixture has two receives and only one of them is real work, so the
 	// count is the assertion. A line number would go stale the moment the
-	// fixture's comment changes, and the test would then pass by finding
+	// fixture's comment changes, and the test would then pass by violation
 	// nothing rather than by checking anything.
 	receives := 0
-	for _, f := range findings {
+	for _, f := range violations {
 		if strings.Contains(f.Detail, "channel receive") {
 			receives++
 		}
 	}
 	if receives != 1 {
-		t.Errorf("reported %d channel receives, want 1 - the cancellation clause must stay exempt: %v", receives, findings)
+		t.Errorf("reported %d channel receives, want 1 - the cancellation clause must stay exempt: %v", receives, violations)
 	}
 }
 
@@ -103,8 +103,8 @@ func TestMixedSelectIsStillReported(t *testing.T) {
 //     which is the intended outcome: a decision rather than a habit.
 //   - a package that hides a goroutine behind a helper of its own, once such a
 //     helper exists inside the allowlist.
-func checkConcurrencyContainment(tr tree) []Finding {
-	var findings []Finding
+func checkConcurrencyContainment(tr tree) []Violation {
+	var violations []Violation
 
 	for _, sf := range tr.files {
 		if sf.isTest || concurrencyAllowlist[sf.rel] {
@@ -112,7 +112,7 @@ func checkConcurrencyContainment(tr tree) []Finding {
 		}
 		exempt := cancellationWaits(sf.file)
 		report := func(pos token.Pos, what string) {
-			findings = append(findings, Finding{
+			violations = append(violations, Violation{
 				File:   sf.rel,
 				Line:   sf.fset.Position(pos).Line,
 				Detail: what + " - concurrency lives in the orchestrator alone, so that the core never learns anything runs in parallel",
@@ -121,7 +121,7 @@ func checkConcurrencyContainment(tr tree) []Finding {
 
 		for _, imp := range importsOf(sf) {
 			if imp.path == "sync" || imp.path == "sync/atomic" {
-				findings = append(findings, Finding{
+				violations = append(violations, Violation{
 					File:   sf.rel,
 					Line:   imp.line,
 					Detail: "import of \"" + imp.path + "\" - concurrency lives in the orchestrator alone",
@@ -150,7 +150,7 @@ func checkConcurrencyContainment(tr tree) []Finding {
 			return true
 		})
 	}
-	return sortFindings(findings)
+	return sortViolations(violations)
 }
 
 // cancellationWaits marks the receives and selects that do nothing but wait for

@@ -24,7 +24,7 @@ const statusVocabulary = "internal/core/status/status.go"
 // promise and looks like a success while doing it.
 func TestNoLiteralAppearanceOutsideDictionary(t *testing.T) {
 	tr := mustLoadModule(t)
-	requireNoFindings(t, checkAppearanceLiterals(tr), "literal appearance outside the dictionary")
+	requireNoViolations(t, checkAppearanceLiterals(tr), "literal appearance outside the dictionary")
 }
 
 // TestAppearanceGuardDetectsPlantedViolations is the canary. The real tree has
@@ -38,11 +38,11 @@ func TestAppearanceGuardDetectsPlantedViolations(t *testing.T) {
 		files: append(append([]sourceFile{}, real.files...),
 			loadFixture(t, "appearance_violation.go", "internal/adapter/render/planted.go")),
 	}
-	findings := checkAppearanceLiterals(planted)
+	violations := checkAppearanceLiterals(planted)
 
-	requireFinding(t, findings, "literal escape sequence")
-	requireFinding(t, findings, "non-ASCII character")
-	requireFinding(t, findings, "literal status label")
+	requireViolation(t, violations, "literal escape sequence")
+	requireViolation(t, violations, "non-ASCII character")
+	requireViolation(t, violations, "literal status label")
 }
 
 // checkAppearanceLiterals reports escape sequences, non-ASCII characters and
@@ -56,9 +56,9 @@ func TestAppearanceGuardDetectsPlantedViolations(t *testing.T) {
 //     from its numeric value, both pass.
 //   - a colour chosen correctly but applied to the wrong status. This guard is
 //     about where appearance is written, not about whether it is right.
-func checkAppearanceLiterals(tr tree) []Finding {
+func checkAppearanceLiterals(tr tree) []Violation {
 	labels := statusLabels(tr)
-	var findings []Finding
+	var violations []Violation
 
 	for _, sf := range tr.files {
 		if sf.isTest {
@@ -78,27 +78,27 @@ func checkAppearanceLiterals(tr tree) []Finding {
 			if !appearanceAllowed {
 				for _, r := range value {
 					if r == 0x1b {
-						findings = append(findings, Finding{sf.rel, line, fmt.Sprintf(
+						violations = append(violations, Violation{sf.rel, line, fmt.Sprintf(
 							"literal escape sequence - colour belongs in %s, never at the call site", appearanceDictionary)})
 						break
 					}
 				}
 				for _, r := range value {
 					if r > 0x7f {
-						findings = append(findings, Finding{sf.rel, line, fmt.Sprintf(
+						violations = append(violations, Violation{sf.rel, line, fmt.Sprintf(
 							"non-ASCII character %q - status glyphs belong in %s, and a stray one here would also put a non-English string in front of a user", r, appearanceDictionary)})
 						break
 					}
 				}
 			}
 			if !labelsAllowed && labels[value] {
-				findings = append(findings, Finding{sf.rel, line, fmt.Sprintf(
+				violations = append(violations, Violation{sf.rel, line, fmt.Sprintf(
 					"literal status label %q - the renderer takes the label from the status, never from the call site", value)})
 			}
 			return true
 		})
 	}
-	return sortFindings(findings)
+	return sortViolations(violations)
 }
 
 // statusLabels reads the four labels out of the status vocabulary itself rather

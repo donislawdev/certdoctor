@@ -9,11 +9,11 @@
 # a point, and it is small enough that a branch quietly going untested still
 # shows up.
 #
-# 🔴 A FLOOR ONLY EVER RISES. Lowering one to turn a red run green is the owner's
+# A FLOOR ONLY EVER RISES. Lowering one to turn a red run green is the owner's
 # decision, not a way to get unblocked - the same rule the size ratchet follows.
 # Raising one after coverage improves is ordinary work and welcome.
 #
-# 🔴 EVERY PACKAGE MUST APPEAR HERE. A package with no line is a finding, not a
+# EVERY PACKAGE MUST APPEAR HERE. A package with no line is a finding, not a
 # package with no floor. Without that rule the gate would quietly stop covering
 # the tree as new directories appear, which is exactly how the layer guard would
 # have failed if it did not report packages outside its map.

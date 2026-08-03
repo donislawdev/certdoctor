@@ -1,6 +1,54 @@
 package render
 
-import "syscall"
+import (
+	"os"
+	"syscall"
+)
+
+// enableVirtualTerminalProcessing is the console mode flag that makes a console
+// parse escape sequences instead of printing them.
+//
+// SOURCE: SetConsoleMode,
+// https://learn.microsoft.com/en-us/windows/console/setconsolemode, read
+// 2026-08-03. The value is 0x0004 and the flag is documented as making the
+// console interpret ANSI sequences in the text written to it.
+const enableVirtualTerminalProcessing = 0x0004
+
+// consoleUnderstandsSequences asks the destination whether it will interpret an
+// escape sequence or print it.
+//
+// MEASURED RATHER THAN ASSUMED, 2026-08-03, by probe S6 on the owner's machine,
+// and the measurement settles it rather than merely supporting it. ONE MACHINE,
+// ONE DAY, TWO CONSOLE HOSTS, TWO DIFFERENT ANSWERS:
+//
+//	Windows Terminal          mode 0x0007  - virtual terminal processing IS set
+//	conhost.exe with cmd.exe  mode 0x0003  - it is NOT
+//
+// So this is not a question about the platform, it is a question about the
+// window the person happens to be standing in front of, and there is no way to
+// answer it except by asking. Colour written to the second one arrives as
+// visible rubbish, which makes the report look broken - worse than a report with
+// no colour in it at all. Being a character device was treated as enough until
+// somebody asked.
+//
+// IT DOES NOT TURN THE FLAG ON, and that is a rule rather than an omission.
+// Setting it would change the state of somebody else's console and leave it
+// changed, and this program does not change things - it is the first line of the
+// README. Asking costs nothing. Being wrong costs the readability of the one
+// artefact this tool produces.
+//
+// A handle that refuses the question answers no, which degrades to plain text.
+// Every default here leans the same way.
+func consoleUnderstandsSequences(destination *os.File) bool {
+	if destination == nil {
+		return false
+	}
+	var mode uint32
+	if err := syscall.GetConsoleMode(syscall.Handle(destination.Fd()), &mode); err != nil {
+		return false
+	}
+	return mode&enableVirtualTerminalProcessing != 0
+}
 
 // utf8CodePage is the code page identifier for UTF-8.
 //

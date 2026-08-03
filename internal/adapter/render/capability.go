@@ -15,17 +15,26 @@ type Capability struct {
 
 // DetectCapability works out what a destination can render.
 //
-// It asks two questions of the operating system and one of the environment, and
-// that is the whole of it. Nothing else about this program's behaviour comes
+// It asks three questions of the operating system and one of the environment,
+// and that is the whole of it. Nothing else about this program's behaviour comes
 // from a variable: a run has to be reproducible from the command line somebody
 // can read in a CI log, and NO_COLOR is the single documented exception because
 // it changes how output looks and not what it says.
+//
+// THE THIRD QUESTION WAS MISSING AND ITS ABSENCE WAS AN ASSUMPTION. Whether the
+// console renders a GLYPH was settled by asking it for its code page, with the
+// source written down. Whether it renders a COLOUR was not asked at all - being
+// a character device was taken as enough. Probe S6 measured a console on the
+// owner's machine at mode 0x0003: no virtual terminal processing, which means
+// the escape sequence is printed literally and the report reads as
+// "<-[34m? UNKNOWN". That is the same harm the ASCII substitute exists to
+// prevent for glyphs, arriving through the other channel.
 func DetectCapability(destination *os.File, lookupEnv func(string) (string, bool), noColorRequested bool) Capability {
 	capability := Capability{}
 	if !isTerminal(destination) {
 		return capability
 	}
-	if !noColorRequested && !noColorInEnvironment(lookupEnv) {
+	if !noColorRequested && !noColorInEnvironment(lookupEnv) && consoleUnderstandsSequences(destination) {
 		capability.Color = ColorOn
 	}
 	if consoleRendersUnicode() {
