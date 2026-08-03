@@ -18,6 +18,33 @@ import (
 // the appearance guard skips test files precisely so that this can exist.
 var escapeSequence = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
+// TestAColumnWidthIsCountedInRunesAndNotInBytes pins the unit the table is laid
+// out in.
+//
+// It counted bytes, which is the same number only while every value in the
+// column is ASCII. Everything is today - layer identifiers, status words, the
+// names in the registry - so nothing was misaligned and nothing would have been
+// until the trust matrix put a path from somebody else's machine into a column,
+// with an account name that may well be in Cyrillic or CJK. The misalignment
+// would then have looked like a defect in that layer rather than here.
+//
+// The string is built from code points rather than pasted in, so this file
+// carries no character its reader cannot see.
+func TestAColumnWidthIsCountedInRunesAndNotInBytes(t *testing.T) {
+	// Latin small a with ogonek and z with dot above: three runes, five bytes.
+	word := string([]rune{'a', 0x0105, 0x017c})
+
+	if len(word) == widthOf(word) {
+		t.Fatal("this fixture no longer tells the two units apart")
+	}
+	if got := widthOf(word); got != 3 {
+		t.Errorf("width of a three rune word is %d, want 3", got)
+	}
+	if got := widthOf(pad(word, 6)); got != 6 {
+		t.Errorf("padding to six left a column %d wide", got)
+	}
+}
+
 // everyStatusReport is the screen showing all four statuses at once.
 //
 // The interface rules ask for one run that prints every status in every output

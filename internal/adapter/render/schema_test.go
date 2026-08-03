@@ -4,7 +4,39 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestTheStartTimeKeepsItsSubSecondPrecision covers a timestamp that resolved to
+// the second.
+//
+// Two runs inside one second carried the same started_at, so a pair of saved
+// reports could not be put in order - and putting two reports side by side is
+// what --compare exists for. RFC3339Nano is still RFC3339, so nothing parsing
+// the field has to change.
+func TestTheStartTimeKeepsItsSubSecondPrecision(t *testing.T) {
+	r := everyStatusReport()
+	r.Run.StartedAt = r.Run.StartedAt.Add(123456789 * time.Nanosecond)
+
+	document, err := Encode(r)
+	if err != nil {
+		t.Fatalf("encoding failed: %v", err)
+	}
+	if !strings.Contains(string(document), ".123456789Z") {
+		t.Errorf("the start time lost everything below a second:\n%s", firstLinesOf(string(document), 6))
+	}
+	if err := ValidateDocument(document); err != nil {
+		t.Errorf("a document with a precise timestamp no longer matches the schema: %v", err)
+	}
+}
+
+func firstLinesOf(s string, n int) string {
+	lines := strings.SplitN(s, "\n", n+1)
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return strings.Join(lines, "\n")
+}
 
 func encodedReport(t *testing.T) []byte {
 	t.Helper()

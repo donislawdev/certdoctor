@@ -127,7 +127,11 @@ func documentFor(r report.Report) jsonReport {
 		SchemaVersion: SchemaVersion,
 		Tool:          jsonTool{Name: r.Tool.Name, Version: r.Tool.Version},
 		Run: jsonRun{
-			StartedAt:      r.Run.StartedAt.UTC().Format(time.RFC3339),
+			// RFC3339Nano rather than RFC3339, which resolves to the second. Two
+			// runs inside one second carried the same timestamp, so a pair of
+			// saved reports could not be put in order - and putting two reports
+			// side by side is what --compare exists for.
+			StartedAt:      r.Run.StartedAt.UTC().Format(time.RFC3339Nano),
 			DurationMS:     r.Run.Duration.Milliseconds(),
 			Target:         r.Run.Target,
 			PrivilegeLevel: r.Run.PrivilegeLevel.String(),

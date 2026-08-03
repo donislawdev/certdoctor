@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/status"
@@ -74,9 +75,9 @@ func (t Terminal) writeLayers(b *strings.Builder, r report.Report) {
 
 	idWidth, labelWidth, nameWidth := 0, 0, 0
 	for _, row := range r.Layers {
-		idWidth = max(idWidth, len(row.ID.String()))
-		labelWidth = max(labelWidth, len(Label(row.Status)))
-		nameWidth = max(nameWidth, len(row.ID.Name()))
+		idWidth = max(idWidth, widthOf(row.ID.String()))
+		labelWidth = max(labelWidth, widthOf(Label(row.Status)))
+		nameWidth = max(nameWidth, widthOf(row.ID.Name()))
 	}
 
 	for _, row := range r.Layers {
@@ -129,9 +130,26 @@ func (t Terminal) badge(s status.Status) string {
 	return Paint(s, t.Color, Of(s).Marker(t.Glyph))
 }
 
+// widthOf is the column width of a string, COUNTED IN RUNES.
+//
+// The unit is named because the standard of code requires every place that
+// measures or cuts text to say which one it uses - bytes, code points and
+// grapheme clusters are three different numbers. This counted bytes, which is
+// the same number only while everything in the column is ASCII. Everything is
+// today: layer identifiers, status words and the names in the registry. The
+// trust matrix brings paths from somebody else's machine into a column, with an
+// account name that may be in Cyrillic or CJK, and byte counting would have
+// misaligned the table there and looked like a defect in that layer.
+//
+// A rune is not a display cell either, and that limit is stated rather than
+// hidden: a wide character occupies two columns in a terminal and one rune here.
+// Closing that needs a width table this program does not carry and will not add
+// for the sake of alignment.
+func widthOf(s string) int { return utf8.RuneCountInString(s) }
+
 func pad(s string, width int) string {
-	if len(s) >= width {
+	if widthOf(s) >= width {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-widthOf(s))
 }

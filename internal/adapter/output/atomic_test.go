@@ -8,6 +8,29 @@ import (
 	"testing"
 )
 
+// TestARemovalThatFailsIsReportedRatherThanSwallowed covers the clean up path
+// after a failed write.
+//
+// The result of removing the temporary file used to be discarded. That is this
+// program's one promise broken in the quietest way there is - the only file
+// certdoctor creates is a report at a path a person named, and a leftover
+// .certdoctor-report-* is not that. The message named the write that had failed
+// and said nothing about what was still lying in the directory.
+//
+// Removing a file that is not there is the one way to make the call fail on
+// every platform. The three real ways - a handle held open by a scanner, a
+// permission withdrawn mid-run, a file system that went away - are not
+// reachable portably, which is why the branch went untested in the first place.
+func TestARemovalThatFailsIsReportedRatherThanSwallowed(t *testing.T) {
+	err := removeTemporary(filepath.Join(t.TempDir(), "was-never-created"))
+	if err == nil {
+		t.Fatal("a removal that failed returned no error, so a leftover file would never be mentioned")
+	}
+	if !strings.Contains(err.Error(), "still there") {
+		t.Errorf("the message does not say the file is still there: %v", err)
+	}
+}
+
 func TestTheReportLandsAtTheNamedPath(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "report.json")

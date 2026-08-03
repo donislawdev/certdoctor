@@ -13,6 +13,7 @@
 package output
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,12 +53,25 @@ func WriteFile(path string, data []byte) error {
 	name := temporary.Name()
 
 	if err := finish(temporary, data); err != nil {
-		os.Remove(name)
-		return fmt.Errorf("writing %s: %w", path, err)
+		return errors.Join(fmt.Errorf("writing %s: %w", path, err), removeTemporary(name))
 	}
 	if err := os.Rename(name, path); err != nil {
-		os.Remove(name)
-		return fmt.Errorf("moving the finished report to %s: %w", path, err)
+		return errors.Join(fmt.Errorf("moving the finished report to %s: %w", path, err), removeTemporary(name))
+	}
+	return nil
+}
+
+// removeTemporary takes the half written file away, and says so when it cannot.
+//
+// The failure to remove used to be discarded. That is this program's one promise
+// broken in the quietest way available: the only file certdoctor creates is a
+// report at a path a person named, and a leftover .certdoctor-report-* is
+// neither. The message named the write that failed and said nothing about what
+// was still lying in the directory, so the person who went to look found a file
+// nobody had mentioned.
+func removeTemporary(name string) error {
+	if err := os.Remove(name); err != nil {
+		return fmt.Errorf("the temporary file %s could not be removed and is still there: %w", name, err)
 	}
 	return nil
 }
