@@ -190,8 +190,23 @@ var (
 // they are two. A report where every name became the same marker answers none
 // of the questions it was pasted in to answer.
 //
-// It is not safe for use from several goroutines. That is deliberate and
-// matches where it is used: one report, assembled in order.
+// IT IS NOT SAFE FOR USE FROM SEVERAL GOROUTINES, and that is a decision rather
+// than an omission - ADR18. Masking runs on the ASSEMBLY PATH and nowhere else:
+// probes hand back raw evidence and the orchestrator masks it once, in order,
+// after the work is collected. A layer never masks its own output.
+//
+// The reason is worth having next to the code, because the failure it prevents
+// is not a wrong value. The fan-out this program is heading for lives INSIDE a
+// layer - one branch per resolved address in L3, one per probe in L5 - so two
+// branches calling this would write to the same map at the same time, and a
+// racing map in Go is `fatal error: concurrent map writes`, which recover cannot
+// catch. The process would die with no report and with a status that is not in
+// the exit code table.
+//
+// A mutex here was rejected: it needs this file on the concurrency allowlist,
+// which takes that guard off it permanently. The rule is enforced instead by
+// TestOnlyTheAssemblyPathImportsRedaction, which refuses the import from
+// anywhere else - written before the first wiring exists.
 type Redaction struct {
 	mode Mode
 	// pseudonyms maps a real name to the name it is shown as.
