@@ -166,6 +166,42 @@ jobs:
         shell: bash
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
+  # THE ONE PROBE THAT HAS TO BE PUBLIC, and it is worth saying why since every
+  # other one lives outside this repository.
+  #
+  # It answers whether the macOS trust anchors can be listed with cgo disabled.
+  # That is the second reason this project is written in Go - cross-compiling
+  # without a C toolchain - and it has been an open question since before the
+  # first line of code, because nobody had a Mac. CI has one, and CI only sees
+  # what is committed, so this probe cannot live with the others.
+  #
+  # CGO_ENABLED IS SET EXPLICITLY AND THAT IS THE WHOLE POINT. The default on a
+  # developer machine is 1, so a probe built without saying so would answer a
+  # question nobody asked.
+  #
+  # IT BLOCKS, and the failure it blocks on is narrow: no route enumerated
+  # anything. That result would refute the expectation written into the probe
+  # and weaken a decision already taken, which is exactly the kind of thing that
+  # should stop a pipeline rather than sit in a log. If it turns out to depend
+  # on the runner's keychain rather than on the platform, it becomes reporting
+  # only - with the reason written down, not silently.
+  macos-anchors:
+    name: macos trust anchors
+    runs-on: macos-latest
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: set up go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: enumerate without cgo
+        shell: bash
+        working-directory: tools/probe-macos-truststore
+        env:
+          CGO_ENABLED: "0"
+        run: go run .
+
   release-build:
     name: release build, static
     runs-on: ubuntu-latest
