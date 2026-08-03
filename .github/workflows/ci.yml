@@ -36,7 +36,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # macOS joined on 2026-08-03. Until then every claim about this program
+        # on macOS rested on cross-compilation, which proves it builds and
+        # nothing about whether it runs. It does NOT answer the open question
+        # about enumerating the macOS trust store without cgo - that needs a
+        # probe, and the probe lives outside this repository.
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -109,6 +114,57 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: bash tools/coverage-gate.sh
+
+  # WHY THE CHECK SET IS NARROW, and this is measured rather than cautious.
+  #
+  # The default set was run over the whole tree on 2026-08-03 and produced
+  # exactly one finding: a suggestion to convert one struct to another instead
+  # of writing the fields out. That is a simplification, not a defect - and the
+  # rule this project follows is to enable the checks that catch a SILENT
+  # ERROR and skip the ones with an opinion about style, because a guard that
+  # shouts about correct code is switched off within a week.
+  #
+  # SA is "outright wrong or pointless", U is unused code. Both classes were
+  # measured over the tree and reported nothing, so this enters CI without a
+  # backlog of pre-existing noise to grandfather in.
+  #
+  # Pinned to a version rather than @latest. A tool that changes under us turns
+  # an unrelated commit red, which teaches people that red means nothing.
+  static-analysis:
+    name: staticcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: set up go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: staticcheck
+        shell: bash
+        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 -checks=SA,U ./...
+
+  # A security-adjacent tool with no dependencies still runs on a standard
+  # library that gets advisories of its own, and the Go version is pinned in
+  # go.mod - so the thing most likely to carry a known vulnerability here is
+  # the toolchain, not somebody else's package.
+  #
+  # Neither this nor staticcheck enters go.mod. They are separate processes run
+  # over our code, which is the category where a licence has no bearing on what
+  # we ship - the release binary links neither of them.
+  vulnerabilities:
+    name: known vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: set up go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        shell: bash
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
   release-build:
     name: release build, static
