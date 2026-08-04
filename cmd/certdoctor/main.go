@@ -89,6 +89,7 @@ func liveEnvironment() environment {
 		// elsewhere, by identifier and never by the name of a group. A question
 		// that fails comes back unknown, and the report says so.
 		privilege: privilege.Level(),
+		lookupEnv: os.LookupEnv,
 		writeFile: output.WriteFile,
 	}
 }

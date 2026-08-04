@@ -38,6 +38,11 @@ type environment struct {
 	now        func() time.Time
 	platform   report.Platform
 	privilege  report.PrivilegeLevel
+	// lookupEnv is how L0 sees this machine's environment. It is a seam for the
+	// same reason the clock is: a test reading the real environment would pass
+	// or fail depending on whose machine it ran on, and the one variable that
+	// would change its mind is exactly the sort this layer reports.
+	lookupEnv func(name string) (string, bool)
 	// writeFile puts a finished report at a path the user named. It is the only
 	// way this package can reach the file system.
 	writeFile func(path string, data []byte) error
@@ -102,7 +107,7 @@ func walk(ctx context.Context, o *options, env environment, shown targetReductio
 		Budget:      budget(o.timeout),
 		LayerBudget: budget(o.probeTimeout),
 		Now:         env.now,
-		Layers:      run.NotImplemented(),
+		Layers:      run.Wire(env.lookupEnv),
 		Notes:       pendingNotes(shown, env.privilege),
 	})
 	if err != nil {
@@ -227,11 +232,15 @@ func readTarget(o *options) (targetReduction, *redact.Redaction, *fault) {
 // nothing. An empty notes array claims the run held nothing back, so these are
 // not decoration: they are what will make that claim mean something when it is
 // finally true.
+// The blanket note that used to head this list is GONE, and its removal is the
+// point rather than a tidy-up. It read "no diagnostic layer is implemented yet",
+// which stopped being true the day L0 started reading this machine's context. A
+// note kept past the arrival of the thing it announced is worse than no note:
+// it teaches people that notes are boilerplate, and then the one that mattered
+// goes unread with the rest. What it used to say is now COUNTED rather than
+// asserted - the verdict names how many layers could not be assessed, and each
+// of those layers says so in its own row, with a reason.
 var standingNotes = []report.Note{
-	{
-		Kind:   report.NoteNotImplemented,
-		Detail: "no diagnostic layer is implemented yet, so nothing about this machine has been assessed",
-	},
 	{
 		Kind:   report.NoteNotImplemented,
 		Field:  "trust_matrix",

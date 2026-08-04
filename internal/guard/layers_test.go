@@ -85,6 +85,25 @@ var intraLayerEdges = map[string][]string{
 		"internal/core/layer",
 		"internal/core/exitcode",
 	},
+	// L0 builds findings and grades itself, so it needs the shape of a finding
+	// and the vocabulary of statuses. The arrow runs one way and cannot run
+	// back: neither report nor status knows a machine context exists.
+	//
+	// Why the assessment lives here at all, rather than in the orchestrator
+	// where no edge would be needed. Working a verdict out of evidence is the
+	// core's job - ADR7 - precisely so it can be tested on recorded evidence
+	// instead of on a broken machine. Moving it one floor up would buy a shorter
+	// list here and pay for it with the one rule that makes assessment testable.
+	//
+	// The alternative was for this package to declare its own variable type and
+	// let the orchestrator turn it into a finding. That needs no declaration and
+	// gives up more than it saves: a second description of a shape that is a
+	// frozen public contract, and the choice of source moved to a layer that
+	// never looked at the machine.
+	"internal/core/machine": {
+		"internal/core/report",
+		"internal/core/status",
+	},
 }
 
 // coreForbiddenStdlib keeps the core a pure function of evidence: no network, no

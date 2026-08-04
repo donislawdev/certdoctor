@@ -39,6 +39,21 @@ func invoke(args ...string) *harness {
 // whether that level was established, and a test cannot elevate the process it
 // runs in. The level arrives as a parameter for the same reason the clock does.
 func invokeAs(level report.PrivilegeLevel, args ...string) *harness {
+	return invokeIn(nil, level, args...)
+}
+
+// invokeIn is invokeAs with the environment L0 will read.
+//
+// A nil map is the ordinary case and means nothing is set. THE REAL ENVIRONMENT
+// IS NEVER CONSULTED HERE, and that is not caution: the variables L0 reports are
+// exactly the ones a developer machine behind a corporate proxy has set, so a
+// test that read them would pass here and fail there, or worse, print somebody's
+// internal proxy host into a test log.
+//
+// A name present with an empty value is a variable SET TO NOTHING, which is a
+// different fact from absent and is one of the three states L0 has to tell
+// apart.
+func invokeIn(env map[string]string, level report.PrivilegeLevel, args ...string) *harness {
 	h := &harness{written: map[string][]byte{}}
 	h.code = guarded(context.Background(), args, environment{
 		stdout: &h.stdout,
@@ -52,6 +67,10 @@ func invokeAs(level report.PrivilegeLevel, args ...string) *harness {
 		now:       func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
 		platform:  report.Platform{OS: "testos", Arch: "testarch"},
 		privilege: level,
+		lookupEnv: func(name string) (string, bool) {
+			value, set := env[name]
+			return value, set
+		},
 		writeFile: func(path string, data []byte) error {
 			h.written[path] = data
 			return nil
@@ -302,11 +321,26 @@ func TestEveryLayerInTheDocumentAppearsInTheTerminalReport(t *testing.T) {
 // a Go map is randomised, so a renderer that walked one would reorder sections
 // between runs of identical input - and every test written as a single
 // comparison would still pass.
+// THE EMPTINESS CHECK IS NOT DECORATION AND IT WAS ADDED AFTER A MEASUREMENT.
+// Without it this test is satisfied by a program that prints NOTHING, because
+// two empty strings are equal. That is not hypothetical: the mutation that makes
+// the orchestrator walk its map instead of the registry produces rows in the
+// wrong order, the report validator refuses them, and the run ends with an
+// internal failure having written nothing at all. Sixteen silent runs agree
+// perfectly. Measured 2026-08-04 over thirty runs of the register: the mutation
+// was caught 13 times out of 30 - a guard that is a coin toss is not a guard,
+// and it read as a clean pass in the summary line.
 func TestTheSameRunProducesTheSameBytes(t *testing.T) {
 	for _, format := range []string{"terminal", "json"} {
 		first := invoke("https://example.com", "--format", format).stdout.String()
+		if first == "" {
+			t.Fatalf("a %s run produced no report at all, so comparing it with another proves nothing", format)
+		}
 		for attempt := 0; attempt < 15; attempt++ {
 			again := invoke("https://example.com", "--format", format).stdout.String()
+			if again == "" {
+				t.Fatalf("a %s run produced no report at all, so comparing it with another proves nothing", format)
+			}
 			if again != first {
 				t.Fatalf("two %s runs of the same command line differ", format)
 			}
@@ -668,5 +702,107 @@ func TestARedactedRunMasksTheTargetHostAndSaysSo(t *testing.T) {
 	}
 	if !strings.Contains(plain, `"redacted": false`) {
 		t.Error("no stronger mode was asked for and the report claims names were masked")
+	}
+}
+
+// TestNoEnvironmentCredentialReachesEitherSurface is the end this whole ordering
+// was built for, checked on the real command line rather than on a fixture.
+//
+// The masking function was written BEFORE the layer that produces values to
+// mask, deliberately, so that no version of this program ever existed with code
+// that printed a password. This is the test that says the arrangement worked:
+// the value goes in raw at the layer, and neither surface shows it.
+func TestNoEnvironmentCredentialReachesEitherSurface(t *testing.T) {
+	const secret = "s3kret"
+	env := map[string]string{"HTTPS_PROXY": "http://someone:" + secret + "@proxy.example:8080"}
+
+	for _, format := range []string{"terminal", "json"} {
+		h := invokeIn(env, report.PrivilegeUnknown, "https://example.com", "--format", format)
+		everything := h.stdout.String() + h.stderr.String()
+
+		if strings.Contains(everything, secret) {
+			t.Errorf("%s: the password from the environment reached the output", format)
+		}
+		if !strings.Contains(everything, "proxy.example") {
+			t.Errorf("%s: the proxy host was removed as well, and the host is the diagnosis", format)
+		}
+	}
+}
+
+// TestTheDisabledCertificateCheckSurvivesTheWholeWay is the other direction, and
+// it is the one that has already been got wrong once.
+//
+// A masking rule asking whether the NAME contained a credential word answered yes
+// for NODE_TLS_REJECT_UNAUTHORIZED, because "unauthorized" contains "auth". What
+// it removed was the value 0 - that is, the entire finding: certificate checking
+// switched off. A rule that deletes the diagnosis to protect a secret that was
+// never there is worse than no rule.
+func TestTheDisabledCertificateCheckSurvivesTheWholeWay(t *testing.T) {
+	h := invokeIn(map[string]string{"NODE_TLS_REJECT_UNAUTHORIZED": "0"},
+		report.PrivilegeUnknown, "https://example.com", "--json")
+
+	if !strings.Contains(h.stdout.String(), `"value": "0"`) {
+		t.Error("the value of NODE_TLS_REJECT_UNAUTHORIZED did not survive to the report")
+	}
+}
+
+// TestTheTwoSpellingsAreShownSeparately keeps the report from folding away a
+// difference that decides behaviour.
+//
+// curl honours the http proxy variable in lower case only. On Linux the two
+// spellings are separate variables, so one being set and the other not is the
+// whole answer to "why does curl ignore my proxy" - and a report that merged
+// them into one row would be true and useless at once.
+func TestTheTwoSpellingsAreShownSeparately(t *testing.T) {
+	out := invokeIn(map[string]string{"HTTP_PROXY": "http://upper.example:8080"},
+		report.PrivilegeUnknown, "https://example.com").stdout.String()
+
+	if !strings.Contains(out, "HTTP_PROXY is set") {
+		t.Error("the upper case spelling was set and the report does not say so")
+	}
+	if !strings.Contains(out, "http_proxy is not set") {
+		t.Error("the lower case spelling was not set and the report does not say so - the two were merged")
+	}
+}
+
+// TestAVariableSetToNothingReadsDifferentlyFromAnAbsentOne covers the state that
+// the value column cannot show, because both print nothing.
+//
+// An empty HTTPS_PROXY switches proxying off in some tools while an absent one
+// leaves them to look elsewhere. If the report showed those identically, the
+// person reading it would be told the opposite of what their machine does.
+func TestAVariableSetToNothingReadsDifferentlyFromAnAbsentOne(t *testing.T) {
+	out := invokeIn(map[string]string{"NO_PROXY": ""},
+		report.PrivilegeUnknown, "https://example.com").stdout.String()
+
+	if !strings.Contains(out, "NO_PROXY is set to nothing") {
+		t.Error("a variable set to nothing is not distinguishable in the report")
+	}
+	if !strings.Contains(out, "no_proxy is not set") {
+		t.Error("an absent variable stopped being reported as absent")
+	}
+}
+
+// TestTheVerdictCountsTheLayersItCouldNotAssess replaces a claim with a count.
+//
+// The report used to carry a standing note saying no layer was implemented. That
+// sentence stopped being true the day L0 started reading this machine, and a note
+// kept past the arrival of the thing it announced teaches people to skip notes.
+// What it said is now worked out from the rows themselves.
+func TestTheVerdictCountsTheLayersItCouldNotAssess(t *testing.T) {
+	h := invoke("https://example.com")
+	out := h.stdout.String()
+
+	if !strings.Contains(out, "7 of 8 diagnostic layers could not be assessed.") {
+		t.Errorf("the verdict does not count the unassessed layers:\n%.400s", out)
+	}
+	if strings.Contains(out, "Nothing could be assessed yet.") {
+		t.Error("the verdict still says nothing was assessed, and L0 assesses this machine")
+	}
+	if strings.Contains(out, "no diagnostic layer is implemented yet") {
+		t.Error("the standing note outlived the thing it announced")
+	}
+	if h.code != exitcode.Inconclusive {
+		t.Errorf("the run ended with %d, want %d - one layer passing does not make a run conclusive", h.code, exitcode.Inconclusive)
 	}
 }

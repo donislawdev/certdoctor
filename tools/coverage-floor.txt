@@ -46,6 +46,7 @@ github.com/donislawdev/certdoctor/internal/adapter/render 79
 github.com/donislawdev/certdoctor/internal/app/run 100
 github.com/donislawdev/certdoctor/internal/core/exitcode 100
 github.com/donislawdev/certdoctor/internal/core/layer 94
+github.com/donislawdev/certdoctor/internal/core/machine 100
 github.com/donislawdev/certdoctor/internal/core/redact 94
 github.com/donislawdev/certdoctor/internal/core/report 87
 github.com/donislawdev/certdoctor/internal/core/status 82

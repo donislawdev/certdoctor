@@ -6,15 +6,17 @@ certdoctor walks the whole path in one command - DNS, proxy and PAC, TCP, TLS - 
 
 ---
 
-## Status: early development. Nothing is diagnosed yet.
+## Status: early development. One layer of eight does anything.
 
-**There is a `certdoctor` command, it prints a complete report, and every line of that report says it could not assess anything.** You get the real artefact - a one sentence verdict, a row for each of the eight layers, and the notes saying what was held back - except that every layer reads `UNKNOWN` with a reason, the verdict is that nothing could be assessed yet, and the run exits with the code that means exactly that.
+**There is a `certdoctor` command, it prints a complete report, and seven of its eight rows say they could not assess anything.** You get the real artefact - a one sentence verdict, a row for each of the eight layers, and the notes saying what was held back. The verdict counts the layers it could not assess, and the run exits with the code that means exactly that.
 
 That is the point rather than an accident. `UNKNOWN` is the correct status for "not built yet", so there is no moment in this program's life at which it claims to have checked something it has not.
 
-What the repository holds today is the whole path from the command line to the exit code: argument parsing, the orchestrator and its time budget, the terminal renderer, `--json` with a schema and a validator that runs before anything is printed, `--out` with an atomic write, and the credential masking that must exist before any layer dumps its first environment variable. Under that sits the foundation - the status vocabulary, the exit code table, the appearance dictionary, and the guards that police all three - plus CI.
+**The one layer that does work is `L0`, the context layer.** It reports twenty-one environment variables that decide what this machine trusts and what it proxies - both spellings of each proxy variable separately, because they are not the same variable everywhere - saying of each whether it is set, set to nothing, or absent. Credentials are removed from the values on the way out, always, whether or not you pass `--redact`.
 
-**What is missing is every diagnostic layer.** Nothing resolves a name, opens a socket, reads a certificate or looks inside a trust store. **There is nothing useful to install and nothing useful to run.**
+What the repository holds besides that is the whole path from the command line to the exit code: argument parsing, the orchestrator and its time budget, the terminal renderer, `--json` with a schema and a validator that runs before anything is printed, `--out` with an atomic write, and the credential masking. Under that sits the foundation - the status vocabulary, the exit code table, the appearance dictionary, and the guards that police all three - plus CI.
+
+**What is missing is the other seven layers.** Nothing resolves a name, opens a socket, reads a certificate or looks inside a trust store. **There is still nothing useful to install and nothing useful to run.**
 
 Everything below describes what certdoctor is being built to do, not what it does today. This section will be removed when the first release ships. Until then, treat every capability on this page as a plan.
 
