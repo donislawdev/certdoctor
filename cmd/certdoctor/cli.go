@@ -13,6 +13,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/app/run"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
@@ -64,12 +65,12 @@ func execute(ctx context.Context, args []string, env environment) exitcode.Code 
 // diagnose is the path that produces a report: work out what to look at, walk
 // the layers, check the result against its own rules, render it, deliver it.
 func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
-	origin, reduced, targetFault := reduceTarget(o.target)
+	shown, redaction, targetFault := readTarget(o)
 	if targetFault != nil {
 		return complain(env, targetFault)
 	}
 
-	finished, walkFault := walk(ctx, o, env, origin, reduced)
+	finished, walkFault := walk(ctx, o, env, shown, redaction)
 	if walkFault != nil {
 		return complain(env, walkFault)
 	}
@@ -91,18 +92,18 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 // no arrangement of this file in which an unchecked report reaches a renderer. A
 // verdict that disagrees with the rows beneath it is an internal failure, never
 // something to print and let the reader sort out.
-func walk(ctx context.Context, o *options, env environment, origin string, reduced targetReduction) (report.Report, *fault) {
+func walk(ctx context.Context, o *options, env environment, shown targetReduction, redaction *redact.Redaction) (report.Report, *fault) {
 	finished, err := run.Execute(ctx, run.Options{
 		Tool:        report.Tool{Name: toolName, Version: toolVersion},
-		Target:      origin,
+		Target:      shown.target,
 		Platform:    env.platform,
 		Privilege:   env.privilege,
-		Redacted:    o.redact,
+		Redaction:   redaction,
 		Budget:      budget(o.timeout),
 		LayerBudget: budget(o.probeTimeout),
 		Now:         env.now,
 		Layers:      run.NotImplemented(),
-		Notes:       pendingNotes(o, reduced, env.privilege),
+		Notes:       pendingNotes(shown, env.privilege),
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -141,36 +142,45 @@ func complain(env environment, f *fault) exitcode.Code {
 	return f.code
 }
 
-// targetReduction records what was taken out of the URL before it was printed.
+// targetReduction records what the report shows as the target and whether
+// anything was taken out of it.
 type targetReduction struct {
-	origin string
+	target string
 	// removed says something was dropped, so the report can say so rather than
 	// present a shortened URL as if it were the whole one.
 	removed bool
 }
 
-// reduceTarget parses the URL and reduces it to its origin.
+// readTarget validates the URL, masks it, and hands back the redaction the whole
+// run will use.
 //
-// WHY THE REPORT DOES NOT CARRY THE WHOLE URL YET. The target is itself capable
-// of being a secret: user info, a token in the query string, a session
-// identifier in the path. The rule is that credentials are masked always, with
-// or without --redact, and the function that does that masking is deliberately
-// scheduled before the layer that would first produce something to mask. Until
-// it exists, printing the URL as given would create exactly the code that
-// ordering was meant to prevent - code that writes a password out.
+// THE TARGET IS MASKED BY POSITION, NOT BY NAME, and it is the only thing in
+// this program that is. Everything else arrives from the machine, where a value
+// that looks ordinary usually is. This one is typed by a person under time
+// pressure and can be a secret in three places at once: user info, a token in
+// the query, a session identifier in the path. There is no name to ask about, so
+// the rule is positional - user info replaced, every query VALUE replaced with
+// its name kept, the whole path reduced to one marker, the fragment dropped
+// without one because it never reaches a server.
 //
-// The origin is not masking. It is the removal of every part that could carry a
-// credential, which is strictly narrower than what masking will allow later.
-// The report says it was reduced.
+// It used to be reduced to its origin instead, with the report saying so, for
+// the length of time between the entry point existing and the masking function
+// being wired to it. That is over: the origin was strictly narrower than this,
+// so the change can only show more.
+//
+// The redaction is built here because this is where the mode is known, and it is
+// ONE instance for the whole report - a pseudonym has to mean the same machine
+// wherever it appears.
 //
 // The scheme is required rather than guessed. Guessing would have to cope with
 // "localhost:8080", which the URL parser reads as the scheme "localhost" and
 // the opaque part "8080", and a tool that quietly diagnoses a different address
 // than the one asked about is worse than one that asks for a clearer question.
-func reduceTarget(raw string) (string, targetReduction, *fault) {
+func readTarget(o *options) (targetReduction, *redact.Redaction, *fault) {
+	raw := o.target
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return "", targetReduction{}, usageFault(
+		return targetReduction{}, nil, usageFault(
 			"%q is not a URL certdoctor can read: %v. Give one like https://example.com", raw, err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
@@ -180,12 +190,12 @@ func reduceTarget(raw string) (string, targetReduction, *fault) {
 		// ticket came straight back out, unescaped, into somebody's console and
 		// their log. The parser refuses ASCII control characters, which is why
 		// this looked safe - it does not refuse the ones above them.
-		return "", targetReduction{}, usageFault(
+		return targetReduction{}, nil, usageFault(
 			"%q has no http:// or https:// scheme. Without one a host name cannot be told from a port number, so write it out, for example %q",
 			raw, "https://"+raw)
 	}
 	if parsed.Host == "" {
-		return "", targetReduction{}, usageFault("%q names no host. Give one like https://example.com", raw)
+		return targetReduction{}, nil, usageFault("%q names no host. Give one like https://example.com", raw)
 	}
 
 	// The host is lower cased and nothing else is. Names in DNS are case
@@ -194,13 +204,19 @@ func reduceTarget(raw string) (string, targetReduction, *fault) {
 	// run, a difference --compare would report where nothing had changed, and
 	// two different pseudonyms under --redact for one host. A path and a query
 	// are case sensitive and are left exactly as they were.
-	origin := parsed.Scheme + "://" + strings.ToLower(parsed.Host)
-	dropped := parsed.User != nil ||
-		parsed.RawQuery != "" ||
-		parsed.Fragment != "" ||
-		(parsed.Path != "" && parsed.Path != "/")
+	//
+	// It is done HERE rather than inside the masking rule, so that the rule for
+	// the target stays the rule the owner approved and nothing else.
+	parsed.Host = strings.ToLower(parsed.Host)
 
-	return origin, targetReduction{origin: origin, removed: dropped}, nil
+	mode := redact.Credentials
+	if o.redact {
+		mode = redact.Everything
+	}
+	redaction := redact.New(mode)
+
+	shown, removed := redaction.Target(parsed.String())
+	return targetReduction{target: shown, removed: removed}, redaction, nil
 }
 
 // standingNotes are the shortfalls this build has no matter what it is asked to
@@ -230,7 +246,7 @@ var standingNotes = []report.Note{
 
 // pendingNotes is the standing list plus whatever this particular invocation
 // added to it.
-func pendingNotes(o *options, reduced targetReduction, privilege report.PrivilegeLevel) []report.Note {
+func pendingNotes(shown targetReduction, privilege report.PrivilegeLevel) []report.Note {
 	notes := append([]report.Note{}, standingNotes...)
 	// An unknown privilege level is a legitimate answer and it is also the one
 	// that makes a later comparison of two reports meaningless, so it is never
@@ -244,18 +260,12 @@ func pendingNotes(o *options, reduced targetReduction, privilege report.Privileg
 			Detail: "the operating system did not answer when asked what privilege this process runs with, so the level is left unknown rather than guessed",
 		})
 	}
-	if reduced.removed {
+	if shown.removed {
 		notes = append(notes, report.Note{
-			Kind:   report.NoteReduced,
-			Field:  "run.target",
-			Detail: "the target is shown as its origin only, because the masking that would let a path or a query string be printed safely is not built yet",
-		})
-	}
-	if o.redact {
-		notes = append(notes, report.Note{
-			Kind:   report.NoteNoEffect,
-			Field:  "--redact",
-			Detail: "nothing in this report can be masked yet, so the option changed nothing",
+			Kind:  report.NoteReduced,
+			Field: "run.target",
+			Detail: "parts of the target were masked out of the report: user info, the values of any query parameters, " +
+				"and the path, which is shown as a marker because deciding which path segments are identifiers would take a threshold nobody has measured",
 		})
 	}
 	return notes

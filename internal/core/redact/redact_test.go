@@ -602,3 +602,100 @@ func TestCarriedCredentialsAgreesWithWhatMaskingActuallyRemoves(t *testing.T) {
 		}
 	}
 }
+
+// TestASettingNamedAsASecretLosesItsWholeValue is the rule ADR19 added, and the
+// hole it closes is one a reader has to be shown to believe.
+//
+// Text masks BY NAME. Hand it a bare value and the name is gone, so the rule
+// that would have fired has nothing to fire on: masking PROXY_PASSWORD's value
+// on its own leaves it exactly as it was. The layer that reports environment
+// variables hands over the value alone - it must, because gluing NAME=VALUE back
+// together is what deleted a finding once already - so without this the first
+// variable named as a secret walks into the report.
+func TestASettingNamedAsASecretLosesItsWholeValue(t *testing.T) {
+	r := New(Credentials)
+
+	// The shape of the hole, stated first: the value alone survives Text.
+	if got := r.Text("hunter2"); got != "hunter2" {
+		t.Fatalf("this test no longer demonstrates anything: Text alone returned %q", got)
+	}
+
+	masked, carried := r.SettingValue("PROXY_PASSWORD", "hunter2")
+	if strings.Contains(masked, "hunter2") {
+		t.Errorf("the value of a setting named as a secret survived: %q", masked)
+	}
+	if !carried {
+		t.Error("a credential was removed and the finding does not record that anything was")
+	}
+}
+
+// TestAVariableWhoseNameOnlyContainsACredentialWordKeepsItsValue is D8 checked
+// through the door ADR19 opened.
+//
+// The value 0 in NODE_TLS_REJECT_UNAUTHORIZED is certificate verification
+// switched off in Node - the entire finding. An earlier rule deleted it because
+// "unauthorized" contains "auth". Passing the name beside the value must not
+// bring that back: the name is read in segments, and none of node, tls, reject
+// or unauthorized is anybody's credential word.
+func TestAVariableWhoseNameOnlyContainsACredentialWordKeepsItsValue(t *testing.T) {
+	r := New(Credentials)
+
+	masked, carried := r.SettingValue("NODE_TLS_REJECT_UNAUTHORIZED", "0")
+	if masked != "0" {
+		t.Errorf("the whole finding was masked away: %q", masked)
+	}
+	if carried {
+		t.Error("a value that is not a secret was reported as having carried one")
+	}
+}
+
+// TestAValueMaskedOnItsOwnStillLosesItsUserInfo keeps the new rule from
+// replacing the old ones. A proxy URL carries its credential inside a structure
+// that names it, so it has to be caught whatever the setting is called.
+func TestAValueMaskedOnItsOwnStillLosesItsUserInfo(t *testing.T) {
+	r := New(Credentials)
+
+	masked, carried := r.SettingValue("HTTPS_PROXY", "http://user:hunter2@proxy.corp:8080")
+	if strings.Contains(masked, "hunter2") {
+		t.Errorf("a password inside a proxy URL survived: %q", masked)
+	}
+	if !strings.Contains(masked, "proxy.corp") {
+		t.Errorf("the host was taken out under the floor mode, which is not what it is for: %q", masked)
+	}
+	if !carried {
+		t.Error("user info was removed and the finding does not say a credential was there")
+	}
+}
+
+// TestASettingSetToNothingCarriesNothing covers the degenerate but legal input.
+// HTTPS_PROXY= with no value switches proxying off in some tools, so it is a
+// real state - and nothing can have been removed from it, whatever its name.
+func TestASettingSetToNothingCarriesNothing(t *testing.T) {
+	for _, name := range []string{"HTTPS_PROXY", "PROXY_PASSWORD"} {
+		masked, carried := New(Credentials).SettingValue(name, "")
+		if masked != "" {
+			t.Errorf("%s set to nothing came back as %q", name, masked)
+		}
+		if carried {
+			t.Errorf("%s set to nothing was reported as having carried a credential", name)
+		}
+	}
+}
+
+// TestPseudonymisingAHostIsNotReportedAsRemovingACredential is the separation
+// that makes the flag in the report mean something.
+//
+// Under the stronger mode a proxy host becomes a pseudonym, so the value changes
+// - but nothing secret was taken out of it. A report saying this variable
+// carried a credential would be a false accusation drawn from the fact that
+// --redact was on.
+func TestPseudonymisingAHostIsNotReportedAsRemovingACredential(t *testing.T) {
+	masked, carried := New(Everything).SettingValue("HTTPS_PROXY", "http://proxy.corp:8080")
+
+	if strings.Contains(masked, "proxy.corp") {
+		t.Errorf("the stronger mode left the host in place: %q", masked)
+	}
+	if carried {
+		t.Errorf("masking a host was reported as removing a credential: %q", masked)
+	}
+}

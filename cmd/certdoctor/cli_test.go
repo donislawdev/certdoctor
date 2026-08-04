@@ -611,3 +611,62 @@ func TestEveryFlagIsDocumentedAndEveryDocumentedFlagExists(t *testing.T) {
 		}
 	}
 }
+
+// TestTheTargetIsMaskedRatherThanReducedToItsOrigin is the expiry of the rule
+// that stood in for masking while masking was not wired to anything.
+//
+// The report used to show scheme, host and port and drop everything else, saying
+// so in a note. That was strictly narrower than masking, deliberately, so that
+// no code existed which could print a password. Now the whole URL is shown with
+// the dangerous parts taken out by POSITION: user info replaced, every query
+// value replaced with its name kept, the path reduced to one marker.
+//
+// The parameter NAME surviving is half the diagnosis - "your URL carries a
+// token" can be said without saying the token - and it is the half a reduction
+// to the origin threw away.
+func TestTheTargetIsMaskedRatherThanReducedToItsOrigin(t *testing.T) {
+	out := invoke("https://example.com/session/abc123?token=xyz789", "--json").stdout.String()
+
+	for _, secret := range []string{"abc123", "xyz789", "session"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("%q reached the report", secret)
+		}
+	}
+	if !strings.Contains(out, "token") {
+		t.Error("the name of the query parameter was dropped, and that name is half the diagnosis")
+	}
+	if !strings.Contains(out, "example.com") {
+		t.Error("the host was removed without --redact having been asked for")
+	}
+	if !strings.Contains(out, "[redacted]") {
+		t.Errorf("nothing in the target was marked as removed:\n%s", out)
+	}
+}
+
+// TestARedactedRunMasksTheTargetHostAndSaysSo is the flag doing something at
+// last. It used to be accepted and announced as having changed nothing, which is
+// the only honest thing to say about an option that does not work - and that
+// note has to disappear the day it starts working, or notes become decoration.
+func TestARedactedRunMasksTheTargetHostAndSaysSo(t *testing.T) {
+	out := invoke("https://internal.corp.example/", "--redact", "--json").stdout.String()
+
+	if strings.Contains(out, "internal.corp.example") {
+		t.Error("--redact was asked for and the host is still in the report")
+	}
+	if !strings.Contains(out, `"redacted": true`) {
+		t.Error("names were masked and the report does not say so")
+	}
+	if strings.Contains(out, "no_effect") {
+		t.Error("--redact now changes the report and still claims it changed nothing")
+	}
+
+	// The other side: without the flag the host stays, because the floor removes
+	// credentials and nothing else.
+	plain := invoke("https://internal.corp.example/", "--json").stdout.String()
+	if !strings.Contains(plain, "internal.corp.example") {
+		t.Error("the host was masked without --redact, which is not what the floor does")
+	}
+	if !strings.Contains(plain, `"redacted": false`) {
+		t.Error("no stronger mode was asked for and the report claims names were masked")
+	}
+}

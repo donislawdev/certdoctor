@@ -459,6 +459,43 @@ func maskQueryValues(query string) string {
 	return strings.Join(parts, "&")
 }
 
+// SettingValue masks the value of one setting, TAKING ITS NAME AS A SEPARATE
+// ARGUMENT, and reports whether anything was removed.
+//
+// WHY THIS EXISTS AT ALL, because Text looks like it should be enough. Text
+// masks BY NAME: the rules for name=value pairs and for query parameters ask
+// whether the name standing next to a value says the value is a secret. Hand
+// Text a bare value and that name is gone, so the rule has nothing to work on.
+// A layer reporting environment variables hands over the value ALONE - it must,
+// see below - so PROXY_PASSWORD would have gone into the report untouched. It
+// does not happen today only because no variable on the current list is itself
+// named as a secret: every credential in them sits inside a structure that
+// carries its own name, a URL's user info or a -Dtrustpassword= inside
+// JAVA_TOOL_OPTIONS. That is a property of a list, not of the code.
+//
+// WHY THE NAME IS A SECOND ARGUMENT RATHER THAN GLUED TO THE VALUE. Gluing them
+// back into NAME=VALUE is the defect that cost a whole finding once already:
+// asking whether the joined string contains a credential word answered yes for
+// NODE_TLS_REJECT_UNAUTHORIZED, because "unauthorized" contains "auth", and the
+// value it deleted - 0 - was the entire diagnosis. Segment matching fixed the
+// question; passing the two apart keeps the layer from ever building the string
+// that made it dangerous. Both halves are needed and neither relies on the
+// other.
+//
+// A value that is set to nothing has nothing to remove, whatever its name says.
+func (r *Redaction) SettingValue(name, value string) (masked string, carried bool) {
+	if value == "" {
+		return "", false
+	}
+	if namesASecret(settingName(name), settingSecretWords) {
+		return Placeholder, true
+	}
+	// Asked of the RAW value and asked FIRST, so that pseudonymising a host
+	// under the stronger mode is never mistaken for removing a credential.
+	carried = r.CarriedCredentials(value)
+	return r.Text(value), carried
+}
+
 // CarriedCredentials reports whether masking would remove anything from s.
 //
 // The fact that a proxy URL carries credentials is itself diagnostic - it is

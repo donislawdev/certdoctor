@@ -8,6 +8,7 @@ import (
 
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
+	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/status"
 )
@@ -498,5 +499,179 @@ func TestALayerReceivesTheDeadlineItWasGiven(t *testing.T) {
 		if d > 10*time.Minute {
 			t.Errorf("layer %d was given %s, so the hour long layer budget beat the two second run budget", i, d)
 		}
+	}
+}
+
+// proxyFinding is a layer answer carrying the shape this whole slice exists for:
+// an environment variable whose ordinary corporate value holds a password.
+func proxyFinding(value string) Answer {
+	return Answer{
+		Status: status.Pass,
+		Findings: []report.Finding{{
+			Kind:    report.FindingEnvironmentVariable,
+			Summary: "HTTPS_PROXY is set",
+			Source:  report.SourceDetected,
+			EnvironmentVariable: &report.EnvironmentVariable{
+				Name:  "HTTPS_PROXY",
+				Value: value,
+				Set:   true,
+			},
+		}},
+	}
+}
+
+// TestTheOrchestratorMasksTheEvidenceALayerHandsBack is rule 17 finally being
+// enforced rather than merely available.
+//
+// The masking function has existed with a full set of property tests and two
+// fuzz targets since before any layer could produce a thing to mask, and for all
+// that time NOTHING CALLED IT. This is the test that makes the difference
+// between "the tool exists" and "the rule is enforced".
+//
+// The options carry no redaction at all, on purpose: a forgotten assignment has
+// to mask less, never nothing.
+func TestTheOrchestratorMasksTheEvidenceALayerHandsBack(t *testing.T) {
+	o := baseOptions(newClock())
+	if o.Redaction != nil {
+		t.Fatal("this test is meant to run with no redaction supplied")
+	}
+	o.Layers[layer.Context] = func(context.Context) Answer {
+		return proxyFinding("http://user:hunter2@proxy.corp:8080")
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+
+	row := rowFor(t, r, layer.Context)
+	if len(row.Findings) != 1 {
+		t.Fatalf("the finding did not survive the walk: %#v", row.Findings)
+	}
+	variable := row.Findings[0].EnvironmentVariable
+	if strings.Contains(variable.Value, "hunter2") {
+		t.Errorf("a password reached the report: %q", variable.Value)
+	}
+	if !variable.CarriedCredentials {
+		t.Error("a credential was removed and the finding does not record that there was one")
+	}
+	// The floor removes credentials and leaves names alone, so the host stays.
+	// Without this the test would also pass against a redaction that deleted
+	// everything, which is not the behaviour anybody wants.
+	if !strings.Contains(variable.Value, "proxy.corp") {
+		t.Errorf("the host was removed under the floor mode: %q", variable.Value)
+	}
+	if r.Run.Redacted {
+		t.Error("the report claims names were masked and no stronger mode was asked for")
+	}
+}
+
+// TestTheStrongerModeReachesTheEvidenceAndIsAnnounced is the other half. The
+// flag in the report has to describe what actually happened to the evidence,
+// because the two are read together by whoever compares two reports.
+func TestTheStrongerModeReachesTheEvidenceAndIsAnnounced(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Context] = func(context.Context) Answer {
+		return proxyFinding("http://proxy.corp:8080")
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+
+	variable := rowFor(t, r, layer.Context).Findings[0].EnvironmentVariable
+	if strings.Contains(variable.Value, "proxy.corp") {
+		t.Errorf("the stronger mode did not reach the evidence: %q", variable.Value)
+	}
+	if variable.CarriedCredentials {
+		t.Error("pseudonymising a host was recorded as removing a credential")
+	}
+	if !r.Run.Redacted {
+		t.Error("names were masked and the report does not say so")
+	}
+}
+
+// TestALayerKeepsTheEvidenceItHandedOver closes the defect that copying the
+// findings slice does NOT close.
+//
+// Copying a slice copies the pointers in it, so the body a layer handed over is
+// the same object the report holds. Masking through that pointer rewrites the
+// layer's own evidence underneath it. It is harmless while every layer is
+// stateless and it is a defect the moment one is not - and by then it would look
+// like the masking was wrong rather than the aliasing.
+func TestALayerKeepsTheEvidenceItHandedOver(t *testing.T) {
+	const raw = "http://user:hunter2@proxy.corp:8080"
+	answer := proxyFinding(raw)
+
+	o := baseOptions(newClock())
+	o.Layers[layer.Context] = func(context.Context) Answer { return answer }
+
+	if _, err := Execute(context.Background(), o); err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+	if got := answer.Findings[0].EnvironmentVariable.Value; got != raw {
+		t.Errorf("the assembly path rewrote the layer's own evidence: %q", got)
+	}
+}
+
+// TestMaskingReachesTheDetailLineAndTheNotes covers the two pieces of free text
+// that are not findings. Neither carries evidence today, and the first one that
+// quotes a host will be written by somebody who is not thinking about masking.
+func TestMaskingReachesTheDetailLineAndTheNotes(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Notes = []report.Note{{
+		Kind:   report.NoteNotImplemented,
+		Detail: "nothing reads https://proxy.corp:8080 yet",
+	}}
+	o.Layers[layer.Context] = func(context.Context) Answer {
+		return Answer{
+			Status: status.Warn,
+			Reason: status.ReasonAccessDenied,
+			Detail: "could not read https://proxy.corp:8080",
+		}
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+	if detail := rowFor(t, r, layer.Context).Detail; strings.Contains(detail, "proxy.corp") {
+		t.Errorf("a host survived in a detail line: %q", detail)
+	}
+	if strings.Contains(r.Notes[0].Detail, "proxy.corp") {
+		t.Errorf("a host survived in a note: %q", r.Notes[0].Detail)
+	}
+}
+
+// TestMaskingAFindingWithNoEnvironmentBodyDoesNotReachIntoIt covers a branch
+// that CANNOT be reached through Execute today, and says why it is there.
+//
+// A finding of the one declared kind must carry its body - the orchestrator
+// refuses it otherwise, before masking ever sees it. So this guard is for the
+// second kind: a certificate finding in L4 will have no environment variable in
+// it, and without the check masking would dereference nil and take the whole run
+// down. Reaching it needs the function called directly, which is why this test
+// does that rather than pretending a walk could produce it.
+func TestMaskingAFindingWithNoEnvironmentBodyDoesNotReachIntoIt(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Credentials)
+
+	finding := report.Finding{
+		Kind:    report.FindingKind("certificate"),
+		Summary: "the chain was signed by a CA local to https://proxy.corp:8080",
+		Source:  report.SourceDetected,
+	}
+	o.maskFinding(&finding)
+
+	if finding.EnvironmentVariable != nil {
+		t.Error("masking invented a body for a finding that had none")
+	}
+	// The envelope is still masked, because the summary is what every surface
+	// renders without knowing the kind.
+	if strings.Contains(finding.Summary, "proxy.corp") && o.Redaction.Mode() == redact.Everything {
+		t.Errorf("the summary was left unmasked: %q", finding.Summary)
 	}
 }

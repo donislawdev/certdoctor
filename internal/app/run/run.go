@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/layer"
+	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/status"
 )
@@ -75,7 +76,19 @@ type Options struct {
 	Target    string
 	Platform  report.Platform
 	Privilege report.PrivilegeLevel
-	Redacted  bool
+
+	// Redaction takes the credentials out of everything the layers produced.
+	//
+	// IT LIVES HERE AND NOT IN A LAYER - ADR18. One instance per report, because
+	// a pseudonym has to mean the same machine everywhere in it, and it is used
+	// on the assembly path only: a Redaction holds unsynchronised maps, and the
+	// fan-out this program is heading for lives INSIDE a layer, so two branches
+	// calling it would race on a map. That is a fatal error in Go, not a wrong
+	// value, and recover cannot catch it.
+	//
+	// Nil is allowed and means the floor: credentials are removed, names are
+	// not. A forgotten assignment therefore masks less, never nothing.
+	Redaction *redact.Redaction
 
 	// Budget limits the whole walk. Zero or less means no limit, which is what
 	// the flag documents.
@@ -108,6 +121,9 @@ func Execute(ctx context.Context, o Options) (report.Report, error) {
 	if o.Now == nil {
 		return report.Report{}, fmt.Errorf("no clock was supplied to the run")
 	}
+	if o.Redaction == nil {
+		o.Redaction = redact.New(redact.Credentials)
+	}
 
 	started := o.Now()
 	results := make([]report.LayerResult, 0, len(layer.All))
@@ -137,7 +153,60 @@ func Execute(ctx context.Context, o Options) (report.Report, error) {
 		}
 	}
 
+	// MASKED HERE, ONCE, AFTER EVERY LAYER HAS ANSWERED. This is the whole of
+	// ADR18 in one line: probes hand back raw evidence and this is the only
+	// place that takes credentials out of it. Doing it per layer would put the
+	// masking package inside the code that is going to become concurrent.
+	o.mask(results, notes)
+
 	return o.assemble(started, results, notes, exceeded), nil
+}
+
+// mask rewrites in place everything the layers produced, and nothing else.
+//
+// The verdict is deliberately not touched. It is built from counts of statuses
+// and carries no text from anybody's machine, and the report validator
+// recomputes it and compares - so a masked sentence would be a difference with
+// no cause.
+func (o Options) mask(results []report.LayerResult, notes []report.Note) {
+	for i := range results {
+		results[i].Detail = o.Redaction.Text(results[i].Detail)
+		for j := range results[i].Findings {
+			o.maskFinding(&results[i].Findings[j])
+		}
+	}
+	// Notes carry no evidence today - they are written here and by the entry
+	// point. They go through anyway, because the first note that quotes a path
+	// or a host will be written by somebody who is not thinking about masking.
+	for i := range notes {
+		notes[i].Detail = o.Redaction.Text(notes[i].Detail)
+	}
+}
+
+// maskFinding takes the credentials out of one finding.
+//
+// THE BODY IS REPLACED RATHER THAN WRITTEN THROUGH, and that is not tidiness.
+// Copying the findings slice copies the POINTERS in it, so the body a layer
+// handed over is the same object the report holds. Masking through that pointer
+// would rewrite the layer's own evidence underneath it - harmless while layers
+// are stateless, and a defect that appears the day one is not.
+func (o Options) maskFinding(finding *report.Finding) {
+	finding.Summary = o.Redaction.Text(finding.Summary)
+	if finding.EnvironmentVariable == nil {
+		return
+	}
+
+	variable := *finding.EnvironmentVariable
+	// A variable that is not set has no value and cannot have carried anything,
+	// which is a rule the report validator enforces from the other side.
+	if variable.Set {
+		// The NAME goes in beside the value and is never glued to it - ADR19
+		// and D8. Masking the value alone would leave a secret whose name is the
+		// only thing saying it is one, and gluing them back together is what
+		// deleted the finding in NODE_TLS_REJECT_UNAUTHORIZED=0.
+		variable.Value, variable.CarriedCredentials = o.Redaction.SettingValue(variable.Name, variable.Value)
+	}
+	finding.EnvironmentVariable = &variable
 }
 
 // remaining is how much of the overall budget is left, or a negative duration
@@ -280,7 +349,10 @@ func (o Options) assemble(started time.Time, results []report.LayerResult, notes
 			Target:         o.Target,
 			PrivilegeLevel: o.Privilege,
 			Platform:       o.Platform,
-			Redacted:       o.Redacted,
+			// Read off the redaction rather than carried as a second field, so
+			// that the report cannot claim one thing while the masking did
+			// another.
+			Redacted:       o.Redaction.Mode() == redact.Everything,
 			BudgetExceeded: exceeded,
 		},
 		Verdict: report.Assess(results),
