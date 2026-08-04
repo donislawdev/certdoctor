@@ -46,7 +46,61 @@ func TestNoRealAccountNameReachesTheRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the module could not be read: %v", err)
 	}
-	requireNoViolations(t, checkPersonalData(tr.root, tr.files), "an account name in a path")
+	requireNoViolations(t, checkPersonalData(tr.root, scannedFiles(t, tr)), "an account name in a path")
+}
+
+// scannedFiles is the module's Go sources plus the fuzzing corpus.
+//
+// THE CORPUS IS HERE BECAUSE IT IS THE LIKELIEST PLACE FOR THIS TO GO WRONG NEXT.
+// The failure this guard exists for happened in fixtures for the masking
+// function; its seed corpus sits one directory away, is tracked, is published,
+// and until this was added no scan in the repository read it. A seed grows from
+// a crash or gets pasted in from a real report, which is exactly how a real host
+// name or home directory would arrive - by the ordinary route rather than by
+// carelessness.
+func scannedFiles(t *testing.T, tr tree) []sourceFile {
+	t.Helper()
+	files := append([]sourceFile{}, tr.files...)
+
+	corpus, err := corpusFiles(tr.root)
+	if err != nil {
+		t.Fatalf("the fuzzing corpus could not be listed: %v", err)
+	}
+	for _, rel := range corpus {
+		files = append(files, sourceFile{rel: rel})
+	}
+	return files
+}
+
+// TestTheCorpusIsActuallyRead is the coverage half, and it is what the pass above
+// cannot give on its own.
+//
+// The corpus is clean, so a scan that skipped it entirely would report exactly
+// what a scan that read it reports. Without this, dropping the corpus back out
+// would leave every test in this file green.
+func TestTheCorpusIsActuallyRead(t *testing.T) {
+	tr, err := loadModule()
+	if err != nil {
+		t.Fatalf("the module could not be read: %v", err)
+	}
+
+	corpus, err := corpusFiles(tr.root)
+	if err != nil {
+		t.Fatalf("the fuzzing corpus could not be listed: %v", err)
+	}
+	if len(corpus) == 0 {
+		t.Fatal("no seed corpus is in the tree, so this test proves nothing - if the corpus was removed on purpose, this check goes with it")
+	}
+
+	scanned := map[string]bool{}
+	for _, sf := range scannedFiles(t, tr) {
+		scanned[sf.rel] = true
+	}
+	for _, rel := range corpus {
+		if !scanned[rel] {
+			t.Errorf("%s is a tracked seed and the personal data scan does not read it", rel)
+		}
+	}
 }
 
 // TestThePersonalDataGuardCanFail is the canary, and on a clean tree it carries

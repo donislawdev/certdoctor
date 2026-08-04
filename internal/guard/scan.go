@@ -240,3 +240,50 @@ func sortViolations(violations []Violation) []Violation {
 	})
 	return violations
 }
+
+// corpusFiles lists every seed in a fuzzing corpus in this module.
+//
+// WHY THIS EXISTS SEPARATELY FROM EVERY OTHER WALK. Seed corpora live under
+// testdata, which the module walk skips by name - rightly, because that is also
+// where the fixtures with planted violations live, and scanning those would make
+// every guard fail on its own canaries. The effect was that four TRACKED,
+// PUBLISHED files were read by nothing at all: not the module walk, which skips
+// the directory, and not the prose list, which does not name them.
+//
+// A corpus is the likeliest published place for somebody else's data to appear.
+// It grows from crashes, and a seed added by hand from a real bug report is the
+// ordinary way it grows - so the day one carries a real host name or a home
+// directory, it arrives by the normal route rather than by a mistake.
+//
+// A WALK IS SAFE HERE AND A LIST WOULD NOT BE, which is the opposite of the
+// decision made for the prose files. That list is explicit because a walk would
+// have to know what git ignores. Nothing under a corpus directory is ignored -
+// the corpus is in the repository on purpose, so that an ordinary test run
+// replays everything ever found - and it gains files without anybody editing a
+// list, which is exactly when a hand written list stops covering the tree.
+func corpusFiles(root string) ([]string, error) {
+	var found []string
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("walking %s: %w", path, err)
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return fmt.Errorf("locating %s: %w", path, relErr)
+		}
+		rel = filepath.ToSlash(rel)
+		if !strings.Contains(rel, "/testdata/fuzz/") {
+			return nil
+		}
+		found = append(found, rel)
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	sort.Strings(found)
+	return found, nil
+}

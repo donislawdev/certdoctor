@@ -85,17 +85,24 @@ func TestTheRepositoryIsInEnglish(t *testing.T) {
 		t.Fatalf("the module could not be read: %v", err)
 	}
 
-	requireNoViolations(t, checkLanguage(tr.root, scannedPaths(tr)), "a Polish word")
+	requireNoViolations(t, checkLanguage(tr.root, scannedPaths(t, tr)), "a Polish word")
 }
 
-// scannedPaths is everything this guard reads: the module's Go sources plus the
-// tracked files the module walk does not reach.
-func scannedPaths(tr tree) []string {
+// scannedPaths is everything this guard reads: the module's Go sources, the
+// tracked files the module walk does not reach, and the fuzzing corpus.
+func scannedPaths(t *testing.T, tr tree) []string {
+	t.Helper()
 	paths := make([]string, 0, len(tr.files)+len(proseFiles))
 	for _, sf := range tr.files {
 		paths = append(paths, sf.rel)
 	}
-	return append(paths, proseFiles...)
+	paths = append(paths, proseFiles...)
+
+	corpus, err := corpusFiles(tr.root)
+	if err != nil {
+		t.Fatalf("the fuzzing corpus could not be listed: %v", err)
+	}
+	return append(paths, corpus...)
 }
 
 // TestTheScanCoversTheProseFilesAndTheGoSources proves both halves are actually
@@ -112,7 +119,7 @@ func TestTheScanCoversTheProseFilesAndTheGoSources(t *testing.T) {
 	}
 
 	covered := map[string]bool{}
-	for _, rel := range scannedPaths(tr) {
+	for _, rel := range scannedPaths(t, tr) {
 		covered[rel] = true
 	}
 	for _, rel := range proseFiles {
@@ -122,6 +129,22 @@ func TestTheScanCoversTheProseFilesAndTheGoSources(t *testing.T) {
 	}
 	if !covered["internal/core/redact/redact.go"] {
 		t.Error("the Go sources are not in the scan, so the half where this last went wrong is unread")
+	}
+
+	// THE THIRD HALF, ADDED AFTER IT WAS FOUND MISSING. The corpus is tracked
+	// and published and was read by neither of the two above: the module walk
+	// skips testdata by name, and the prose list does not mention it.
+	corpus, err := corpusFiles(tr.root)
+	if err != nil {
+		t.Fatalf("the fuzzing corpus could not be listed: %v", err)
+	}
+	if len(corpus) == 0 {
+		t.Fatal("no seed corpus is in the tree, so this test proves nothing about whether one would be scanned - if the corpus was removed on purpose, this check goes with it")
+	}
+	for _, rel := range corpus {
+		if !covered[rel] {
+			t.Errorf("%s is a tracked seed and no scan reads it", rel)
+		}
 	}
 }
 
