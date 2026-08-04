@@ -520,8 +520,9 @@ func proxyFinding(value string) Answer {
 	}
 }
 
-// TestTheOrchestratorMasksTheEvidenceALayerHandsBack is rule 17 finally being
-// enforced rather than merely available.
+// TestTheOrchestratorMasksTheEvidenceALayerHandsBack is the promise that
+// credentials never reach a report, finally enforced rather than merely
+// available.
 //
 // The masking function has existed with a full set of property tests and two
 // fuzz targets since before any layer could produce a thing to mask, and for all

@@ -25,7 +25,7 @@ const controlSecret = "CONTROLSECRETVALUE"
 
 func FuzzUserInfoNeverSurvives(f *testing.F) {
 	seeds := []struct{ user, secret, host, tail string }{
-		{"user", "haslo", "proxy.corp.example:8080", ""},
+		{"user", "hunter2", "proxy.corp.example:8080", ""},
 		{"bob", "s3cr3t", "proxy", "/a/b?page=2"},
 		{"DOMAIN\\bob", "p@ss", "proxy", ""},
 		{"token", "x", "registry.example", "/v1"},
@@ -88,7 +88,7 @@ func FuzzUserInfoNeverSurvives(f *testing.F) {
 // nobody would know which one to believe.
 func FuzzMaskingIsIdempotent(f *testing.F) {
 	for _, seed := range []string{
-		"http://user:haslo@proxy:8080",
+		"http://user:hunter2@proxy:8080",
 		"https://api.example/v1?token=abc&key=def&page=2",
 		"-Djavax.net.ssl.trustStorePassword=changeit",
 		"Proxy-Authorization: Basic ZGVtbzpzZWNyZXQ=",
@@ -98,14 +98,14 @@ func FuzzMaskingIsIdempotent(f *testing.F) {
 		"",
 		"\x00\x01 not text at all",
 		"https://[::1]:8443/x and https://[::1]/y",
-		"C:\\Users\\Testtt\\AppData\\Roaming\\npm",
+		"C:\\Users\\jdoe\\AppData\\Roaming\\npm",
 	} {
 		f.Add(seed)
 	}
 
 	f.Fuzz(func(t *testing.T, text string) {
 		for _, mode := range []Mode{Credentials, Everything} {
-			r := New(mode, "Testtt", "bob")
+			r := New(mode, "jdoe", "bob")
 			once := r.Text(text)
 			twice := r.Text(once)
 			if once != twice {

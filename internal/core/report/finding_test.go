@@ -34,7 +34,8 @@ func TestEveryFindingKindIsCompletelyDeclared(t *testing.T) {
 
 // TestEverySourceIsCompletelyDeclared covers the other closed list in this file.
 //
-// It matters more than it looks. Source is rule 18 written into the data - it
+// It matters more than it looks. Source is the rule that every claim about
+// somebody else's machine carries where it came from, written into the data - it
 // says how strong a claim is - so a source outside the four would let a report
 // present something worked out as something observed.
 func TestEverySourceIsCompletelyDeclared(t *testing.T) {

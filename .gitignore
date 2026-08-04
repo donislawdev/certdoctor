@@ -1,8 +1,13 @@
 # certdoctor - .gitignore
 #
+# NOTE ON REFERENCES: this file used to point at the planning documents by
+# number - "see docs/16" and so on. Those documents are the ones this very
+# file keeps out of the repository, so every such pointer was an instruction
+# to read something the reader cannot have. Reasons are stated here instead.
+#
 # WARNING: this file is what keeps the Polish planning documents out of the public
 # repository. Removing an entry from the "planning documents" block below does not
-# just add files to the repo - it publishes internal notes. See docs/16 ADR2.
+# just add files to the repo - it publishes internal notes.
 
 # --- Planning documents. Polish, internal, never published. ---
 /docs/
@@ -21,7 +26,7 @@
 # Consequence worth knowing before removing this line: a public clone now has no
 # record of what was measured and why, beyond the comments in the code. Putting
 # the line back does not merely add a file - it publishes the whole measurement
-# log at once. See docs/00 section F.
+# log at once.
 /CHANGELOG-DEV.md
 
 # --- Development tooling and measurement rigs. Never shipped, never a CI dependency. ---
@@ -64,7 +69,7 @@
 # sitting next to it and "git add -A" would commit it.
 *.mutbak
 
-# --- Testbed material generated at startup, NEVER committed (docs/16 ADR5) ---
+# --- Testbed material generated at startup, NEVER committed ---
 # Private keys and certificates for the fake corporate CA are produced when the
 # testbed starts. Committing a private key trips secret scanners and is permanent
 # in git history.
@@ -79,7 +84,7 @@
 # WARNING - do NOT add a blanket pattern for "anything that looks generated".
 # The testbed's expected verdicts are the guards' golden data. They MUST stay in
 # the repository. Excluding them turns every end-to-end guard green with nothing
-# left to check against. See docs/16 ADR5 and docs/21.
+# left to check against.
 !/testbed/**/expected/**
 
 # --- Local editor and OS state ---

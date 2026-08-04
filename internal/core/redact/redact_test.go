@@ -18,8 +18,8 @@ func TestTheDocumentedLeaksAreClosed(t *testing.T) {
 	}{
 		{
 			name:    "the corporate proxy value from the plan",
-			input:   "http://user:haslo@proxy.corp.example:8080",
-			gone:    "haslo",
+			input:   "http://user:hunter2@proxy.corp.example:8080",
+			gone:    "hunter2",
 			survive: "proxy.corp.example:8080",
 		},
 		{
@@ -113,7 +113,7 @@ func TestAPathToATrustStoreIsNotTreatedAsASecret(t *testing.T) {
 func TestAHostIsMaskedEvenWhenACredentialStandsInFrontOfIt(t *testing.T) {
 	leaks := []string{"proxy.corp.example", "registry.internal"}
 	cases := []string{
-		"http://user:haslo@proxy.corp.example:8080",
+		"http://user:hunter2@proxy.corp.example:8080",
 		"https://sometoken@registry.internal/v1",
 		// The already masked shape, because a report gets masked again by
 		// whoever quotes it.
@@ -162,8 +162,8 @@ func TestATargetKeepsItsShapeAndLosesItsSecrets(t *testing.T) {
 	}{
 		{"https://example.com", "https://example.com", false},
 		{"https://example.com/", "https://example.com/", false},
-		{"http://user:haslo@proxy.corp.example:8080", "http://[redacted]@proxy.corp.example:8080", true},
-		{"https://api.firma.pl/session/abc123", "https://api.firma.pl/[redacted]", true},
+		{"http://user:hunter2@proxy.corp.example:8080", "http://[redacted]@proxy.corp.example:8080", true},
+		{"https://api.example.com/session/abc123", "https://api.example.com/[redacted]", true},
 		{"https://api.example/v1?token=X&format=json", "https://api.example/[redacted]?token=[redacted]&format=[redacted]", true},
 		{"https://example.com/#top", "https://example.com/", true},
 		{"https://example.com?a=1", "https://example.com?a=[redacted]", true},
@@ -198,7 +198,7 @@ func TestAMaskedTargetStillHidesTheHostUnderTheStrongerMode(t *testing.T) {
 // than one hand.
 func TestMaskingIsIdempotent(t *testing.T) {
 	inputs := []string{
-		"http://user:haslo@proxy:8080",
+		"http://user:hunter2@proxy:8080",
 		"https://api.example/v1?token=abc&key=def",
 		"-Dpassword=secret -Duser=bob",
 		"https://internal.corp.example/a/b?sig=zzz",
@@ -314,16 +314,23 @@ func TestOnlyTheStrongerModeTouchesNames(t *testing.T) {
 // TestTheCallersSensitiveNamesGoUnderTheStrongerMode covers the one thing no
 // pattern finds: the account name the process runs as, which shows up in every
 // path on the machine.
+//
+// THE NAME IN THIS FIXTURE IS INVENTED AND HAS TO STAY INVENTED. This repository
+// is published, so a fixture is read by strangers - and the property under test
+// holds for ANY name, so a real one would prove nothing extra while putting
+// somebody's account name in front of everybody who clones this. The names a
+// fixture may use are listed in internal/guard/personal_test.go, and a guard
+// refuses the rest.
 func TestTheCallersSensitiveNamesGoUnderTheStrongerMode(t *testing.T) {
-	const path = `C:\Users\Testtt\AppData\Roaming\npm\.npmrc`
+	const path = `C:\Users\jdoe\AppData\Roaming\npm\.npmrc`
 
-	if got := New(Everything, "Testtt").Text(path); strings.Contains(got, "Testtt") {
+	if got := New(Everything, "jdoe").Text(path); strings.Contains(got, "jdoe") {
 		t.Errorf("the account name survived --redact: %q", got)
 	}
-	if got := New(Everything, "Testtt").Text(path); !strings.Contains(got, "npm") {
+	if got := New(Everything, "jdoe").Text(path); !strings.Contains(got, "npm") {
 		t.Errorf("--redact removed more of the path than the name: %q", got)
 	}
-	if got := New(Credentials, "Testtt").Text(path); got != path {
+	if got := New(Credentials, "jdoe").Text(path); got != path {
 		t.Errorf("the default mode touched a path: %q", got)
 	}
 }
