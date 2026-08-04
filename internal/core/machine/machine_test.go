@@ -31,17 +31,22 @@ func findingNamed(t *testing.T, result Result, name string) report.Finding {
 	return report.Finding{}
 }
 
-// TestTheApprovedListIsExactlyTwentyOneDistinctNames pins the list.
+// TestTheApprovedListIsExactlyTwentyThreeDistinctNames pins the list.
 //
-// The number is approved rather than convenient - D11 raised it from nineteen
-// when the two container hints joined - so a variable appearing or vanishing is
-// a decision, not an edit. The duplicate half matters just as much and is
+// The number is approved rather than convenient. D11 raised it from nineteen to
+// twenty-one when the container hints joined, and to twenty-three when the two
+// variables that decide whether OTHER variables on this list take effect joined
+// - so a variable appearing or vanishing is a decision, not an edit. Two more
+// turned up while the sources were being read and were left out, because reading
+// documentation is not a way to grow an approved list.
+//
+// The duplicate half matters just as much and is
 // invisible by eye at this length: the same name twice produces two identical
 // rows in every report, which reads as the two spellings of a variable rather
 // than as a mistake.
-func TestTheApprovedListIsExactlyTwentyOneDistinctNames(t *testing.T) {
-	if len(variables) != 21 {
-		t.Fatalf("the approved list holds twenty-one variables, this one holds %d", len(variables))
+func TestTheApprovedListIsExactlyTwentyThreeDistinctNames(t *testing.T) {
+	if len(variables) != 23 {
+		t.Fatalf("the approved list holds twenty-three variables, this one holds %d", len(variables))
 	}
 	seen := map[string]bool{}
 	for _, name := range variables {
@@ -278,7 +283,7 @@ func TestWithNoWayToLookTheAnswerIsUnknownAndNotPass(t *testing.T) {
 // reads like a measurement.
 func TestTheDetailCountsRatherThanClaims(t *testing.T) {
 	detail := Read(fixed(nil)).Detail
-	if !strings.Contains(detail, "21") {
+	if !strings.Contains(detail, "23") {
 		t.Errorf("the detail line %q does not say how many variables were read", detail)
 	}
 }

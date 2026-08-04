@@ -70,6 +70,17 @@ var variables = []string{
 	// all on a Windows curl using the system store, and the person who ran it
 	// waits for an effect that is never coming.
 	"CURL_CA_BUNDLE",
+	// CURL_SSL_BACKEND picks the TLS backend when curl was built with support
+	// for more than one, by case insensitive name - the manual page lists
+	// gnutls, mbedtls, openssl, rustls, schannel and wolfssl - and a name that
+	// is not built in leaves curl on its default. Same document and section,
+	// read 2026-08-04.
+	//
+	// IT IS ON THIS LIST BECAUSE IT DECIDES WHETHER THE VARIABLE ABOVE MEANS
+	// ANYTHING. Setting this to schannel is what makes CURL_CA_BUNDLE inert. A
+	// report showing the bundle as set without showing this would be stating a
+	// fact and implying an effect that may not exist.
+	"CURL_SSL_BACKEND",
 
 	// requests, Advanced Usage, read 2026-08-04:
 	// https://github.com/psf/requests/blob/main/docs/user/advanced.rst
@@ -98,6 +109,19 @@ var variables = []string{
 	// 0. The name is now read in segments and is handed to the masking rules
 	// beside the value rather than glued to it - D8 and ADR19.
 	"NODE_TLS_REJECT_UNAUTHORIZED",
+	// NODE_USE_ENV_PROXY set to 1 makes Node read HTTP_PROXY, HTTPS_PROXY and
+	// NO_PROXY at startup and route its requests accordingly. Added in v24.0.0
+	// and v22.21.0 - same document, read 2026-08-04.
+	//
+	// IT IS ON THIS LIST FOR THE SAME REASON AS CURL_SSL_BACKEND: it decides
+	// whether three variables already reported above reach this runtime at all.
+	// Without it, "HTTPS_PROXY is set" is a true row that says nothing about
+	// whether the Node process everyone is complaining about ever saw it.
+	//
+	// Node marks this one as under active development, so the behaviour may
+	// move. That is a reason to report the setting and claim nothing about the
+	// effect, which is what this layer does with all of them.
+	"NODE_USE_ENV_PROXY",
 
 	// JVM Tool Interface specification, section "JAVA_TOOL_OPTIONS", read
 	// 2026-08-04:
