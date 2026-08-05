@@ -70,19 +70,37 @@ var fileReadAllowlist = map[string]bool{
 	"internal/guard/scan.go": true,
 }
 
-// fileOpeningFunctions are the standard library calls that turn a path into
-// something readable.
+// fileReachingCalls are the standard library calls that make a path touch a
+// filesystem, by package.
 //
 // os.Stat and friends are here too, and that is deliberate: a UNC path is
 // reached by ASKING ABOUT IT, not only by opening it. The 21 seconds measured
 // in that neighbouring project were spent on an existence check.
-var fileOpeningFunctions = map[string]bool{
-	"Open":     true,
-	"ReadFile": true,
-	"ReadDir":  true,
-	"Stat":     true,
-	"Lstat":    true,
-	"OpenFile": true,
+//
+// path/filepath IS THE SECOND ENTRY AND IT WAS ADDED BECAUSE THIS GUARD HAD
+// A HOLE THE SHAPE OF THE NEXT THING WE WERE ABOUT TO WRITE. The list used to
+// ask only whether the package was os, so filepath.EvalSymlinks - which walks
+// every component of a path on disk, and is exactly what the file port's new
+// resolver is built on - went past it without a word. Found on 2026-08-05 while
+// widening that port, not by a red run.
+//
+// Deliberately absent from the filepath entry: Clean, Join, Abs, Base and the
+// rest. They rearrange text. Only these four go and look.
+var fileReachingCalls = map[string]map[string]bool{
+	"os": {
+		"Open":     true,
+		"ReadFile": true,
+		"ReadDir":  true,
+		"Stat":     true,
+		"Lstat":    true,
+		"OpenFile": true,
+	},
+	"filepath": {
+		"EvalSymlinks": true,
+		"Walk":         true,
+		"WalkDir":      true,
+		"Glob":         true,
+	},
 }
 
 // TestNothingOutsideTheAllowlistReachesTheNetwork is inviolable rule 16 turned
@@ -121,15 +139,20 @@ func TestTheReachGuardsCanFail(t *testing.T) {
 		files:      []sourceFile{loadFixture(t, "opens_a_path.go", "internal/core/probe/planted.go")},
 	}
 	violations := checkFileOpening(opening)
-	requireViolation(t, violations, "may not open a path")
+	requireViolation(t, violations, "may not reach a path")
 
-	// BOTH SHAPES, AND THIS HALF WAS PAID FOR BY THE MUTATION REGISTER. Dropping
-	// Stat from the list of watched calls left every test in this file green,
-	// because the only fixture read a file and none of them asked about one. The
-	// 21 seconds in the review this rule comes from were spent on an existence
-	// check, so the shape that hurts most was the shape nothing covered.
+	// ALL THREE SHAPES, AND THE MIDDLE ONE WAS PAID FOR BY THE MUTATION REGISTER.
+	// Dropping Stat from the list of watched calls left every test in this file
+	// green, because the only fixture read a file and none of them asked about
+	// one. The 21 seconds in the review this rule comes from were spent on an
+	// existence check, so the shape that hurts most was the shape nothing
+	// covered.
 	requireViolation(t, violations, "os.ReadFile")
 	requireViolation(t, violations, "os.Stat")
+	// The third was paid for the cheaper way, by noticing before writing the
+	// code: the file port's resolver is built on this exact call, and until
+	// 2026-08-05 this scanner could not see it.
+	requireViolation(t, violations, "filepath.EvalSymlinks")
 }
 
 // TestAnAllowlistedFileMayReach is the other side of both rules. A guard that
@@ -223,12 +246,13 @@ func checkFileOpening(tr tree) []Violation {
 				return true
 			}
 			pkg, ok := selector.X.(*ast.Ident)
-			if !ok || pkg.Name != "os" || !fileOpeningFunctions[selector.Sel.Name] {
+			if !ok || !fileReachingCalls[pkg.Name][selector.Sel.Name] {
 				return true
 			}
 			violations = append(violations, Violation{sf.rel, sf.fset.Position(call.Pos()).Line, fmt.Sprintf(
-				"%s may not open a path with os.%s - a path from somebody else's configuration can be a UNC path, "+
-					"and opening one is a connection the network guard cannot see (docs/14 section 3a)", sf.rel, selector.Sel.Name)})
+				"%s may not reach a path with %s.%s - a path from somebody else's configuration can be a UNC path or "+
+					"a link to one, and touching it is a connection the network guard cannot see (docs/14 section 3a)",
+				sf.rel, pkg.Name, selector.Sel.Name)})
 			return true
 		})
 	}

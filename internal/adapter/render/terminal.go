@@ -175,11 +175,39 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 // decides whether some tools proxy at all, and it must not survive only in the
 // machine readable document.
 func findingValue(finding report.Finding) string {
-	variable := finding.EnvironmentVariable
-	if variable == nil || !variable.Set {
-		return ""
+	switch {
+	case finding.EnvironmentVariable != nil:
+		variable := finding.EnvironmentVariable
+		if !variable.Set {
+			return ""
+		}
+		return variable.Value
+	case finding.NameResolution != nil:
+		return resolutionValue(*finding.NameResolution)
 	}
-	return variable.Value
+	return ""
+}
+
+// resolutionValue is the addresses, and the time it took to get them.
+//
+// THE RESPONSE CODE IS DELIBERATELY NOT HERE. It belongs in the summary, which
+// is the line every surface renders without knowing the kind - and a row saying
+// SERVFAIL only in a column this renderer happens to print would be invisible in
+// markdown the day that renderer exists.
+//
+// The duration rides along rather than getting a column of its own, because a
+// column invites reading down it. D13: two answers' times are not comparable -
+// whichever query went second benefited from whatever the first one warmed, and
+// that has now been measured twice.
+func resolutionValue(answer report.NameResolution) string {
+	value := strings.Join(answer.Addresses, ", ")
+	if answer.DurationMS <= 0 {
+		return value
+	}
+	if value == "" {
+		return fmt.Sprintf("%d ms", answer.DurationMS)
+	}
+	return fmt.Sprintf("%s  %d ms", value, answer.DurationMS)
 }
 
 // writeNotes prints what the run did not do. It prints the heading even when

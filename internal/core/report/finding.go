@@ -14,12 +14,16 @@ const (
 	// FindingEnvironmentVariable - one environment variable that decides trust
 	// or proxying, exactly as it was found.
 	FindingEnvironmentVariable FindingKind = "environment_variable"
+	// FindingNameResolution - one answer to "what does this name resolve to",
+	// seen through one of the two lenses L1 looks through.
+	FindingNameResolution FindingKind = "name_resolution"
 )
 
 // findingKindMeanings is the registry. The registry test refuses a kind that is
 // declared without one.
 var findingKindMeanings = map[FindingKind]string{
 	FindingEnvironmentVariable: "an environment variable that decides trust or proxying",
+	FindingNameResolution:      "one answer to what a name resolves to, through one named lens",
 }
 
 // AllFindingKinds lists every kind exactly once, in declaration order.
@@ -31,9 +35,55 @@ var findingKindMeanings = map[FindingKind]string{
 // one row per certificate field with the relationship glued into the key, or an
 // untyped blob - and then the schema stops saying anything. The case that breaks
 // the simpler shape is named and dated rather than imagined.
+// THE SECOND KIND ARRIVED AT L1, NOT AT L4, AND THAT IS WORTH KNOWING. The
+// note in docs/25 that anchored this machinery's justification named a
+// certificate in L4 as the case that would break a flat shape. A resolution
+// answer broke it first: it is a view, a resolver, a record type, a response
+// code, a list of addresses and a duration, and gluing that into a name-value
+// pair would put the relationship into the key.
 var AllFindingKinds = []FindingKind{
 	FindingEnvironmentVariable,
+	FindingNameResolution,
 }
+
+// ResolutionView says which of the two lenses an answer was seen through.
+//
+// EXACTLY TWO, AND THE THIRD ONE PEOPLE REACH FOR IS A MISTAKE - ADR23. In a
+// container the system view cannot be measured and has to be rebuilt from
+// resolv.conf and nsswitch.conf, which is tempting to call a third view. It is
+// not: it is still the system view, and how strongly we know it is what Source
+// already carries. Two fields saying the same thing drift apart the first time
+// one of them is edited.
+type ResolutionView string
+
+const (
+	// ViewSystem - asked the way the user's runtime would ask, so the answer is
+	// what their runtime gets.
+	ViewSystem ResolutionView = "system"
+	// ViewDirect - our own query to one named resolver, so the answer is what is
+	// actually in DNS.
+	ViewDirect ResolutionView = "direct"
+)
+
+var resolutionViewMeanings = map[ResolutionView]string{
+	ViewSystem: "asked the way this system asks, so it is what the user's runtime gets",
+	ViewDirect: "our own query to one named resolver, so it is what is actually in DNS",
+}
+
+// AllResolutionViews lists every view exactly once, in declaration order.
+var AllResolutionViews = []ResolutionView{ViewSystem, ViewDirect}
+
+// Valid reports whether v is one of the two.
+func (v ResolutionView) Valid() bool {
+	_, ok := resolutionViewMeanings[v]
+	return ok
+}
+
+// Meaning returns the English text for v, or the empty string outside the two.
+func (v ResolutionView) Meaning() string { return resolutionViewMeanings[v] }
+
+// String makes ResolutionView printable without a conversion at every call site.
+func (v ResolutionView) String() string { return string(v) }
 
 // Valid reports whether k is one of the declared kinds.
 func (k FindingKind) Valid() bool {
@@ -112,6 +162,56 @@ type Finding struct {
 
 	// EnvironmentVariable is set when Kind is FindingEnvironmentVariable.
 	EnvironmentVariable *EnvironmentVariable
+	// NameResolution is set when Kind is FindingNameResolution.
+	NameResolution *NameResolution
+}
+
+// NameResolution is the body of a name resolution finding: one answer, through
+// one lens, from one place.
+//
+// ONE FINDING PER ANSWER RATHER THAN ONE PER NAME. The direct view asks each
+// resolver separately and asks for A and AAAA separately, because that is where
+// the divergences live - a resolver that answers for one record type and not
+// the other is the "hangs thirty seconds, then works" class. Folding those into
+// one row would need a nested array inside the body and would cost the property
+// that makes findings work: that Summary is a sentence every surface can render
+// without knowing the kind.
+type NameResolution struct {
+	// Name is the name that was resolved.
+	Name string
+	// View says which lens this answer came through.
+	View ResolutionView
+	// Resolver is which resolver was asked. It is EMPTY FOR THE SYSTEM VIEW and
+	// that is not a gap: the operating system resolves the name and does not
+	// tell us which of its configured servers answered. Filling this in for the
+	// system view would be inventing the most useful part of the row.
+	Resolver string
+	// QueryType is the record type asked for - "A", "AAAA". Empty for the system
+	// view, which does not split by type and hands back a mixed list.
+	//
+	// It is a plain string rather than a closed registry on purpose: which types
+	// we ask for will grow, and a closed list here would be a promise to break.
+	QueryType string
+	// ResponseCode is what the resolver answered - NOERROR, NXDOMAIN, SERVFAIL,
+	// NODATA and whatever else arrives.
+	//
+	// EMPTY FOR THE SYSTEM VIEW, and this is the whole reason the direct view
+	// exists. net.Resolver collapses NXDOMAIN and SERVFAIL into one "no such
+	// host", so the system lens genuinely cannot tell us which happened - ADR24.
+	// It is not a closed registry because it comes off the wire: an unknown code
+	// is reported as itself rather than refused.
+	ResponseCode string
+	// Addresses is what came back, in a stable order.
+	Addresses []string
+	// DurationMS is how long this one answer took, in whole milliseconds.
+	//
+	// MILLISECONDS ARE DELIBERATELY COARSE. D13 forbids putting two views' times
+	// side by side as a comparison, because the second query always benefits
+	// from whatever the first warmed - measured twice, in S4 and again in S8.
+	// A unit that cannot express the difference between two warm cache hits is a
+	// unit that does not invite the comparison. It is the same unit the run's own
+	// duration uses, so the document has one way of saying "how long".
+	DurationMS int64
 }
 
 // EnvironmentVariable is the body of an environment variable finding.
@@ -158,6 +258,7 @@ type EnvironmentVariable struct {
 // registry test rather than a body nothing checks.
 var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingEnvironmentVariable: func(f Finding) bool { return f.EnvironmentVariable != nil },
+	FindingNameResolution:      func(f Finding) bool { return f.NameResolution != nil },
 }
 
 // Breach names what is wrong with a finding, or returns the empty string for one
@@ -198,9 +299,17 @@ func (f Finding) Breach() string {
 }
 
 // bodyBreach asks the body itself, once the envelope is known to be sound.
+//
+// The resolution body is handed the envelope's Source as well, and it is the
+// first rule in this file that spans the two. The reason is ADR23: how strongly
+// an answer is known lives in the envelope, WHICH LENS it came through lives in
+// the body, and one combination of the two is a claim nobody could have made.
 func (f Finding) bodyBreach() string {
-	if f.EnvironmentVariable != nil {
+	switch {
+	case f.EnvironmentVariable != nil:
 		return f.EnvironmentVariable.breach()
+	case f.NameResolution != nil:
+		return f.NameResolution.breach(f.Source)
 	}
 	return ""
 }
@@ -221,3 +330,65 @@ func (e EnvironmentVariable) breach() string {
 	}
 	return ""
 }
+
+// breach refuses the combinations that would state something nobody could have
+// established.
+//
+// THE THREE RULES ABOUT THE SYSTEM VIEW ARE THE POINT OF THIS FUNCTION. The
+// operating system answers a name and tells us nothing else: not which of its
+// resolvers replied, not which record type it asked for, not what response code
+// came back. Every one of those is the most useful column in the row, so every
+// one of them is what a plausible-looking mistake would fill in - and a filled
+// in row reads as a measurement rather than as an invention.
+func (n NameResolution) breach(source Source) string {
+	switch {
+	case n.Name == "":
+		return "carries a resolution answer for no name, which would render as a row with nothing in front of it"
+	case !n.View.Valid():
+		return fmt.Sprintf("was seen through the view %q, so it does not say which of the two lenses it came from", n.View)
+	case n.DurationMS < 0:
+		return fmt.Sprintf("says resolving %s took %d milliseconds", n.Name, n.DurationMS)
+	}
+
+	if n.View == ViewSystem {
+		switch {
+		case n.Resolver != "":
+			return fmt.Sprintf("is the system view of %s and names %s as the resolver that answered, which this system "+
+				"does not report", n.Name, n.Resolver)
+		case n.ResponseCode != "":
+			return fmt.Sprintf("is the system view of %s and carries the response code %s, which the system resolver "+
+				"does not hand back", n.Name, n.ResponseCode)
+		case n.QueryType != "":
+			return fmt.Sprintf("is the system view of %s and says it asked for %s, which that view does not split by",
+				n.Name, n.QueryType)
+		}
+	}
+
+	if n.View == ViewDirect {
+		switch {
+		case source == SourceDerived:
+			return fmt.Sprintf("is our own query for %s and says it was derived rather than observed", n.Name)
+		case n.Resolver == "":
+			return fmt.Sprintf("is a direct query for %s and cannot say which resolver was asked", n.Name)
+		case n.ResponseCode == "":
+			return fmt.Sprintf("is a direct query for %s and carries no response code, which is the one thing this "+
+				"view exists to establish", n.Name)
+		case n.QueryType == "":
+			return fmt.Sprintf("is a direct query for %s and does not say which record type it asked for", n.Name)
+		}
+	}
+
+	// A name that does not exist has no addresses. Reporting both is the kind of
+	// contradiction that renders as an ordinary row and gets believed.
+	if n.ResponseCode == ResponseNXDomain && len(n.Addresses) > 0 {
+		return fmt.Sprintf("says %s does not exist and lists %d address(es) for it", n.Name, len(n.Addresses))
+	}
+	return ""
+}
+
+// ResponseNXDomain is the one response code this package names, because it is
+// the one a rule here depends on.
+//
+// The rest are deliberately not constants: they arrive off the wire, the list is
+// not ours to close, and an unknown code is reported as itself.
+const ResponseNXDomain = "NXDOMAIN"

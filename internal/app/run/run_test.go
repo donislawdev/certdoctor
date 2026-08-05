@@ -676,3 +676,130 @@ func TestMaskingAFindingWithNoEnvironmentBodyDoesNotReachIntoIt(t *testing.T) {
 		t.Errorf("the summary was left unmasked: %q", finding.Summary)
 	}
 }
+
+// resolutionFinding is a direct view answer, the shape L1 will hand over.
+func resolutionFinding(name, resolver string) Answer {
+	return Answer{
+		Status: status.Pass,
+		Detail: "resolved one name two ways",
+		Findings: []report.Finding{{
+			Kind:    report.FindingNameResolution,
+			Summary: resolver + " answered NOERROR for " + name + " A",
+			Source:  report.SourceDetected,
+			NameResolution: &report.NameResolution{
+				Name:         name,
+				View:         report.ViewDirect,
+				Resolver:     resolver,
+				QueryType:    "A",
+				ResponseCode: "NOERROR",
+				Addresses:    []string{"192.0.2.10"},
+				DurationMS:   4,
+			},
+		}},
+	}
+}
+
+// TestEveryFindingKindSaysHowItIsMasked is the guard this table was built for.
+//
+// THE SHAPE IT REPLACED WOULD HAVE FAILED SILENTLY. Masking used to return early
+// when the one body it knew about was absent, so a second kind of finding would
+// have crossed the whole assembly path with its summary masked and its body
+// untouched - and nothing would have said so. That is inviolable rule 17 broken
+// by an omission rather than a decision, which is the only way it ever gets
+// broken.
+func TestEveryFindingKindSaysHowItIsMasked(t *testing.T) {
+	if len(maskedBodies) != len(report.AllFindingKinds) {
+		t.Fatalf("%d kinds of finding are declared and %d of them say how they are masked - one list was edited alone",
+			len(report.AllFindingKinds), len(maskedBodies))
+	}
+	for _, kind := range report.AllFindingKinds {
+		if _, declared := maskedBodies[kind]; !declared {
+			t.Errorf("%q is a declared kind of finding and nothing on the assembly path masks its body", kind)
+		}
+	}
+}
+
+// TestTheResolutionBodyGoesThroughMasking covers the second kind reaching the
+// masking path at all - the thing the table guarantees and the old shape did not.
+func TestTheResolutionBodyGoesThroughMasking(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything, "secret-resolver.corp")
+	o.Layers[layer.Resolution] = func(context.Context) Answer {
+		return resolutionFinding("example.com", "secret-resolver.corp")
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+
+	row := rowFor(t, r, layer.Resolution)
+	if len(row.Findings) != 1 {
+		t.Fatalf("the finding did not survive the walk: %#v", row.Findings)
+	}
+	answer := row.Findings[0].NameResolution
+	if answer == nil {
+		t.Fatal("the resolution body did not survive the walk")
+	}
+	if strings.Contains(answer.Resolver, "secret-resolver.corp") {
+		t.Errorf("a name handed over as sensitive reached the report through the resolution body: %q", answer.Resolver)
+	}
+	// The addresses stay. An address is the diagnosis, and a report that masked
+	// them would answer "what does this resolve to" with a pseudonym.
+	if len(answer.Addresses) != 1 || answer.Addresses[0] != "192.0.2.10" {
+		t.Errorf("the addresses were altered: %v", answer.Addresses)
+	}
+}
+
+// TestABareHostNameIsNotYetMaskedAndThatIsPinned records a KNOWN GAP rather than
+// leaving it to be discovered.
+//
+// Under --redact a host name is supposed to become a pseudonym, and it does for a
+// host sitting inside a URL - which is where every host in this report has lived
+// until now. A bare name in a field of its own goes through unchanged unless it
+// was handed to redact.New as sensitive, and that list is empty (OBS37).
+//
+// This is pinned the same way the mapped drive letter is pinned in the file port:
+// a guard believed to be wider than it is reads as permission to stop looking,
+// and the day somebody widens the reach, this test is what tells them the
+// behaviour changed on purpose rather than by accident.
+func TestABareHostNameIsNotYetMaskedAndThatIsPinned(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Resolution] = func(context.Context) Answer {
+		return resolutionFinding("internal.example.com", "192.0.2.53")
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+
+	answer := rowFor(t, r, layer.Resolution).Findings[0].NameResolution
+	if answer.Name != "internal.example.com" {
+		t.Errorf("a bare host name is now masked under --redact, giving %q. If that was intended, this test is the "+
+			"place to say so - and OBS37 is the entry to close", answer.Name)
+	}
+}
+
+// TestALayerKeepsTheResolutionEvidenceItHandedOver is the pointer rule applied to
+// the second body.
+//
+// Copying a findings slice copies the pointers in it, so masking through one
+// would rewrite the layer's own evidence underneath it. Harmless while layers are
+// stateless and a defect the day one is not - and the first body needed its own
+// test for exactly this, so the second does too.
+func TestALayerKeepsTheResolutionEvidenceItHandedOver(t *testing.T) {
+	handed := resolutionFinding("example.com", "secret-resolver.corp")
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything, "secret-resolver.corp")
+	o.Layers[layer.Resolution] = func(context.Context) Answer { return handed }
+
+	if _, err := Execute(context.Background(), o); err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+
+	if got := handed.Findings[0].NameResolution.Resolver; got != "secret-resolver.corp" {
+		t.Errorf("the layer's own evidence was rewritten underneath it: %q", got)
+	}
+}

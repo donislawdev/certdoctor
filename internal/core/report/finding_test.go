@@ -215,3 +215,178 @@ func TestTheZeroValuesAreNotAcceptedAnswers(t *testing.T) {
 		t.Error("the zero value of a source is accepted")
 	}
 }
+
+// TestEveryResolutionViewIsCompletelyDeclared closes the list at two.
+//
+// ADR23 decided there are two lenses and that "derived" is not a third one - it
+// is how strongly the system view is known, which Source already carries. The
+// registry is what stops a third view being added by somebody who has not read
+// that decision, because a third view would silently mean the same fact is
+// declared in two places.
+func TestEveryResolutionViewIsCompletelyDeclared(t *testing.T) {
+	if len(AllResolutionViews) != 2 {
+		t.Fatalf("%d views are declared - ADR23 says two, and a third is the mistake it exists to prevent",
+			len(AllResolutionViews))
+	}
+	seen := map[ResolutionView]bool{}
+	for _, view := range AllResolutionViews {
+		if seen[view] {
+			t.Errorf("%q appears twice in the list", view)
+		}
+		seen[view] = true
+		if !view.Valid() {
+			t.Errorf("%q is listed and does not validate", view)
+		}
+		if view.Meaning() == "" {
+			t.Errorf("%q is listed with no meaning", view)
+		}
+		if view.String() != string(view) {
+			t.Errorf("%q does not print as itself", view)
+		}
+	}
+	if (ResolutionView("derived")).Valid() {
+		t.Error("\"derived\" validates as a view - that is the third value ADR23 refused, and it belongs to Source")
+	}
+	if (ResolutionView("")).Valid() {
+		t.Error("the zero value validates, so a forgotten assignment would pass as a lens")
+	}
+}
+
+func systemViewFinding() Finding {
+	return Finding{
+		Kind:    FindingNameResolution,
+		Summary: "this system resolves example.com to 2 addresses",
+		Source:  SourceDetected,
+		NameResolution: &NameResolution{
+			Name:       "example.com",
+			View:       ViewSystem,
+			Addresses:  []string{"192.0.2.10", "2001:db8::10"},
+			DurationMS: 27,
+		},
+	}
+}
+
+func directViewFinding() Finding {
+	return Finding{
+		Kind:    FindingNameResolution,
+		Summary: "192.0.2.53 answered NOERROR for example.com A",
+		Source:  SourceDetected,
+		NameResolution: &NameResolution{
+			Name:         "example.com",
+			View:         ViewDirect,
+			Resolver:     "192.0.2.53",
+			QueryType:    "A",
+			ResponseCode: "NOERROR",
+			Addresses:    []string{"192.0.2.10"},
+			DurationMS:   4,
+		},
+	}
+}
+
+// TestBothViewsAreAcceptedWhenWellFormed is the other side of the refusals
+// below. Rules that refused every resolution finding would satisfy all of them
+// and nobody would find out until L1 could not emit a single row.
+func TestBothViewsAreAcceptedWhenWellFormed(t *testing.T) {
+	if breach := systemViewFinding().Breach(); breach != "" {
+		t.Errorf("a well formed system view was refused: %s", breach)
+	}
+	if breach := directViewFinding().Breach(); breach != "" {
+		t.Errorf("a well formed direct view was refused: %s", breach)
+	}
+	// The system view IS allowed to be derived - that is the container case D3
+	// describes, where it has to be rebuilt from resolv.conf rather than measured.
+	derived := systemViewFinding()
+	derived.Source = SourceDerived
+	if breach := derived.Breach(); breach != "" {
+		t.Errorf("a derived system view was refused, and that is the whole container case: %s", breach)
+	}
+}
+
+// TestAResolutionAnswerCannotClaimWhatNobodyEstablished walks every refusal.
+//
+// THE THREE SYSTEM VIEW RULES ARE WHY THIS BODY HAS A BREACH FUNCTION AT ALL.
+// The operating system resolves a name and reports nothing else - not which of
+// its resolvers replied, not which record type it asked for, not what response
+// code came back. Each of those is the most useful column in the row, so each is
+// what a plausible mistake fills in, and a filled in row reads as a measurement.
+func TestAResolutionAnswerCannotClaimWhatNobodyEstablished(t *testing.T) {
+	cases := []struct {
+		name    string
+		base    func() Finding
+		damage  func(*Finding)
+		expects string
+	}{
+		{"an answer for no name", systemViewFinding,
+			func(f *Finding) { f.NameResolution.Name = "" }, "for no name"},
+		{"a lens nobody declared", systemViewFinding,
+			func(f *Finding) { f.NameResolution.View = ResolutionView("guessed") }, "which of the two lenses"},
+		{"a third lens called derived", systemViewFinding,
+			func(f *Finding) { f.NameResolution.View = ResolutionView("derived") }, "which of the two lenses"},
+		{"time running backwards", systemViewFinding,
+			func(f *Finding) { f.NameResolution.DurationMS = -1 }, "took -1 milliseconds"},
+
+		{"the system view naming a resolver", systemViewFinding,
+			func(f *Finding) { f.NameResolution.Resolver = "192.0.2.53" }, "does not report"},
+		{"the system view carrying a response code", systemViewFinding,
+			func(f *Finding) { f.NameResolution.ResponseCode = "NOERROR" }, "does not hand back"},
+		{"the system view claiming a record type", systemViewFinding,
+			func(f *Finding) { f.NameResolution.QueryType = "AAAA" }, "does not split by"},
+
+		{"our own query called derived", directViewFinding,
+			func(f *Finding) { f.Source = SourceDerived }, "derived rather than observed"},
+		{"a direct query with no resolver", directViewFinding,
+			func(f *Finding) { f.NameResolution.Resolver = "" }, "cannot say which resolver"},
+		{"a direct query with no response code", directViewFinding,
+			func(f *Finding) { f.NameResolution.ResponseCode = "" }, "this view exists to establish"},
+		{"a direct query with no record type", directViewFinding,
+			func(f *Finding) { f.NameResolution.QueryType = "" }, "which record type"},
+
+		{"a name that does not exist, with addresses", directViewFinding, func(f *Finding) {
+			f.NameResolution.ResponseCode = ResponseNXDomain
+		}, "does not exist and lists"},
+
+		{"the kind without the body", systemViewFinding,
+			func(f *Finding) { f.NameResolution = nil }, "carries no body of that kind"},
+		{"both bodies at once", systemViewFinding, func(f *Finding) {
+			f.EnvironmentVariable = &EnvironmentVariable{Name: "HTTPS_PROXY", Set: true, Value: "x"}
+		}, "body as well"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			finding := c.base()
+			c.damage(&finding)
+			breach := finding.Breach()
+			if breach == "" {
+				t.Fatalf("%s was accepted", c.name)
+			}
+			if !strings.Contains(breach, c.expects) {
+				t.Errorf("the refusal reads %q and does not mention %q", breach, c.expects)
+			}
+		})
+	}
+}
+
+// TestADirectAnswerMayReportNothingFound keeps NODATA expressible.
+//
+// "The name exists and has no AAAA record" is a real answer and half of the
+// class of failures L1 is meant to find. A rule requiring addresses would have
+// made it unsayable, which is why it is pinned rather than assumed.
+func TestADirectAnswerMayReportNothingFound(t *testing.T) {
+	finding := directViewFinding()
+	finding.NameResolution.QueryType = "AAAA"
+	finding.NameResolution.ResponseCode = "NODATA"
+	finding.NameResolution.Addresses = nil
+	finding.Summary = "192.0.2.53 answered NODATA for example.com AAAA"
+
+	if breach := finding.Breach(); breach != "" {
+		t.Errorf("an answer of NODATA was refused, and it is a real one: %s", breach)
+	}
+
+	// And NXDOMAIN with no addresses is fine too - it is the contradiction that
+	// is refused, not the code.
+	finding.NameResolution.ResponseCode = ResponseNXDomain
+	if breach := finding.Breach(); breach != "" {
+		t.Errorf("NXDOMAIN with no addresses was refused: %s", breach)
+	}
+}

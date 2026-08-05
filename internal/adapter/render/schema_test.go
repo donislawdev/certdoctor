@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/donislawdev/certdoctor/internal/core/layer"
+	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
 // TestTheStartTimeKeepsItsSubSecondPrecision covers a timestamp that resolved to
@@ -302,4 +305,142 @@ func TestAnEmptyCollectionEncodesAsAnEmptyArrayRatherThanNull(t *testing.T) {
 	if err := ValidateDocument(document); err != nil {
 		t.Errorf("a report with no rows does not match the schema:\n%v", err)
 	}
+}
+
+// resolutionReport is a report carrying the second kind of finding, both views.
+//
+// It is separate from everyStatusReport rather than folded into it, because the
+// tests above pin the environment variable body and would start describing two
+// things at once.
+func resolutionReport() report.Report {
+	r := everyStatusReport()
+	for i := range r.Layers {
+		if r.Layers[i].ID != layer.Resolution {
+			continue
+		}
+		r.Layers[i].Findings = []report.Finding{
+			{
+				Kind:    report.FindingNameResolution,
+				Summary: "this system resolves example.com to 2 addresses",
+				Source:  report.SourceDetected,
+				NameResolution: &report.NameResolution{
+					Name:       "example.com",
+					View:       report.ViewSystem,
+					Addresses:  []string{"192.0.2.10", "2001:db8::10"},
+					DurationMS: 27,
+				},
+			},
+			{
+				Kind:    report.FindingNameResolution,
+				Summary: "192.0.2.53 answered NODATA for example.com AAAA",
+				Source:  report.SourceDetected,
+				NameResolution: &report.NameResolution{
+					Name:         "example.com",
+					View:         report.ViewDirect,
+					Resolver:     "192.0.2.53",
+					QueryType:    "AAAA",
+					ResponseCode: "NODATA",
+					// NIL, NOT AN EMPTY SLICE, AND THE MUTATION REGISTER IS WHY.
+					// A layer that got no addresses hands back nil, and nil is
+					// what the encoder has to turn into an empty array. Written
+					// as []string{} this fixture encoded identically whether or
+					// not the encoder copied, so the mutation that dropped the
+					// copy survived - the test could not see the difference the
+					// code exists to make.
+					Addresses:  nil,
+					DurationMS: 4,
+				},
+			},
+		}
+	}
+	return r
+}
+
+// TestADocumentCarryingTheSecondKindValidates is the whole point of this slice:
+// the contract grew a second body and the schema still describes what the encoder
+// produces.
+func TestADocumentCarryingTheSecondKindValidates(t *testing.T) {
+	document, err := Encode(resolutionReport())
+	if err != nil {
+		t.Fatalf("encoding failed: %v", err)
+	}
+	if err := ValidateDocument(document); err != nil {
+		t.Fatalf("a document with a resolution finding is refused by its own schema:\n%v", err)
+	}
+
+	text := string(document)
+	// The body key equals the kind, so a reader with the document and no schema
+	// can tell which body they are looking at.
+	if !strings.Contains(text, `"name_resolution"`) {
+		t.Errorf("the resolution body is not under its own key:\n%s", text)
+	}
+	// The system view carries three nulls, and each of them is a refusal to
+	// invent the most useful column in the row.
+	if !strings.Contains(text, `"resolver": null`) {
+		t.Error("the system view names a resolver, which this system does not report")
+	}
+	if !strings.Contains(text, `"response_code": null`) {
+		t.Error("the system view carries a response code, which the system resolver does not hand back")
+	}
+	// A direct view that found nothing renders an empty array rather than null.
+	// Null would say "did not look", and this view looked and was told there is
+	// nothing of that type.
+	if !strings.Contains(text, `"addresses": []`) {
+		t.Errorf("an answer of NODATA does not render an empty address array:\n%s", text)
+	}
+}
+
+// TestTheSchemaRefusesAResolutionBodyThatChangedShape keeps the second
+// declaration honest, the same way the first one is kept honest above.
+func TestTheSchemaRefusesAResolutionBodyThatChangedShape(t *testing.T) {
+	document, err := Encode(resolutionReport())
+	if err != nil {
+		t.Fatalf("encoding failed: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		change func(map[string]any)
+		expect string
+	}{
+		{"the addresses became one string", func(d map[string]any) {
+			body := resolutionBody(d)
+			body["addresses"] = "192.0.2.10"
+		}, "schema declares an array"},
+		{"the duration became text", func(d map[string]any) {
+			body := resolutionBody(d)
+			body["duration_ms"] = "27ms"
+		}, "duration_ms"},
+		{"the view went missing", func(d map[string]any) {
+			delete(resolutionBody(d), "view")
+		}, "view"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := ValidateDocument(mutate(t, document, c.change))
+			if err == nil {
+				t.Fatalf("%s was accepted", c.name)
+			}
+			if !strings.Contains(err.Error(), c.expect) {
+				t.Errorf("the refusal reads %q and does not mention %q", err, c.expect)
+			}
+		})
+	}
+}
+
+// resolutionBody digs out the first resolution body in a decoded document.
+func resolutionBody(d map[string]any) map[string]any {
+	for _, row := range d["layers"].([]any) {
+		findings, ok := row.(map[string]any)["findings"].([]any)
+		if !ok {
+			continue
+		}
+		for _, finding := range findings {
+			if body, ok := finding.(map[string]any)["name_resolution"].(map[string]any); ok {
+				return body
+			}
+		}
+	}
+	return nil
 }

@@ -393,3 +393,67 @@ func TestColumnsAreMeasuredRatherThanChosen(t *testing.T) {
 		t.Error("a long detail line was truncated")
 	}
 }
+
+// TestTheTerminalRendersTheSecondKindOfFinding covers the surface parity rule at
+// the moment the union grew a second member.
+//
+// INVIOLABLE RULE 12: every finding has to be expressible in the terminal, in
+// md/html and in --json. The renderer degrades gracefully for a kind it does not
+// know - it prints the summary and no value column - so a second kind that
+// nobody taught it about would LOOK FINE while quietly losing the addresses.
+// That is why this asserts on the value column and not only on the summary.
+func TestTheTerminalRendersTheSecondKindOfFinding(t *testing.T) {
+	r := everyStatusReport()
+	for i := range r.Layers {
+		if r.Layers[i].ID != layer.Resolution {
+			continue
+		}
+		r.Layers[i].Findings = []report.Finding{
+			{
+				Kind:    report.FindingNameResolution,
+				Summary: "this system resolves example.com to 2 addresses",
+				Source:  report.SourceDetected,
+				NameResolution: &report.NameResolution{
+					Name:       "example.com",
+					View:       report.ViewSystem,
+					Addresses:  []string{"192.0.2.10", "2001:db8::10"},
+					DurationMS: 27,
+				},
+			},
+			{
+				Kind:    report.FindingNameResolution,
+				Summary: "192.0.2.53 answered NODATA for example.com AAAA",
+				Source:  report.SourceDetected,
+				NameResolution: &report.NameResolution{
+					Name:         "example.com",
+					View:         report.ViewDirect,
+					Resolver:     "192.0.2.53",
+					QueryType:    "AAAA",
+					ResponseCode: "NODATA",
+					DurationMS:   4,
+				},
+			},
+		}
+	}
+
+	var page strings.Builder
+	if err := (Terminal{}).Render(&page, r); err != nil {
+		t.Fatalf("rendering failed: %v", err)
+	}
+	out := page.String()
+
+	for _, want := range []string{
+		"this system resolves example.com to 2 addresses",
+		"192.0.2.10",
+		"2001:db8::10",
+		"27 ms",
+		// The response code lives in the summary, which is the line every surface
+		// renders without knowing the kind. A code visible only in a column this
+		// renderer happens to print would vanish in markdown.
+		"192.0.2.53 answered NODATA for example.com AAAA",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the page does not carry %q:\n%s", want, out)
+		}
+	}
+}

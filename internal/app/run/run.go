@@ -192,10 +192,42 @@ func (o Options) mask(results []report.LayerResult, notes []report.Note) {
 // are stateless, and a defect that appears the day one is not.
 func (o Options) maskFinding(finding *report.Finding) {
 	finding.Summary = o.Redaction.Text(finding.Summary)
-	if finding.EnvironmentVariable == nil {
-		return
+	if mask, declared := maskedBodies[finding.Kind]; declared {
+		mask(o.Redaction, finding)
 	}
+}
 
+// maskedBodies says how each declared kind of finding gets masked.
+//
+// WHY A TABLE RATHER THAN A CHAIN OF nil CHECKS, and this one is paid for in
+// advance rather than after the fact. The previous shape returned early when the
+// body it knew about was absent, so a second kind of finding would have travelled
+// the whole assembly path UNTOUCHED - the summary masked, the body not - and
+// nothing anywhere would have said so. That is the exact shape of failure
+// inviolable rule 17 exists to prevent, and it would have looked like working
+// code.
+//
+// This map is walked against report.AllFindingKinds by a guard, so a kind
+// declared without an entry here is a red test rather than a body nothing masks.
+// It is the same construction findingBodies uses in the core, for the same
+// reason.
+// NEITHER ENTRY CHECKS ITS BODY FOR nil, AND THAT IS DELIBERATE. Every finding
+// reaching this point has been through Finding.Breach, which refuses a finding
+// whose body does not match its kind - and resultOf drops the findings of a
+// layer that broke that contract before they get here. A nil check would
+// therefore be a branch nothing can execute, which is the shape the mutation
+// register caught twice in P3a: code that reads as caution and decides nothing.
+//
+// It also fails in the wrong direction. A nil body skipped quietly is evidence
+// that crossed the assembly path unmasked - inviolable rule 17 - while the
+// dereference is a panic the entry point already catches and maps to 1 RUNTIME.
+// Loud and coded beats quiet and leaking.
+var maskedBodies = map[report.FindingKind]func(*redact.Redaction, *report.Finding){
+	report.FindingEnvironmentVariable: maskEnvironmentVariable,
+	report.FindingNameResolution:      maskNameResolution,
+}
+
+func maskEnvironmentVariable(r *redact.Redaction, finding *report.Finding) {
 	variable := *finding.EnvironmentVariable
 	// A variable that is not set has no value and cannot have carried anything,
 	// which is a rule the report validator enforces from the other side.
@@ -204,9 +236,31 @@ func (o Options) maskFinding(finding *report.Finding) {
 		// and D8. Masking the value alone would leave a secret whose name is the
 		// only thing saying it is one, and gluing them back together is what
 		// deleted the finding in NODE_TLS_REJECT_UNAUTHORIZED=0.
-		variable.Value, variable.CarriedCredentials = o.Redaction.SettingValue(variable.Name, variable.Value)
+		variable.Value, variable.CarriedCredentials = r.SettingValue(variable.Name, variable.Value)
 	}
 	finding.EnvironmentVariable = &variable
+}
+
+// maskNameResolution puts the resolution body through the same masking as
+// everything else on this path.
+//
+// WHAT IT DOES NOT DO TODAY, WRITTEN HERE RATHER THAN DISCOVERED LATER. Under
+// --redact a host name is supposed to become a pseudonym, and Text does that for
+// a host sitting INSIDE A URL - which is where every host in this report has
+// lived until now. A bare name in a field of its own goes through unchanged
+// unless it was handed to redact.New as sensitive, and that list is empty
+// (OBS37). So this call is correct and currently has nothing to do to a name
+// like example.com. A test pins that, so the day the reach is widened it is a
+// decision and not a side effect.
+//
+// Addresses are deliberately left alone. An address is the diagnosis - the same
+// argument that kept trust store paths readable - and a report that masked them
+// would answer "what does this resolve to" with "[address-1]".
+func maskNameResolution(r *redact.Redaction, finding *report.Finding) {
+	answer := *finding.NameResolution
+	answer.Name = r.Text(answer.Name)
+	answer.Resolver = r.Text(answer.Resolver)
+	finding.NameResolution = &answer
 }
 
 // remaining is how much of the overall budget is left, or a negative duration

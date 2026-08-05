@@ -98,9 +98,25 @@ type jsonFinding struct {
 	Kind    string `json:"kind"`
 	Summary string `json:"summary"`
 	Source  string `json:"source"`
-	// EnvironmentVariable is null for a finding of any other kind. There is one
-	// other kind today, which is none, so it is never null yet.
+	// Exactly one of these is set and the rest are null. The key equals the kind,
+	// so a reader with the document and no schema can still tell which body they
+	// are looking at.
 	EnvironmentVariable *jsonEnvironmentVariable `json:"environment_variable"`
+	NameResolution      *jsonNameResolution      `json:"name_resolution"`
+}
+
+type jsonNameResolution struct {
+	Name string `json:"name"`
+	View string `json:"view"`
+	// Null rather than empty for the system view. An empty string would read as
+	// "asked nobody" where the truth is "this system does not say whom".
+	Resolver     *string `json:"resolver"`
+	QueryType    *string `json:"query_type"`
+	ResponseCode *string `json:"response_code"`
+	// Never null. A view that answered with nothing renders an empty array,
+	// which is a statement - the same distinction findings themselves carry.
+	Addresses  []string `json:"addresses"`
+	DurationMS int64    `json:"duration_ms"`
 }
 
 type jsonEnvironmentVariable struct {
@@ -217,9 +233,40 @@ func findingsOf(row report.LayerResult) *[]jsonFinding {
 			Summary:             finding.Summary,
 			Source:              finding.Source.String(),
 			EnvironmentVariable: environmentVariableOf(finding),
+			NameResolution:      nameResolutionOf(finding),
 		})
 	}
 	return &found
+}
+
+func nameResolutionOf(finding report.Finding) *jsonNameResolution {
+	if finding.NameResolution == nil {
+		return nil
+	}
+	answer := *finding.NameResolution
+	body := jsonNameResolution{
+		Name: answer.Name,
+		View: answer.View.String(),
+		// Never nil, so a view that answered with nothing renders [] rather than
+		// null. Null here would say "did not look", and this view did.
+		Addresses:  append([]string{}, answer.Addresses...),
+		DurationMS: answer.DurationMS,
+	}
+	// Taken through locals so each pointer is to this row's value rather than to
+	// the loop's, the same shape the environment body uses one function up.
+	if answer.Resolver != "" {
+		resolver := answer.Resolver
+		body.Resolver = &resolver
+	}
+	if answer.QueryType != "" {
+		queryType := answer.QueryType
+		body.QueryType = &queryType
+	}
+	if answer.ResponseCode != "" {
+		code := answer.ResponseCode
+		body.ResponseCode = &code
+	}
+	return &body
 }
 
 func environmentVariableOf(finding report.Finding) *jsonEnvironmentVariable {

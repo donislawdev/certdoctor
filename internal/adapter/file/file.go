@@ -19,13 +19,33 @@
 package file
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 )
 
 // Source turns a path into something readable.
 type Source func(path string) (io.ReadCloser, error)
+
+// Resolve turns a path into the path it actually names, following symbolic
+// links.
+//
+// IT IS A SECOND PORT BECAUSE RESOLVING TOUCHES THE FILESYSTEM, and this
+// package is not allowed to - the same reason Source is a port rather than a
+// call to os.Open.
+//
+// WHY IT EXISTS AT ALL, and it is a measurement rather than a worry.
+// docs/14 section 2.2 says plainly that a check on the TEXT of a path does not
+// catch symbolic links and that the judgement has to happen after resolution.
+// IsRemote below reads text. On 2026-08-05 the first real file this program is
+// going to read was looked at on two systems: in WSL /etc/resolv.conf is a
+// symbolic link to /mnt/wsl/resolv.conf, and on a systemd machine it is
+// normally a link to /run/systemd/resolve/stub-resolv.conf. A link whose target
+// sits under a mount from another host is a remote path wearing a local name,
+// and without this port nothing here could tell.
+type Resolve func(path string) (string, error)
 
 // Record is told about every path a guarded source was ASKED for, and whether
 // it was opened. The refusals are the half worth having.
@@ -39,9 +59,20 @@ type Record func(path string, opened bool)
 // reported, never opened.
 type RemotePath struct {
 	Path string
+	// Via is the path Path resolved to, when a symbolic link is what made it
+	// remote. It is empty when the path was remote as written.
+	//
+	// BOTH ARE REPORTED AND THAT IS THE POINT. "Your resolv.conf is a link to a
+	// file on a share" is the answer somebody came here for, and naming only the
+	// resolved path would hide which of their files to go and look at.
+	Via string
 }
 
 func (r *RemotePath) Error() string {
+	if r.Via != "" {
+		return fmt.Sprintf("%s leads to %s, which is not on this machine - opening it would connect to another host "+
+			"and authenticate as whoever is running this, so it was reported instead of opened", r.Path, r.Via)
+	}
 	return fmt.Sprintf("%s is not on this machine - opening it would connect to another host and authenticate as "+
 		"whoever is running this, so it was reported instead of opened", r.Path)
 }
@@ -83,29 +114,69 @@ func IsRemote(path string) bool {
 
 // Guarded puts the remote check and the size limit in front of a source.
 //
-// THE ORDER IS THE WHOLE POINT AND IT IS NOT ARBITRARY. The path is judged
-// BEFORE anything is opened, because opening is the act that connects; and the
-// size is capped BEFORE bytes reach a parser, because after parsing it is too
-// late - the cost of a hostile document is spent inside the parser, and the
-// only lever ahead of it is how many bytes it is given.
+// THE ORDER IS THE WHOLE POINT AND IT IS NOT ARBITRARY. It runs in four steps
+// and swapping any two of them gives away what the step before it bought:
 //
-// A limit of zero or less means no limit. The concrete number is NOT decided
-// here and NOT hard-coded anywhere yet: docs/14 section 2.3 refuses a figure
-// borrowed from somebody else's parser, so it waits for a measurement on ours,
-// which arrives with the first real parser.
-func Guarded(inner Source, limit int64, record Record) Source {
+//  1. Judge the path AS WRITTEN. Nothing has been touched yet.
+//  2. Only then resolve symbolic links, which DOES touch the filesystem.
+//  3. Judge what it resolved to, because a link can point off this machine.
+//  4. Open, and cap the bytes before they reach a parser.
+//
+// STEP 1 HAS TO COME BEFORE STEP 2 AND IT IS EASY TO GET BACKWARDS. Resolving
+// a path is itself a filesystem operation, so resolving first would perform the
+// expensive, identity-leaking act on exactly the path we are trying not to
+// touch - the twenty-one seconds measured in the review behind docs/14 section
+// 3a were spent asking about a UNC path, not reading one. Judging the text
+// first costs nothing and is the only step that is safe to do blind.
+//
+// Step 3 exists because step 1 reads TEXT, and docs/14 section 2.2 says text
+// does not catch links. That is not theoretical here: /etc/resolv.conf, the
+// first real file this program reads, is a symbolic link in WSL and on any
+// systemd machine.
+//
+// A limit of zero or less means no limit, and the number is a parameter rather
+// than a constant on purpose: docs/14 section 2.3 wants it measured per parser,
+// and the files this program reads do not share one honest figure - a hosts
+// file is legitimately megabytes where a resolv.conf is a few hundred bytes.
+func Guarded(inner Source, resolve Resolve, limit int64, record Record) Source {
 	return func(path string) (io.ReadCloser, error) {
-		if IsRemote(path) {
+		refuse := func(err error) (io.ReadCloser, error) {
 			if record != nil {
 				record(path, false)
 			}
-			return nil, &RemotePath{Path: path}
+			return nil, err
 		}
-		if inner == nil {
-			if record != nil {
-				record(path, false)
+
+		if IsRemote(path) {
+			return refuse(&RemotePath{Path: path})
+		}
+		// A missing resolver refuses everything rather than quietly skipping the
+		// link check, for the same reason a nil allowed set refuses every dial:
+		// a forgotten port must not read as an absence of restrictions.
+		if resolve == nil {
+			return refuse(fmt.Errorf("no way to resolve symbolic links was supplied, so %s was not opened - a link "+
+				"can point off this machine and the check for that cannot be skipped", path))
+		}
+
+		resolved, err := resolve(path)
+		switch {
+		case err == nil:
+			if resolved != path && IsRemote(resolved) {
+				return refuse(&RemotePath{Path: path, Via: resolved})
 			}
-			return nil, fmt.Errorf("no file source was supplied, so %s could not be read", path)
+		case errors.Is(err, fs.ErrNotExist):
+			// A path that is not there cannot be a link to somewhere else. This
+			// is handed on so the source reports the absence, because "your
+			// configuration names a file that does not exist" is a fact about
+			// the machine being diagnosed and refusing it here would report it
+			// as a problem of ours.
+		default:
+			return refuse(fmt.Errorf("%s could not be resolved, so whether it leads off this machine is unknown "+
+				"and it was not opened: %w", path, err))
+		}
+
+		if inner == nil {
+			return refuse(fmt.Errorf("no file source was supplied, so %s could not be read", path))
 		}
 
 		handle, err := inner(path)

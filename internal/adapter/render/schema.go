@@ -83,6 +83,21 @@ var schema = object(map[string]node{
 				"set":                 boolean(),
 				"carried_credentials": boolean(),
 			})),
+			// The second body, and the paragraph above predicted this edit
+			// exactly: the declaration grows a nullable body next to the first
+			// rather than a gap appearing quietly.
+			"name_resolution": nullable(object(map[string]node{
+				"name": text(),
+				"view": text(),
+				// Null for the system view on all three: the operating system
+				// resolves a name and reports neither which resolver replied, nor
+				// which record type it asked for, nor what code came back.
+				"resolver":      nullable(text()),
+				"query_type":    nullable(text()),
+				"response_code": nullable(text()),
+				"addresses":     array(text()),
+				"duration_ms":   number(),
+			})),
 		}))),
 	})),
 	"notes": array(object(map[string]node{
