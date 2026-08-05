@@ -218,7 +218,16 @@ func readTarget(o *options) (targetReduction, *redact.Redaction, *fault) {
 	if o.redact {
 		mode = redact.Everything
 	}
-	redaction := redact.New(mode)
+	// THE TARGET HOST IS HANDED OVER AS SENSITIVE, AND ADR26 IS WHY. Masking finds
+	// a host inside a URL by pattern, which covered every host in this report until
+	// L1 - that layer reports a BARE name in a field of its own, and no pattern
+	// finds those without guessing which dotted words are names. This is the one
+	// host we never have to guess about, so it is handed over by name.
+	//
+	// It is handed over in both modes. Names are only masked under Everything, so
+	// this costs nothing in the weaker one, and a conditional here would be a
+	// second place where the mode decides something.
+	redaction := redact.New(mode, redact.Host(parsed.Hostname()))
 
 	shown, removed := redaction.Target(parsed.String())
 	return targetReduction{target: shown, removed: removed}, redaction, nil

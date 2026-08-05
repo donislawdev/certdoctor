@@ -105,7 +105,7 @@ func FuzzMaskingIsIdempotent(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, text string) {
 		for _, mode := range []Mode{Credentials, Everything} {
-			r := New(mode, "jdoe", "bob")
+			r := New(mode, Name("jdoe"), Name("bob"))
 			once := r.Text(text)
 			twice := r.Text(once)
 			if once != twice {

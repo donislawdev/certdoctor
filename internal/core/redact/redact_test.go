@@ -207,7 +207,7 @@ func TestMaskingIsIdempotent(t *testing.T) {
 	}
 	for _, mode := range []Mode{Credentials, Everything} {
 		for _, input := range inputs {
-			r := New(mode, "bob")
+			r := New(mode, Name("bob"))
 			once := r.Text(input)
 			twice := r.Text(once)
 			if once != twice {
@@ -267,7 +267,7 @@ func TestTwoRunsOfTheSameInputProduceTheSameText(t *testing.T) {
 	}
 	var first []string
 	for attempt := 0; attempt < 10; attempt++ {
-		r := New(Everything, "user")
+		r := New(Everything, Name("user"))
 		var got []string
 		for _, v := range values {
 			got = append(got, r.Text(v))
@@ -324,13 +324,13 @@ func TestOnlyTheStrongerModeTouchesNames(t *testing.T) {
 func TestTheCallersSensitiveNamesGoUnderTheStrongerMode(t *testing.T) {
 	const path = `C:\Users\jdoe\AppData\Roaming\npm\.npmrc`
 
-	if got := New(Everything, "jdoe").Text(path); strings.Contains(got, "jdoe") {
+	if got := New(Everything, Name("jdoe")).Text(path); strings.Contains(got, "jdoe") {
 		t.Errorf("the account name survived --redact: %q", got)
 	}
-	if got := New(Everything, "jdoe").Text(path); !strings.Contains(got, "npm") {
+	if got := New(Everything, Name("jdoe")).Text(path); !strings.Contains(got, "npm") {
 		t.Errorf("--redact removed more of the path than the name: %q", got)
 	}
-	if got := New(Credentials, "jdoe").Text(path); got != path {
+	if got := New(Credentials, Name("jdoe")).Text(path); got != path {
 		t.Errorf("the default mode touched a path: %q", got)
 	}
 }
@@ -339,7 +339,7 @@ func TestTheCallersSensitiveNamesGoUnderTheStrongerMode(t *testing.T) {
 // that would leave half a name behind: masking "bob" first turns "bobby" into
 // "name-1by".
 func TestALongerNameIsMaskedBeforeAShorterOneItContains(t *testing.T) {
-	got := New(Everything, "bob", "bobby").Text("/home/bobby/x and /home/bob/y")
+	got := New(Everything, Name("bob"), Name("bobby")).Text("/home/bobby/x and /home/bob/y")
 	if strings.Contains(got, "bobby") || strings.Contains(got, "by/") {
 		t.Errorf("a name was masked in pieces: %q", got)
 	}
@@ -357,7 +357,7 @@ func TestALongerNameIsMaskedBeforeAShorterOneItContains(t *testing.T) {
 	// A path has no host rule behind it to tidy up the mess. A dot is not a word
 	// character, so the short name is still found inside the long one, and what
 	// is left over stays left over.
-	path := New(Everything, "example", "corp.example").Text("/etc/ssl/corp.example/ca.pem")
+	path := New(Everything, Name("example"), Name("corp.example")).Text("/etc/ssl/corp.example/ca.pem")
 	if strings.Contains(path, "corp.") {
 		t.Errorf("a name was masked in pieces, leaving half of it behind: %q", path)
 	}
@@ -534,7 +534,7 @@ func TestATargetQuerySegmentWithNoNameIsStillMasked(t *testing.T) {
 func TestAShortSensitiveNameDoesNotRewriteOrdinaryWords(t *testing.T) {
 	const text = "system trust store, administrator, apikey policy, /home/sys/.npmrc"
 
-	got := New(Everything, "sys").Text(text)
+	got := New(Everything, Name("sys")).Text(text)
 	for _, kept := range []string{"system", "trust store", "administrator", "apikey"} {
 		if !strings.Contains(got, kept) {
 			t.Errorf("%q was rewritten by a three letter account name: %q", kept, got)
@@ -542,6 +542,65 @@ func TestAShortSensitiveNameDoesNotRewriteOrdinaryWords(t *testing.T) {
 	}
 	if strings.Contains(got, "/home/sys/") {
 		t.Errorf("the account name itself survived where it stood alone: %q", got)
+	}
+}
+
+// TestAHandedOverHostReadsAsAHostEverywhere is ADR26 asserted directly, and it
+// is the reason Sensitive is a type rather than a string.
+//
+// L1 reports a host name TWICE in shapes that look nothing alike: bare, in a
+// field of its own, and inside a URL. Both have to come out as one pseudonym and
+// both have to be labelled a host. The second half is the part that would rot
+// quietly: the two rules key on the real name, so they agree on the NUMBER
+// whatever the kind is, and only the word inside the brackets would go wrong.
+func TestAHandedOverHostReadsAsAHostEverywhere(t *testing.T) {
+	const text = "proxy.corp.example answered for https://proxy.corp.example:8080/x"
+
+	got := New(Everything, Host("proxy.corp.example")).Text(text)
+	if strings.Contains(got, "proxy.corp.example") {
+		t.Fatalf("a host handed over as sensitive survived: %q", got)
+	}
+	if strings.Contains(got, "[name-") {
+		t.Errorf("a host was pseudonymised as a name, so one machine reads as two ideas: %q", got)
+	}
+	if strings.Count(got, "[host-1]") != 2 {
+		t.Errorf("the bare name and the name in the URL did not come out as one pseudonym: %q", got)
+	}
+	// The port is diagnostic and identifies nobody, so it stays.
+	if !strings.Contains(got, ":8080") {
+		t.Errorf("the port was masked along with the host: %q", got)
+	}
+}
+
+// TestAnAccountAndAHostAreToldApart is the other side of the kind. Without it the
+// kind could be ignored entirely and the test above would still pass, because one
+// name cannot show that two labels exist.
+func TestAnAccountAndAHostAreToldApart(t *testing.T) {
+	got := New(Everything, Host("build.corp.example"), Name("jdoe")).
+		Text("build.corp.example is reached by jdoe")
+
+	if !strings.Contains(got, "[host-1]") {
+		t.Errorf("the host did not read as a host: %q", got)
+	}
+	if !strings.Contains(got, "[name-1]") {
+		t.Errorf("the account did not read as a name: %q", got)
+	}
+}
+
+// TestASensitiveNameWithNoTextIsDropped covers the one input that would turn this
+// list into a disaster rather than a mistake.
+//
+// An empty name compiled into a matcher matches at every position, so it would
+// replace the whole report with pseudonyms - and the zero value of an exported
+// struct is something a caller can write by accident.
+func TestASensitiveNameWithNoTextIsDropped(t *testing.T) {
+	const text = "https://api.example/v1 reached by jdoe"
+
+	for _, empty := range []Sensitive{Host(""), Name(""), {}} {
+		got := New(Everything, empty).Text(text)
+		if !strings.Contains(got, "jdoe") {
+			t.Errorf("an empty sensitive name rewrote text it should not have touched: %q", got)
+		}
 	}
 }
 

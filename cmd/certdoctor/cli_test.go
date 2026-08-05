@@ -705,6 +705,38 @@ func TestARedactedRunMasksTheTargetHostAndSaysSo(t *testing.T) {
 	}
 }
 
+// TestTheEntryPointHandsTheTargetHostToTheMasking is the wiring half of ADR26,
+// and it exists because nothing else can see it yet.
+//
+// The rule has two halves: masking can pseudonymise a bare host name handed to
+// it, and the entry point has to hand the target over. The first half is guarded
+// in the masking package. The SECOND half has no witness until L1 produces a bare
+// name, because every host in today's report sits inside a URL, where the pattern
+// rule finds it whether or not it was handed over.
+//
+// So this reaches for the redaction the entry point built and asks it directly.
+// Without this, the handover could be deleted with every test in the repository
+// still green - which is the shape "the tool exists and the rule is not enforced"
+// takes, and this project has paid for that once already with masking itself.
+func TestTheEntryPointHandsTheTargetHostToTheMasking(t *testing.T) {
+	for _, c := range []struct {
+		flag   bool
+		masked bool
+	}{{flag: true, masked: true}, {flag: false, masked: false}} {
+		_, redaction, fault := readTarget(&options{target: "https://internal.corp.example/a", redact: c.flag})
+		if fault != nil {
+			t.Fatalf("an ordinary URL was refused: %v", fault.message)
+		}
+
+		// A BARE name, with no URL around it - which is what an L1 finding carries
+		// and the one shape the pattern rule cannot find on its own.
+		got := redaction.Text("internal.corp.example answered")
+		if masked := !strings.Contains(got, "internal.corp.example"); masked != c.masked {
+			t.Errorf("with --redact=%v a bare target host came back as %q", c.flag, got)
+		}
+	}
+}
+
 // TestNoEnvironmentCredentialReachesEitherSurface is the end this whole ordering
 // was built for, checked on the real command line rather than on a fixture.
 //

@@ -723,7 +723,7 @@ func TestEveryFindingKindSaysHowItIsMasked(t *testing.T) {
 // masking path at all - the thing the table guarantees and the old shape did not.
 func TestTheResolutionBodyGoesThroughMasking(t *testing.T) {
 	o := baseOptions(newClock())
-	o.Redaction = redact.New(redact.Everything, "secret-resolver.corp")
+	o.Redaction = redact.New(redact.Everything, redact.Host("secret-resolver.corp"))
 	o.Layers[layer.Resolution] = func(context.Context) Answer {
 		return resolutionFinding("example.com", "secret-resolver.corp")
 	}
@@ -751,34 +751,55 @@ func TestTheResolutionBodyGoesThroughMasking(t *testing.T) {
 	}
 }
 
-// TestABareHostNameIsNotYetMaskedAndThatIsPinned records a KNOWN GAP rather than
-// leaving it to be discovered.
+// TestABareHostNameIsMaskedOnceItIsHandedOver is the front of OBS37 that ADR26
+// closed, asserted from both sides.
 //
-// Under --redact a host name is supposed to become a pseudonym, and it does for a
-// host sitting inside a URL - which is where every host in this report has lived
-// until now. A bare name in a field of its own goes through unchanged unless it
-// was handed to redact.New as sensitive, and that list is empty (OBS37).
+// Under --redact a host name becomes a pseudonym, and it always did for a host
+// sitting inside a URL - which is where every host in this report lived until L1.
+// A bare name in a field of its own needs handing over as sensitive, and the
+// entry point now hands the target host over for exactly this reason.
 //
-// This is pinned the same way the mapped drive letter is pinned in the file port:
-// a guard believed to be wider than it is reads as permission to stop looking,
-// and the day somebody widens the reach, this test is what tells them the
-// behaviour changed on purpose rather than by accident.
-func TestABareHostNameIsNotYetMaskedAndThatIsPinned(t *testing.T) {
-	o := baseOptions(newClock())
-	o.Redaction = redact.New(redact.Everything)
-	o.Layers[layer.Resolution] = func(context.Context) Answer {
+// THE SECOND HALF IS THE ONE THAT KEEPS THIS HONEST. A name nobody handed over
+// still goes through untouched, and that is not an oversight: finding bare host
+// names by pattern would mean guessing which dotted words are names, which either
+// misses the interesting ones or renames half the report. The boundary is pinned
+// the same way the mapped drive letter is pinned in the file port - a guard
+// believed to be wider than it is reads as permission to stop looking.
+func TestABareHostNameIsMaskedOnceItIsHandedOver(t *testing.T) {
+	handedOver := baseOptions(newClock())
+	handedOver.Redaction = redact.New(redact.Everything, redact.Host("internal.example.com"))
+	handedOver.Layers[layer.Resolution] = func(context.Context) Answer {
 		return resolutionFinding("internal.example.com", "192.0.2.53")
 	}
 
-	r, err := Execute(context.Background(), o)
+	r, err := Execute(context.Background(), handedOver)
 	if err != nil {
 		t.Fatalf("the walk failed: %v", err)
 	}
-
 	answer := rowFor(t, r, layer.Resolution).Findings[0].NameResolution
-	if answer.Name != "internal.example.com" {
-		t.Errorf("a bare host name is now masked under --redact, giving %q. If that was intended, this test is the "+
-			"place to say so - and OBS37 is the entry to close", answer.Name)
+	if strings.Contains(answer.Name, "internal.example.com") {
+		t.Errorf("a bare host name handed over as sensitive reached the report: %q", answer.Name)
+	}
+	// The pseudonym says HOST, not name. Both rules key on the real name so the
+	// two would agree anyway, but the label is what a reader sees, and a host
+	// reading as [name-1] beside another host reading as [host-1] is two words
+	// for one idea - ADR26.
+	if !strings.HasPrefix(answer.Name, "[host-") {
+		t.Errorf("the target host was pseudonymised as something other than a host: %q", answer.Name)
+	}
+
+	untouched := baseOptions(newClock())
+	untouched.Redaction = redact.New(redact.Everything)
+	untouched.Layers[layer.Resolution] = func(context.Context) Answer {
+		return resolutionFinding("internal.example.com", "192.0.2.53")
+	}
+	r, err = Execute(context.Background(), untouched)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+	if got := rowFor(t, r, layer.Resolution).Findings[0].NameResolution.Name; got != "internal.example.com" {
+		t.Errorf("a bare host name nobody handed over is now masked, giving %q. If that was intended, this test is "+
+			"the place to say so - masking by pattern is the thing ADR26 did not do", got)
 	}
 }
 
@@ -792,7 +813,7 @@ func TestABareHostNameIsNotYetMaskedAndThatIsPinned(t *testing.T) {
 func TestALayerKeepsTheResolutionEvidenceItHandedOver(t *testing.T) {
 	handed := resolutionFinding("example.com", "secret-resolver.corp")
 	o := baseOptions(newClock())
-	o.Redaction = redact.New(redact.Everything, "secret-resolver.corp")
+	o.Redaction = redact.New(redact.Everything, redact.Host("secret-resolver.corp"))
 	o.Layers[layer.Resolution] = func(context.Context) Answer { return handed }
 
 	if _, err := Execute(context.Background(), o); err != nil {

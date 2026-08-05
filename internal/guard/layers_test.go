@@ -59,7 +59,9 @@ var rootRule = layerRule{location: "", mayImportBelow: nil}
 // intraLayerEdges lists the imports allowed BETWEEN packages of the same layer.
 //
 // Sideways edges are forbidden by default, and this is the list of exceptions.
-// It is empty, which is the correct state for four packages.
+// It had two entries when this sentence was last true of it and said it was
+// empty - corrected 2026-08-05. A comment counting the thing below it is a
+// comment that goes stale on the next edit, so this one no longer counts.
 //
 // Why the default is a ban rather than a permission. Two adapters importing each
 // other is "the core does not know the interface" broken one floor down: a probe
@@ -112,6 +114,15 @@ var intraLayerEdges = map[string][]string{
 //
 // Deliberately NOT on this list: net/url and crypto/x509 parse without touching
 // anything, and time carries durations that belong in evidence.
+//
+// net/netip JOINED THAT SENTENCE ON 2026-08-05 AND IT WAS A DECISION, NOT AN
+// OVERSIGHT. The check below compares import paths exactly, so "net" has never
+// covered "net/netip" and the core could always have imported it - which is
+// precisely why it is written down here now rather than used quietly. The package
+// is address VALUES: parsing and formatting, no sockets, no name lookups, nothing
+// that can block. The alternative was writing IPv6 text formatting by hand, with
+// its zero-compression rules, inside the one package that reads hostile bytes off
+// the network.
 //
 // This list is deliberately strict now. Relaxing it later is a visible act with
 // a written reason, while a loose list never tightens on its own.

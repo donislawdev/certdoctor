@@ -217,22 +217,53 @@ type Redaction struct {
 	counts map[string]int
 	// sensitive are names the caller knows are personal or internal and that no
 	// pattern would find on its own - the user's account name above all.
-	sensitive []sensitiveName
+	sensitive []Sensitive
 }
 
-// sensitiveName is one caller-supplied name together with the matcher that
-// finds it.
+// Kinds of thing a pseudonym can stand for. They are the word inside the
+// brackets, so [host-1] and [name-1] read as what they replaced.
+const (
+	kindHost = "host"
+	kindName = "name"
+)
+
+// Sensitive is one name the caller knows has to go under Everything, together
+// with WHAT KIND OF THING IT IS.
+//
+// THE KIND IS THE WHOLE REASON THIS IS A TYPE AND NOT A STRING - ADR26. Without
+// it the target host handed over this way would read as [name-1] while the same
+// host inside a URL reads as [host-1], and a reader would be looking at two
+// labels for one machine. The fields are unexported and the only ways to build
+// one are Host and Name, so a name with no kind cannot be constructed - a
+// pseudonym of [-1] looks like a corrupted report, and a report whose text looks
+// broken stops being believed at the line above as well.
 //
 // WHY A MATCHER AND NOT A PLAIN SUBSTRING REPLACEMENT. The first version used
 // strings.ReplaceAll, which has no idea what a word is. A service account called
 // sys turned "system trust store" into "[name-1]tem trust store", and adm turned
 // "administrator" into "[name-1]inistrator". Short account names are ordinary -
-// sys, adm, svc, ci, ops - and so is a target host whose first label is api. The
-// result was not a leak, it was a report that looked corrupted, and a report
-// whose text looks broken stops being believed at the line above as well.
-type sensitiveName struct {
+// sys, adm, svc, ci, ops - and so is a target host whose first label is api.
+type Sensitive struct {
+	kind    string
 	text    string
 	pattern *regexp.Regexp
+}
+
+// Host names a machine. It is what the entry point hands over for the target,
+// so the bare name in an L1 finding and the host inside a URL come out as the
+// same pseudonym.
+func Host(name string) Sensitive { return sensitiveOf(kindHost, name) }
+
+// Name names a person or an account - what no pattern would find on its own.
+func Name(name string) Sensitive { return sensitiveOf(kindName, name) }
+
+// sensitiveOf builds one entry, or an empty one for an empty name. New drops
+// the empty ones rather than compiling a matcher that would match everywhere.
+func sensitiveOf(kind, text string) Sensitive {
+	if text == "" {
+		return Sensitive{}
+	}
+	return Sensitive{kind: kind, text: text, pattern: wholeWord(text)}
 }
 
 // New starts a redaction.
@@ -241,21 +272,16 @@ type sensitiveName struct {
 // Everything: the account name the process runs as, the target host. They are
 // passed in rather than discovered here, because this package reads no
 // environment and no file - assessment has to be reproducible from its input.
-func New(mode Mode, sensitive ...string) *Redaction {
-	kept := make([]string, 0, len(sensitive))
+func New(mode Mode, sensitive ...Sensitive) *Redaction {
+	kept := make([]Sensitive, 0, len(sensitive))
 	for _, name := range sensitive {
-		if name != "" {
+		if name.text != "" {
 			kept = append(kept, name)
 		}
 	}
 	// Longest first, so that masking a name never leaves a shorter name that is
 	// a prefix of it sitting in the text.
 	sortByLengthDescending(kept)
-
-	matchers := make([]sensitiveName, 0, len(kept))
-	for _, name := range kept {
-		matchers = append(matchers, sensitiveName{text: name, pattern: wholeWord(name)})
-	}
 
 	return &Redaction{
 		mode:       mode,
@@ -265,7 +291,7 @@ func New(mode Mode, sensitive ...string) *Redaction {
 		// pseudonyms on a second pass.
 		issued:    map[string]bool{Placeholder: true},
 		counts:    map[string]int{},
-		sensitive: matchers,
+		sensitive: kept,
 	}
 }
 
@@ -692,12 +718,12 @@ func (r *Redaction) maskNames(s string) string {
 		}
 		// Literal replacement, so that a pseudonym is never read as an
 		// expansion reference by the regexp package.
-		s = name.pattern.ReplaceAllLiteralString(s, r.pseudonymFor("name", name.text))
+		s = name.pattern.ReplaceAllLiteralString(s, r.pseudonymFor(name.kind, name.text))
 	}
 	return hostInURL.ReplaceAllStringFunc(s, func(match string) string {
 		parts := hostInURL.FindStringSubmatch(match)
 		host, port := splitPort(parts[2])
-		return parts[1] + r.pseudonymFor("host", host) + port
+		return parts[1] + r.pseudonymFor(kindHost, host) + port
 	})
 }
 
@@ -790,9 +816,9 @@ func (r *Redaction) pseudonymFor(kind, real string) string {
 	return pseudonym
 }
 
-func sortByLengthDescending(names []string) {
+func sortByLengthDescending(names []Sensitive) {
 	for i := 1; i < len(names); i++ {
-		for j := i; j > 0 && len(names[j]) > len(names[j-1]); j-- {
+		for j := i; j > 0 && len(names[j].text) > len(names[j-1].text); j-- {
 			names[j], names[j-1] = names[j-1], names[j]
 		}
 	}
