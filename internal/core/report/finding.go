@@ -28,19 +28,20 @@ var findingKindMeanings = map[FindingKind]string{
 
 // AllFindingKinds lists every kind exactly once, in declaration order.
 //
-// THERE IS EXACTLY ONE TODAY AND THE MACHINERY STILL EARNS ITS PLACE. A flat
-// shape of name and value would carry this kind and break on the next one: a TCP
-// result is a refusal reason AND a duration, and a TLS result is a certificate,
-// which is a record with a dozen fields. Squeezing that into a pair gives either
-// one row per certificate field with the relationship glued into the key, or an
-// untyped blob - and then the schema stops saying anything. The case that breaks
-// the simpler shape is named and dated rather than imagined.
-// THE SECOND KIND ARRIVED AT L1, NOT AT L4, AND THAT IS WORTH KNOWING. The
-// note in docs/25 that anchored this machinery's justification named a
-// certificate in L4 as the case that would break a flat shape. A resolution
-// answer broke it first: it is a view, a resolver, a record type, a response
-// code, a list of addresses and a duration, and gluing that into a name-value
-// pair would put the relationship into the key.
+// THE MACHINERY WAS BUILT FOR A SECOND KIND AND THE SECOND KIND HAS ARRIVED. A
+// flat shape of name and value carried the first one and would have broken on
+// this one: a resolution answer is a view, a resolver, a record type, a response
+// code, a list of addresses and a duration. Squeezing that into a pair gives
+// either one row per field with the relationship glued into the key, or an
+// untyped blob - and then the schema stops saying anything.
+//
+// WHAT IS WORTH KNOWING IS WHERE IT CAME FROM. The justification written when
+// this had one member named a CERTIFICATE IN L4 as the case that would break the
+// simpler shape - named and dated rather than imagined, which was the point. It
+// was the right argument about the wrong layer: L1 broke it first, three
+// milestones earlier. The lesson is not to argue harder about which case it will
+// be, but that a shape chosen for a named future case earns its keep even when
+// the case that arrives is a different one.
 var AllFindingKinds = []FindingKind{
 	FindingEnvironmentVariable,
 	FindingNameResolution,

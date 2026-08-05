@@ -124,6 +124,21 @@ jobs:
         shell: bash
         run: bash tools/coverage-gate.sh
 
+      # THE ONLY STEP IN THIS FILE THAT RUNS THE PROGRAM RATHER THAN TESTING IT.
+      #
+      # Everything above exercises the code in process with the outside world
+      # replaced - no real disk, no real clock, no terminal. That is the right
+      # shape for a unit and it cannot answer whether the thing we ship starts,
+      # keeps its output on the right channel, or leaves a file behind. Three
+      # findings in this project came from running the binary and from nothing
+      # else, so the gap is measured rather than suspected.
+      #
+      # It runs on all three systems on purpose. Two of those three findings
+      # were invisible from the system this is developed on.
+      - name: the shipped binary behaves as promised
+        shell: bash
+        run: bash tools/acceptance.sh
+
   # WHY THE CHECK SET IS NARROW, and this is measured rather than cautious.
   #
   # The default set was run over the whole tree on 2026-08-03 and produced
