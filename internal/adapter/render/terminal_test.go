@@ -402,6 +402,177 @@ func TestColumnsAreMeasuredRatherThanChosen(t *testing.T) {
 // know - it prints the summary and no value column - so a second kind that
 // nobody taught it about would LOOK FINE while quietly losing the addresses.
 // That is why this asserts on the value column and not only on the summary.
+// hostileText is put into every text field a report has. It carries one of each
+// class visible refuses: an escape that starts a colour sequence, a NUL, a
+// carriage return that would rewrite the line, a C1 byte, and a bidirectional
+// override that reorders whatever follows it.
+const hostileText = "ok\x1b[32m\x00\rok\u202eok"
+
+// TestNoControlByteFromTheMachineReachesTheTerminal is the guard for OBS47, and
+// it is written as a PROPERTY over the whole page rather than as a list of
+// fields.
+//
+// THAT SHAPE IS THE POINT. A test naming today's fields would pass forever while
+// a field added next year went out raw - which is exactly how this hole appeared:
+// the appearance guard reads OUR SOURCE for literal escape sequences and is blind
+// by construction to bytes that arrive in the data. Colour is switched off here,
+// so the page has no legitimate escape at all and the assertion can be total.
+//
+// The measured case behind it: HTTPS_PROXY carrying an escape sequence rendered
+// the report in colour with --no-color asked for. A value that can repaint a row
+// can make a FAIL read as a pass.
+func TestNoControlByteFromTheMachineReachesTheTerminal(t *testing.T) {
+	r := reportWithHostileTextEverywhere()
+
+	var b strings.Builder
+	if err := (Terminal{}).Render(&b, r); err != nil {
+		t.Fatalf("the report could not be rendered: %v", err)
+	}
+
+	for i, line := range strings.Split(b.String(), "\n") {
+		for _, symbol := range line {
+			if symbol == '\n' {
+				continue
+			}
+			if forbiddenOnAPage(symbol) {
+				t.Fatalf("line %d carries U+%04X, which a terminal acts on: %q", i+1, symbol, line)
+			}
+		}
+	}
+	// The other side. A guard that stripped everything would pass the loop above
+	// and produce a page saying nothing, so the escaped form has to be there.
+	if !strings.Contains(b.String(), `\u001b`) {
+		t.Error("the escape sequence was deleted rather than made visible - the report now shows a value that is not the value on the machine")
+	}
+	requireFindingColumnsLineUp(t, b.String())
+}
+
+// forbiddenOnAPage is the test's OWN list of what a terminal acts on, written
+// out separately from unsafeRune on purpose.
+//
+// THE FIRST VERSION ASKED unsafeRune AND THE MUTATION REGISTER CAUGHT IT. A test
+// whose oracle is the function under test agrees with that function whatever it
+// does: deleting the bidirectional range from unsafeRune made the renderer stop
+// escaping those runes AND made this loop stop looking for them, so the mutant
+// survived while the page carried an invisible override. Two readings of one rule
+// by the same hand are one witness, not two.
+func forbiddenOnAPage(r rune) bool {
+	if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+		return true
+	}
+	for _, bidi := range []rune{
+		0x202a, 0x202b, 0x202c, 0x202d, 0x202e,
+		0x2066, 0x2067, 0x2068, 0x2069,
+	} {
+		if r == bidi {
+			return true
+		}
+	}
+	return false
+}
+
+// requireFindingColumnsLineUp checks that two findings whose escaped summaries
+// differ in length still put their value column in the same place.
+//
+// COLUMNS ARE MEASURED ON THE ESCAPED TEXT and the golden page cannot see it:
+// nothing on that page carries a control byte, so measuring before or after
+// escaping gives identical widths there. The mutation register found the gap.
+func requireFindingColumnsLineUp(t *testing.T, page string) {
+	t.Helper()
+	var starts []int
+	for _, line := range strings.Split(page, "\n") {
+		at := strings.Index(line, "  detected")
+		if strings.HasPrefix(line, "      ") && at > 0 {
+			starts = append(starts, at)
+		}
+	}
+	if len(starts) < 2 {
+		t.Fatalf("the fixture no longer produces two finding rows, so this check proves nothing: %d found", len(starts))
+	}
+	for _, at := range starts[1:] {
+		if at != starts[0] {
+			t.Errorf("finding columns do not line up: source column starts at %d and at %d", starts[0], at)
+		}
+	}
+}
+
+// TestOnlyOurOwnAppearanceEscapesSurviveWithColourOn is the second half. With
+// colour on the page legitimately carries escape sequences, so the test above
+// cannot be total - this one says the only ones present are the dictionary's.
+func TestOnlyOurOwnAppearanceEscapesSurviveWithColourOn(t *testing.T) {
+	r := reportWithHostileTextEverywhere()
+
+	var b strings.Builder
+	if err := (Terminal{Color: ColorOn}).Render(&b, r); err != nil {
+		t.Fatalf("the report could not be rendered: %v", err)
+	}
+
+	// Every escape our own painting emits is followed by a bracket and ends at
+	// an m. Anything else came from the data.
+	rest := b.String()
+	for {
+		at := strings.IndexRune(rest, 0x1b)
+		if at < 0 {
+			return
+		}
+		tail := rest[at:]
+		end := strings.IndexRune(tail, 'm')
+		if end < 0 || !strings.HasPrefix(tail, "\x1b[") {
+			t.Fatalf("an escape sequence that is not ours reached the page: %q", tail[:min(20, len(tail))])
+		}
+		if strings.ContainsAny(tail[:end], "\x00\r") {
+			t.Fatalf("an escape sequence carries control bytes from the data: %q", tail[:end])
+		}
+		rest = tail[end+1:]
+	}
+}
+
+// reportWithHostileTextEverywhere fills every string a report carries, so the
+// property test above covers fields nobody thought to name.
+func reportWithHostileTextEverywhere() report.Report {
+	r := everyStatusReport()
+	r.Tool.Name = hostileText
+	r.Tool.Version = hostileText
+	r.Run.Target = hostileText
+	r.Run.Platform.OS = hostileText
+	r.Run.Platform.Arch = hostileText
+	r.Verdict.Sentence = hostileText
+	// TWO FINDINGS OF THE SAME RAW LENGTH AND DIFFERENT ESCAPED LENGTH, and that
+	// is what makes the alignment check able to fail at all. Measured before
+	// escaping the two summaries look identical, so the column is set too narrow
+	// for the one that grew - measured after, the plain row is padded to match.
+	// A fixture whose two rows escape to the same length would pass either way,
+	// which is the shape OBS43 records.
+	plain := strings.Repeat("p", len([]rune(hostileText)))
+	for i := range r.Layers {
+		r.Layers[i].Detail = hostileText
+		r.Layers[i].Findings = []report.Finding{
+			{
+				Kind:    report.FindingEnvironmentVariable,
+				Summary: hostileText,
+				Source:  report.SourceDetected,
+				EnvironmentVariable: &report.EnvironmentVariable{
+					Name: hostileText, Value: hostileText, Set: true,
+				},
+			},
+			{
+				Kind:    report.FindingEnvironmentVariable,
+				Summary: plain,
+				Source:  report.SourceDetected,
+				EnvironmentVariable: &report.EnvironmentVariable{
+					Name: plain, Value: plain, Set: true,
+				},
+			},
+		}
+	}
+	r.Notes = []report.Note{{
+		Kind:   report.NoteDegraded,
+		Field:  hostileText,
+		Detail: hostileText,
+	}}
+	return r
+}
+
 func TestTheTerminalRendersTheSecondKindOfFinding(t *testing.T) {
 	r := everyStatusReport()
 	for i := range r.Layers {
