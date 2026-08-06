@@ -114,7 +114,7 @@ func (t Terminal) writeLayers(b *strings.Builder, r report.Report) {
 // WHY UNCONDITIONALLY, AND WHY --no-color DOES NOT COVER THIS. That switch turns
 // off the escape sequences THIS PROGRAM ADDS. It does nothing about sequences the
 // program merely PASSES THROUGH out of somebody's environment - measured on
-// 2026-08-05: HTTPS_PROXY carrying an escape sequence rendered the report in
+// 2026-08-06: HTTPS_PROXY carrying an escape sequence rendered the report in
 // colour, with --no-color asked for. The appearance guard is blind to it by
 // construction: it reads OUR source for literal sequences, and these bytes are
 // not in our source, they are in the data.
