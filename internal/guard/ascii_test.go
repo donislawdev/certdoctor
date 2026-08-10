@@ -26,8 +26,11 @@ var asciiAllowlist = map[string]bool{
 // TWO SEPARATE COSTS, AND THE SECOND IS THE ONE THAT BITES. Decoration in a
 // comment is harmless in Go and not harmless everywhere: the same habit put a
 // character outside ASCII into a PowerShell script in the tooling directory, and
-// PowerShell reading a file without a byte order mark can turn that into a parse
-// error five lines further down - a failure that points at the wrong place. The
+// Windows PowerShell 5.1 reading a file without a byte order mark turns that into
+// a parse error five lines further down - a failure that points at the wrong
+// place. PowerShell 7 reads the same file correctly, which retires the MECHANISM
+// and not the rule: a file whose meaning depends on which interpreter opened it
+// is a file nobody can reason about, and the tooling moved to 7 in a day. The
 // second cost is worse and is what this guard is really for: an INVISIBLE
 // character in source is one nobody reviewing it can see. A zero width space or
 // a bidirectional override changes what a line means to a reader without

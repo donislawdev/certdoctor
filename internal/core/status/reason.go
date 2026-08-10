@@ -23,6 +23,20 @@ const (
 	// dropped this probe. Without this reason a run that ran out of time would be
 	// indistinguishable from a run that found nothing.
 	ReasonSkippedBudget Reason = "skipped_budget"
+	// ReasonNothingToCheck - the layer ran correctly and there was nothing on
+	// this machine for it to look at.
+	//
+	// THE SIXTH REASON, AND IT EXISTS BECAUSE THE OTHER FIVE WOULD ALL HAVE BEEN
+	// A LIE - ADR33. L1 on a machine that lists no DNS resolver has not timed
+	// out, has not been refused access, has not produced output we cannot read
+	// and has not broken: it worked, and there was nobody to ask. Reporting that
+	// as probe_error would blame this program for a fact about somebody's
+	// machine, which is the exact inversion inviolable rule 15 exists to stop.
+	//
+	// It is deliberately general rather than about resolvers. The same shape is
+	// waiting at L2 with no proxy configured and at L5 with no runtime
+	// installed, and a reason named after L1 would be reinvented twice.
+	ReasonNothingToCheck Reason = "nothing_to_check"
 )
 
 // AllReasons lists every reason exactly once.
@@ -32,20 +46,22 @@ var AllReasons = []Reason{
 	ReasonAccessDenied,
 	ReasonProbeError,
 	ReasonSkippedBudget,
+	ReasonNothingToCheck,
 }
 
 // reasonDescriptions carries the English one-liner shown to the user. Keeping it
 // here rather than at the call site is what stops the same reason from being
 // worded three different ways in three renderers.
 var reasonDescriptions = map[Reason]string{
-	ReasonUnparseable:   "the probe produced output certdoctor does not recognize",
-	ReasonTimeout:       "the probe did not finish within its time limit",
-	ReasonAccessDenied:  "certdoctor was not allowed to read this",
-	ReasonProbeError:    "the probe itself failed to run",
-	ReasonSkippedBudget: "skipped because the run exceeded its overall time budget",
+	ReasonUnparseable:    "the probe produced output certdoctor does not recognize",
+	ReasonTimeout:        "the probe did not finish within its time limit",
+	ReasonAccessDenied:   "certdoctor was not allowed to read this",
+	ReasonProbeError:     "the probe itself failed to run",
+	ReasonSkippedBudget:  "skipped because the run exceeded its overall time budget",
+	ReasonNothingToCheck: "this layer ran and there was nothing on this machine for it to look at",
 }
 
-// Valid reports whether r is one of the five.
+// Valid reports whether r is one of the declared reasons.
 func (r Reason) Valid() bool {
 	_, ok := reasonDescriptions[r]
 	return ok

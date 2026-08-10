@@ -13,17 +13,23 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/dial"
+	"github.com/donislawdev/certdoctor/internal/adapter/dns"
+	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/adapter/output"
 	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
+	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/report"
+	"github.com/donislawdev/certdoctor/internal/core/resolve"
 )
 
 func main() {
@@ -91,5 +97,42 @@ func liveEnvironment() environment {
 		privilege: privilege.Level(),
 		lookupEnv: os.LookupEnv,
 		writeFile: output.WriteFile,
+
+		// The resolvers this machine uses, read through the guarded file port on
+		// the systems where that means a file. The limit is 1 MB and it arrives
+		// as an argument rather than as a constant somewhere, because the files
+		// this program reads do not share one honest number - ADR25.
+		nameservers: func() (dns.Nameservers, error) {
+			source, resolvePath := file.Live()
+			return dns.Enumerate(file.Guarded(source, resolvePath, resolverConfigLimit, nil))
+		},
+		// The real dialler, behind the guard. dns.Socket is the only function in
+		// this program that opens a connection, and it is never reached without
+		// dial.Guarded having checked the address against what this run derived.
+		exchange: func(targets *allowed.Targets) resolve.Exchange {
+			return dns.Exchange(dial.Guarded(dns.Socket, targets, nil))
+		},
+		queryID: queryID,
 	}
+}
+
+// resolverConfigLimit is the 1 MB from ADR25, measured rather than chosen: the
+// real files are 172 to 526 bytes and the parser costs are linear, so this caps
+// memory rather than the parser. The hosts file will need its own number.
+const resolverConfigLimit = 1 << 20
+
+// queryID picks the identifier of one DNS query.
+//
+// IT IS CRYPTOGRAPHIC RANDOMNESS AND NOT A COUNTER, and the reason is the only
+// defence this program has against an answer that did not come from the resolver
+// it asked. A predictable identifier makes an off-path reply trivial to forge,
+// and the parser believes any packet whose identifier matches.
+//
+// crypto/rand.Read never returns an error and always fills the slice, so there
+// is no failure branch here - one would be a branch nothing can execute, which
+// is the shape the mutation register has caught in this tree more than once.
+func queryID() uint16 {
+	var b [2]byte
+	_, _ = rand.Read(b[:])
+	return uint16(b[0])<<8 | uint16(b[1])
 }

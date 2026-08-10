@@ -225,6 +225,14 @@ type Redaction struct {
 const (
 	kindHost = "host"
 	kindName = "name"
+	// kindResolver is a DNS resolver this machine is configured to use.
+	//
+	// IT IS A THIRD KIND AND NOT host, THOUGH BOTH ARE OFTEN ADDRESSES - ADR32.
+	// The distinction is what the reader is looking at: [host-1] is the machine
+	// somebody asked about, [resolver-1] is a piece of their own infrastructure
+	// that happened to be asked. Folding them together would put one label on two
+	// different roles in the same row.
+	kindResolver = "resolver"
 )
 
 // Sensitive is one name the caller knows has to go under Everything, together
@@ -256,6 +264,17 @@ func Host(name string) Sensitive { return sensitiveOf(kindHost, name) }
 
 // Name names a person or an account - what no pattern would find on its own.
 func Name(name string) Sensitive { return sensitiveOf(kindName, name) }
+
+// Resolver names a DNS server this machine is configured to use.
+//
+// WHY THIS IS MASKED WHEN THE ADDRESSES A NAME RESOLVED TO ARE NOT - ADR32. The
+// rule "addresses are never masked" was written when the only address in this
+// report was the one the target resolved to, and that address IS the answer
+// somebody came for. A resolver address is infrastructure: it does not say why
+// anything is broken, it says what the machines in somebody's network are
+// called. Under --redact - the flag reached for by the person about to paste
+// this into a ticket - that is exactly the difference worth keeping.
+func Resolver(address string) Sensitive { return sensitiveOf(kindResolver, address) }
 
 // sensitiveOf builds one entry, or an empty one for an empty name. New drops
 // the empty ones rather than compiling a matcher that would match everywhere.

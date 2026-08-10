@@ -106,6 +106,39 @@ var intraLayerEdges = map[string][]string{
 		"internal/core/report",
 		"internal/core/status",
 	},
+	// L1 asks resolvers and grades what came back, so it needs the same two as
+	// L0 plus the packet codec. The arrow runs one way and cannot run back: none
+	// of the three knows a layer exists.
+	//
+	// WHY dnsmsg IS A SEPARATE PACKAGE AND THEREFORE A DECLARED EDGE, rather
+	// than a file inside this one. It is the only code in this program that
+	// parses bytes arriving from the network, and a boundary buys it a coverage
+	// floor of its own, a fuzz target of its own, and the property that nothing
+	// else in the tree can quietly grow a second way of reading a packet. The
+	// alternative - folding it in here - needs no declaration and gives all three
+	// of those up.
+	"internal/core/resolve": {
+		"internal/core/dnsmsg",
+		"internal/core/report",
+		"internal/core/status",
+	},
+	// The DNS plumbing takes a dialler and the dialler carries the rule about
+	// where this program may connect, so the arrow runs from the thing that uses
+	// a socket to the thing that decides whether it may have one. It cannot run
+	// back: dial knows nothing about DNS and holds no net import of its own.
+	//
+	// The alternative was for the entry point to hand Exchange a bare function
+	// instead of dial.Dialer. That needs no declaration and gives up the type
+	// that says "this dialler has been through the guard" - and a bare func is
+	// exactly what an unguarded one would look like too.
+	//
+	// The file port is the second edge and it is there for ONE call: on a
+	// unix-like system this machine's resolvers are read out of /etc/resolv.conf,
+	// and that path has to go through the port that judges it before anything
+	// opens it. It is not an optional convenience - resolv.conf is a symbolic
+	// link on WSL and on any systemd machine, and a link into a mount from
+	// another host is a remote path wearing a local name.
+	"internal/adapter/dns": {"internal/adapter/dial", "internal/adapter/file"},
 }
 
 // coreForbiddenStdlib keeps the core a pure function of evidence: no network, no

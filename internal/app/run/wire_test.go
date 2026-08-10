@@ -9,6 +9,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/machine"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
+	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	"github.com/donislawdev/certdoctor/internal/core/status"
 )
 
@@ -26,7 +27,7 @@ func envOf(pairs map[string]string) machine.Lookup {
 // would be caught eventually - but as an internal failure with no report, which
 // is a much worse way to learn that somebody added a ninth layer.
 func TestWireStillCoversEveryDeclaredLayer(t *testing.T) {
-	layers := Wire(envOf(nil))
+	layers := Wire(envOf(nil), resolve.Input{})
 
 	if len(layers) != len(layer.All) {
 		t.Fatalf("the wiring holds %d layers, the registry declares %d", len(layers), len(layer.All))
@@ -44,7 +45,7 @@ func TestWireStillCoversEveryDeclaredLayer(t *testing.T) {
 // answering "not implemented", and every other test here would stay green -
 // because they all assert on shapes that the stub satisfies too.
 func TestWiringPutsTheContextLayerInPlaceOfTheStub(t *testing.T) {
-	answer := Wire(envOf(map[string]string{"HTTPS_PROXY": "http://proxy.example:8080"}))[layer.Context](context.Background())
+	answer := Wire(envOf(map[string]string{"HTTPS_PROXY": "http://proxy.example:8080"}), resolve.Input{})[layer.Context](context.Background())
 
 	if answer.Status != status.Pass {
 		t.Fatalf("L0 answered %s with a readable environment, want %s", answer.Status, status.Pass)
@@ -57,16 +58,29 @@ func TestWiringPutsTheContextLayerInPlaceOfTheStub(t *testing.T) {
 	}
 }
 
-// TestTheOtherSevenLayersStillSayTheyAreNotWritten is the other side of the
-// override: exactly one layer grew code, and a wiring that quietly answered for
-// all eight would be the tool claiming to have checked seven things it has not.
-func TestTheOtherSevenLayersStillSayTheyAreNotWritten(t *testing.T) {
-	layers := Wire(envOf(nil))
+// written is the set of layers that have grown code. It is written out by hand
+// rather than derived, so that a layer starting to answer for itself has to be
+// added here deliberately - the alternative is a wiring that quietly answers for
+// all eight while the tool claims to have checked things it has not.
+var written = map[layer.ID]bool{layer.Context: true, layer.Resolution: true}
 
+// TestTheUnwrittenLayersStillSayTheyAreNotWritten is the other side of the
+// override.
+//
+// IT COUNTED SEVEN UNTIL 2026-08-10 AND NOW COUNTS SIX, which is the whole
+// reason the list above exists rather than a subtraction from eight. A number in
+// the name of a test goes stale silently, and a test asserting the stub for a
+// layer that has since grown code would have to be loosened to pass - which is
+// how a guard turns into decoration.
+func TestTheUnwrittenLayersStillSayTheyAreNotWritten(t *testing.T) {
+	layers := Wire(envOf(nil), resolve.Input{})
+
+	checked := 0
 	for _, id := range layer.All {
-		if id == layer.Context {
+		if written[id] {
 			continue
 		}
+		checked++
 		answer := layers[id](context.Background())
 		if answer.Status != status.Unknown || answer.Detail != notImplementedDetail {
 			t.Errorf("layer %s answered %s / %q, want unknown / %q",
@@ -75,6 +89,29 @@ func TestTheOtherSevenLayersStillSayTheyAreNotWritten(t *testing.T) {
 		if answer.Findings != nil {
 			t.Errorf("layer %s did not look and reported a list of findings, which renders as a claim that it did", id)
 		}
+	}
+	if checked == 0 {
+		t.Fatal("every layer is claimed to be written, so this test checked nothing")
+	}
+}
+
+// TestALayerWithNoPortsAnswersForItselfRatherThanAsAStub is what replaces the
+// row this test used to cover for L1.
+//
+// A layer that HAS code and was handed nothing must not be indistinguishable
+// from one that was never written. Both are unknown, and only one of them can be
+// fixed by supplying a port - so the sentence has to say which.
+func TestALayerWithNoPortsAnswersForItselfRatherThanAsAStub(t *testing.T) {
+	answer := Wire(envOf(nil), resolve.Input{})[layer.Resolution](context.Background())
+
+	if answer.Status != status.Unknown {
+		t.Errorf("L1 with no ports answered %s", answer.Status)
+	}
+	if answer.Detail == notImplementedDetail {
+		t.Error("L1 has code and answered with the stub for a layer that has none")
+	}
+	if !strings.Contains(answer.Detail, "no way to send a query") {
+		t.Errorf("L1 explains itself with %q, which does not say what was missing", answer.Detail)
 	}
 }
 
@@ -87,7 +124,7 @@ func TestTheOtherSevenLayersStillSayTheyAreNotWritten(t *testing.T) {
 func TestWithNoEnvironmentPortTheRunStillProducesAReport(t *testing.T) {
 	clock := newClock()
 	options := baseOptions(clock)
-	options.Layers = Wire(nil)
+	options.Layers = Wire(nil, resolve.Input{})
 
 	finished, err := Execute(context.Background(), options)
 	if err != nil {
@@ -122,9 +159,13 @@ func TestWithNoEnvironmentPortTheRunStillProducesAReport(t *testing.T) {
 			t.Errorf("L0 was recorded as having broken its own contract: %s", note.Detail)
 		}
 	}
-	// The other seven rows are untouched: one layer's missing port costs that
-	// layer and nothing else.
-	for _, row := range finished.Layers[1:] {
+	// The other rows are untouched: one layer's missing port costs that layer and
+	// nothing else. L1 is skipped because it has code of its own and answers for
+	// itself here - which is exactly the property being checked, one row down.
+	for _, row := range finished.Layers {
+		if written[row.ID] {
+			continue
+		}
 		if row.Detail != notImplementedDetail {
 			t.Errorf("layer %s reads %q, want the untouched stub", row.ID, row.Detail)
 		}
@@ -146,7 +187,7 @@ func TestTheOrchestratorMasksWhatTheContextLayerFound(t *testing.T) {
 	options.Layers = Wire(envOf(map[string]string{
 		"HTTPS_PROXY":                  "http://someone:" + secret + "@proxy.example:8080",
 		"NODE_TLS_REJECT_UNAUTHORIZED": "0",
-	}))
+	}), resolve.Input{})
 
 	finished, err := Execute(context.Background(), options)
 	if err != nil {
@@ -194,7 +235,7 @@ func TestTheOrchestratorMasksWhatTheContextLayerFound(t *testing.T) {
 // stateless, and a defect the day one is not.
 func TestTheLayerKeepsTheRawEvidenceItHandedOver(t *testing.T) {
 	const raw = "http://someone:s3kret@proxy.example:8080"
-	answer := Wire(envOf(map[string]string{"HTTPS_PROXY": raw}))[layer.Context](context.Background())
+	answer := Wire(envOf(map[string]string{"HTTPS_PROXY": raw}), resolve.Input{})[layer.Context](context.Background())
 
 	options := baseOptions(newClock())
 	options.Redaction = redact.New(redact.Credentials)

@@ -10,11 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/dns"
 	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
+	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
 	"github.com/donislawdev/certdoctor/internal/core/report"
+	"github.com/donislawdev/certdoctor/internal/core/resolve"
 )
 
 // harness is one invocation with the outside world replaced.
@@ -77,6 +80,189 @@ func invokeIn(env map[string]string, level report.PrivilegeLevel, args ...string
 		},
 	})
 	return h
+}
+
+// TestTheRawHostReachesTheResolvingLayerEvenUnderRedact is the guard for the one
+// wiring mistake that would be invisible in every other test.
+//
+// run.Options.Target carries the target AFTER masking, and it is the obvious
+// field to feed L1 from - it is right there, it is called Target, and under the
+// default mode it even holds the real host. Under --redact it holds [host-1], so
+// a run wired that way would ask this machine's resolvers to resolve the literal
+// string [host-1], get NXDOMAIN from every one of them, and report a working
+// machine as unable to resolve its own target.
+//
+// NOTHING ELSE WOULD NOTICE. The report would be well formed, the schema would
+// validate, the verdict would agree with the rows, and the answer would be
+// confidently wrong - which is the exact failure this product exists to prevent,
+// committed by the product.
+func TestTheRawHostReachesTheResolvingLayerEvenUnderRedact(t *testing.T) {
+	for _, redacted := range []bool{false, true} {
+		var asked []string
+		h := &harness{written: map[string][]byte{}}
+		args := []string{"https://internal.corp.example", "--format", "json"}
+		if redacted {
+			args = append(args, "--redact")
+		}
+
+		guarded(context.Background(), args, environment{
+			stdout:     &h.stdout,
+			stderr:     &h.stderr,
+			capability: func(bool) render.Capability { return render.Capability{} },
+			now:        func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
+			platform:   report.Platform{OS: "testos", Arch: "testarch"},
+			privilege:  report.PrivilegeUnknown,
+			lookupEnv:  func(string) (string, bool) { return "", false },
+			writeFile:  func(string, []byte) error { return nil },
+
+			nameservers: func() (dns.Nameservers, error) {
+				return dns.Nameservers{ToAsk: []string{"192.0.2.53"}, Known: []string{"192.0.2.53"}, From: "a test"}, nil
+			},
+			queryID: func() uint16 { return 1 },
+			exchange: func(*allowed.Targets) resolve.Exchange {
+				return func(_ context.Context, resolver string, query []byte) ([]byte, error) {
+					// The name is read back out of the wire format, which is the
+					// only place it can be checked without trusting the layer to
+					// report what it actually sent.
+					asked = append(asked, nameIn(query), resolver)
+					return nil, resolve.ErrTimeout
+				}
+			},
+		})
+
+		if len(asked) == 0 {
+			t.Fatalf("with --redact=%v no query was sent, so this proves nothing", redacted)
+		}
+		for _, value := range asked {
+			if strings.Contains(value, "[") {
+				t.Errorf("with --redact=%v a pseudonym was sent to a resolver: %q", redacted, value)
+			}
+		}
+		if asked[0] != "internal.corp.example" {
+			t.Errorf("with --redact=%v the layer was asked to resolve %q", redacted, asked[0])
+		}
+		if asked[1] != "192.0.2.53" {
+			t.Errorf("with --redact=%v the query went to %q", redacted, asked[1])
+		}
+	}
+}
+
+// TestTheAllowedSetCarriesWhatWillActuallyBeDialled is inviolable rule 16 at the
+// seam where it is easiest to break without noticing.
+//
+// The set stores strings and dial.Guarded compares strings, so allowing a bare
+// address while dialling one with a port would refuse every query on a machine
+// that works - and allowing the port form while something else dialled the bare
+// one would let a connection through unchecked. Both failures look like the
+// guard doing its job.
+func TestTheAllowedSetCarriesWhatWillActuallyBeDialled(t *testing.T) {
+	parsed, fault := readTarget(&options{target: "https://example.com/x"})
+	if fault != nil {
+		t.Fatalf("an ordinary URL was refused: %v", fault.message)
+	}
+
+	targets := allowedTargets(parsed, dns.Nameservers{
+		// The last one is not an address. Windows keeps this setting as free
+		// text, so somebody's registry can hold anything at all.
+		Known: []string{"192.0.2.53", "2001:db8::53", "not-an-address"},
+	})
+
+	for _, resolver := range []string{"192.0.2.53", "2001:db8::53"} {
+		dialled, err := dns.Target(resolver)
+		if err != nil {
+			t.Fatalf("%s could not be turned into a dial target: %v", resolver, err)
+		}
+		if reason, ok := targets.Permits(dialled); !ok {
+			t.Errorf("%s will be dialled and the set refuses it", dialled)
+		} else if reason != allowed.ReasonResolver {
+			t.Errorf("%s is in the set as %q", dialled, reason)
+		}
+	}
+	if _, ok := targets.Permits("example.com"); !ok {
+		t.Error("the target the user asked about is not in the set")
+	}
+	if _, ok := targets.Permits("not-an-address:53"); ok {
+		t.Error("something that is not an address reached the set of places this run may connect to")
+	}
+}
+
+// TestAResolverThatCannotBeReadIsNotAMachineWithoutDNS covers the nil port.
+//
+// An empty list is a statement about somebody's machine. A build that could not
+// look has no business making it, and the two send a reader to different places.
+func TestAResolverThatCannotBeReadIsNotAMachineWithoutDNS(t *testing.T) {
+	found, err := enumerate(environment{})
+	if err == nil {
+		t.Fatal("a build with no way to enumerate reported success")
+	}
+	if len(found.ToAsk) != 0 || len(found.Known) != 0 {
+		t.Error("a failed enumeration still handed back resolvers")
+	}
+}
+
+// TestEveryResolverIsHandedToTheMasking is ADR32 at the point of handover.
+//
+// The rule is enforced by the redaction, but the redaction only masks what it was
+// told about - and the telling is one loop in one function, which is exactly the
+// kind of line that gets deleted in a tidy-up with every other test still green.
+func TestEveryResolverIsHandedToTheMasking(t *testing.T) {
+	parsed, fault := readTarget(&options{target: "https://example.com"})
+	if fault != nil {
+		t.Fatalf("an ordinary URL was refused: %v", fault.message)
+	}
+	found := dns.Nameservers{Known: []string{"10.1.2.3", "10.4.5.6"}}
+
+	redaction := redactionFor(&options{redact: true}, parsed, found)
+	got := redaction.Text("asked 10.1.2.3 and then 10.4.5.6")
+	for _, resolver := range found.Known {
+		if strings.Contains(got, resolver) {
+			t.Errorf("%s survived masking under --redact: %q", resolver, got)
+		}
+	}
+
+	// The weaker mode leaves them, which is the documented behaviour rather than
+	// an oversight: --redact is what promises names are hidden.
+	plain := redactionFor(&options{}, parsed, found).Text("asked 10.1.2.3")
+	if !strings.Contains(plain, "10.1.2.3") {
+		t.Errorf("a resolver was masked without --redact: %q", plain)
+	}
+}
+
+// TestQueryIdentifiersAreNotPredictable checks the one property that makes an
+// off-path answer detectable at all.
+//
+// A counter would pass every other test in this repository: the layer would send
+// queries, the parser would match identifiers, and every answer would come back
+// clean. It would also make a forged reply trivial to land, and nothing in the
+// report would look wrong.
+func TestQueryIdentifiersAreNotPredictable(t *testing.T) {
+	seen := map[uint16]int{}
+	const draws = 512
+	for i := 0; i < draws; i++ {
+		seen[queryID()]++
+	}
+	// Sixteen bits over five hundred draws: a fair source lands a handful of
+	// collisions and a counter or a constant lands far outside this.
+	if len(seen) < draws*3/4 {
+		t.Errorf("%d draws produced only %d distinct identifiers", draws, len(seen))
+	}
+	if len(seen) == 1 {
+		t.Error("every query would carry the same identifier")
+	}
+}
+
+// nameIn reads the question's name back out of a DNS query.
+func nameIn(query []byte) string {
+	var labels []string
+	for at := 12; at < len(query); {
+		length := int(query[at])
+		if length == 0 || at+1+length > len(query) {
+			break
+		}
+		labels = append(labels, string(query[at+1:at+1+length]))
+		at += 1 + length
+	}
+	return strings.Join(labels, ".")
 }
 
 // TestOnlyASuccessfulRunWritesToStandardOutput is the channel guard.
@@ -723,10 +909,15 @@ func TestTheEntryPointHandsTheTargetHostToTheMasking(t *testing.T) {
 		flag   bool
 		masked bool
 	}{{flag: true, masked: true}, {flag: false, masked: false}} {
-		_, redaction, fault := readTarget(&options{target: "https://internal.corp.example/a", redact: c.flag})
+		o := &options{target: "https://internal.corp.example/a", redact: c.flag}
+		parsed, fault := readTarget(o)
 		if fault != nil {
 			t.Fatalf("an ordinary URL was refused: %v", fault.message)
 		}
+		// Built the way the entry point builds it, resolvers and all. Reaching
+		// for redactionFor rather than for a redaction made here is the point:
+		// the handover could be deleted with every other test still green.
+		redaction := redactionFor(o, parsed, dns.Nameservers{})
 
 		// A BARE name, with no URL around it - which is what an L1 finding carries
 		// and the one shape the pattern rule cannot find on its own.

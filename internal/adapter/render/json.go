@@ -16,11 +16,17 @@ import (
 // changing what one means raises the major. A consumer must ignore fields it
 // does not know, and that is written in the README rather than assumed.
 //
-// It stays at 1.0 for the whole of the first milestone even though almost every
-// slice adds fields. Nothing is released and nobody consumes it yet, so counting
-// up to 1.8 before the first user exists would be noise dressed as diligence.
-// The number moves when there is somebody it could mislead.
-const SchemaVersion = "1.0"
+// IT STOOD AT 1.0 THROUGH THREE FIELD ADDITIONS AND STOPPED DOING SO ON
+// 2026-08-10 - ADR30. The argument for holding it was that nothing is released
+// and nobody consumes it, so counting up before the first user exists is noise
+// dressed as diligence. That argument was granted once, in writing, as a ONE-OFF
+// - docs/00 section F - and a one-off used a fourth time is not a decision any
+// more, it is a habit with a footnote.
+//
+// So the minor moves with the field that caused it. L1 adds the reason a query
+// has no response code, which is the first thing in this document a consumer
+// could read as an answer when it is the absence of one.
+const SchemaVersion = "1.1"
 
 // JSON renders the machine readable report.
 //
@@ -113,6 +119,9 @@ type jsonNameResolution struct {
 	Resolver     *string `json:"resolver"`
 	QueryType    *string `json:"query_type"`
 	ResponseCode *string `json:"response_code"`
+	// Null when there was an answer. Exactly one of this and ResponseCode is set
+	// for the direct view, which the core refuses to break - ADR30.
+	NoAnswer *string `json:"no_answer"`
 	// Never null. A view that answered with nothing renders an empty array,
 	// which is a statement - the same distinction findings themselves carry.
 	Addresses  []string `json:"addresses"`
@@ -261,6 +270,10 @@ func nameResolutionOf(finding report.Finding) *jsonNameResolution {
 	if answer.QueryType != "" {
 		queryType := answer.QueryType
 		body.QueryType = &queryType
+	}
+	if answer.NoAnswer != "" {
+		noAnswer := answer.NoAnswer.String()
+		body.NoAnswer = &noAnswer
 	}
 	if answer.ResponseCode != "" {
 		code := answer.ResponseCode

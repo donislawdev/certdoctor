@@ -23,6 +23,21 @@ import (
 // somebody would make this suite send traffic at them.
 const aTarget = "https://example.com"
 
+// anUnresolvableTarget is a name that CANNOT exist, and that is a guarantee
+// rather than a hope.
+//
+// .invalid is reserved by RFC 2606 precisely so that it can never be delegated
+// to anybody, so every resolver on earth answers NXDOMAIN for this and no packet
+// leaves the user's own network to find that out.
+//
+// IT EXISTS BECAUSE L1 MADE THIS SUITE DEPEND ON THE OUTSIDE WORLD - OBS46, and
+// the decision recorded there is that these checks verify STRUCTURE, not
+// content. example.com sits behind a load balancer that rotates the order of the
+// addresses it hands back, so two runs against it legitimately differ - which is
+// true information about DNS and useless for asking whether our own output is
+// stable.
+const anUnresolvableTarget = "https://certdoctor-acceptance.invalid"
+
 // ---------------------------------------------------------------- group A
 
 // TestTheShippedBinaryWritesNoFileNobodyAskedFor is inviolable rule 14 observed
@@ -291,9 +306,21 @@ func TestTheShippedBinaryAnswersEveryMetaSwitchFromItself(t *testing.T) {
 // that legitimately differs. Here the two runs differ in that field and in
 // nothing else, and the list of fields allowed to differ is pinned rather than
 // assumed.
+//
+// IT ASKS ABOUT A NAME THAT CANNOT EXIST, AND IT DID NOT HAVE TO UNTIL L1.
+// While this program reached nothing, any target produced the same document
+// twice. Now it measures somebody else's DNS, and the resolver behind
+// example.com rotates the ORDER of the addresses it returns - so two runs
+// differ, correctly, and this check would report a load balancer doing its job
+// as a defect in our output.
+//
+// The property being defended never included the network: it is that OUR OWN
+// ordering is stable, because iterating a Go map is randomised and a renderer
+// that walked one would shuffle rows between runs. A name that resolves nowhere
+// keeps that property askable.
 func TestTheShippedBinaryProducesTheSameDocumentTwice(t *testing.T) {
-	first := runProgram(t, aTarget, "--json")
-	second := runProgram(t, aTarget, "--json")
+	first := runProgram(t, anUnresolvableTarget, "--json")
+	second := runProgram(t, anUnresolvableTarget, "--json")
 
 	if first.code != second.code {
 		t.Fatalf("the same command ended with %d and then %d", first.code, second.code)

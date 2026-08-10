@@ -338,6 +338,18 @@ func TestAResolutionAnswerCannotClaimWhatNobodyEstablished(t *testing.T) {
 			func(f *Finding) { f.NameResolution.Resolver = "" }, "cannot say which resolver"},
 		{"a direct query with no response code", directViewFinding,
 			func(f *Finding) { f.NameResolution.ResponseCode = "" }, "this view exists to establish"},
+		{"a direct query claiming an answer and a reason for having none", directViewFinding, func(f *Finding) {
+			f.NameResolution.NoAnswer = NoAnswerTimeout
+		}, "also the reason"},
+		{"a reason for silence nobody declared", directViewFinding, func(f *Finding) {
+			f.NameResolution.ResponseCode = ""
+			f.NameResolution.Addresses = nil
+			f.NameResolution.NoAnswer = NoAnswer("gave_up")
+		}, "outside the closed list"},
+		{"silence that somehow brought addresses back", directViewFinding, func(f *Finding) {
+			f.NameResolution.ResponseCode = ""
+			f.NameResolution.NoAnswer = NoAnswerTimeout
+		}, "lists 1 address(es) from it"},
 		{"a direct query with no record type", directViewFinding,
 			func(f *Finding) { f.NameResolution.QueryType = "" }, "which record type"},
 
@@ -388,5 +400,65 @@ func TestADirectAnswerMayReportNothingFound(t *testing.T) {
 	finding.NameResolution.ResponseCode = ResponseNXDomain
 	if breach := finding.Breach(); breach != "" {
 		t.Errorf("NXDOMAIN with no addresses was refused: %s", breach)
+	}
+}
+
+// TestEveryReasonForSilenceIsCompletelyDeclared is the registry test for the
+// reasons a query has no response code.
+//
+// The list is closed BECAUSE THESE REASONS ARE OURS - ADR30. A response code
+// arrives from the network and an unrecognised one is news, so that vocabulary
+// stays open. A reason for silence describes what this program did, so an
+// unrecognised one is a defect here.
+func TestEveryReasonForSilenceIsCompletelyDeclared(t *testing.T) {
+	if len(AllNoAnswers) != len(noAnswerMeanings) {
+		t.Fatalf("the list has %d reasons and the registry has %d", len(AllNoAnswers), len(noAnswerMeanings))
+	}
+	for _, reason := range AllNoAnswers {
+		if !reason.Valid() {
+			t.Errorf("%s is listed and the registry does not know it", reason)
+		}
+		if reason.Meaning() == "" {
+			t.Errorf("%s has no meaning, so a reader of the report gets a bare word", reason)
+		}
+		if reason.String() != string(reason) {
+			t.Errorf("%s does not print as itself", reason)
+		}
+	}
+	if NoAnswer("timed_out").Valid() {
+		t.Error("a reason outside the registry was accepted, so the list is not closed")
+	}
+	if NoAnswer("").Meaning() != "" {
+		t.Error("the empty reason carries a meaning, and empty means there was an answer")
+	}
+}
+
+// TestADirectAnswerMaySayWhyThereWasNoAnswer is the accepting side of the rule
+// above, and it is the half that would go missing.
+//
+// Rules that refused every silent answer would satisfy every refusal test in
+// this file while making the commonest real outcome on a broken network -
+// nothing came back - impossible to report at all.
+func TestADirectAnswerMaySayWhyThereWasNoAnswer(t *testing.T) {
+	for _, reason := range AllNoAnswers {
+		finding := directViewFinding()
+		finding.NameResolution.ResponseCode = ""
+		finding.NameResolution.Addresses = nil
+		finding.NameResolution.NoAnswer = reason
+		finding.Summary = "192.0.2.53 did not answer for example.com A"
+
+		if breach := finding.Breach(); breach != "" {
+			t.Errorf("a direct answer reporting %s was refused, and it is a real outcome: %s", reason, breach)
+		}
+	}
+
+	// The system view can fail to answer too, and when it does the reason comes
+	// from the same closed list. It still may not carry a response code - that
+	// rule is untouched, and this is the case where somebody would be tempted.
+	system := systemViewFinding()
+	system.NameResolution.Addresses = nil
+	system.NameResolution.NoAnswer = NoAnswerTimeout
+	if breach := system.Breach(); breach != "" {
+		t.Errorf("a system view that timed out was refused: %s", breach)
 	}
 }

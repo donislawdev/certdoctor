@@ -572,6 +572,51 @@ func TestAHandedOverHostReadsAsAHostEverywhere(t *testing.T) {
 	}
 }
 
+// TestAResolverReadsAsInfrastructureAndNotAsTheAnswer is ADR32 pinned.
+//
+// The rule it defends is a DISTINCTION, not a blanket: a resolver address is a
+// piece of somebody's network and goes under a pseudonym, while the address a
+// name resolved to is the answer they came for and stays. A test that only
+// checked the masking half would pass on an implementation that masked every
+// address and destroyed the diagnosis, so both halves are here.
+func TestAResolverReadsAsInfrastructureAndNotAsTheAnswer(t *testing.T) {
+	const text = "10.1.2.53 answered NOERROR and gave 192.0.2.10"
+
+	got := New(Everything, Resolver("10.1.2.53")).Text(text)
+	if strings.Contains(got, "10.1.2.53") {
+		t.Errorf("a resolver handed over as sensitive survived: %q", got)
+	}
+	if !strings.Contains(got, "[resolver-1]") {
+		t.Errorf("the resolver did not read as a resolver: %q", got)
+	}
+	if strings.Contains(got, "[host-") || strings.Contains(got, "[name-") {
+		t.Errorf("a resolver was labelled as something else, so one row carries two ideas: %q", got)
+	}
+	// THE HALF THAT WOULD GO MISSING. The address the name resolved to is the
+	// answer, and a redaction that took it as well would answer "what does this
+	// resolve to" with a pseudonym.
+	if !strings.Contains(got, "192.0.2.10") {
+		t.Errorf("the address the name resolved to was masked, which deletes the diagnosis: %q", got)
+	}
+}
+
+// TestAResolverAddressIsNotMatchedInsideALongerOne covers the boundary the
+// pseudonym machinery has to get right for addresses specifically.
+//
+// Names have letters and read wrongly when cut. Addresses read wrongly when
+// EXTENDED: 10.1.2.5 sitting inside 10.1.2.53 would turn a neighbouring resolver
+// into "[resolver-1]3", which looks like a corrupted report rather than a bug.
+func TestAResolverAddressIsNotMatchedInsideALongerOne(t *testing.T) {
+	got := New(Everything, Resolver("10.1.2.5")).Text("10.1.2.5 and 10.1.2.53 and 110.1.2.5")
+
+	if strings.Count(got, "[resolver-1]") != 1 {
+		t.Errorf("the address matched inside a longer one: %q", got)
+	}
+	if !strings.Contains(got, "10.1.2.53") || !strings.Contains(got, "110.1.2.5") {
+		t.Errorf("a neighbouring address was damaged: %q", got)
+	}
+}
+
 // TestAnAccountAndAHostAreToldApart is the other side of the kind. Without it the
 // kind could be ignored entirely and the test above would still pass, because one
 // name cannot show that two labels exist.

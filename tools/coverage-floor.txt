@@ -41,6 +41,7 @@
 github.com/donislawdev/certdoctor none
 github.com/donislawdev/certdoctor/cmd/certdoctor 90
 github.com/donislawdev/certdoctor/internal/adapter/dial 100
+github.com/donislawdev/certdoctor/internal/adapter/dns 90
 github.com/donislawdev/certdoctor/internal/adapter/file 91
 github.com/donislawdev/certdoctor/internal/adapter/output 72
 github.com/donislawdev/certdoctor/internal/adapter/privilege 87

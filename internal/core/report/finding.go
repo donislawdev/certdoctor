@@ -86,6 +86,77 @@ func (v ResolutionView) Meaning() string { return resolutionViewMeanings[v] }
 // String makes ResolutionView printable without a conversion at every call site.
 func (v ResolutionView) String() string { return string(v) }
 
+// NoAnswer says why a query has no response code.
+//
+// SILENCE IS NOT A RESPONSE CODE, AND THAT IS THE WHOLE REASON THIS TYPE EXISTS
+// RATHER THAN A FEW MORE STRINGS IN ResponseCode - ADR30. NODATA lives in that
+// field legitimately because it is read OUT OF A PACKET THAT ARRIVED: the name
+// exists and there is no record of the type asked for. Here no packet arrived at
+// all, so there is nothing to read, and a reader of --json would have to guess
+// which values came off the wire and which we invented.
+//
+// It is measured rather than reasoned: a forward to an unroutable address
+// produces SILENCE, not SERVFAIL - docs/17 section 6d, on the coredns bench. A
+// layer that folded the two together would send somebody to their resolver when
+// the answer is their firewall.
+//
+// THE LIST IS CLOSED, unlike ResponseCode, and for the mirror-image reason:
+// these reasons are OURS. They describe what this program did or failed to do,
+// so an unrecognised one is a defect here rather than news from the network.
+type NoAnswer string
+
+const (
+	// NoAnswerTimeout - the query went out and nothing came back in time.
+	NoAnswerTimeout NoAnswer = "timeout"
+	// NoAnswerRefusedByRule - the allowed set refused this address, so nothing
+	// was ever sent. It is a fact about US, and reporting it as a network
+	// failure would accuse a working resolver.
+	NoAnswerRefusedByRule NoAnswer = "refused_by_rule"
+	// NoAnswerTransportError - sending or receiving failed outright.
+	NoAnswerTransportError NoAnswer = "transport_error"
+	// NoAnswerUnreadableAnswer - something came back and could not be read as an
+	// answer to the question that was asked.
+	NoAnswerUnreadableAnswer NoAnswer = "unreadable_answer"
+	// NoAnswerNotAsked - the layer ran out of its budget before this query.
+	//
+	// IT IS REPORTED RATHER THAN OMITTED, and that is inviolable rule 1. Three
+	// resolvers times two record types at three seconds each is eighteen seconds
+	// against a ten second layer budget, so queries WILL be dropped on a slow
+	// network - and a report that simply had fewer rows would read as a machine
+	// with fewer resolvers.
+	NoAnswerNotAsked NoAnswer = "not_asked"
+)
+
+var noAnswerMeanings = map[NoAnswer]string{
+	NoAnswerTimeout:          "the query was sent and nothing came back in time",
+	NoAnswerRefusedByRule:    "this address was not in the allowed set, so nothing was sent",
+	NoAnswerTransportError:   "sending the query or reading the reply failed",
+	NoAnswerUnreadableAnswer: "a reply arrived and could not be read as an answer to this question",
+	NoAnswerNotAsked:         "the layer ran out of time before this query was asked",
+}
+
+// AllNoAnswers lists every reason exactly once, in declaration order.
+var AllNoAnswers = []NoAnswer{
+	NoAnswerTimeout,
+	NoAnswerRefusedByRule,
+	NoAnswerTransportError,
+	NoAnswerUnreadableAnswer,
+	NoAnswerNotAsked,
+}
+
+// Valid reports whether n is one of the declared reasons.
+func (n NoAnswer) Valid() bool {
+	_, ok := noAnswerMeanings[n]
+	return ok
+}
+
+// Meaning returns the English text for n, or the empty string outside the
+// registry.
+func (n NoAnswer) Meaning() string { return noAnswerMeanings[n] }
+
+// String makes NoAnswer printable without a conversion at every call site.
+func (n NoAnswer) String() string { return string(n) }
+
 // Valid reports whether k is one of the declared kinds.
 func (k FindingKind) Valid() bool {
 	_, ok := findingKindMeanings[k]
@@ -202,6 +273,9 @@ type NameResolution struct {
 	// It is not a closed registry because it comes off the wire: an unknown code
 	// is reported as itself rather than refused.
 	ResponseCode string
+	// NoAnswer says why there is no response code, and is empty when there is
+	// one. The direct view carries exactly one of the two - see breach.
+	NoAnswer NoAnswer
 	// Addresses is what came back, in a stable order.
 	Addresses []string
 	// DurationMS is how long this one answer took, in whole milliseconds.
@@ -371,12 +445,35 @@ func (n NameResolution) breach(source Source) string {
 			return fmt.Sprintf("is our own query for %s and says it was derived rather than observed", n.Name)
 		case n.Resolver == "":
 			return fmt.Sprintf("is a direct query for %s and cannot say which resolver was asked", n.Name)
-		case n.ResponseCode == "":
-			return fmt.Sprintf("is a direct query for %s and carries no response code, which is the one thing this "+
-				"view exists to establish", n.Name)
 		case n.QueryType == "":
 			return fmt.Sprintf("is a direct query for %s and does not say which record type it asked for", n.Name)
+		// EXACTLY ONE OF THE TWO, AND BOTH HALVES OF THAT ARE WORTH A BRANCH -
+		// ADR30. Neither means the row says nothing about what happened, which is
+		// the one thing this view exists to establish. Both means it claims the
+		// resolver answered AND that it never did, and a reader would believe
+		// whichever column they looked at first.
+		case n.ResponseCode == "" && n.NoAnswer == "":
+			return fmt.Sprintf("is a direct query for %s and says neither what the resolver answered nor why it did "+
+				"not, which is the one thing this view exists to establish", n.Name)
+		case n.ResponseCode != "" && n.NoAnswer != "":
+			return fmt.Sprintf("is a direct query for %s carrying the response code %s and also the reason %q for "+
+				"having none", n.Name, n.ResponseCode, n.NoAnswer)
 		}
+	}
+
+	// Checked for every view, because the system view can fail to answer too and
+	// the reason it gives has to come from the same closed list.
+	if n.NoAnswer != "" && !n.NoAnswer.Valid() {
+		return fmt.Sprintf("says resolving %s produced no answer because %q, which is outside the closed list",
+			n.Name, n.NoAnswer)
+	}
+	// AN ANSWER THAT NEVER ARRIVED CANNOT HAVE BROUGHT ADDRESSES. This is the
+	// same shape as the NXDOMAIN rule below and catches the likelier mistake: a
+	// caller that fills in the reason for a timeout while leaving the addresses
+	// from the query before it.
+	if n.NoAnswer != "" && len(n.Addresses) > 0 {
+		return fmt.Sprintf("says resolving %s produced no answer (%s) and lists %d address(es) from it",
+			n.Name, n.NoAnswer, len(n.Addresses))
 	}
 
 	// A name that does not exist has no addresses. Reporting both is the kind of

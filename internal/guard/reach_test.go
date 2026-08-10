@@ -8,18 +8,29 @@ import (
 
 // dialAllowlist names the files allowed to reach the network.
 //
-// IT IS EMPTY, AND THAT IS THE CORRECT STATE TODAY. Nothing in this program
-// connects to anything yet. The guard is written now, before L1, for the reason
-// the whole ordering of this project rests on: a guard written afterwards
-// arrives to find the rule already broken, and then it is something to repair
-// rather than something that protects.
+// IT WAS EMPTY UNTIL 2026-08-10 AND HAS EXACTLY ONE ENTRY, which is the number
+// worth defending. An entry here is not a formality: it means there is one more
+// place in this program where a connection can begin, and the promise of
+// inviolable rule 16 - that certdoctor connects only to what it derived from the
+// user's own question - rests on how few such places there are. The entry goes in
+// together with the code it covers, never ahead of it.
 //
-// An entry here is not a formality. It means there is one more place in this
-// program where a connection can begin, and the promise of inviolable rule 16 -
-// that certdoctor connects only to what it derived from the user's own question
-// - rests on how few such places there are. The entry goes in together with the
-// code it covers, never ahead of it.
-var dialAllowlist = map[string]bool{}
+// THE GUARD WAS WRITTEN BEFORE THERE WAS ANYTHING TO CATCH, at P3a, and that is
+// why this list could start at zero. A guard written afterwards arrives to find
+// the rule already broken and is then something to repair rather than something
+// that protects. It also means this entry was added the way the rule intends: the
+// scanner went red on the new file, and the line below is the answer to it.
+var dialAllowlist = map[string]bool{
+	// The UDP socket L1 sends a query out of, and nothing else. It is not called
+	// directly anywhere: the entry point wraps it in dial.Guarded, so the allowed
+	// set refuses an address the run did not derive before this file is reached.
+	//
+	// It is one FILE and not the package, deliberately. Everything else under
+	// internal/adapter/dns - reading a reply, listing this machine's resolvers -
+	// stays on the wrong side of this list, so a second way to open a connection
+	// cannot appear next to the first one without turning this test red.
+	"internal/adapter/dns/network.go": true,
+}
 
 // networkPackages are the standard library imports that can open a connection.
 //
@@ -68,6 +79,17 @@ var fileReadAllowlist = map[string]bool{
 	// on purpose: an exclusion would silently cover every guard file written
 	// from now on, and this list is meant to be read.
 	"internal/guard/scan.go": true,
+
+	// The plumbing behind the file port, added 2026-08-10 with L1. THIS IS THE
+	// FIRST ENTRY THAT READS A PATH FROM SOMEBODY ELSE'S CONFIGURATION -
+	// /etc/resolv.conf - which is the exact case the rest of this comment is
+	// about, and it is why the port in front of it judges the path as written,
+	// then resolves links, then judges what they led to, and only then opens.
+	//
+	// The rule itself is in file.go and touches nothing. Only this file does, so
+	// the count of places able to turn a path into bytes goes up by one and stays
+	// readable.
+	"internal/adapter/file/live.go": true,
 }
 
 // fileReachingCalls are the standard library calls that make a path touch a
@@ -121,12 +143,15 @@ func TestNothingOutsideTheAllowlistOpensAPath(t *testing.T) {
 	requireNoViolations(t, checkFileOpening(tr), "path opening outside the allowlist")
 }
 
-// TestTheReachGuardsCanFail is the canary, and on this tree it carries the
-// whole weight.
+// TestTheReachGuardsCanFail is the canary, and it carried the whole weight until
+// 2026-08-10.
 //
-// Both lists are empty and nothing in the module dials or opens anything, so
-// both checks above run over a set with nothing in it and would look exactly
-// the same if they read no files at all.
+// While both lists were empty, the two checks above ran over a set with nothing
+// in it and would have looked exactly the same if they had read no files at all.
+// That is no longer true - each list now names real files - but the canary stays
+// and matters MORE, not less: from here on the checks pass partly because the
+// allowlists say so, and a scanner that silently stopped scanning would look
+// identical to one finding nothing outside them.
 func TestTheReachGuardsCanFail(t *testing.T) {
 	dialing := tree{
 		modulePath: "github.com/donislawdev/certdoctor",

@@ -95,8 +95,14 @@ var schema = object(map[string]node{
 				"resolver":      nullable(text()),
 				"query_type":    nullable(text()),
 				"response_code": nullable(text()),
-				"addresses":     array(text()),
-				"duration_ms":   number(),
+				// Null whenever there WAS an answer, and one of the closed reasons
+				// when there was not - ADR30. It sits beside response_code rather
+				// than inside it because silence is a transport fact and a response
+				// code is a DNS fact, and a consumer must not have to guess which
+				// values came off the wire.
+				"no_answer":   nullable(text()),
+				"addresses":   array(text()),
+				"duration_ms": number(),
 			})),
 		}))),
 	})),

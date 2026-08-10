@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -10,11 +11,14 @@ import (
 	"time"
 
 	certdoctor "github.com/donislawdev/certdoctor"
+	"github.com/donislawdev/certdoctor/internal/adapter/dns"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/app/run"
+	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
+	"github.com/donislawdev/certdoctor/internal/core/resolve"
 )
 
 const (
@@ -46,6 +50,30 @@ type environment struct {
 	// writeFile puts a finished report at a path the user named. It is the only
 	// way this package can reach the file system.
 	writeFile func(path string, data []byte) error
+
+	// nameservers enumerates the resolvers this machine is configured to use.
+	//
+	// IT IS CALLED BEFORE THE WALK AND NOT INSIDE L1, and that ordering is
+	// forced by masking: a pseudonym is issued once per report, so the redaction
+	// has to be told about every resolver address before the first one can appear
+	// anywhere - ADR32. It also has to happen before the allowed set is built,
+	// because a query to a resolver nobody allowed is a query dial.Guarded
+	// refuses.
+	//
+	// A nil one is legal and means this build has no way to look, which L1
+	// reports as unknown with a reason rather than as a machine with no DNS.
+	nameservers func() (dns.Nameservers, error)
+	// exchange builds the way L1 sends a query, given the set of places this run
+	// may connect to.
+	//
+	// It takes the set rather than closing over one, because the set is built
+	// from what this particular run derived - the target, then this machine's
+	// resolvers - and handing the dialler a set assembled elsewhere is how a
+	// guard ends up checking against something other than what is dialled.
+	exchange func(*allowed.Targets) resolve.Exchange
+	// queryID picks the identifier of one DNS query. Unpredictable in the real
+	// build, because that is the only thing making an off-path answer detectable.
+	queryID func() uint16
 }
 
 // execute runs one command line from beginning to end and returns the code the
@@ -70,12 +98,24 @@ func execute(ctx context.Context, args []string, env environment) exitcode.Code 
 // diagnose is the path that produces a report: work out what to look at, walk
 // the layers, check the result against its own rules, render it, deliver it.
 func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
-	shown, redaction, targetFault := readTarget(o)
+	parsed, targetFault := readTarget(o)
 	if targetFault != nil {
 		return complain(env, targetFault)
 	}
 
-	finished, walkFault := walk(ctx, o, env, shown, redaction)
+	// THE ORDER OF THE NEXT FOUR LINES IS THE WHOLE OF THE L1 WIRING AND IT IS
+	// NOT FREE. The resolvers have to be known before the masking is built, so a
+	// pseudonym covers every address that can appear. The masking has to exist
+	// before the target is reduced. The allowed set has to be complete before
+	// anything can be dialled. Swapping any pair produces a run that looks
+	// correct and either leaks an address or refuses every query.
+	found, foundErr := enumerate(env)
+	redaction := redactionFor(o, parsed, found)
+	shown, removed := redaction.Target(parsed.String())
+	targets := allowedTargets(parsed, found)
+
+	finished, walkFault := walk(ctx, o, env, targetReduction{target: shown, removed: removed}, redaction,
+		resolutionInput(o, env, parsed, found, foundErr, targets))
 	if walkFault != nil {
 		return complain(env, walkFault)
 	}
@@ -97,7 +137,8 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 // no arrangement of this file in which an unchecked report reaches a renderer. A
 // verdict that disagrees with the rows beneath it is an internal failure, never
 // something to print and let the reader sort out.
-func walk(ctx context.Context, o *options, env environment, shown targetReduction, redaction *redact.Redaction) (report.Report, *fault) {
+func walk(ctx context.Context, o *options, env environment, shown targetReduction, redaction *redact.Redaction,
+	resolution resolve.Input) (report.Report, *fault) {
 	finished, err := run.Execute(ctx, run.Options{
 		Tool:        report.Tool{Name: toolName, Version: toolVersion},
 		Target:      shown.target,
@@ -107,7 +148,7 @@ func walk(ctx context.Context, o *options, env environment, shown targetReductio
 		Budget:      budget(o.timeout),
 		LayerBudget: budget(o.probeTimeout),
 		Now:         env.now,
-		Layers:      run.Wire(env.lookupEnv),
+		Layers:      run.Wire(env.lookupEnv, resolution),
 		Notes:       pendingNotes(shown, env.privilege),
 	})
 	if err != nil {
@@ -181,11 +222,11 @@ type targetReduction struct {
 // "localhost:8080", which the URL parser reads as the scheme "localhost" and
 // the opaque part "8080", and a tool that quietly diagnoses a different address
 // than the one asked about is worse than one that asks for a clearer question.
-func readTarget(o *options) (targetReduction, *redact.Redaction, *fault) {
+func readTarget(o *options) (*url.URL, *fault) {
 	raw := o.target
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return targetReduction{}, nil, usageFault(
+		return nil, usageFault(
 			"%q is not a URL certdoctor can read: %v. Give one like https://example.com", raw, err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
@@ -195,12 +236,12 @@ func readTarget(o *options) (targetReduction, *redact.Redaction, *fault) {
 		// ticket came straight back out, unescaped, into somebody's console and
 		// their log. The parser refuses ASCII control characters, which is why
 		// this looked safe - it does not refuse the ones above them.
-		return targetReduction{}, nil, usageFault(
+		return nil, usageFault(
 			"%q has no http:// or https:// scheme. Without one a host name cannot be told from a port number, so write it out, for example %q",
 			raw, "https://"+raw)
 	}
 	if parsed.Host == "" {
-		return targetReduction{}, nil, usageFault("%q names no host. Give one like https://example.com", raw)
+		return nil, usageFault("%q names no host. Give one like https://example.com", raw)
 	}
 
 	// The host is lower cased and nothing else is. Names in DNS are case
@@ -213,24 +254,109 @@ func readTarget(o *options) (targetReduction, *redact.Redaction, *fault) {
 	// It is done HERE rather than inside the masking rule, so that the rule for
 	// the target stays the rule the owner approved and nothing else.
 	parsed.Host = strings.ToLower(parsed.Host)
+	return parsed, nil
+}
 
+// enumerate asks this machine which resolvers it uses, tolerating a build that
+// has no way to look.
+//
+// A nil port is not silently an empty list. An empty list means "this machine
+// lists no resolver", which is a statement about somebody's machine, and a build
+// that could not look has no business making it.
+func enumerate(env environment) (dns.Nameservers, error) {
+	if env.nameservers == nil {
+		return dns.Nameservers{}, errors.New("this build has no way to enumerate the resolvers this machine uses")
+	}
+	return env.nameservers()
+}
+
+// redactionFor builds the one masking the whole report will use.
+//
+// THE TARGET HOST IS HANDED OVER AS SENSITIVE, AND ADR26 IS WHY. Masking finds a
+// host inside a URL by pattern, which covered every host in this report until L1
+// - that layer reports a BARE name in a field of its own, and no pattern finds
+// those without guessing which dotted words are names. This is the one host we
+// never have to guess about, so it is handed over by name.
+//
+// EVERY RESOLVER GOES OVER TOO, AS A DIFFERENT KIND - ADR32. An address the
+// target resolved to is the answer somebody came for and stays visible. A
+// resolver address is infrastructure: it does not say why anything is broken, it
+// says what the machines in somebody's network are called, and the person
+// reaching for --redact is the one about to paste this into a ticket.
+//
+// THE WIDER LIST IS USED, not the one L1 will ask. A resolver written down on
+// this machine and not currently in use is still an internal address, and it can
+// still reach the report - the layer names the ones it asked, and the enumeration
+// names where the list came from.
+//
+// Both go over in both modes. Names are only masked under Everything, so this
+// costs nothing in the weaker one, and a conditional here would be a second place
+// where the mode decides something.
+func redactionFor(o *options, parsed *url.URL, found dns.Nameservers) *redact.Redaction {
 	mode := redact.Credentials
 	if o.redact {
 		mode = redact.Everything
 	}
-	// THE TARGET HOST IS HANDED OVER AS SENSITIVE, AND ADR26 IS WHY. Masking finds
-	// a host inside a URL by pattern, which covered every host in this report until
-	// L1 - that layer reports a BARE name in a field of its own, and no pattern
-	// finds those without guessing which dotted words are names. This is the one
-	// host we never have to guess about, so it is handed over by name.
-	//
-	// It is handed over in both modes. Names are only masked under Everything, so
-	// this costs nothing in the weaker one, and a conditional here would be a
-	// second place where the mode decides something.
-	redaction := redact.New(mode, redact.Host(parsed.Hostname()))
+	sensitive := make([]redact.Sensitive, 0, len(found.Known)+1)
+	sensitive = append(sensitive, redact.Host(parsed.Hostname()))
+	for _, resolver := range found.Known {
+		sensitive = append(sensitive, redact.Resolver(resolver))
+	}
+	return redact.New(mode, sensitive...)
+}
 
-	shown, removed := redaction.Target(parsed.String())
-	return targetReduction{target: shown, removed: removed}, redaction, nil
+// allowedTargets builds the finite set of places this run may connect to.
+//
+// INVIOLABLE RULE 16, ASSEMBLED IN THE ONE PLACE THAT KNOWS WHAT THE USER ASKED.
+// Two of the five permitted derivations are available this early: the target
+// itself, and the resolvers this machine records. The addresses the target
+// resolves to are a third and they arrive during the walk - nothing dials them
+// yet, so adding them here would be an entry with no consumer.
+//
+// The set is built from the WIDER resolver list on purpose. A query goes only to
+// the narrower one, so every address dialled is certain to be in here, and the
+// difference between the two lists cannot turn into a refusal on a working
+// machine.
+func allowedTargets(parsed *url.URL, found dns.Nameservers) *allowed.Targets {
+	targets := allowed.New()
+	// The error is ignored on purpose and only here: Allow refuses an empty
+	// target, and readTarget has already refused a URL with no host.
+	_ = targets.Allow(parsed.Host, allowed.ReasonTarget)
+
+	for _, resolver := range found.Known {
+		address, err := dns.Target(resolver)
+		if err != nil {
+			// Something that is not an address cannot be dialled, so leaving it
+			// out of the set changes nothing about what this run can reach. It is
+			// not swallowed either: L1 asks it anyway and reports the refusal in
+			// its own row, which is where a reader would look for it.
+			continue
+		}
+		_ = targets.Allow(address, allowed.ReasonResolver)
+	}
+	return targets
+}
+
+// resolutionInput assembles everything L1 needs for one walk.
+func resolutionInput(o *options, env environment, parsed *url.URL, found dns.Nameservers, foundErr error,
+	targets *allowed.Targets) resolve.Input {
+	var exchange resolve.Exchange
+	if env.exchange != nil {
+		exchange = env.exchange(targets)
+	}
+	return resolve.Input{
+		// THE RAW HOST, NOT run.Options.Target. That field carries the target
+		// after masking, so a layer fed from it would spend the run under
+		// --redact resolving the literal name [host-1]. A test pins this.
+		Name:           parsed.Hostname(),
+		Resolvers:      found.ToAsk,
+		ResolversFrom:  found.From,
+		ResolversError: foundErr,
+		Exchange:       exchange,
+		QueryID:        env.queryID,
+		Now:            env.now,
+		PerQuery:       budget(o.probeTimeout),
+	}
 }
 
 // standingNotes are the shortfalls this build has no matter what it is asked to
