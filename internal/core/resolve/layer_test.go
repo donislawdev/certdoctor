@@ -952,6 +952,85 @@ func answeringWith(addresses []string) Exchange {
 	}
 }
 
+// TestTheUnionIsEveryResolverAndNotTheFirstOne is ADR31, at the place where
+// taking a shortcut would be invisible.
+//
+// Comparing against one resolver's answer would be a silent judgement about
+// whose answer counts, and on a machine whose resolvers agree it would produce
+// exactly the same output as the union - so nothing would ever show it. Here the
+// two resolvers answer differently on purpose: only the union covers what the
+// platform returned, and a first-resolver comparison would call it disjoint,
+// which is the class that raises a warning.
+func TestTheUnionIsEveryResolverAndNotTheFirstOne(t *testing.T) {
+	const first, second = "192.0.2.10", "192.0.2.11"
+
+	in := workingInput(func(_ context.Context, resolver string, query []byte) ([]byte, error) {
+		id := uint16(query[0])<<8 | uint16(query[1])
+		asked := dnsmsg.Type(uint16(query[len(query)-4])<<8 | uint16(query[len(query)-3]))
+		if asked != dnsmsg.TypeA {
+			return replyWith(id, asked, 0), nil
+		}
+		if resolver == "192.0.2.53" {
+			return replyWith(id, asked, 0, []byte{192, 0, 2, 10}), nil
+		}
+		return replyWith(id, asked, 0, []byte{192, 0, 2, 11}), nil
+	})
+	in.System = systemAnswering(SystemAnswer{Addresses: []string{first, second}})
+
+	got := Ask(context.Background(), in)
+	row := systemRowOf(t, got)
+	if row.NameResolution.Divergence != report.DivergenceAgree {
+		t.Errorf("the platform returned exactly what the two resolvers said between them, and the class is %q",
+			row.NameResolution.Divergence)
+	}
+	if got.Status != status.Pass {
+		t.Errorf("a comparison against every resolver agrees, and the layer said %s: %q", got.Status, got.Detail)
+	}
+}
+
+// TestADirectRowMayNotCarryTheComparison is the contract rule from ADR37, and
+// the failure it prevents is arithmetic rather than dramatic.
+//
+// Two resolvers times two record types is four direct rows. A class copied onto
+// each of them is one fact stored four times, which stays true exactly until
+// somebody edits one copy - and a reader has no way to know which of the four is
+// the one that was computed.
+func TestADirectRowMayNotCarryTheComparison(t *testing.T) {
+	// THE SUMMARY IS FILLED IN AND THE FIRST VERSION OF THIS TEST LEFT IT EMPTY,
+	// which the mutation register caught and reading never would have. A finding
+	// with no summary breaches the contract on its own, so the assertion "this
+	// row is refused" was satisfied whatever the divergence rule did - the test
+	// passed for a reason it was not about. Hence the second assertion too: the
+	// refusal has to NAME the thing being defended.
+	row := report.Finding{
+		Kind:    report.FindingNameResolution,
+		Summary: "192.0.2.53 answered NOERROR for example.com A",
+		Source:  report.SourceDetected,
+		NameResolution: &report.NameResolution{
+			Name:         "example.com",
+			View:         report.ViewDirect,
+			Resolver:     "192.0.2.53",
+			QueryType:    "A",
+			ResponseCode: "NOERROR",
+			Divergence:   report.DivergenceAgree,
+		},
+	}
+	broken := row.Breach()
+	if broken == "" {
+		t.Fatal("a direct row carried the comparison of the two views and the contract accepted it")
+	}
+	if !strings.Contains(broken, "divergence") {
+		t.Errorf("the row was refused for something else, so this test proves nothing about the rule: %s", broken)
+	}
+
+	// The other side, so the rule cannot be satisfied by refusing every direct
+	// row: the same row without the class has to be accepted.
+	row.NameResolution.Divergence = ""
+	if broken := row.Breach(); broken != "" {
+		t.Errorf("an ordinary direct row was refused: %s", broken)
+	}
+}
+
 // TestTheComparisonIsBySetAndNotByOrder pins the property the acceptance suite
 // paid for once already.
 //
