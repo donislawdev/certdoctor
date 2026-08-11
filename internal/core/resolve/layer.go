@@ -138,13 +138,20 @@ func Ask(ctx context.Context, in Input) Result {
 		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: in.noResolverDetail()}
 	}
 
-	findings := make([]report.Finding, 0, len(in.Resolvers)*len(dnsmsg.AllTypes))
-	answered := 0
+	total := len(in.Resolvers) * len(dnsmsg.AllTypes)
+	findings := make([]report.Finding, 0, total)
+	answered, sent := 0, 0
+	// Counted by kind rather than as one number, because the reason this layer
+	// gives for establishing nothing is chosen from these - ADR36.
+	seen := map[report.NoAnswer]int{}
 	for _, resolver := range in.Resolvers {
 		for _, recordType := range dnsmsg.AllTypes {
-			finding := in.askOne(ctx, resolver, recordType)
+			finding := in.askOne(ctx, resolver, recordType, total-sent)
+			sent++
 			if finding.NameResolution.ResponseCode != "" {
 				answered++
+			} else {
+				seen[finding.NameResolution.NoAnswer]++
 			}
 			findings = append(findings, finding)
 		}
@@ -153,12 +160,60 @@ func Ask(ctx context.Context, in Input) Result {
 	if answered == 0 {
 		return Result{
 			Status:   status.Unknown,
-			Reason:   status.ReasonProbeError,
-			Detail:   nothingAnswered,
+			Reason:   reasonForNothingAnswered(seen),
+			Detail:   nothingAnsweredDetail(total, seen[report.NoAnswerNotAsked]),
 			Findings: findings,
 		}
 	}
-	return Result{Status: status.Pass, Detail: in.answeredDetail(answered), Findings: findings}
+	return Result{
+		Status:   status.Pass,
+		Detail:   in.answeredDetail(answered, seen[report.NoAnswerNotAsked]),
+		Findings: findings,
+	}
+}
+
+// reasonForNothingAnswered picks which of the closed list of reasons describes a
+// walk where no resolver produced a response code.
+//
+// IT EXISTS BECAUSE probe_error USED TO BE THE ANSWER TO ALL OF THEM, and that
+// word means "the probe fell over" - ADR33 says so in as many words. A run where
+// every resolver stayed silent sends the reader to look at certdoctor, which is
+// the one place the answer is not.
+//
+// TIMEOUT OUTRANKS SKIPPING BECAUSE IT IS THE CAUSE AND SKIPPING IS THE
+// CONSEQUENCE. A budget spent waiting is why the later queries were never sent,
+// and naming the consequence would point at our arithmetic instead of at the
+// resolver that never answered.
+//
+// WHAT LANDS ON probe_error IS NAMED RATHER THAN LEFT TO BE DISCOVERED. A
+// refusal by the allowed set genuinely is our own doing, so it belongs there.
+// A transport error - the wire said no - does NOT, and there is no value in the
+// closed list that says it. It is the least wrong of six rather than the right
+// one, and the list is a public contract that does not grow without the owner.
+func reasonForNothingAnswered(seen map[report.NoAnswer]int) status.Reason {
+	switch {
+	case seen[report.NoAnswerTimeout] > 0:
+		return status.ReasonTimeout
+	case seen[report.NoAnswerNotAsked] > 0:
+		return status.ReasonSkippedBudget
+	case seen[report.NoAnswerUnreadableAnswer] > 0:
+		return status.ReasonUnparseable
+	}
+	return status.ReasonProbeError
+}
+
+// nothingAnsweredDetail adds the count of queries that never went out.
+//
+// INVIOLABLE RULE 1 ON THE ONE SENTENCE ANYBODY READS. "No resolver answered" is
+// true about the queries that were sent and misleading about the machine when
+// three of four were never sent at all. The rows carry not_asked honestly, but
+// they are below the fold of a terminal report and the sentence is not.
+func nothingAnsweredDetail(total, notAsked int) string {
+	if notAsked == 0 {
+		return nothingAnswered
+	}
+	return fmt.Sprintf("%s. %d of %d queries were not asked, because this layer ran out of its budget first",
+		nothingAnswered, notAsked, total)
 }
 
 // unusable names the port this layer was not given, or returns empty.
@@ -199,9 +254,16 @@ func (in Input) noResolverDetail() string {
 // resolver address is masked under --redact (ADR32) and this sentence goes
 // through the same masking as everything else - but a sentence built from counts
 // cannot leak one by being written before somebody thought about it.
-func (in Input) answeredDetail(answered int) string {
-	return fmt.Sprintf("asked %d resolver(s) for %d record type(s) and got %d answer(s)",
+// It also names queries that never went out, for the same reason the sentence
+// above does: a walk that asked half of what it planned and says only what came
+// back is a partial result wearing the shape of a complete one.
+func (in Input) answeredDetail(answered, notAsked int) string {
+	said := fmt.Sprintf("asked %d resolver(s) for %d record type(s) and got %d answer(s)",
 		len(in.Resolvers), len(dnsmsg.AllTypes), answered)
+	if notAsked == 0 {
+		return said
+	}
+	return fmt.Sprintf("%s, and %d query(ies) were not asked within the budget", said, notAsked)
 }
 
 // askOne sends a single query and turns whatever happened into one finding.
@@ -210,8 +272,10 @@ func (in Input) answeredDetail(answered int) string {
 // asked at all is still a row saying so - inviolable rule 1 - because a report
 // with fewer rows reads as a machine with fewer resolvers rather than as a run
 // that did less than it promised.
-func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.Type) report.Finding {
-	remaining := in.remaining(ctx)
+// queriesLeft counts this query and every one after it, so the share it is given
+// shrinks as the walk goes on and grows again whenever somebody answers early.
+func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.Type, queriesLeft int) report.Finding {
+	remaining := in.limitFor(ctx, queriesLeft)
 	if remaining <= 0 {
 		return in.finding(resolver, recordType, answer{noAnswer: report.NoAnswerNotAsked})
 	}
@@ -254,24 +318,45 @@ func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.T
 	})
 }
 
-// remaining is how long one query may take: the shorter of its own limit and
-// whatever is left of the layer's deadline.
+// limitFor is how long one query may take: the shorter of its own limit and its
+// SHARE of whatever is left of the layer's deadline.
 //
-// THE CAP IS THE POINT AND THE ARITHMETIC IS WHY THIS LAYER NAMES SKIPPED
-// QUERIES. Three resolvers times two record types at three seconds each is
-// eighteen seconds against a ten second layer budget, so on a slow network the
-// last queries WILL be dropped. A layer that let each query take its full limit
-// would spend the whole run's time and then report a timeout of its own.
-func (in Input) remaining(ctx context.Context) time.Duration {
+// THE SHARE IS THE POINT, AND IT REPLACED AN ARITHMETIC THAT WAS MEASURABLY
+// WRONG - OBS53, ADR36. This used to hand each query everything that was left,
+// which is only a cap when PerQuery is smaller than the layer budget. The entry
+// point derives both from the same switch, so it never was: one silent resolver
+// took 10008 ms of a ten second budget, three of four queries came back
+// not_asked, and the layer reported "no resolver answered" about a machine whose
+// second resolver answers in milliseconds.
+//
+// DIVIDING WHAT IS LEFT, RATHER THAN THE WHOLE BUDGET, IS WHAT MAKES THIS CHEAP.
+// A query that answered in 30 ms hands the rest of its share back to the queries
+// after it, so a healthy machine is not slowed down by arithmetic meant for a
+// broken one. A fixed split would punish the fast machine to protect the slow.
+//
+// THE PRICE IS NAMED RATHER THAN HIDDEN: a slow but working resolver can now be
+// cut off where it used to finish. That is the better half of the trade, because
+// the alternative is letting one resolver answer on behalf of the whole layer.
+func (in Input) limitFor(ctx context.Context, queriesLeft int) time.Duration {
 	deadline, set := ctx.Deadline()
 	if !set {
+		// No layer deadline at all: there is nothing to divide, and the query's
+		// own limit is the only thing left. Zero here means the caller asked for
+		// no limit and got one, which is what it asked for.
 		return in.PerQuery
 	}
 	left := deadline.Sub(in.Now())
-	if in.PerQuery > 0 && in.PerQuery < left {
+	if left <= 0 {
+		return 0
+	}
+	share := left
+	if queriesLeft > 1 {
+		share = left / time.Duration(queriesLeft)
+	}
+	if in.PerQuery > 0 && in.PerQuery < share {
 		return in.PerQuery
 	}
-	return left
+	return share
 }
 
 // reasonFor maps an exchange failure onto the closed list of reasons.

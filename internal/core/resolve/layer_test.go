@@ -303,8 +303,14 @@ func TestNobodyAnsweringIsUnknownAndNotAFailure(t *testing.T) {
 	if got.Status != status.Unknown {
 		t.Errorf("a run where nobody answered came back %s", got.Status)
 	}
-	if got.Reason != status.ReasonProbeError {
-		t.Errorf("the reason is %q", got.Reason)
+	// THIS ASSERTION SAID probe_error UNTIL ADR36 AND IT WAS THE WRONG WORD, not
+	// a weaker one. Every resolver here times out, nothing on our side fell over,
+	// and probe_error means exactly that it did - so the old value sent a reader
+	// to look at certdoctor for a fact about somebody's network. The check is
+	// still an exact value rather than a range, because a reason that drifts is
+	// the same as no reason.
+	if got.Reason != status.ReasonTimeout {
+		t.Errorf("the reason is %q, and every resolver here timed out", got.Reason)
 	}
 	// The rows are still there. A run that asked and got nothing is not a run
 	// that did not ask.
@@ -402,6 +408,242 @@ func TestOneQueryCannotSpendTheWholeLayerBudget(t *testing.T) {
 				limit, in.PerQuery)
 		}
 	}
+}
+
+// TestASilentResolverDoesNotStopTheOthersBeingAsked is the defect OBS53 measured,
+// written as a rule.
+//
+// THE FAILURE IT DEFENDS AGAINST WAS REAL AND MEASURED, not imagined. On a
+// machine listing an unroutable resolver first and a working one second, this
+// layer spent 10008 ms of its ten second budget on the silent one, marked the
+// other three queries not_asked, and said "no resolver answered" - about a
+// machine where the second resolver answers in milliseconds and Go's own
+// resolver had just used it. The rows were honest one by one; the layer's
+// summary was a statement about somebody else's DNS that came from our
+// arithmetic.
+//
+// IT USES THE REAL CLOCK, for the reason written on the test below it: a context
+// deadline is kept against the real clock, and reading it through an injected one
+// compares two timelines that have nothing to do with each other (OBS49).
+//
+// PerQuery IS SET EQUAL TO THE LAYER BUDGET ON PURPOSE - that is how the entry
+// point wires it, and it is exactly the configuration in which the old cap never
+// bit.
+func TestASilentResolverDoesNotStopTheOthersBeingAsked(t *testing.T) {
+	const silent, answering = "192.0.2.53", "198.51.100.53"
+	const budget = 600 * time.Millisecond
+
+	in := workingInput(nil)
+	in.Resolvers = []string{silent, answering}
+	in.Now = time.Now
+	in.PerQuery = budget
+	in.Exchange = func(ctx context.Context, resolver string, query []byte) ([]byte, error) {
+		if resolver == silent {
+			// Silence, not refusal. A resolver that accepts the packet and never
+			// answers is the shape that starves the budget - a refusal comes back
+			// at once and costs nothing.
+			<-ctx.Done()
+			return nil, ErrTimeout
+		}
+		id := uint16(query[0])<<8 | uint16(query[1])
+		asked := dnsmsg.Type(uint16(query[len(query)-4])<<8 | uint16(query[len(query)-3]))
+		return replyWith(id, asked, 0, addressFor(asked)), nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	got := Ask(ctx, in)
+
+	asked := map[string]int{}
+	for _, finding := range got.Findings {
+		body := finding.NameResolution
+		if body.ResponseCode != "" {
+			asked[body.Resolver]++
+		}
+	}
+	if asked[answering] == 0 {
+		t.Errorf("the resolver that answers was never asked: one silent resolver spent the whole layer budget.\n"+
+			"status %s, reason %q, detail %q\nrows: %s", got.Status, got.Reason, got.Detail, rowsOf(got))
+	}
+	// The other side, so this cannot be satisfied by never asking the silent one:
+	// every query still has to produce a row, and the silent resolver's rows have
+	// to say what happened to them rather than vanishing.
+	if len(got.Findings) != len(in.Resolvers)*len(dnsmsg.AllTypes) {
+		t.Errorf("the layer produced %d rows for %d resolvers and %d record types",
+			len(got.Findings), len(in.Resolvers), len(dnsmsg.AllTypes))
+	}
+}
+
+// TestNobodyAnsweringIsNotReportedAsOurOwnFailure is ADR36 part 2.
+//
+// probe_error means "the probe fell over", and ADR33 says so in as many words.
+// Reporting a run in which every resolver stayed silent as OUR failure sends the
+// reader to look at certdoctor, which is the one place the answer is not.
+func TestNobodyAnsweringIsNotReportedAsOurOwnFailure(t *testing.T) {
+	in := workingInput(nil)
+	in.Now = time.Now
+	in.PerQuery = 400 * time.Millisecond
+	in.Exchange = func(ctx context.Context, _ string, _ []byte) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ErrTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	got := Ask(ctx, in)
+
+	if got.Status != status.Unknown {
+		t.Errorf("nobody answered and the layer said %s", got.Status)
+	}
+	if got.Reason != status.ReasonTimeout {
+		t.Errorf("every resolver timed out and the reason is %q, which blames us rather than naming what happened",
+			got.Reason)
+	}
+}
+
+// TestTheLayerSaysHowManyQueriesItNeverAsked keeps inviolable rule 1 on the one
+// sentence a reader actually reads.
+//
+// A run that asked one query out of four and reports "no resolver answered" is
+// true about the queries it sent and misleading about the machine. The count is
+// what tells those apart, and it has to be IN THE SENTENCE, because the rows
+// carrying not_asked are below the fold of the terminal report.
+// THE FIXTURE OVERRUNS ITS SHARE ON PURPOSE, AND AN EARLIER VERSION OF THIS TEST
+// COULD NOT PRODUCE THE STATE IT WAS ABOUT. Waiting on the context makes every
+// query end exactly when its share ends, so after ADR36 nothing is ever skipped
+// and the test skipped itself - a check that reports "nothing to see" is one a
+// mutation walks straight past (OBS28). A resolver whose reply lands after the
+// deadline is both realistic and the only way to spend more than the share.
+func TestTheLayerSaysHowManyQueriesItNeverAsked(t *testing.T) {
+	const budget = 200 * time.Millisecond
+	const overrun = 150 * time.Millisecond
+
+	in := workingInput(nil)
+	in.Now = time.Now
+	in.PerQuery = 0 // no limit of its own: the layer deadline is the only cap
+	in.Exchange = func(context.Context, string, []byte) ([]byte, error) {
+		time.Sleep(overrun)
+		return nil, ErrTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	got := Ask(ctx, in)
+
+	skipped := 0
+	for _, finding := range got.Findings {
+		if finding.NameResolution.NoAnswer == report.NoAnswerNotAsked {
+			skipped++
+		}
+	}
+	if skipped == 0 {
+		t.Fatalf("two queries at %s each cannot fit in %s, so some had to be skipped: %s", overrun, budget, rowsOf(got))
+	}
+	if !strings.Contains(got.Detail, "not asked") {
+		t.Errorf("%d queries were never asked and the sentence does not say so: %q", skipped, got.Detail)
+	}
+	// The count has to be the real one. A sentence that says "some" would pass a
+	// check for the words and tell the reader nothing.
+	if !strings.Contains(got.Detail, fmt.Sprintf("%d of %d", skipped, len(got.Findings))) {
+		t.Errorf("the sentence does not carry the actual count %d of %d: %q", skipped, len(got.Findings), got.Detail)
+	}
+}
+
+// TestALayerThatArrivedTooLateSaysSoRatherThanBlamingItself covers the state
+// skipped_budget was put in the list for.
+//
+// The layer can be reached with its budget already gone - earlier layers are
+// entitled to spend it, and the run deadline is shared. Nothing is sent, every
+// row is not_asked, and NOTHING TIMED OUT, because a query that never went out
+// cannot time out. probe_error here would say certdoctor fell over, and
+// `timeout` would say a resolver was slow: both name something that did not
+// happen, on a run where we simply never asked.
+func TestALayerThatArrivedTooLateSaysSoRatherThanBlamingItself(t *testing.T) {
+	in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		t.Error("a query went out on a budget that was already spent")
+		return nil, ErrTimeout
+	})
+	in.Now = time.Now
+
+	// A deadline in the past: the shape of a layer reached last on a slow run.
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	got := Ask(ctx, in)
+
+	if got.Status != status.Unknown {
+		t.Errorf("a layer that asked nothing answered %s", got.Status)
+	}
+	if got.Reason != status.ReasonSkippedBudget {
+		t.Errorf("the reason is %q, and no query was ever sent", got.Reason)
+	}
+	for _, finding := range got.Findings {
+		if finding.NameResolution.NoAnswer != report.NoAnswerNotAsked {
+			t.Errorf("a query that never went out is recorded as %q", finding.NameResolution.NoAnswer)
+		}
+	}
+	if !strings.Contains(got.Detail, fmt.Sprintf("%d of %d", len(got.Findings), len(got.Findings))) {
+		t.Errorf("the sentence does not say that every query was skipped: %q", got.Detail)
+	}
+}
+
+// TestASuccessfulWalkStillSaysWhatItSkipped is the same rule as the test above,
+// on the path where it is easiest to lose.
+//
+// A layer that answers PASS has already told the reader the good news, and a
+// query nobody sent is exactly the kind of thing that disappears behind it.
+// Inviolable rule 1 does not have an exception for runs that went well: a walk
+// that asked three of four questions and reports only what came back is a
+// partial result wearing the shape of a complete one.
+func TestASuccessfulWalkStillSaysWhatItSkipped(t *testing.T) {
+	const quick, slow = "192.0.2.53", "198.51.100.53"
+
+	in := workingInput(nil)
+	in.Resolvers = []string{quick, slow}
+	in.Now = time.Now
+	in.PerQuery = 0
+	in.Exchange = func(_ context.Context, resolver string, query []byte) ([]byte, error) {
+		if resolver == slow {
+			// Lands after the layer deadline, which leaves nothing for the query
+			// after it.
+			time.Sleep(150 * time.Millisecond)
+			return nil, ErrTimeout
+		}
+		id := uint16(query[0])<<8 | uint16(query[1])
+		asked := dnsmsg.Type(uint16(query[len(query)-4])<<8 | uint16(query[len(query)-3]))
+		return replyWith(id, asked, 0, addressFor(asked)), nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	got := Ask(ctx, in)
+
+	if got.Status != status.Pass {
+		t.Fatalf("two queries answered and the layer said %s: %s", got.Status, rowsOf(got))
+	}
+	skipped := 0
+	for _, finding := range got.Findings {
+		if finding.NameResolution.NoAnswer == report.NoAnswerNotAsked {
+			skipped++
+		}
+	}
+	if skipped == 0 {
+		t.Fatalf("nothing was skipped, so this proves nothing about a PASS hiding one: %s", rowsOf(got))
+	}
+	if !strings.Contains(got.Detail, "not asked") {
+		t.Errorf("a PASS hid %d query nobody sent: %q", skipped, got.Detail)
+	}
+}
+
+// rowsOf renders the rows compactly for a failure message. A failing budget test
+// that does not show what each resolver did leaves the reader guessing which half
+// broke.
+func rowsOf(r Result) string {
+	var out strings.Builder
+	for _, finding := range r.Findings {
+		body := finding.NameResolution
+		fmt.Fprintf(&out, "\n  %s %s code=%q no_answer=%q", body.Resolver, body.QueryType, body.ResponseCode, body.NoAnswer)
+	}
+	return out.String()
 }
 
 // TestTheLayerSentenceCountsResolversAndNamesNone is ADR32 defended at the one
