@@ -501,6 +501,44 @@ func TestNobodyAnsweringIsNotReportedAsOurOwnFailure(t *testing.T) {
 	}
 }
 
+// TestEveryWayOfEstablishingNothingPicksItsOwnReason is ADR33 and ADR39 as one
+// table, and the rule it defends is that the reason points somewhere true.
+//
+// A reason is where the report sends the reader. probe_error sends them to
+// certdoctor, which is the one place the answer is not when a cable is out, and
+// that was the answer to a transport failure until the seventh reason existed.
+// The order matters as much as the values: a timeout is the CAUSE and a skipped
+// query is its CONSEQUENCE, so naming the consequence would point at our own
+// arithmetic instead of at the resolver that never answered.
+func TestEveryWayOfEstablishingNothingPicksItsOwnReason(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want status.Reason
+	}{
+		{"nothing came back in time", ErrTimeout, status.ReasonTimeout},
+		{"the wire said no", errors.New("network is unreachable"), status.ReasonTransportError},
+		{"our own set refused us", ErrRefused, status.ReasonProbeError},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+				return nil, c.err
+			})
+			got := Ask(context.Background(), in)
+
+			if got.Status != status.Unknown {
+				t.Fatalf("nothing was established and the layer said %s", got.Status)
+			}
+			if got.Reason != c.want {
+				t.Errorf("%v came back as %q, want %q - the reason is where this report sends the reader",
+					c.err, got.Reason, c.want)
+			}
+		})
+	}
+}
+
 // TestTheLayerSaysHowManyQueriesItNeverAsked keeps inviolable rule 1 on the one
 // sentence a reader actually reads.
 //

@@ -26,7 +26,7 @@ import (
 // So the minor moves with the field that caused it. L1 adds the reason a query
 // has no response code, which is the first thing in this document a consumer
 // could read as an answer when it is the absence of one.
-const SchemaVersion = "1.2"
+const SchemaVersion = "1.3"
 
 // JSON renders the machine readable report.
 //

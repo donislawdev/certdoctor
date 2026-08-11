@@ -37,6 +37,20 @@ const (
 	// waiting at L2 with no proxy configured and at L5 with no runtime
 	// installed, and a reason named after L1 would be reinvented twice.
 	ReasonNothingToCheck Reason = "nothing_to_check"
+	// ReasonTransportError - every attempt to ask failed on the wire, and none of
+	// them failed inside this program.
+	//
+	// THE SEVENTH REASON, AND IT EXISTS FOR THE SAME MEASURED CAUSE AS THE SIXTH
+	// - ADR39. A run where every resolver was unreachable had nowhere honest to
+	// land: it did not time out, it was not refused access, nothing was
+	// unreadable and nothing here broke. It fell to probe_error, which says the
+	// probe itself failed, so the reader was sent to look at certdoctor while the
+	// answer was a cable, a firewall or a network that is down.
+	//
+	// IT IS THE SAME WORD AS THE ROW-LEVEL REASON ON PURPOSE. A reader who sees
+	// transport_error on four rows and something different on the layer above
+	// them would reasonably assume the two describe different things.
+	ReasonTransportError Reason = "transport_error"
 )
 
 // AllReasons lists every reason exactly once.
@@ -47,6 +61,7 @@ var AllReasons = []Reason{
 	ReasonProbeError,
 	ReasonSkippedBudget,
 	ReasonNothingToCheck,
+	ReasonTransportError,
 }
 
 // reasonDescriptions carries the English one-liner shown to the user. Keeping it
@@ -59,6 +74,7 @@ var reasonDescriptions = map[Reason]string{
 	ReasonProbeError:     "the probe itself failed to run",
 	ReasonSkippedBudget:  "skipped because the run exceeded its overall time budget",
 	ReasonNothingToCheck: "this layer ran and there was nothing on this machine for it to look at",
+	ReasonTransportError: "every attempt to ask failed on the wire rather than inside certdoctor",
 }
 
 // Valid reports whether r is one of the declared reasons.

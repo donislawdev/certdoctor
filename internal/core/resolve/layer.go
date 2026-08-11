@@ -467,7 +467,15 @@ func reasonForNothingAnswered(seen map[report.NoAnswer]int) status.Reason {
 		return status.ReasonSkippedBudget
 	case seen[report.NoAnswerUnreadableAnswer] > 0:
 		return status.ReasonUnparseable
+	case seen[report.NoAnswerTransportError] > 0:
+		// ADDED WITH THE SEVENTH REASON - ADR39, closing OBS55. This used to fall
+		// through to probe_error, which says this program broke, and sent the
+		// reader to look at certdoctor while the answer was a cable or a firewall.
+		return status.ReasonTransportError
 	}
+	// WHAT IS LEFT IS OURS AND ONLY OURS: a refusal by our own allowed set. It is
+	// the one remaining way to reach this line, and probe_error is the right word
+	// for it - the run was stopped by a rule this program applied to itself.
 	return status.ReasonProbeError
 }
 

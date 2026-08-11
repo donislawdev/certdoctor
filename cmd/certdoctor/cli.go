@@ -424,6 +424,24 @@ var standingNotes = []report.Note{
 		Field:  "run.platform.container",
 		Detail: "certdoctor does not detect containers yet, so this is left empty rather than answered no",
 	},
+	// THE DOCUMENT SAYS OUT LOUD THAT IT IS NOT STABLE YET, and it says it HERE
+	// rather than only in a document nobody reading --json will ever open.
+	//
+	// The schema moved three times in one day - a field for silence, a field for
+	// the divergence of the two views, a seventh reason - and every one of those
+	// was the right call precisely because nothing is released. A consumer who
+	// pins this version has no way to know that from the number alone, and
+	// finding out from a broken pipeline is the expensive way to be told.
+	//
+	// IT DISAPPEARS AT THE FIRST RELEASE, and that is the whole design: a note
+	// that never goes away teaches people that notes are boilerplate, and then
+	// the one that mattered goes unread with the rest.
+	{
+		Kind:  report.NoteUndetermined,
+		Field: "schema_version",
+		Detail: "this schema is still moving and will keep moving until certdoctor reaches 1.0.0 - " +
+			"pin this version only if you are prepared to update, and read the technical changelog before you do",
+	},
 }
 
 // pendingNotes is the standing list plus whatever this particular invocation
