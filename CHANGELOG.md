@@ -10,9 +10,26 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
-`certdoctor <url>` produces a whole report. One of its eight diagnostic layers now says something about your machine; the other seven report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them - "7 of 8 diagnostic layers could not be assessed." - and the run ends with `5 INCONCLUSIVE`. What exists is the path a real answer will travel, built before any answer, so that there is no point at which this program claims to have checked something it has not.
+`certdoctor <url>` produces a whole report. Two of its eight diagnostic layers now say something about your machine; the other six report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE`. What exists is the path a real answer will travel, built before any answer, so that there is no point at which this program claims to have checked something it has not.
 
 ### Added
+
+- **`L1` answers what a name resolves to, asking the resolvers this machine is configured to use.** This is the first thing certdoctor does that leaves your own process. It reads the resolvers out of the registry and the IP helper API on Windows, and out of `/etc/resolv.conf` elsewhere, then asks each of them separately for `A` and for `AAAA` - and reports one row per answer rather than one row per name, because a resolver that answers for one record type and not the other is the whole "hangs for thirty seconds, then works" class of problem.
+
+  **Each row says which resolver answered, what it answered, and how long it took.** `NXDOMAIN`, `SERVFAIL` and `NODATA` are told apart and reported as themselves. That distinction is the reason this layer asks the resolvers directly instead of using the one built into Go: the standard resolver collapses "the name does not exist" and "resolving it failed" into a single message, and those two send you to two different places.
+
+  **A query that got no answer says why, in its own field, rather than pretending to a response code.** Nothing came back in time, the reply could not be read, the address was not one this run was allowed to reach, or there was not enough time left to ask at all - the last one because a slow network can use up the layer's budget, and a report with fewer rows would read as a machine with fewer resolvers.
+
+  **This is one of the two views this layer will end up reporting.** It is certdoctor's own query to a named resolver, so it is what is actually in DNS. The second view - what your system itself answers, which can differ - arrives next, together with the comparison between them. The report says so rather than leaving you to notice one is missing.
+
+  **`L1` reports `PASS` when it got answers and `UNKNOWN` with a reason when it did not.** It does not report `FAIL` when no resolver answers, and that is deliberate: this view never reads your `hosts` file, so a name that only resolves there gets nothing from every resolver. Calling that a failure would blame your network for a limit of this tool.
+
+- **`--redact` now also replaces the addresses of your resolvers**, as `[resolver-1]`, `[resolver-2]` and so on. The addresses a name resolved to stay visible, because those are the answer you came for. A resolver address is not an answer - it is what the machines inside your network are called, and `--redact` is the flag you reach for when you are about to paste a report into a ticket.
+
+### Changed
+
+- **`schema_version` is now `1.1`.** It stood at `1.0` while fields were added, on the grounds that nothing was released and nobody was reading the document. It moves now because `L1` adds the first field in it that could be read as an answer when it is the absence of one. A consumer pinned to the exact string `1.0` will need to accept `1.1`; one that ignores fields it does not know needs no change.
+- **`UNKNOWN` has a sixth reason, `nothing_to_check`**: the layer ran correctly and there was nothing on this machine for it to look at. A machine with no configured DNS resolver gets this rather than `probe_error`, which would have said this program broke when it did not.
 
 - **`L0` reports the environment this machine is configured with.** Twenty-three variables that decide what gets trusted and what gets proxied - the proxy variables, `SSL_CERT_FILE` and `SSL_CERT_DIR`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `NODE_TLS_REJECT_UNAUTHORIZED`, `JAVA_TOOL_OPTIONS`, `GIT_SSL_CAINFO` and `GIT_SSL_CAPATH`, `PIP_CERT`, `AWS_CA_BUNDLE`, and two that hint at a container. Each is reported as set, set to nothing, or not set. Those are three different answers, not two: an empty `HTTPS_PROXY` switches proxying off in some tools while an absent one sends them looking elsewhere.
 

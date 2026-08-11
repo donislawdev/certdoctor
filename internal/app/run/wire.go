@@ -5,7 +5,9 @@ import (
 
 	"github.com/donislawdev/certdoctor/internal/core/layer"
 	"github.com/donislawdev/certdoctor/internal/core/machine"
+	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
+	"github.com/donislawdev/certdoctor/internal/core/status"
 )
 
 // Wire returns the behaviour of all eight layers: the ones that are written
@@ -50,26 +52,31 @@ func Wire(environment machine.Lookup, resolution resolve.Input) Layers {
 // did not look and an empty slice means it looked and found nothing, and the
 // orchestrator's own copy is what keeps those two apart from here on - ADR20.
 func answerFrom(result machine.Result) Answer {
-	return Answer{
-		Status:   result.Status,
-		Reason:   result.Reason,
-		Detail:   result.Detail,
-		Findings: result.Findings,
-	}
+	return answerOf(result.Status, result.Reason, result.Detail, result.Findings)
 }
 
 // answerFromResolution is the same boundary for L1.
 //
-// IT IS A SECOND FUNCTION AND NOT A SHARED ONE, and that is worth a sentence
-// because the two bodies are identical today. Each layer's result is its own
-// type, and the day one of them grows a field this boundary has to think about,
-// a shared function would have to grow a way of not thinking about it for the
-// other. Two small functions cost four lines and cannot drift into that.
+// EACH LAYER HAS ITS OWN RESULT TYPE AND THEY SHARE ONE CROSSING, and the second
+// half of that sentence was written by the mutation register rather than by
+// judgement. This started as a copy of the function above, with a comment
+// arguing that two small functions cannot drift. What it actually did was make
+// three EXISTING entries ambiguous - the same rule now matched in two places, so
+// each of them reported SKIP and stopped proving anything. A duplicated rule
+// duplicates itself for the register too, and the register says so by going
+// quiet.
+//
+// So the rule lives once, in answerOf, and both layers go through it.
 func answerFromResolution(result resolve.Result) Answer {
-	return Answer{
-		Status:   result.Status,
-		Reason:   result.Reason,
-		Detail:   result.Detail,
-		Findings: result.Findings,
-	}
+	return answerOf(result.Status, result.Reason, result.Detail, result.Findings)
+}
+
+// answerOf is the crossing itself: four fields, carried across unchanged.
+//
+// It masks nothing (ADR18), grades nothing (ADR7) and attaches no identifier -
+// a layer never gets to say which layer it is. The findings slice is passed
+// along as it is, NIL AND ALL: nil means the layer did not look and an empty
+// slice means it looked and found nothing (ADR20).
+func answerOf(state status.Status, reason status.Reason, detail string, findings []report.Finding) Answer {
+	return Answer{Status: state, Reason: reason, Detail: detail, Findings: findings}
 }
