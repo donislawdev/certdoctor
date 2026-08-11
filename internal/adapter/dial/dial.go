@@ -59,7 +59,34 @@ func (r *Refusal) Error() string {
 // cannot connect at all, which is loud, wrong in the safe direction, and
 // impossible to mistake for working.
 func Guarded(inner Dialer, targets *allowed.Targets, record Record) Dialer {
+	mayReach := Permission(targets, record)
 	return func(ctx context.Context, address string) (io.ReadWriteCloser, error) {
+		if err := mayReach(address); err != nil {
+			return nil, err
+		}
+		if inner == nil {
+			return nil, fmt.Errorf("no dialler was supplied, so %s could not be reached", address)
+		}
+		return inner(ctx, address)
+	}
+}
+
+// Permission is the rule itself, with no plumbing attached: may this address be
+// dialled, and the recorder is told either way.
+//
+// IT EXISTS SO THAT THE RULE LIVES IN ONE PLACE WHEN A SECOND DIALLER APPEARS -
+// ADR35. The system view has to ask net.Resolver, whose Dial has a different
+// signature and hands back a net.Conn, so it cannot go through Guarded above.
+// Writing the check a second time inside that adapter is the shape OBS50
+// measured: the same rule matching in two places turned three existing mutation
+// entries into SKIP, and the summary differed from a clean one by a single
+// number. Here the second caller consumes the same function rather than a copy
+// of it, so an entry aimed at this rule still aims at both.
+//
+// A nil recorder means nobody is watching. A nil set is not the same thing and
+// refuses everything, for the reason spelled out on Guarded.
+func Permission(targets *allowed.Targets, record Record) func(address string) error {
+	return func(address string) error {
 		permitted := false
 		if targets != nil {
 			_, permitted = targets.Permits(address)
@@ -68,11 +95,8 @@ func Guarded(inner Dialer, targets *allowed.Targets, record Record) Dialer {
 			record(address, permitted)
 		}
 		if !permitted {
-			return nil, &Refusal{Address: address}
+			return &Refusal{Address: address}
 		}
-		if inner == nil {
-			return nil, fmt.Errorf("no dialler was supplied, so %s could not be reached", address)
-		}
-		return inner(ctx, address)
+		return nil
 	}
 }

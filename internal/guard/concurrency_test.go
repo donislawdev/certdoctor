@@ -16,6 +16,70 @@ import (
 // and the core must not learn that anything runs in parallel.
 var concurrencyAllowlist = map[string]bool{}
 
+// lockOnlyAllowlist names files allowed to HOLD A LOCK and nothing else.
+//
+// IT IS A NARROWER EXEMPTION THAN THE LIST ABOVE, AND THAT IS ITS WHOLE REASON.
+// A file here may import sync. It still may not start a goroutine, open a
+// channel, send on one, receive from one, or select - those stay reported, for
+// ever, by the same walk that covers every other file. The list above switches
+// the guard off for a file; this one switches off a single question.
+//
+// WHY IT EXISTS AT ALL, MEASURED RATHER THAN ARGUED. The system view has to ask
+// net.Resolver, and net.Resolver calls the dialler we hand it FROM ITS OWN
+// GOROUTINES - measured in alpine, three runs of three, with the A and AAAA
+// queries overlapping in time by tens of microseconds. The one fact that
+// dialler has to report outward, whether it was called at all, is what decides
+// detected against derived (ADR28). So the state is written by somebody else's
+// goroutines and read by ours, which is a lock whether or not we like it.
+//
+// THIS IS A THIRD CATEGORY THAT docs/22 SECTION 2 DID NOT ANTICIPATE. Rule 1
+// there says concurrency lives in the orchestrator alone, and it is about work
+// WE run in parallel. Nothing in this program starts a goroutine for the system
+// view. The parallelism is the standard library's, arriving through a callback,
+// and the only thing we own is the lock that makes reading it safe. Writing that
+// distinction down is the point of this list: the next reader must not conclude
+// that the core has started parallelising itself.
+var lockOnlyAllowlist = map[string]bool{
+	// The system view's dialler. It holds one mutex over two fields and starts
+	// nothing - and if it ever does start something, the walk below still says so.
+	"internal/adapter/dns/system.go": true,
+}
+
+// TestALockOnlyFileMayHoldALockAndNothingElse is the canary for the narrow
+// exemption, and without it that list is a hole nobody checks.
+//
+// An allowlist entry is only worth having if the thing it does NOT excuse is
+// still enforced. This plants a file on the lock-only list and hands the scanner
+// a fixture that holds a mutex AND starts a goroutine, opens a channel, sends,
+// receives and selects. The import must stop being reported; every one of the
+// others must still be, and the test names them rather than counting, because a
+// count passes just as well when the wrong half survives.
+func TestALockOnlyFileMayHoldALockAndNothingElse(t *testing.T) {
+	const planted = "internal/adapter/probe/planted.go"
+	lockOnlyAllowlist[planted] = true
+	defer delete(lockOnlyAllowlist, planted)
+
+	tr := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "concurrency_violation.go", planted)},
+	}
+	violations := checkConcurrencyContainment(tr)
+
+	var said string
+	for _, v := range violations {
+		said += v.Detail + "\n"
+		if strings.Contains(v.Detail, "import of") {
+			t.Errorf("a lock-only file was still reported for holding a lock: %s", v.Detail)
+		}
+	}
+	for _, structural := range []string{"go statement", "channel type", "channel send", "channel receive", "select statement"} {
+		if !strings.Contains(said, structural) {
+			t.Errorf("a lock-only file got away with a %s, and the exemption was meant to cover the import alone.\nreported:\n%s",
+				structural, said)
+		}
+	}
+}
+
 // TestConcurrencyIsContained is the guard from docs 22 position 2. It stands
 // before the first goroutine on purpose: written afterwards it would find the
 // rule already broken and would be something to repair rather than something
@@ -119,13 +183,19 @@ func checkConcurrencyContainment(tr tree) []Violation {
 			})
 		}
 
-		for _, imp := range importsOf(sf) {
-			if imp.path == "sync" || imp.path == "sync/atomic" {
-				violations = append(violations, Violation{
-					File:   sf.rel,
-					Line:   imp.line,
-					Detail: "import of \"" + imp.path + "\" - concurrency lives in the orchestrator alone",
-				})
+		// A lock-only file is excused THIS question and no other. Everything below
+		// still runs against it, so the day somebody adds a goroutine here the
+		// guard says so - which is the difference between a narrow exemption and
+		// switching the guard off for a file.
+		if !lockOnlyAllowlist[sf.rel] {
+			for _, imp := range importsOf(sf) {
+				if imp.path == "sync" || imp.path == "sync/atomic" {
+					violations = append(violations, Violation{
+						File:   sf.rel,
+						Line:   imp.line,
+						Detail: "import of \"" + imp.path + "\" - concurrency lives in the orchestrator alone",
+					})
+				}
 			}
 		}
 

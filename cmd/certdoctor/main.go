@@ -112,6 +112,13 @@ func liveEnvironment() environment {
 		exchange: func(targets *allowed.Targets) resolve.Exchange {
 			return dns.Exchange(dial.Guarded(dns.Socket, targets, nil))
 		},
+		// The second lens. It gets dial.Permission rather than dial.Guarded
+		// because net.Resolver wants a dialler of its own shape - and it gets the
+		// SAME rule the line above uses rather than a second copy of it, which is
+		// the whole of ADR35 in one argument.
+		system: func(targets *allowed.Targets) resolve.SystemLookup {
+			return dns.System(dial.Permission(targets, nil))
+		},
 		queryID: queryID,
 	}
 }

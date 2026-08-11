@@ -634,6 +634,234 @@ func TestASuccessfulWalkStillSaysWhatItSkipped(t *testing.T) {
 	}
 }
 
+// systemAnswering builds a system lens that always says the same thing.
+func systemAnswering(a SystemAnswer) SystemLookup {
+	return func(context.Context, string) SystemAnswer { return a }
+}
+
+// systemRowOf finds the one row the system lens produces, or fails.
+func systemRowOf(t *testing.T, r Result) report.Finding {
+	t.Helper()
+	for _, finding := range r.Findings {
+		if finding.NameResolution.View == report.ViewSystem {
+			return finding
+		}
+	}
+	t.Fatalf("the walk produced no system row at all: %s", rowsOf(r))
+	return report.Finding{}
+}
+
+// TestTheSystemRowLeavesTheThreeColumnsItCannotKnowEmpty is the contract from K2,
+// checked at the one place that could fill them in.
+//
+// The platform resolves a name and does not say which server answered, which
+// record type it asked for, or what the reply's code was. Those are the three
+// most useful columns of a row, which is exactly why a plausible mistake fills
+// them in - and a filled-in row reads like a measurement rather than a guess.
+// The finding contract refuses them, and this checks that the layer does not
+// have to be refused.
+func TestTheSystemRowLeavesTheThreeColumnsItCannotKnowEmpty(t *testing.T) {
+	in := workingInput(answering(func(id uint16, recordType dnsmsg.Type) ([]byte, error) {
+		return replyWith(id, recordType, 0, addressFor(recordType)), nil
+	}))
+	in.System = systemAnswering(SystemAnswer{Addresses: []string{"192.0.2.10"}, ViaPlatform: true})
+
+	row := systemRowOf(t, Ask(context.Background(), in))
+	body := row.NameResolution
+	if body.Resolver != "" {
+		t.Errorf("the system row names %q as the resolver, which this view cannot know", body.Resolver)
+	}
+	if body.QueryType != "" {
+		t.Errorf("the system row says it asked for %q, which this view does not split by", body.QueryType)
+	}
+	if body.ResponseCode != "" {
+		t.Errorf("the system row carries the response code %q, which the platform does not hand back", body.ResponseCode)
+	}
+	if broken := row.Breach(); broken != "" {
+		t.Errorf("the row this layer built is refused by its own contract: %s", broken)
+	}
+}
+
+// TestTheSystemRowSaysWhoDidTheWork is ADR28 in one assertion, and it is the
+// whole reason the adapter reports a fact instead of the core asking a question.
+//
+// Probe S10 measured a cgo-enabled binary on glibc going through Go's own
+// resolver, which is why neither the operating system nor the build settings can
+// decide this. What decides it is whether our dialler was called during THIS
+// query, and the core does nothing with that fact but translate it.
+func TestTheSystemRowSaysWhoDidTheWork(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		viaPlatform bool
+		want        report.Source
+	}{
+		{"the platform resolved it", true, report.SourceDetected},
+		{"our own resolver stood in", false, report.SourceDerived},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			in := workingInput(answering(func(id uint16, recordType dnsmsg.Type) ([]byte, error) {
+				return replyWith(id, recordType, 0, addressFor(recordType)), nil
+			}))
+			in.System = systemAnswering(SystemAnswer{Addresses: []string{"192.0.2.10"}, ViaPlatform: c.viaPlatform})
+
+			row := systemRowOf(t, Ask(context.Background(), in))
+			if row.Source != c.want {
+				t.Errorf("the platform did the work: %v, and the row says %q", c.viaPlatform, row.Source)
+			}
+			if broken := row.Breach(); broken != "" {
+				t.Errorf("the row is refused by its own contract: %s", broken)
+			}
+		})
+	}
+}
+
+// TestAMachineWithNoResolverOfItsOwnIsStillAsked is the state S11 measured and
+// this layer used to get wrong.
+//
+// An empty resolv.conf does not mean names do not resolve - it means the
+// platform asks loopback, and a container whose local resolver answered got
+// "there was nobody to ask" out of this layer. Nothing to check now needs BOTH
+// lenses to be missing.
+func TestAMachineWithNoResolverOfItsOwnIsStillAsked(t *testing.T) {
+	// THE EXCHANGE IS WIRED AND MUST NEVER BE CALLED, which is two assertions in
+	// one fixture. A nil one would be refused before the walk even starts - a
+	// missing port is our own defect whatever the machine looks like - and in
+	// production it is always wired, so a test handing nil would be measuring a
+	// state that cannot happen.
+	in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		t.Error("a query went out although this machine lists no resolver to send one to")
+		return nil, ErrTimeout
+	})
+	in.Resolvers = nil
+	in.System = systemAnswering(SystemAnswer{Addresses: []string{"203.0.113.10"}})
+
+	got := Ask(context.Background(), in)
+	if got.Reason == status.ReasonNothingToCheck {
+		t.Fatalf("the platform resolved the name and the layer said there was nothing to check: %q", got.Detail)
+	}
+	if got.Status != status.Pass {
+		t.Errorf("the platform answered and the layer said %s: %q", got.Status, got.Detail)
+	}
+	row := systemRowOf(t, got)
+	if len(row.NameResolution.Addresses) == 0 {
+		t.Error("the system row carries no addresses, so the answer was lost on the way")
+	}
+	// And the sentence has to admit which lens did it, because on this machine
+	// the direct view established nothing at all.
+	if !strings.Contains(got.Detail, "no resolver of its own") {
+		t.Errorf("the sentence does not say the direct view had nobody to ask: %q", got.Detail)
+	}
+}
+
+// TestTheSystemViewIsCountedInTheBudgetLikeAnyOtherQuery keeps ADR36 whole.
+//
+// Leaving the second lens out of the arithmetic would hand it whatever the
+// direct view left over, which is the same starvation OBS53 measured arriving
+// from the other side. Here the direct view is silent and eats its shares, and
+// the system view still has to be asked rather than dropped.
+func TestTheSystemViewIsCountedInTheBudgetLikeAnyOtherQuery(t *testing.T) {
+	const budget = 500 * time.Millisecond
+
+	asked := false
+	in := workingInput(nil)
+	in.Now = time.Now
+	in.PerQuery = budget
+	in.Exchange = func(ctx context.Context, _ string, _ []byte) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ErrTimeout
+	}
+	in.System = func(context.Context, string) SystemAnswer {
+		asked = true
+		return SystemAnswer{Addresses: []string{"203.0.113.10"}}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	got := Ask(ctx, in)
+
+	if !asked {
+		t.Fatalf("four silent resolvers spent the whole budget and the platform was never asked: %s", rowsOf(got))
+	}
+	if got.Status != status.Pass {
+		t.Errorf("the platform answered and the layer said %s: %q", got.Status, got.Detail)
+	}
+}
+
+// TestWhenNeitherLensResolvesTheNameTheSentenceStopsApologisingForOne is the
+// half of inviolable rule 1 that only shows up once the second lens exists.
+//
+// The sentence for "nobody answered" was written while this layer had one view,
+// and it says so: it explains that with only our own view there is no telling a
+// name that does not resolve from one this view cannot see. That is true, and it
+// stops being true the moment the platform has been asked too. A sentence that
+// keeps apologising for a lens it is holding is worse than one that never had it.
+func TestWhenNeitherLensResolvesTheNameTheSentenceStopsApologisingForOne(t *testing.T) {
+	in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		return nil, ErrTimeout
+	})
+	in.System = systemAnswering(SystemAnswer{NoAnswer: report.NoAnswerTransportError})
+
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown {
+		t.Errorf("neither lens resolved the name and the layer said %s", got.Status)
+	}
+	if strings.Contains(got.Detail, "with only our own view") {
+		t.Errorf("both lenses were used and the sentence still says only one was: %q", got.Detail)
+	}
+	if !strings.Contains(got.Detail, "neither view") {
+		t.Errorf("the sentence does not say that both lenses came back empty: %q", got.Detail)
+	}
+	// And the row itself has to say what happened rather than looking like a
+	// lookup nobody performed.
+	row := systemRowOf(t, got)
+	if !strings.Contains(row.Summary, "no answer") {
+		t.Errorf("the system row reads %q, which does not say it failed", row.Summary)
+	}
+}
+
+// TestAPassStillAdmitsThatTheOtherLensSaidNothing is the same rule on the path
+// where it is easiest to lose: the good news has already been delivered.
+func TestAPassStillAdmitsThatTheOtherLensSaidNothing(t *testing.T) {
+	in := workingInput(answering(func(id uint16, recordType dnsmsg.Type) ([]byte, error) {
+		return replyWith(id, recordType, 0, addressFor(recordType)), nil
+	}))
+	in.System = systemAnswering(SystemAnswer{NoAnswer: report.NoAnswerTimeout})
+
+	got := Ask(context.Background(), in)
+	if got.Status != status.Pass {
+		t.Fatalf("our own view answered and the layer said %s: %q", got.Status, got.Detail)
+	}
+	if !strings.Contains(got.Detail, "the system view did not answer") {
+		t.Errorf("a PASS hid the fact that the second lens said nothing: %q", got.Detail)
+	}
+}
+
+// TestTheSystemViewIsNamedRatherThanDroppedWhenTheBudgetIsGone is inviolable
+// rule 1 for the row that arrives last.
+//
+// Being last is exactly why it is the one that gets dropped, and a report with
+// no system row reads like a run that never had a second lens rather than one
+// that ran out of time before using it.
+func TestTheSystemViewIsNamedRatherThanDroppedWhenTheBudgetIsGone(t *testing.T) {
+	in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		return nil, ErrTimeout
+	})
+	in.Now = time.Now
+	in.System = func(context.Context, string) SystemAnswer {
+		t.Error("the platform was asked although the budget was already gone")
+		return SystemAnswer{}
+	}
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	got := Ask(ctx, in)
+
+	row := systemRowOf(t, got)
+	if row.NameResolution.NoAnswer != report.NoAnswerNotAsked {
+		t.Errorf("the system row says %q where nothing was ever sent", row.NameResolution.NoAnswer)
+	}
+}
+
 // rowsOf renders the rows compactly for a failure message. A failing budget test
 // that does not show what each resolver did leaves the reader guessing which half
 // broke.

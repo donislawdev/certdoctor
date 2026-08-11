@@ -20,12 +20,15 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strconv"
 )
 
 // Socket opens a UDP association to one resolver.
 //
-// IT IS THE ONLY FUNCTION IN THIS PROGRAM THAT OPENS A CONNECTION, and this file
-// is the only entry on the dial allowlist in reach_test.go. Inviolable rule 16 -
+// IT IS THE ONLY FUNCTION IN THIS PROGRAM THAT OPENS A CONNECTION OF ITS OWN,
+// and this file is one of two entries on the dial allowlist in reach_test.go -
+// the other is system.go, where net.Resolver is handed a dialler for the system
+// view because its shape cannot be ours (ADR35). Inviolable rule 16 -
 // that a diagnostic tool reading somebody's trust stores does not phone home -
 // is a promise a user cannot check for themselves, and what makes it checkable
 // is that the number of places able to start a connection stays countable.
@@ -86,6 +89,45 @@ func Target(resolver string) (string, error) {
 	// A zone identifier survives - fe80::1%eth0 is a legitimate entry in
 	// resolv.conf, and what the file says is what the report shows.
 	return netip.AddrPortFrom(addr, dnsPort).String(), nil
+}
+
+// RawTarget is the same resolver spelled the way the PLATFORM spells it: the
+// token exactly as the machine wrote it down, joined with the port.
+//
+// IT EXISTS BECAUSE Target CANONICALISES AND THE PLATFORM DOES NOT, and that is
+// measured rather than assumed. Go's own resolv.conf reader joins the RAW token
+// with "53" - net/dnsconfig_unix.go, read at the source in Go 1.26.5 - so a file
+// saying "2001:0DB8::1" makes it ask for "[2001:0DB8::1]:53" while Target hands
+// the allowed set "[2001:db8::1]:53". The set compares strings and does so on
+// purpose, so unless BOTH spellings are in it the guard refuses a resolver that
+// is answering. Probe S11 measured exactly that, OBS54.
+//
+// It joins with net.JoinHostPort rather than assembling the string here, because
+// that is the function the platform uses, and agreeing with it by hand is a
+// guess that would go stale silently.
+func RawTarget(resolver string) string {
+	return net.JoinHostPort(resolver, strconv.Itoa(dnsPort))
+}
+
+// PlatformFallbackResolvers are the resolvers the platform asks when this
+// machine lists none of its own.
+//
+// SOURCE, AS INVIOLABLE RULE 18 REQUIRES: net/dnsconfig.go in Go 1.26.5 declares
+// defaultNS as 127.0.0.1:53 and [::1]:53, and uses it when resolv.conf is
+// missing, unreadable, or carries no nameserver line. Probe S11 confirmed it by
+// running rather than by reading: with an empty resolv.conf and a resolver
+// answering on loopback, Go resolved the name through these two while certdoctor
+// reported having nobody to ask.
+//
+// THEY ARE ADDED ONLY WHEN THE MACHINE LISTS NONE - ADR34. A machine with a
+// resolver of its own never sends the platform here, so putting loopback in the
+// set alongside a real list would widen what this program may reach for no
+// measured reason.
+func PlatformFallbackResolvers() []string {
+	return []string{
+		net.JoinHostPort("127.0.0.1", strconv.Itoa(dnsPort)),
+		net.JoinHostPort("::1", strconv.Itoa(dnsPort)),
+	}
 }
 
 // dnsPort is not configurable today.

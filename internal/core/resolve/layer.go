@@ -96,9 +96,48 @@ type Input struct {
 	// Now is the clock, taken as a port so the budget arithmetic is testable
 	// without waiting for real time to pass.
 	Now func() time.Time
+	// System asks the platform the same question, and is the second of the two
+	// lenses D3 requires.
+	//
+	// A NIL ONE IS NOT A DEFECT AND DOES NOT STOP THE WALK, unlike the ports
+	// above. The direct view establishes something on its own, so a run without
+	// the system lens is a narrower answer rather than no answer - and the report
+	// says which of the two it is holding rather than leaving the reader to count
+	// lenses.
+	System SystemLookup
 	// PerQuery is the longest one query may take. It is capped by whatever is
 	// left of the layer's own deadline, never the other way round.
 	PerQuery time.Duration
+}
+
+// SystemLookup asks the platform to resolve a name the way any other program on
+// this machine would.
+//
+// IT TAKES NO RESOLVER AND RETURNS NO RESPONSE CODE, and neither is an
+// oversight. The platform resolves a name and does not say which server answered
+// it, which record type it asked for, or what the reply's code was - so the
+// finding contract refuses a system row carrying any of the three. Those are the
+// three most useful columns of a row, which makes them the three a plausible
+// mistake fills in, and a filled-in row reads like a measurement.
+type SystemLookup func(ctx context.Context, name string) SystemAnswer
+
+// SystemAnswer is what the platform said, plus the one fact only the adapter can
+// establish.
+type SystemAnswer struct {
+	// Addresses are what the name resolved to, in the order the platform gave
+	// them.
+	Addresses []string
+	// ViaPlatform says the question went through the platform's own resolver
+	// rather than the one built into this binary.
+	//
+	// ADR28: THE ADAPTER DECIDES THIS AT RUN TIME AND THE CORE ONLY TRANSLATES.
+	// It is not a fact about the operating system or about how this was built -
+	// probe S10 measured a cgo-enabled binary on glibc going through Go's own
+	// resolver anyway - it is a fact about what happened during THIS query. The
+	// core turns it into detected or derived and asks nothing else.
+	ViaPlatform bool
+	// NoAnswer says why there is no answer, and is empty when there is one.
+	NoAnswer report.NoAnswer
 }
 
 // Result is what L1 established, before anything has been masked.
@@ -121,6 +160,7 @@ const (
 	noClock         = "no clock was supplied, so the time each answer took could not be established"
 	noResolvers     = "this machine lists no DNS resolver we could find, so there was nobody to ask"
 	nothingAnswered = "no resolver answered, and with only our own view there is no way to tell a name that does not resolve from one this view cannot see"
+	neitherView     = "neither view resolved this name: our own queries got nothing back and the platform did not resolve it either"
 )
 
 // Ask walks every resolver and every record type once, and reports what came
@@ -134,42 +174,151 @@ func Ask(ctx context.Context, in Input) Result {
 	if broken := in.unusable(); broken != "" {
 		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: broken}
 	}
-	if len(in.Resolvers) == 0 {
+	// A MACHINE THAT LISTS NO RESOLVER CAN STILL RESOLVE NAMES, and that is not a
+	// theory - S11 measured it. With an empty resolv.conf the platform asks
+	// loopback, and a container whose local resolver answered had this layer
+	// report there was nobody to ask. So "nothing to check" now needs BOTH lenses
+	// to be missing, not just our own list.
+	if len(in.Resolvers) == 0 && in.System == nil {
 		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: in.noResolverDetail()}
 	}
 
-	total := len(in.Resolvers) * len(dnsmsg.AllTypes)
-	findings := make([]report.Finding, 0, total)
-	answered, sent := 0, 0
-	// Counted by kind rather than as one number, because the reason this layer
-	// gives for establishing nothing is chosen from these - ADR36.
+	counted := tallies{total: len(in.Resolvers) * len(dnsmsg.AllTypes)}
+	if in.System != nil {
+		// THE SYSTEM VIEW COUNTS AS A QUERY IN THE BUDGET ARITHMETIC. Leaving it
+		// out would hand it whatever the direct view left over, which is the same
+		// starvation ADR36 was written to remove, arriving from the other side.
+		counted.total++
+	}
+
+	findings := make([]report.Finding, 0, counted.total)
 	seen := map[report.NoAnswer]int{}
+	sent := 0
 	for _, resolver := range in.Resolvers {
 		for _, recordType := range dnsmsg.AllTypes {
-			finding := in.askOne(ctx, resolver, recordType, total-sent)
+			finding := in.askOne(ctx, resolver, recordType, counted.total-sent)
 			sent++
-			if finding.NameResolution.ResponseCode != "" {
-				answered++
-			} else {
-				seen[finding.NameResolution.NoAnswer]++
-			}
+			counted.direct += tally(finding, seen)
 			findings = append(findings, finding)
 		}
 	}
 
-	if answered == 0 {
+	// THE SYSTEM VIEW GOES LAST AND THE ORDER IS FIXED RATHER THAN CONVENIENT.
+	// Whichever lens goes second asks a resolver whose cache the first one just
+	// warmed, so its timing is flattering and means nothing. D13 part 2 forbids
+	// putting the two views' times side by side for exactly this reason - probe
+	// S4 was measured the wrong way round and its numbers could not be quoted. A
+	// fixed order at least keeps the bias in one direction and written down.
+	if in.System != nil {
+		counted.systemAsked = true
+		finding := in.askSystem(ctx, counted.total-sent)
+		counted.systemAnswered = tally(finding, seen) == 1
+		findings = append(findings, finding)
+	}
+
+	if counted.direct+boolToInt(counted.systemAnswered) == 0 {
+		// STILL UNKNOWN RATHER THAN FAIL, EVEN WITH BOTH LENSES SILENT, AND THAT
+		// IS NOT AN OVERSIGHT. D13 does call that case FAIL, but it says so as one
+		// of five named divergence classes, and the classification is the next
+		// slice. Reaching for the verdict here would implement half of D13 and
+		// leave the other four cases unnamed.
 		return Result{
 			Status:   status.Unknown,
 			Reason:   reasonForNothingAnswered(seen),
-			Detail:   nothingAnsweredDetail(total, seen[report.NoAnswerNotAsked]),
+			Detail:   nothingAnsweredDetail(counted, seen[report.NoAnswerNotAsked]),
 			Findings: findings,
 		}
 	}
-	return Result{
-		Status:   status.Pass,
-		Detail:   in.answeredDetail(answered, seen[report.NoAnswerNotAsked]),
-		Findings: findings,
+	counted.notAsked = seen[report.NoAnswerNotAsked]
+	return Result{Status: status.Pass, Detail: in.answeredDetail(counted), Findings: findings}
+}
+
+// tallies is what one walk counted. It exists so the sentence builders take one
+// argument instead of four numbers whose order nobody can check at the call site.
+type tallies struct {
+	total          int
+	direct         int
+	notAsked       int
+	systemAsked    bool
+	systemAnswered bool
+}
+
+// tally counts one row as an answer or as a reason for not having one.
+//
+// "NO REASON" IS THE SAME FACT AS "A RESPONSE CODE" AND THAT IS ENFORCED, not
+// assumed: the finding contract refuses a direct row carrying neither and refuses
+// one carrying both. The system view never carries a code at all, so asking
+// about the reason is the only question that fits both lenses.
+func tally(finding report.Finding, seen map[report.NoAnswer]int) int {
+	if finding.NameResolution.NoAnswer == "" {
+		return 1
 	}
+	seen[finding.NameResolution.NoAnswer]++
+	return 0
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// askSystem asks the platform once, inside its own share of the budget.
+func (in Input) askSystem(ctx context.Context, queriesLeft int) report.Finding {
+	remaining := in.limitFor(ctx, queriesLeft)
+	if remaining <= 0 {
+		return in.systemFinding(SystemAnswer{NoAnswer: report.NoAnswerNotAsked}, 0)
+	}
+
+	queryCtx, cancel := context.WithTimeout(ctx, remaining)
+	defer cancel()
+
+	started := in.Now()
+	answer := in.System(queryCtx, in.Name)
+	return in.systemFinding(answer, in.Now().Sub(started))
+}
+
+// systemFinding turns the platform's answer into the one row this view produces.
+//
+// THE THREE MOST USEFUL COLUMNS ARE LEFT EMPTY ON PURPOSE and the finding
+// contract refuses them here: which resolver answered, which record type was
+// asked for, and what the response code was. The platform reports none of the
+// three, so filling any of them in would be inventing a measurement.
+func (in Input) systemFinding(a SystemAnswer, elapsed time.Duration) report.Finding {
+	// ADR28 AND ADR23 MEET HERE. The adapter reports whether the question went
+	// through the platform's resolver, and that single fact - not the operating
+	// system, not how this was built - decides whether the row is something we
+	// observed or something our own resolver produced in the platform's place.
+	source := report.SourceDerived
+	if a.ViaPlatform {
+		source = report.SourceDetected
+	}
+	return report.Finding{
+		Kind:    report.FindingNameResolution,
+		Summary: systemSummaryOf(in.Name, a, source),
+		Source:  source,
+		NameResolution: &report.NameResolution{
+			Name:       in.Name,
+			View:       report.ViewSystem,
+			Addresses:  a.Addresses,
+			NoAnswer:   a.NoAnswer,
+			DurationMS: elapsed.Milliseconds(),
+		},
+	}
+}
+
+// systemSummaryOf says which resolver actually did the work, because that is the
+// difference between a measurement and a reconstruction.
+func systemSummaryOf(name string, a SystemAnswer, source report.Source) string {
+	how := "through the resolver this platform uses"
+	if source == report.SourceDerived {
+		how = "through the resolver built into this program, because the platform's own was not used"
+	}
+	if a.NoAnswer != "" {
+		return fmt.Sprintf("the system view got no answer for %s %s: %s", name, how, a.NoAnswer.Meaning())
+	}
+	return fmt.Sprintf("the system view resolved %s to %d address(es) %s", name, len(a.Addresses), how)
 }
 
 // reasonForNothingAnswered picks which of the closed list of reasons describes a
@@ -208,12 +357,19 @@ func reasonForNothingAnswered(seen map[report.NoAnswer]int) status.Reason {
 // true about the queries that were sent and misleading about the machine when
 // three of four were never sent at all. The rows carry not_asked honestly, but
 // they are below the fold of a terminal report and the sentence is not.
-func nothingAnsweredDetail(total, notAsked int) string {
+func nothingAnsweredDetail(t tallies, notAsked int) string {
+	// The transitional half of this sentence stops being true the moment the
+	// second lens is present, and a sentence that keeps apologising for a lens it
+	// has is worse than one that never had it.
+	said := nothingAnswered
+	if t.systemAsked {
+		said = neitherView
+	}
 	if notAsked == 0 {
-		return nothingAnswered
+		return said
 	}
 	return fmt.Sprintf("%s. %d of %d queries were not asked, because this layer ran out of its budget first",
-		nothingAnswered, notAsked, total)
+		said, notAsked, t.total)
 }
 
 // unusable names the port this layer was not given, or returns empty.
@@ -257,13 +413,33 @@ func (in Input) noResolverDetail() string {
 // It also names queries that never went out, for the same reason the sentence
 // above does: a walk that asked half of what it planned and says only what came
 // back is a partial result wearing the shape of a complete one.
-func (in Input) answeredDetail(answered, notAsked int) string {
-	said := fmt.Sprintf("asked %d resolver(s) for %d record type(s) and got %d answer(s)",
-		len(in.Resolvers), len(dnsmsg.AllTypes), answered)
-	if notAsked == 0 {
-		return said
+func (in Input) answeredDetail(t tallies) string {
+	// "asked 0 resolver(s) for 2 record type(s)" is arithmetic rather than a
+	// sentence, and it is what a machine with an empty resolv.conf produced. The
+	// direct view having nobody to ask is a fact worth saying in words, because
+	// it is half of the answer on exactly the machine where the other half comes
+	// from the platform.
+	said := "this machine lists no resolver of its own to ask"
+	if len(in.Resolvers) > 0 {
+		said = fmt.Sprintf("asked %d resolver(s) for %d record type(s) and got %d answer(s)",
+			len(in.Resolvers), len(dnsmsg.AllTypes), t.direct)
 	}
-	return fmt.Sprintf("%s, and %d query(ies) were not asked within the budget", said, notAsked)
+	if t.notAsked > 0 {
+		said += fmt.Sprintf(", and %d query(ies) were not asked within the budget", t.notAsked)
+	}
+	// WHICH LENSES WERE USED IS PART OF THE ANSWER, NOT A FOOTNOTE. A report
+	// holding one view reads exactly like a report holding two unless it says so,
+	// and D3 asks for both - so a run with only ours has to admit it in the same
+	// sentence that carries the good news.
+	switch {
+	case !t.systemAsked:
+		said += ", with our own view only"
+	case t.systemAnswered:
+		said += ", and the system view answered"
+	default:
+		said += ", and the system view did not answer"
+	}
+	return said
 }
 
 // askOne sends a single query and turns whatever happened into one finding.

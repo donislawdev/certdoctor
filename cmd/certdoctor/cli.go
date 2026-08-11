@@ -71,6 +71,17 @@ type environment struct {
 	// resolvers - and handing the dialler a set assembled elsewhere is how a
 	// guard ends up checking against something other than what is dialled.
 	exchange func(*allowed.Targets) resolve.Exchange
+	// system builds the second lens: the platform asked the way any other program
+	// on this machine would ask it.
+	//
+	// It takes the set for the same reason exchange does, and it matters more
+	// here: this dialler is handed to net.Resolver, which decides on its own how
+	// many addresses to try and in what order, so the only thing standing between
+	// it and an address nobody derived is the set built for THIS run.
+	//
+	// A nil one is legal and means the run holds one lens. The layer says so in
+	// its own sentence rather than leaving a reader to count views.
+	system func(*allowed.Targets) resolve.SystemLookup
 	// queryID picks the identifier of one DNS query. Unpredictable in the real
 	// build, because that is the only thing making an off-path answer detectable.
 	queryID func() uint16
@@ -333,6 +344,28 @@ func allowedTargets(parsed *url.URL, found dns.Nameservers) *allowed.Targets {
 			continue
 		}
 		_ = targets.Allow(address, allowed.ReasonResolver)
+
+		// AND THE SAME ADDRESS SPELLED THE WAY THE PLATFORM WILL SPELL IT - ADR34.
+		// Go joins the raw token from resolv.conf with the port, so a machine
+		// writing "2001:0DB8::1" makes it ask for a string our canonical form does
+		// not match, and the guard would refuse a resolver that is answering
+		// (S11, OBS54). It goes in only for a token that PARSES, deliberately:
+		// Go's own reader skips a nameserver line that is not an address, so the
+		// raw form of a broken token is a place nobody will ever dial.
+		if raw := dns.RawTarget(resolver); raw != address {
+			_ = targets.Allow(raw, allowed.ReasonResolver)
+		}
+	}
+
+	// A machine that lists no resolver still has one, and it is the one the
+	// platform falls back to - ADR34. Adding these only when the list is empty
+	// keeps the set as narrow as the measurement requires: a machine with its own
+	// resolver never sends the platform to loopback, so an entry for it would
+	// widen what this program may reach for no reason anybody measured.
+	if len(found.Known) == 0 {
+		for _, fallback := range dns.PlatformFallbackResolvers() {
+			_ = targets.Allow(fallback, allowed.ReasonResolver)
+		}
 	}
 	return targets
 }
@@ -344,6 +377,10 @@ func resolutionInput(o *options, env environment, parsed *url.URL, found dns.Nam
 	if env.exchange != nil {
 		exchange = env.exchange(targets)
 	}
+	var system resolve.SystemLookup
+	if env.system != nil {
+		system = env.system(targets)
+	}
 	return resolve.Input{
 		// THE RAW HOST, NOT run.Options.Target. That field carries the target
 		// after masking, so a layer fed from it would spend the run under
@@ -353,6 +390,7 @@ func resolutionInput(o *options, env environment, parsed *url.URL, found dns.Nam
 		ResolversFrom:  found.From,
 		ResolversError: foundErr,
 		Exchange:       exchange,
+		System:         system,
 		QueryID:        env.queryID,
 		Now:            env.now,
 		PerQuery:       budget(o.probeTimeout),

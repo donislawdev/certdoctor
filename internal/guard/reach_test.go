@@ -8,12 +8,17 @@ import (
 
 // dialAllowlist names the files allowed to reach the network.
 //
-// IT WAS EMPTY UNTIL 2026-08-10 AND HAS EXACTLY ONE ENTRY, which is the number
-// worth defending. An entry here is not a formality: it means there is one more
-// place in this program where a connection can begin, and the promise of
-// inviolable rule 16 - that certdoctor connects only to what it derived from the
-// user's own question - rests on how few such places there are. The entry goes in
-// together with the code it covers, never ahead of it.
+// IT WAS EMPTY UNTIL 2026-08-10 AND HAS TWO ENTRIES, which is still a number
+// somebody can hold in their head. An entry here is not a formality: it means
+// there is one more place in this program where a connection can begin, and the
+// promise of inviolable rule 16 - that certdoctor connects only to what it
+// derived from the user's own question - rests on how few such places there are.
+// Each entry goes in together with the code it covers, never ahead of it.
+//
+// THE TWO ARE THE TWO LENSES OF L1 AND NOTHING ELSE: the socket our own queries
+// go out of, and the dialler net.Resolver is handed for the system view. Both
+// consult the same refusal rule. A third entry means a third way to start a
+// connection, and it should be as hard to add as these two were.
 //
 // THE GUARD WAS WRITTEN BEFORE THERE WAS ANYTHING TO CATCH, at P3a, and that is
 // why this list could start at zero. A guard written afterwards arrives to find
@@ -30,6 +35,13 @@ var dialAllowlist = map[string]bool{
 	// stays on the wrong side of this list, so a second way to open a connection
 	// cannot appear next to the first one without turning this test red.
 	"internal/adapter/dns/network.go": true,
+
+	// The system view's dialler, added 2026-08-11 with the code it covers. It is
+	// handed to net.Resolver, whose own shape it has to match, so it cannot go
+	// through dial.Guarded like everything else - ADR35. It asks the SAME rule
+	// instead: dial.Permission, consumed rather than copied, so an entry in the
+	// mutation register aimed at the refusal still aims at both diallers.
+	"internal/adapter/dns/system.go": true,
 }
 
 // networkPackages are the standard library imports that can open a connection.

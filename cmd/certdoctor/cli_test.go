@@ -186,6 +186,64 @@ func TestTheAllowedSetCarriesWhatWillActuallyBeDialled(t *testing.T) {
 	}
 }
 
+// TestTheSetAlsoCarriesTheSpellingThePlatformWillUse is ADR34, and the failure
+// it defends against was measured rather than imagined.
+//
+// Probe S11 put "nameserver 2001:0DB8::1" in a container's resolv.conf and
+// watched Go ask for "[2001:0DB8::1]:53" - the raw token joined with the port,
+// which is what its own reader does. Our canonical form is "[2001:db8::1]:53",
+// the set compares strings on purpose, and the guard therefore refused a
+// resolver that was answering. Nothing in this program dials the raw form yet,
+// and that is exactly why this belongs here now: the system view arrives next
+// and this is the seam it lands on.
+func TestTheSetAlsoCarriesTheSpellingThePlatformWillUse(t *testing.T) {
+	parsed, fault := readTarget(&options{target: "https://example.com/x"})
+	if fault != nil {
+		t.Fatalf("an ordinary URL was refused: %v", fault.message)
+	}
+
+	targets := allowedTargets(parsed, dns.Nameservers{Known: []string{"2001:0DB8::1"}})
+
+	for _, spelling := range []string{"[2001:0DB8::1]:53", "[2001:db8::1]:53"} {
+		if reason, ok := targets.Permits(spelling); !ok {
+			t.Errorf("the platform can ask for %s and the set refuses it", spelling)
+		} else if reason != allowed.ReasonResolver {
+			t.Errorf("%s is in the set as %q", spelling, reason)
+		}
+	}
+}
+
+// TestAMachineListingNoResolverStillHasOne is the other half of ADR34.
+//
+// An empty resolv.conf does not mean nothing will be asked - it means the
+// platform asks loopback, which S11 measured by running: Go resolved the name
+// through 127.0.0.1:53 while certdoctor reported having nobody to ask. Without
+// these two entries the guard refuses the only resolver in play.
+//
+// AND THE OTHER DIRECTION IS PINNED IN THE SAME TEST, because it is the half
+// that keeps the set narrow: a machine WITH a resolver never sends the platform
+// to loopback, so loopback has no business being permitted there.
+func TestAMachineListingNoResolverStillHasOne(t *testing.T) {
+	parsed, fault := readTarget(&options{target: "https://example.com/x"})
+	if fault != nil {
+		t.Fatalf("an ordinary URL was refused: %v", fault.message)
+	}
+
+	empty := allowedTargets(parsed, dns.Nameservers{})
+	for _, fallback := range dns.PlatformFallbackResolvers() {
+		if _, ok := empty.Permits(fallback); !ok {
+			t.Errorf("this machine lists no resolver, the platform will ask %s, and the set refuses it", fallback)
+		}
+	}
+
+	listed := allowedTargets(parsed, dns.Nameservers{Known: []string{"192.0.2.53"}})
+	for _, fallback := range dns.PlatformFallbackResolvers() {
+		if _, ok := listed.Permits(fallback); ok {
+			t.Errorf("a machine with its own resolver had %s permitted as well, which widens the set for nothing", fallback)
+		}
+	}
+}
+
 // TestAResolverThatCannotBeReadIsNotAMachineWithoutDNS covers the nil port.
 //
 // An empty list is a statement about somebody's machine. A build that could not
