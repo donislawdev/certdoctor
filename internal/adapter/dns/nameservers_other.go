@@ -60,3 +60,45 @@ func Enumerate(open file.Source) (Nameservers, error) {
 		From:  ResolverConfPath,
 	}, nil
 }
+
+// NameSourcesPath is where this system records WHERE it looks a name up, as
+// opposed to which server it asks.
+//
+// It is a constant for the same reason ResolverConfPath is: we already knew it,
+// so reading it does not wake the failure mode about paths that arrive from
+// somebody else's configuration.
+const NameSourcesPath = "/etc/nsswitch.conf"
+
+// NameSources reads the hosts line of nsswitch.conf.
+//
+// WHY THIS FILE MATTERS AT ALL, AND IT IS MEASURED RATHER THAN ASSUMED. Probe
+// S10 changed that line to "hosts: dns" and watched an entry in the hosts file
+// STOP resolving - so this line decides whether the platform looks in the hosts
+// file, and our own view never looks there under any configuration. That is the
+// difference D13 saw on localhost and recorded as a fact about our instrument
+// rather than about the user's machine. ADR28 says a derived answer has to say
+// what it was derived FROM, and this is half of that sentence.
+//
+// A MISSING FILE IS AN ANSWER, NOT AN ERROR. alpine ships without one and Go
+// then uses its own default, so "there is no such file" is a fact about this
+// machine that the report can carry - and it is told apart from "the file is
+// there and names no hosts line", which is a different fact again.
+func NameSources(open file.Source) (resolve.NameSources, error) {
+	if open == nil {
+		return resolve.NameSources{}, fmt.Errorf("no way to read %s was supplied", NameSourcesPath)
+	}
+
+	handle, err := open(NameSourcesPath)
+	if err != nil {
+		// Not wrapped as a failure of the run: the caller decides, and for this
+		// file "absent" is the common case rather than the broken one.
+		return resolve.NameSources{}, err
+	}
+	defer handle.Close()
+
+	data, err := io.ReadAll(handle)
+	if err != nil {
+		return resolve.NameSources{}, fmt.Errorf("reading %s: %w", NameSourcesPath, err)
+	}
+	return resolve.ParseNameSources(data)
+}

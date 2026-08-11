@@ -102,6 +102,12 @@ func liveEnvironment() environment {
 		// the systems where that means a file. The limit is 1 MB and it arrives
 		// as an argument rather than as a constant somewhere, because the files
 		// this program reads do not share one honest number - ADR25.
+		// Where this machine records that it looks names up, which is the second
+		// half of what a derived answer has to say about itself - ADR28.
+		sources: func() (resolve.NameSources, error) {
+			source, resolvePath := file.Live()
+			return dns.NameSources(file.Guarded(source, resolvePath, resolverConfigLimit, nil))
+		},
 		nameservers: func() (dns.Nameservers, error) {
 			source, resolvePath := file.Live()
 			return dns.Enumerate(file.Guarded(source, resolvePath, resolverConfigLimit, nil))

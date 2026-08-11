@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"strings"
 	"time"
@@ -63,6 +64,13 @@ type environment struct {
 	// A nil one is legal and means this build has no way to look, which L1
 	// reports as unknown with a reason rather than as a machine with no DNS.
 	nameservers func() (dns.Nameservers, error)
+	// sources reads what this machine records about WHERE it looks names up.
+	//
+	// A nil one, and an error, both mean the same thing to the layer: nothing was
+	// declared. That is deliberate - on Windows there is no such file at all, and
+	// on alpine there is none either, so "absent" is the common case rather than
+	// the broken one and must not read as a failure of the run.
+	sources func() (resolve.NameSources, error)
 	// exchange builds the way L1 sends a query, given the set of places this run
 	// may connect to.
 	//
@@ -370,6 +378,28 @@ func allowedTargets(parsed *url.URL, found dns.Nameservers) *allowed.Targets {
 	return targets
 }
 
+// nameSources asks the environment where this machine looks names up, and
+// answers "nothing was declared" for every way of not knowing.
+//
+// THE ERROR IS DROPPED ON PURPOSE AND ONLY HERE. A missing nsswitch.conf is the
+// normal state of a Windows machine and of alpine, so turning it into a failure
+// would put a broken run in front of somebody whose machine is fine. What the
+// layer needs is the distinction between "this file said files and dns" and
+// "nothing said anything", and the zero value carries the second one exactly.
+func nameSources(env environment) (resolve.NameSources, error) {
+	if env.sources == nil {
+		return resolve.NameSources{}, nil
+	}
+	sources, err := env.sources()
+	if errors.Is(err, fs.ErrNotExist) {
+		// THE ONE FAILURE THAT IS NOT ONE. Windows has no such file and neither
+		// does alpine, so absence is the ordinary state of a working machine and
+		// must not read as something going wrong.
+		return resolve.NameSources{}, nil
+	}
+	return sources, err
+}
+
 // resolutionInput assembles everything L1 needs for one walk.
 func resolutionInput(o *options, env environment, parsed *url.URL, found dns.Nameservers, foundErr error,
 	targets *allowed.Targets) resolve.Input {
@@ -377,6 +407,7 @@ func resolutionInput(o *options, env environment, parsed *url.URL, found dns.Nam
 	if env.exchange != nil {
 		exchange = env.exchange(targets)
 	}
+	sources, sourcesErr := nameSources(env)
 	var system resolve.SystemLookup
 	if env.system != nil {
 		system = env.system(targets)
@@ -391,6 +422,8 @@ func resolutionInput(o *options, env environment, parsed *url.URL, found dns.Nam
 		ResolversError: foundErr,
 		Exchange:       exchange,
 		System:         system,
+		Sources:        sources,
+		SourcesError:   sourcesErr,
 		QueryID:        env.queryID,
 		Now:            env.now,
 		PerQuery:       budget(o.probeTimeout),

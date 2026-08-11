@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
+	"github.com/donislawdev/certdoctor/internal/core/resolve"
 )
 
 // Enumerate asks Windows twice, because there are two questions and they have
@@ -246,4 +247,23 @@ func cstring(b []byte) string {
 		}
 	}
 	return string(b)
+}
+
+// NameSourcesPath is empty on this system, and that is the honest value.
+//
+// Windows has no nsswitch.conf and no equivalent single file naming the order of
+// name sources - the order is decided inside the resolver itself. Inventing a
+// path here so that both platforms "have one" would put a filename into the
+// report that nobody could go and look at.
+const NameSourcesPath = ""
+
+// NameSources answers that this system does not record its name sources in a
+// file we can read.
+//
+// IT RETURNS AN UNDECLARED VALUE RATHER THAN AN ERROR, because nothing failed.
+// The zero value says Declared is false, which is exactly the fact: no file said
+// anything about where names are looked up. An error here would put a failure in
+// the report about a system that is working normally.
+func NameSources(file.Source) (resolve.NameSources, error) {
+	return resolve.NameSources{}, nil
 }

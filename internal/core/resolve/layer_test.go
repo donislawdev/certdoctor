@@ -1086,6 +1086,76 @@ func TestTheComparisonIsBySetAndNotByOrder(t *testing.T) {
 	}
 }
 
+// TestADerivedAnswerSaysWhatItWasDerivedFrom is the second half of ADR28, which
+// stood in the decision register unkept until now.
+//
+// A derived answer means OUR resolver stood in for the platform's. The question
+// that then matters is whether the thing it stood in for would have looked
+// somewhere we never look - and the hosts file is exactly that place. Probe S10
+// measured it: change the line to "hosts: dns" and an entry in the hosts file
+// stops resolving. That is the whole explanation for the disagreement D13 saw on
+// localhost, and without it the report shows the disagreement and not the cause.
+//
+// THE NOT-DERIVED CASE IS IN THE TABLE ON PURPOSE. When the platform did the
+// work itself, its own order is what it used and nothing needs explaining - a
+// note there would be noise, and noise in every run is how notes stop being read.
+func TestADerivedAnswerSaysWhatItWasDerivedFrom(t *testing.T) {
+	cases := []struct {
+		name     string
+		platform bool
+		sources  NameSources
+		failed   error
+		want     string
+		absent   string
+	}{
+		{
+			name:    "the file names the hosts source",
+			sources: NameSources{Declared: true, Order: []string{"files", "dns"}},
+			want:    "looks in the hosts file",
+		},
+		{
+			name:    "the file names dns alone",
+			sources: NameSources{Declared: true, Order: []string{"dns"}},
+			want:    "does not look in the hosts file",
+		},
+		{
+			name: "nothing was declared anywhere",
+			want: "records no order of its own",
+		},
+		{
+			name:   "the file could not be read",
+			failed: errors.New("permission denied"),
+			want:   "could not be read",
+		},
+		{
+			// THE PLATFORM DID IT ITSELF, so its own order is not our business.
+			name:     "the platform resolved it",
+			platform: true,
+			sources:  NameSources{Declared: true, Order: []string{"files", "dns"}},
+			absent:   "hosts file",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := workingInput(answering(func(id uint16, recordType dnsmsg.Type) ([]byte, error) {
+				return replyWith(id, recordType, 0, addressFor(recordType)), nil
+			}))
+			in.Sources = c.sources
+			in.SourcesError = c.failed
+			in.System = systemAnswering(SystemAnswer{Addresses: []string{"192.0.2.10"}, ViaPlatform: c.platform})
+
+			row := systemRowOf(t, Ask(context.Background(), in))
+			if c.want != "" && !strings.Contains(row.Summary, c.want) {
+				t.Errorf("the row does not say %q: %s", c.want, row.Summary)
+			}
+			if c.absent != "" && strings.Contains(row.Summary, c.absent) {
+				t.Errorf("the row explains the platform's own order back to it: %s", row.Summary)
+			}
+		})
+	}
+}
+
 // rowsOf renders the rows compactly for a failure message. A failing budget test
 // that does not show what each resolver did leaves the reader guessing which half
 // broke.

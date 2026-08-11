@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
+	"fmt"
+	"io/fs"
 	"regexp"
 	"strings"
 	"testing"
@@ -1085,5 +1088,63 @@ func TestTheVerdictCountsTheLayersItCouldNotAssess(t *testing.T) {
 	}
 	if h.code != exitcode.Inconclusive {
 		t.Errorf("the run ended with %d, want %d - one layer passing does not make a run conclusive", h.code, exitcode.Inconclusive)
+	}
+}
+
+// TestAMissingNameSourcesFileIsNotAFailure is the distinction that hid a real
+// defect for the length of one measurement.
+//
+// Windows has no nsswitch.conf and neither do some images, so ABSENT is the
+// ordinary state of a working machine and must not read as something going
+// wrong. Every OTHER failure has to survive as an error, because "nothing was
+// declared" is a statement about somebody's configuration and "we could not read
+// it" is a statement about us - and the second one dressed as the first is
+// exactly what let a port that was never wired report a confident falsehood.
+func TestAMissingNameSourcesFileIsNotAFailure(t *testing.T) {
+	declared := resolve.NameSources{Declared: true, Order: []string{"files", "dns"}}
+
+	cases := []struct {
+		name      string
+		sources   func() (resolve.NameSources, error)
+		want      resolve.NameSources
+		wantError bool
+	}{
+		{"no reader at all", nil, resolve.NameSources{}, false},
+		{
+			name:    "the file is not there",
+			sources: func() (resolve.NameSources, error) { return resolve.NameSources{}, fs.ErrNotExist },
+		},
+		{
+			name: "the file is wrapped and not there",
+			sources: func() (resolve.NameSources, error) {
+				return resolve.NameSources{}, fmt.Errorf("reading /etc/nsswitch.conf: %w", fs.ErrNotExist)
+			},
+		},
+		{
+			name:      "the file is there and unreadable",
+			sources:   func() (resolve.NameSources, error) { return resolve.NameSources{}, errors.New("permission denied") },
+			wantError: true,
+		},
+		{
+			name:    "the file was read",
+			sources: func() (resolve.NameSources, error) { return declared, nil },
+			want:    declared,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := nameSources(environment{sources: c.sources})
+
+			if c.wantError && err == nil {
+				t.Error("a file that could not be read came back as a machine that declares nothing")
+			}
+			if !c.wantError && err != nil {
+				t.Errorf("an ordinary machine produced an error: %v", err)
+			}
+			if got.Declared != c.want.Declared {
+				t.Errorf("declared is %v, want %v", got.Declared, c.want.Declared)
+			}
+		})
 	}
 }

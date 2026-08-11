@@ -105,6 +105,24 @@ type Input struct {
 	// says which of the two it is holding rather than leaving the reader to count
 	// lenses.
 	System SystemLookup
+	// Sources is what this machine records about WHERE it looks a name up, as
+	// opposed to which server it asks.
+	//
+	// IT IS THE SECOND HALF OF WHAT ADR28 PROMISED. A derived answer has to say
+	// what it was derived FROM, and the hosts line is the part that explains the
+	// disagreement D13 measured on localhost: the platform may look in the hosts
+	// file and our own view never does, under any configuration. The zero value
+	// says nothing was declared, which is a fact rather than a gap.
+	Sources NameSources
+	// SourcesError is what went wrong while reading that, or nil.
+	//
+	// IT IS A VALUE FOR THE SAME REASON ResolversError IS, and this field exists
+	// because dropping it hid a real defect for the length of one measurement:
+	// the reader was never wired at all, and the layer reported "this machine
+	// records no order of its own" about a machine whose file says files dns.
+	// "Nothing was declared" and "we could not read what was declared" are two
+	// facts, and the second one is about US.
+	SourcesError error
 	// PerQuery is the longest one query may take. It is capped by whatever is
 	// left of the layer's own deadline, never the other way round.
 	PerQuery time.Duration
@@ -416,7 +434,7 @@ func (in Input) systemFinding(a SystemAnswer, elapsed time.Duration) report.Find
 	}
 	return report.Finding{
 		Kind:    report.FindingNameResolution,
-		Summary: systemSummaryOf(in.Name, a, source),
+		Summary: systemSummaryOf(in.Name, a, source, in.Sources, in.SourcesError),
 		Source:  source,
 		NameResolution: &report.NameResolution{
 			Name:       in.Name,
@@ -428,9 +446,34 @@ func (in Input) systemFinding(a SystemAnswer, elapsed time.Duration) report.Find
 	}
 }
 
+// sourcesNote says what a DERIVED answer was derived from - ADR28.
+//
+// IT IS ONLY ADDED WHEN THE ANSWER IS DERIVED, and that is the whole point: when
+// the platform did the work itself, its own order of name sources is what it
+// used and nothing here needs explaining. When OUR resolver stood in for it, the
+// interesting question is whether the thing it stood in for would have looked
+// somewhere we never look - and the hosts file is exactly that place. Probe S10
+// measured it: change that line to "hosts: dns" and an entry in the hosts file
+// stops resolving.
+func sourcesNote(source report.Source, sources NameSources, failed error) string {
+	if source != report.SourceDerived {
+		return ""
+	}
+	switch {
+	case failed != nil:
+		return ", and where this system looks names up could not be read, so this row does not say"
+	case !sources.Declared:
+		return ", and this system records no order of its own for name sources, so that order is the platform default"
+	case sources.ConsultsHostsFile():
+		return ", which looks in the hosts file as well as in DNS - our own view never does, under any configuration"
+	default:
+		return ", which does not look in the hosts file, so neither view does"
+	}
+}
+
 // systemSummaryOf says which resolver actually did the work, because that is the
 // difference between a measurement and a reconstruction.
-func systemSummaryOf(name string, a SystemAnswer, source report.Source) string {
+func systemSummaryOf(name string, a SystemAnswer, source report.Source, sources NameSources, failed error) string {
 	how := "through the resolver this platform uses"
 	if source == report.SourceDerived {
 		how = "through the resolver built into this program, because the platform's own was not used"
@@ -438,6 +481,7 @@ func systemSummaryOf(name string, a SystemAnswer, source report.Source) string {
 	if a.NoAnswer != "" {
 		return fmt.Sprintf("the system view got no answer for %s %s: %s", name, how, a.NoAnswer.Meaning())
 	}
+	how += sourcesNote(source, sources, failed)
 	return fmt.Sprintf("the system view resolved %s to %d address(es) %s", name, len(a.Addresses), how)
 }
 
