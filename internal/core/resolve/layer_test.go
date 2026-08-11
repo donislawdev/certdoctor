@@ -802,8 +802,13 @@ func TestWhenNeitherLensResolvesTheNameTheSentenceStopsApologisingForOne(t *test
 	in.System = systemAnswering(SystemAnswer{NoAnswer: report.NoAnswerTransportError})
 
 	got := Ask(context.Background(), in)
-	if got.Status != status.Unknown {
-		t.Errorf("neither lens resolved the name and the layer said %s", got.Status)
+	// THIS SAID UNKNOWN UNTIL THE CLASSIFICATION ARRIVED, and the change is D13
+	// rather than a relaxation. With one lens, "nobody answered" cannot tell a
+	// name that does not resolve from one that lens cannot see - so unknown was
+	// the only honest answer, and the test one screen down still pins it for that
+	// case. With BOTH lenses silent there is nothing left to be unsure about.
+	if got.Status != status.Fail {
+		t.Errorf("neither of the two lenses resolved the name and the layer said %s", got.Status)
 	}
 	if strings.Contains(got.Detail, "with only our own view") {
 		t.Errorf("both lenses were used and the sentence still says only one was: %q", got.Detail)
@@ -859,6 +864,108 @@ func TestTheSystemViewIsNamedRatherThanDroppedWhenTheBudgetIsGone(t *testing.T) 
 	row := systemRowOf(t, got)
 	if row.NameResolution.NoAnswer != report.NoAnswerNotAsked {
 		t.Errorf("the system row says %q where nothing was ever sent", row.NameResolution.NoAnswer)
+	}
+}
+
+// TestEveryDivergenceClassIsReachedAndOnlyTwoCarryAVerdict is D13 and ADR38 as
+// one table, and the ratio in the name is the decision it defends.
+//
+// Probe S4 measured the two views disagreeing on five names out of five. A layer
+// that warned on "they differ" would therefore warn in almost every run on
+// Windows, which is the shape ADR4 names as the way a tool gets switched off. So
+// four of the six classes are named and left alone, and the test asserts the
+// STATUS as well as the class - a table that only checked the class would pass
+// just as well if every one of them raised a warning.
+func TestEveryDivergenceClassIsReachedAndOnlyTwoCarryAVerdict(t *testing.T) {
+	const a, b, c = "192.0.2.10", "192.0.2.11", "192.0.2.12"
+
+	cases := []struct {
+		name       string
+		direct     []string
+		system     []string
+		want       report.Divergence
+		wantStatus status.Status
+	}{
+		{"the same addresses", []string{a, b}, []string{b, a}, report.DivergenceAgree, status.Pass},
+		{"ours has more", []string{a, b}, []string{a}, report.DivergenceSuperset, status.Pass},
+		{"theirs has more", []string{a}, []string{a, b}, report.DivergenceSuperset, status.Pass},
+		{"nothing in common", []string{a}, []string{b}, report.DivergenceDisjoint, status.Warn},
+		{"only ours answered", []string{a}, nil, report.DivergenceOneSided, status.Pass},
+		{"only theirs answered", nil, []string{a}, report.DivergenceOneSided, status.Pass},
+		{"neither answered", nil, nil, report.DivergenceNeitherAnswered, status.Fail},
+		// ADR38. Five classes did not cover this and a rotating subset produces it
+		// routinely - one address in both, one in each alone.
+		{"a shared address and one each", []string{a, b}, []string{b, c}, report.DivergenceOverlap, status.Pass},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := workingInput(answeringWith(tc.direct))
+			in.Resolvers = []string{"192.0.2.53"}
+			if len(tc.system) == 0 {
+				in.System = systemAnswering(SystemAnswer{NoAnswer: report.NoAnswerTimeout})
+			} else {
+				in.System = systemAnswering(SystemAnswer{Addresses: tc.system})
+			}
+
+			got := Ask(context.Background(), in)
+			row := systemRowOf(t, got)
+			if row.NameResolution.Divergence != tc.want {
+				t.Errorf("direct %v against system %v classified as %q, want %q",
+					tc.direct, tc.system, row.NameResolution.Divergence, tc.want)
+			}
+			if got.Status != tc.wantStatus {
+				t.Errorf("class %q came with status %s, want %s - only disjoint and neither_answered carry a verdict",
+					tc.want, got.Status, tc.wantStatus)
+			}
+			if broken := row.Breach(); broken != "" {
+				t.Errorf("the row is refused by its own contract: %s", broken)
+			}
+		})
+	}
+}
+
+// answeringWith replies with a fixed address list for every query, or with a
+// timeout when the list is empty.
+func answeringWith(addresses []string) Exchange {
+	return func(_ context.Context, _ string, query []byte) ([]byte, error) {
+		if len(addresses) == 0 {
+			return nil, ErrTimeout
+		}
+		id := uint16(query[0])<<8 | uint16(query[1])
+		asked := dnsmsg.Type(uint16(query[len(query)-4])<<8 | uint16(query[len(query)-3]))
+		// Only the A queries carry addresses. Putting four byte addresses into a
+		// AAAA answer would make a malformed packet, which the parser refuses -
+		// correctly - and the test would then be measuring its own fixture.
+		if asked != dnsmsg.TypeA {
+			return replyWith(id, asked, 0), nil
+		}
+		raw := make([][]byte, 0, len(addresses))
+		for _, address := range addresses {
+			parts := [4]byte{}
+			var n1, n2, n3, n4 int
+			_, _ = fmt.Sscanf(address, "%d.%d.%d.%d", &n1, &n2, &n3, &n4)
+			parts = [4]byte{byte(n1), byte(n2), byte(n3), byte(n4)}
+			raw = append(raw, parts[:])
+		}
+		return replyWith(id, asked, 0, raw...), nil
+	}
+}
+
+// TestTheComparisonIsBySetAndNotByOrder pins the property the acceptance suite
+// paid for once already.
+//
+// A resolver behind a large name rotates the order it hands addresses back, and
+// a comparison sensitive to that would report a working load balancer as a
+// divergence - which is exactly how the determinism check broke at K3b-1.
+func TestTheComparisonIsBySetAndNotByOrder(t *testing.T) {
+	in := workingInput(answeringWith([]string{"192.0.2.10", "192.0.2.11"}))
+	in.Resolvers = []string{"192.0.2.53"}
+	in.System = systemAnswering(SystemAnswer{Addresses: []string{"192.0.2.11", "192.0.2.10"}})
+
+	row := systemRowOf(t, Ask(context.Background(), in))
+	if row.NameResolution.Divergence != report.DivergenceAgree {
+		t.Errorf("the same two addresses in a different order classified as %q", row.NameResolution.Divergence)
 	}
 }
 

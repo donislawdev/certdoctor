@@ -127,6 +127,90 @@ const (
 	NoAnswerNotAsked NoAnswer = "not_asked"
 )
 
+// Divergence is how the two views of a name differ - D13, which asks this layer
+// to CLASSIFY the difference rather than to compare the views for equality.
+//
+// WHY NOT A BOOLEAN, AND THIS IS THE WHOLE OF D13. Probe S4 measured the two
+// views disagreeing on five names out of five, so "the views differ" is the
+// normal state of a working machine and a warning built on it would fire in
+// nearly every run on Windows. That is the shape ADR4 warns about: a tool that
+// cries wolf is switched off within a week. Only two of these five carry a
+// verdict, and the other three are named and left alone.
+//
+// THE LIST IS CLOSED AND IT DESCRIBES OUR OWN COMPARISON, so an unrecognised
+// value is a defect here rather than news from anybody's network.
+type Divergence string
+
+const (
+	// DivergenceAgree - both views answered with the same addresses.
+	DivergenceAgree Divergence = "agree"
+	// DivergenceSuperset - one view has everything the other has, and more.
+	//
+	// IT IS USUALLY A FACT ABOUT OUR INSTRUMENT RATHER THAN ABOUT THE MACHINE.
+	// AAAA records show up in the direct view because we ask for them by name,
+	// while the platform hands back a filtered list. Calling that a finding would
+	// accuse somebody's network of a property of ours.
+	DivergenceSuperset Divergence = "superset"
+	// DivergenceDisjoint - both views answered and share no address at all.
+	//
+	// THE ONE CLASS THAT IS A FINDING. Split horizon DNS and a leak past a VPN
+	// both look like this, and both are worth somebody's attention.
+	DivergenceDisjoint Divergence = "disjoint"
+	// DivergenceOneSided - one view answered and the other did not.
+	//
+	// Also usually ours: the direct view never reads the hosts file, so a name
+	// that lives only there is unresolvable to it and resolvable to the platform.
+	DivergenceOneSided Divergence = "one_sided"
+	// DivergenceNeitherAnswered - the name resolved no way at all.
+	DivergenceNeitherAnswered Divergence = "neither_answered"
+	// DivergenceOverlap - both views answered, they share an address, and each
+	// has one the other lacks.
+	//
+	// D13 NAMES FIVE CLASSES AND THIS IS A SIXTH, ADDED WHEN THE CLASSIFIER WAS
+	// WRITTEN AND THE FIVE TURNED OUT NOT TO COVER THE SPACE. A load balancer
+	// handing out rotating subsets produces it routinely: our own queries get two
+	// addresses of four, the platform gets two others, and one is in both.
+	//
+	// IT IS DELIBERATELY NOT disjoint. That class means "these two views share
+	// nothing", which is the split horizon signal and carries a warning. Raising
+	// it on a rotating subset would put a warning in nearly every run against a
+	// large site - the exact failure mode D13 was written to avoid, arriving
+	// through the gap in its own list.
+	DivergenceOverlap Divergence = "overlap"
+)
+
+var divergenceMeanings = map[Divergence]string{
+	DivergenceAgree:           "both views resolved this name to the same addresses",
+	DivergenceSuperset:        "one view returned everything the other did and more",
+	DivergenceDisjoint:        "both views answered and share no address",
+	DivergenceOneSided:        "one view resolved this name and the other did not",
+	DivergenceNeitherAnswered: "neither view resolved this name",
+	DivergenceOverlap:         "both views answered, share an address, and each has one the other lacks",
+}
+
+// AllDivergences lists every class exactly once, in declaration order.
+var AllDivergences = []Divergence{
+	DivergenceAgree,
+	DivergenceSuperset,
+	DivergenceDisjoint,
+	DivergenceOneSided,
+	DivergenceNeitherAnswered,
+	DivergenceOverlap,
+}
+
+// Valid reports whether d is one of the five.
+func (d Divergence) Valid() bool {
+	_, ok := divergenceMeanings[d]
+	return ok
+}
+
+// Meaning returns the English sentence for d, or the empty string outside the
+// list.
+func (d Divergence) Meaning() string { return divergenceMeanings[d] }
+
+// String makes Divergence printable without a conversion at every call site.
+func (d Divergence) String() string { return string(d) }
+
 var noAnswerMeanings = map[NoAnswer]string{
 	NoAnswerTimeout:          "the query was sent and nothing came back in time",
 	NoAnswerRefusedByRule:    "this address was not in the allowed set, so nothing was sent",
@@ -287,6 +371,18 @@ type NameResolution struct {
 	// unit that does not invite the comparison. It is the same unit the run's own
 	// duration uses, so the document has one way of saying "how long".
 	DurationMS int64
+	// Divergence is how this view differs from the other one - D13, ADR37.
+	//
+	// IT LIVES ON THE SYSTEM ROW AND NOWHERE ELSE, and the reason is that there
+	// is exactly one comparison per run while there are many direct rows. The
+	// system row is the one that completes it: it arrives last, after the union
+	// of the direct answers exists (ADR31), and reads literally as "this is how
+	// the platform's answer differs from ours".
+	//
+	// EMPTY MEANS NO COMPARISON WAS POSSIBLE, not "the views agree". A run with
+	// one lens produces no system row at all, so there is nowhere for a value to
+	// sit - which is more honest than a sixth class meaning "not compared".
+	Divergence Divergence
 }
 
 // EnvironmentVariable is the body of an environment variable finding.
@@ -423,6 +519,21 @@ func (n NameResolution) breach(source Source) string {
 		return fmt.Sprintf("was seen through the view %q, so it does not say which of the two lenses it came from", n.View)
 	case n.DurationMS < 0:
 		return fmt.Sprintf("says resolving %s took %d milliseconds", n.Name, n.DurationMS)
+	}
+
+	// CHECKED BEFORE THE PER-VIEW RULES, because a class outside the closed list
+	// is a defect in our own comparison whichever row it turned up on.
+	if n.Divergence != "" && !n.Divergence.Valid() {
+		return fmt.Sprintf("says the two views of %s diverge as %q, which is outside the five classes D13 names",
+			n.Name, n.Divergence)
+	}
+	if n.View == ViewDirect && n.Divergence != "" {
+		// THE COMPARISON HAPPENS ONCE AND THIS IS WHERE IT WOULD QUIETLY HAPPEN
+		// FOUR TIMES. Two resolvers times two record types is four direct rows,
+		// and a class copied onto each of them is one fact in four places -
+		// which stays true exactly until somebody edits one of them.
+		return fmt.Sprintf("is a direct query for %s and carries the divergence %q, which describes the pair of "+
+			"views rather than this one answer", n.Name, n.Divergence)
 	}
 
 	if n.View == ViewSystem {

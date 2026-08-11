@@ -26,7 +26,7 @@ import (
 // So the minor moves with the field that caused it. L1 adds the reason a query
 // has no response code, which is the first thing in this document a consumer
 // could read as an answer when it is the absence of one.
-const SchemaVersion = "1.1"
+const SchemaVersion = "1.2"
 
 // JSON renders the machine readable report.
 //
@@ -126,6 +126,10 @@ type jsonNameResolution struct {
 	// which is a statement - the same distinction findings themselves carry.
 	Addresses  []string `json:"addresses"`
 	DurationMS int64    `json:"duration_ms"`
+	// Null on every direct row and on a run holding one lens - ADR37. It is the
+	// class of the ONE comparison this layer makes, so it sits on the row that
+	// completes it rather than being copied onto each of the others.
+	Divergence *string `json:"divergence"`
 }
 
 type jsonEnvironmentVariable struct {
@@ -266,6 +270,10 @@ func nameResolutionOf(finding report.Finding) *jsonNameResolution {
 	if answer.Resolver != "" {
 		resolver := answer.Resolver
 		body.Resolver = &resolver
+	}
+	if answer.Divergence != "" {
+		divergence := answer.Divergence.String()
+		body.Divergence = &divergence
 	}
 	if answer.QueryType != "" {
 		queryType := answer.QueryType

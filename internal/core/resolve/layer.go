@@ -160,7 +160,6 @@ const (
 	noClock         = "no clock was supplied, so the time each answer took could not be established"
 	noResolvers     = "this machine lists no DNS resolver we could find, so there was nobody to ask"
 	nothingAnswered = "no resolver answered, and with only our own view there is no way to tell a name that does not resolve from one this view cannot see"
-	neitherView     = "neither view resolved this name: our own queries got nothing back and the platform did not resolve it either"
 )
 
 // Ask walks every resolver and every record type once, and reports what came
@@ -213,7 +212,28 @@ func Ask(ctx context.Context, in Input) Result {
 		counted.systemAsked = true
 		finding := in.askSystem(ctx, counted.total-sent)
 		counted.systemAnswered = tally(finding, seen) == 1
+		// THE CLASSIFICATION IS WRITTEN ONTO THIS ROW AND NOWHERE ELSE - ADR37.
+		// There is one comparison per run and many direct rows, and this is the
+		// row that completes it: it arrives after the union of the direct answers
+		// exists, which is what ADR31 asks to compare against.
+		counted.divergence = classify(unionOf(findings), finding.NameResolution.Addresses,
+			counted.direct > 0, counted.systemAnswered)
+		finding.NameResolution.Divergence = counted.divergence
 		findings = append(findings, finding)
+	}
+
+	// D13 GIVES A VERDICT TO EXACTLY TWO OF THE CLASSES, and the other four are
+	// named and left alone. That ratio is the decision: probe S4 measured the two
+	// views disagreeing on five names out of five, so a layer that warned on
+	// "they differ" would warn in nearly every run.
+	switch counted.divergence {
+	case report.DivergenceNeitherAnswered:
+		// With BOTH lenses silent this stops being unknown and becomes a finding.
+		// With one lens it stays unknown, and the test that pins it still passes -
+		// there is no divergence to classify when there was nothing to compare.
+		return Result{Status: status.Fail, Detail: in.divergenceDetail(counted), Findings: findings}
+	case report.DivergenceDisjoint:
+		return Result{Status: status.Warn, Detail: in.divergenceDetail(counted), Findings: findings}
 	}
 
 	if counted.direct+boolToInt(counted.systemAnswered) == 0 {
@@ -233,6 +253,71 @@ func Ask(ctx context.Context, in Input) Result {
 	return Result{Status: status.Pass, Detail: in.answeredDetail(counted), Findings: findings}
 }
 
+// classify says which of the named classes describes the difference between the
+// two views - D13, compared over the UNION of the direct answers (ADR31).
+//
+// THE UNION IS NOT AN APPROXIMATION, IT IS A CHOICE WITH A PRICE. The direct
+// view produces one answer per resolver and record type, and classifying each
+// against the system view separately would produce several classes in one run -
+// a result no single status can carry. Union is the only fold that does not
+// require picking a "main" resolver, and picking one would be a silent judgement
+// about whose answer counts. The price: a resolver disagreeing with its
+// neighbours vanishes into the union and is visible only in its own row.
+//
+// COMPARISON IS BY SET, NOT BY ORDER. Resolvers rotate the order they hand
+// addresses back - the acceptance suite already caught that once, reporting a
+// working load balancer as a defect in our output.
+func classify(direct, system []string, directAnswered, systemAnswered bool) report.Divergence {
+	switch {
+	case !directAnswered && !systemAnswered:
+		return report.DivergenceNeitherAnswered
+	case !directAnswered || !systemAnswered:
+		return report.DivergenceOneSided
+	}
+
+	inDirect := setOf(direct)
+	inSystem := setOf(system)
+	shared, onlyDirect, onlySystem := 0, 0, 0
+	for address := range inDirect {
+		if inSystem[address] {
+			shared++
+		} else {
+			onlyDirect++
+		}
+	}
+	for address := range inSystem {
+		if !inDirect[address] {
+			onlySystem++
+		}
+	}
+
+	switch {
+	case onlyDirect == 0 && onlySystem == 0:
+		return report.DivergenceAgree
+	case shared == 0:
+		return report.DivergenceDisjoint
+	case onlyDirect == 0 || onlySystem == 0:
+		return report.DivergenceSuperset
+	}
+	// D13 NAMES FIVE CLASSES AND THIS IS A SIXTH SHAPE: both views answered,
+	// they share an address, and each has one the other lacks. It is not
+	// disjoint - they agree on something - and calling it that would raise a
+	// warning about split horizon DNS on the ordinary behaviour of a load
+	// balancer handing out rotating subsets, which is the exact failure D13 was
+	// written to avoid. It is not a superset either, in either direction.
+	return report.DivergenceOverlap
+}
+
+// setOf is comparison by membership rather than by position, because resolvers
+// rotate the order they answer in and that order is not a fact about the name.
+func setOf(addresses []string) map[string]bool {
+	out := make(map[string]bool, len(addresses))
+	for _, address := range addresses {
+		out[address] = true
+	}
+	return out
+}
+
 // tallies is what one walk counted. It exists so the sentence builders take one
 // argument instead of four numbers whose order nobody can check at the call site.
 type tallies struct {
@@ -241,6 +326,41 @@ type tallies struct {
 	notAsked       int
 	systemAsked    bool
 	systemAnswered bool
+	// divergence is empty when there was no second lens to compare against.
+	divergence report.Divergence
+}
+
+// unionOf folds every direct answer into one set of addresses - ADR31.
+//
+// IT SKIPS THE SYSTEM ROW BY CONSTRUCTION, because it is called before that row
+// is appended. Reading the view field instead would work today and would break
+// silently the day a third row kind appears.
+func unionOf(direct []report.Finding) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, finding := range direct {
+		for _, address := range finding.NameResolution.Addresses {
+			if !seen[address] {
+				seen[address] = true
+				out = append(out, address)
+			}
+		}
+	}
+	return out
+}
+
+// divergenceDetail is the layer's sentence when the comparison itself is the
+// finding.
+//
+// IT NAMES HOW MANY RESOLVERS WENT INTO THE UNION - ADR31 asks for exactly that,
+// because "the two views disagree" means something different when the union came
+// from one resolver than from three. It names a COUNT and never an address:
+// this sentence goes through the same masking as everything else, but a sentence
+// built out of counts cannot leak one by being written before somebody thought
+// about ADR32.
+func (in Input) divergenceDetail(t tallies) string {
+	return fmt.Sprintf("%s, comparing what %d resolver(s) told us against what this system resolves the name to",
+		t.divergence.Meaning(), len(in.Resolvers))
 }
 
 // tally counts one row as an answer or as a reason for not having one.
@@ -358,13 +478,14 @@ func reasonForNothingAnswered(seen map[report.NoAnswer]int) status.Reason {
 // three of four were never sent at all. The rows carry not_asked honestly, but
 // they are below the fold of a terminal report and the sentence is not.
 func nothingAnsweredDetail(t tallies, notAsked int) string {
-	// The transitional half of this sentence stops being true the moment the
-	// second lens is present, and a sentence that keeps apologising for a lens it
-	// has is worse than one that never had it.
+	// ONE LENS IS THE ONLY WAY TO REACH THIS SENTENCE, and it took the
+	// classification to make that true. A run holding both lenses where neither
+	// answered is classified neither_answered and ends as a verdict before it
+	// gets here - so the branch that used to swap in a two-lens wording was
+	// unreachable the moment D13 was implemented, and the coverage gate found it
+	// the same hour. That is the fifth piece of defensive code in this tree that
+	// defended nothing, and the fifth deleted with its reason rather than kept.
 	said := nothingAnswered
-	if t.systemAsked {
-		said = neitherView
-	}
 	if notAsked == 0 {
 		return said
 	}
@@ -438,6 +559,13 @@ func (in Input) answeredDetail(t tallies) string {
 		said += ", and the system view answered"
 	default:
 		said += ", and the system view did not answer"
+	}
+	// The class goes in the sentence as well as in the field, because the two
+	// classes that are not a verdict are still the interesting half of the
+	// answer - "one view saw an address the other did not" is what somebody came
+	// here to read, and a reader of the terminal report never sees the field.
+	if t.divergence != "" {
+		said += fmt.Sprintf(", and %s", t.divergence.Meaning())
 	}
 	return said
 }

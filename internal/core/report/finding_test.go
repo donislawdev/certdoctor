@@ -403,6 +403,37 @@ func TestADirectAnswerMayReportNothingFound(t *testing.T) {
 	}
 }
 
+// TestEveryDivergenceClassIsCompletelyDeclared is the registry test for D13's
+// classes, grown to six by ADR38.
+//
+// The list is closed for the same reason the silence reasons are: a class
+// describes OUR OWN comparison of two views, so a value outside the registry is
+// a defect here rather than news from anybody's network. The sixth arrived when
+// the classifier was written and the five turned out not to cover the space -
+// two sets can intersect without either containing the other.
+func TestEveryDivergenceClassIsCompletelyDeclared(t *testing.T) {
+	if len(AllDivergences) != len(divergenceMeanings) {
+		t.Fatalf("the list has %d classes and the registry has %d", len(AllDivergences), len(divergenceMeanings))
+	}
+	for _, class := range AllDivergences {
+		if !class.Valid() {
+			t.Errorf("%s is listed and the registry does not know it", class)
+		}
+		if class.Meaning() == "" {
+			t.Errorf("%s has no meaning, so the layer's sentence would carry a bare word", class)
+		}
+		if class.String() != string(class) {
+			t.Errorf("%s does not print as itself", class)
+		}
+	}
+	if Divergence("different").Valid() {
+		t.Error("a class outside the registry was accepted, so the list is not closed")
+	}
+	if Divergence("").Meaning() != "" {
+		t.Error("the empty class carries a meaning, and empty means there was no comparison")
+	}
+}
+
 // TestEveryReasonForSilenceIsCompletelyDeclared is the registry test for the
 // reasons a query has no response code.
 //

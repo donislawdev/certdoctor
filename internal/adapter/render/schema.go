@@ -95,6 +95,9 @@ var schema = object(map[string]node{
 				"resolver":      nullable(text()),
 				"query_type":    nullable(text()),
 				"response_code": nullable(text()),
+				// Null unless this row is the system view of a run that had both
+				// lenses: the class of the one comparison D13 asks for - ADR37.
+				"divergence": nullable(text()),
 				// Null whenever there WAS an answer, and one of the closed reasons
 				// when there was not - ADR30. It sits beside response_code rather
 				// than inside it because silence is a transport fact and a response
