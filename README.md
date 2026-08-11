@@ -6,17 +6,21 @@ certdoctor walks the whole path in one command - DNS, proxy and PAC, TCP, TLS - 
 
 ---
 
-## Status: early development. One layer of eight does anything.
+## Status: early development. Two layers of eight do anything.
 
-**There is a `certdoctor` command, it prints a complete report, and seven of its eight rows say they could not assess anything.** You get the real artefact - a one sentence verdict, a row for each of the eight layers, and the notes saying what was held back. The verdict counts the layers it could not assess, and the run exits with the code that means exactly that.
+**There is a `certdoctor` command, it prints a complete report, and six of its eight rows say they could not assess anything.** You get the real artefact - a one sentence verdict, a row for each of the eight layers, and the notes saying what was held back. The verdict counts the layers it could not assess, and the run exits with the code that means exactly that.
 
 That is the point rather than an accident. `UNKNOWN` is the correct status for "not built yet", so there is no moment in this program's life at which it claims to have checked something it has not.
 
-**The one layer that does work is `L0`, the context layer.** It reports twenty-three environment variables that decide what this machine trusts and what it proxies - both spellings of each proxy variable separately, because they are not the same variable everywhere - saying of each whether it is set, set to nothing, or absent. Credentials are removed from the values on the way out, always, whether or not you pass `--redact`.
+**The first layer that works is `L0`, the context layer.** It reports twenty-three environment variables that decide what this machine trusts and what it proxies - both spellings of each proxy variable separately, because they are not the same variable everywhere - saying of each whether it is set, set to nothing, or absent. Credentials are removed from the values on the way out, always, whether or not you pass `--redact`.
+
+**The second is `L1`, name resolution, and it is the first thing certdoctor does that leaves its own process.** It reads the resolvers this machine is configured to use - from the registry and the IP helper API on Windows, from `/etc/resolv.conf` elsewhere - then asks each of them separately for `A` and for `AAAA`, and reports one row per answer. `NXDOMAIN`, `SERVFAIL` and `NODATA` are told apart and reported as themselves, which is why it asks the resolvers directly rather than using the resolver built into Go: that one collapses "the name does not exist" and "resolving it failed" into a single message, and those send you to two different places. A query that got nothing back says why, in a field of its own, rather than pretending to a response code.
+
+This is one of the two views this layer will report. It is certdoctor's own query to a named resolver, so it is what is actually in DNS; what your system itself answers can differ, and that comparison is the next piece of work. The report says so rather than leaving you to notice a lens is missing.
 
 What the repository holds besides that is the whole path from the command line to the exit code: argument parsing, the orchestrator and its time budget, the terminal renderer, `--json` with a schema and a validator that runs before anything is printed, `--out` with an atomic write, and the credential masking. Under that sits the foundation - the status vocabulary, the exit code table, the appearance dictionary, and the guards that police all three - plus CI.
 
-**What is missing is the other seven layers.** Nothing resolves a name, opens a socket, reads a certificate or looks inside a trust store. **There is still nothing useful to install and nothing useful to run.**
+**What is missing is the other six layers.** Nothing checks a proxy, opens a TCP connection, reads a certificate or looks inside a trust store. **There is still nothing useful to install and nothing useful to run** - two layers of eight is a report about your machine's context and its DNS, not a diagnosis of why a URL will not load.
 
 Everything below describes what certdoctor is being built to do, not what it does today. This section will be removed when the first release ships. Until then, treat every capability on this page as a plan.
 
