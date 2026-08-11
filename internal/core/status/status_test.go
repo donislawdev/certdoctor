@@ -97,15 +97,36 @@ func TestValidRejectsAnythingOutsideTheVocabulary(t *testing.T) {
 	}
 }
 
-// TestOnlyPassNeedsNoReason encodes the ban on silence: anything other than a
-// clean pass has to say why.
-func TestOnlyPassNeedsNoReason(t *testing.T) {
-	if Pass.RequiresReason() {
-		t.Error("Pass must not require a reason")
+// TestOnlyUnknownNeedsAReasonAndEverythingButPassNeedsASentence encodes the ban
+// on silence, split into the two questions it turned out to be.
+//
+// IT USED TO SAY "anything but PASS needs a reason" AND THAT WAS MEASURED WRONG,
+// not merely worded loosely. The reason vocabulary answers "why could this not
+// be assessed" - timeout, refusal, unreadable output, a budget spent. A layer
+// that DID assess something and found it wrong has no honest value in that list,
+// so requiring one meant every WARN and FAIL broke its contract and came back as
+// UNKNOWN with probe_error. D13's entire verdict half was unreachable in the
+// shipped binary because of this line.
+//
+// The ban on silence did not go anywhere: it moved to RequiresDetail, which is
+// the half a reader actually reads, and this test pins both halves so that
+// narrowing one cannot quietly drop the other.
+func TestOnlyUnknownNeedsAReasonAndEverythingButPassNeedsASentence(t *testing.T) {
+	for _, s := range []Status{Pass, Warn, Fail} {
+		if s.RequiresReason() {
+			t.Errorf("%q must not require a reason - that list says why something could NOT be assessed", s)
+		}
 	}
-	for _, s := range []Status{Fail, Warn, Unknown} {
-		if !s.RequiresReason() {
-			t.Errorf("%q must require a reason", s)
+	if !Unknown.RequiresReason() {
+		t.Error("Unknown must require a reason: an unassessed layer with no why is the silence this forbids")
+	}
+
+	if Pass.RequiresDetail() {
+		t.Error("Pass must not be forced to explain itself")
+	}
+	for _, s := range []Status{Warn, Fail, Unknown} {
+		if !s.RequiresDetail() {
+			t.Errorf("%q must carry a sentence: a mark on the screen with nothing beside it cannot be acted on", s)
 		}
 	}
 }

@@ -66,9 +66,35 @@ func (s Status) Valid() bool {
 }
 
 // RequiresReason reports whether a result carrying s must also carry a reason.
-// Silence is forbidden: a status that says something is wrong, or that we could
-// not tell, is useless to the reader without the why.
+//
+// ONLY UNKNOWN DOES, AND THAT IS NARROWER THAN IT USED TO BE. The reason
+// vocabulary answers one question - why this could NOT be assessed: a timeout,
+// a refusal, output nobody could read, a budget spent. A layer that assessed
+// something and found it wrong has no true value to put there, and the closed
+// list is not the place to invent one.
+//
+// IT WAS MEASURED RATHER THAN NOTICED IN PASSING. With "anything but PASS"
+// here, a layer answering WARN or FAIL broke the contract in resultOf and came
+// out as UNKNOWN with probe_error - so the whole of D13's verdict half was
+// unreachable in the shipped binary while the tests, which check the layer
+// before the orchestrator sees it, stayed green. Running the binary against a
+// name under .invalid is what showed it.
+//
+// WHAT REPLACES IT IS NOT NOTHING - see RequiresDetail. Every status that says
+// something is wrong still has to say WHAT in words, which is the half of this
+// rule a reader actually reads.
 func (s Status) RequiresReason() bool {
+	return s == Unknown
+}
+
+// RequiresDetail reports whether a result carrying s must also carry the
+// sentence saying what happened.
+//
+// This is the half of the old RequiresReason that applies to every status but
+// PASS: silence is forbidden. A warning or a failure with no sentence is a red
+// mark on somebody's screen with nothing next to it, which is worse than no
+// mark at all - the reader cannot even tell what was looked at.
+func (s Status) RequiresDetail() bool {
 	return s != Pass
 }
 

@@ -98,11 +98,15 @@ func validateLayerResult(l LayerResult, add func(string, ...any)) {
 	case l.Status.RequiresReason() && l.Reason == "":
 		add("layer %s reports a problem without a reason, which is useless to the reader", l.ID)
 	case !l.Status.RequiresReason() && l.Reason != "":
-		add("layer %s passed and still carries the reason %q", l.ID, l.Reason)
+		// THE WORDING STOPPED BEING "passed" WHEN THE RULE NARROWED. This branch
+		// now catches WARN and FAIL as well, and telling somebody their failing
+		// layer "passed" would send them looking for a defect in the wrong place.
+		add("layer %s reports %s and still carries the reason %q, which belongs to a layer that could not "+
+			"be assessed", l.ID, l.Status, l.Reason)
 	case l.Reason != "" && !l.Reason.Valid():
 		add("layer %s carries the reason %q, which is outside the closed list", l.ID, l.Reason)
 	}
-	if l.Status.RequiresReason() && l.Detail == "" {
+	if l.Status.RequiresDetail() && l.Detail == "" {
 		add("layer %s reports a problem without a detail line saying what happened", l.ID)
 	}
 	// The findings are checked one by one rather than as a whole, because a

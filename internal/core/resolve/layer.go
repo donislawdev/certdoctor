@@ -240,11 +240,17 @@ func Ask(ctx context.Context, in Input) Result {
 		findings = append(findings, finding)
 	}
 
-	// D13 GIVES A VERDICT TO EXACTLY TWO OF THE CLASSES, and the other four are
-	// named and left alone. That ratio is the decision: probe S4 measured the two
+	// A VERDICT GOES TO THREE OF THE CLASSES AND THE REST ARE NAMED AND LEFT
+	// ALONE. That ratio is the decision, not the count: probe S4 measured the two
 	// views disagreeing on five names out of five, so a layer that warned on
 	// "they differ" would warn in nearly every run.
 	switch counted.divergence {
+	case report.DivergenceAgreeNone:
+		// BOTH LENSES ANSWERED AND NEITHER FOUND AN ADDRESS, which is D13 read
+		// literally - a name that resolves no way at all is a failure. It reached
+		// this layer as a pass until it was run against a name under .invalid: two
+		// empty sets compare equal, so the comparison called them agreed.
+		return Result{Status: status.Fail, Detail: in.divergenceDetail(counted), Findings: findings}
 	case report.DivergenceNeitherAnswered:
 		// With BOTH lenses silent this stops being unknown and becomes a finding.
 		// With one lens it stays unknown, and the test that pins it still passes -
@@ -255,11 +261,13 @@ func Ask(ctx context.Context, in Input) Result {
 	}
 
 	if counted.direct+boolToInt(counted.systemAnswered) == 0 {
-		// STILL UNKNOWN RATHER THAN FAIL, EVEN WITH BOTH LENSES SILENT, AND THAT
-		// IS NOT AN OVERSIGHT. D13 does call that case FAIL, but it says so as one
-		// of five named divergence classes, and the classification is the next
-		// slice. Reaching for the verdict here would implement half of D13 and
-		// leave the other four cases unnamed.
+		// STILL UNKNOWN RATHER THAN FAIL, AND THAT IS NOT AN OVERSIGHT. This line
+		// is reached only with ONE lens: a run holding both, where neither
+		// answered, is classified above and left as a verdict before it gets here.
+		// D13 does call the two-lens case FAIL, but it says so as one of the named
+		// divergence classes, and with a single lens there is nothing to classify -
+		// "nobody answered" cannot tell a name that does not resolve from one this
+		// lens cannot see.
 		return Result{
 			Status:   status.Unknown,
 			Reason:   reasonForNothingAnswered(seen),
@@ -295,6 +303,21 @@ func classify(direct, system []string, directAnswered, systemAnswered bool) repo
 
 	inDirect := setOf(direct)
 	inSystem := setOf(system)
+
+	// BOTH LENSES REPLIED AND NEITHER REPLY CARRIED AN ADDRESS. This is checked
+	// before the set comparison below, because that comparison would call two
+	// empty sets equal and reach agree - which is how a name under .invalid came
+	// out as a pass, under the sentence "both views resolved this name to the
+	// same addresses". Two empty things comparing equal is the shape OBS39 named
+	// in a byte guard, arriving in a classifier.
+	//
+	// IT IS ITS OWN CLASS RATHER THAN neither_answered: both resolvers replied,
+	// promptly and authoritatively, and what they said was that the name does
+	// not exist. Reporting that as silence would point at the wire.
+	if len(inDirect) == 0 && len(inSystem) == 0 {
+		return report.DivergenceAgreeNone
+	}
+
 	shared, onlyDirect, onlySystem := 0, 0, 0
 	for address := range inDirect {
 		if inSystem[address] {

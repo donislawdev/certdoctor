@@ -26,7 +26,14 @@ import (
 // So the minor moves with the field that caused it. L1 adds the reason a query
 // has no response code, which is the first thing in this document a consumer
 // could read as an answer when it is the absence of one.
-const SchemaVersion = "1.3"
+//
+// 1.4 MOVES FOR A VALUE RATHER THAN A FIELD, and that is the precedent ADR39
+// set when the seventh reason for UNKNOWN arrived: a consumer branching on a
+// closed list has to learn one more case, and the schema itself will not tell
+// them - divergence is declared as text rather than as an enumeration, so a
+// validator accepts the new class in silence. The version is the only place
+// that says it out loud.
+const SchemaVersion = "1.4"
 
 // JSON renders the machine readable report.
 //

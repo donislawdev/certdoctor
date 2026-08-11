@@ -60,9 +60,16 @@ func TestALayerThatBreaksItsContractDegradesAloneRatherThanEndingTheRun(t *testi
 	}{
 		{"nothing filled in at all", Answer{}},
 		{"a status outside the vocabulary", Answer{Status: status.Status("BROKEN"), Reason: status.ReasonTimeout, Detail: "x"}},
-		{"a problem with a reason outside the closed list", Answer{Status: status.Fail, Reason: status.Reason("made_up"), Detail: "x"}},
+		// EACH FIXTURE BREAKS ONE RULE AND ONLY ONE - OBS56. Two of these used to
+		// break two at once after the reason rule narrowed: a FAIL carrying any
+		// reason is now itself a breach, so a row named "no detail line" would
+		// have been refused for the reason instead and passed while defending
+		// nothing.
+		{"an unassessable layer with a reason outside the closed list",
+			Answer{Status: status.Unknown, Reason: status.Reason("made_up"), Detail: "x"}},
 		{"a pass still carrying a reason", Answer{Status: status.Pass, Reason: status.ReasonTimeout}},
-		{"a problem with no detail line", Answer{Status: status.Fail, Reason: status.ReasonTimeout}},
+		{"a verdict still carrying a reason", Answer{Status: status.Fail, Reason: status.ReasonTimeout, Detail: "x"}},
+		{"a problem with no detail line", Answer{Status: status.Fail}},
 		// A finding is checked here rather than only in the report validator, and
 		// that is the difference between losing one layer and losing the run: a
 		// malformed finding reaching the validator fails the whole report, so the
@@ -111,6 +118,61 @@ func TestALayerThatBreaksItsContractDegradesAloneRatherThanEndingTheRun(t *testi
 		}
 		if !noteNames(r.Notes, layer.TLS) {
 			t.Errorf("%s: the layer was degraded and no note says which one or why", breach.name)
+		}
+	}
+}
+
+// TestAVerdictFromALayerReachesTheReportIntact is the guard whose absence let a
+// whole slice ship without working.
+//
+// K3b-2c gave L1 the ability to answer WARN and FAIL, its tests were green, and
+// the shipped binary could produce NEITHER: every such answer broke the contract
+// in resultOf and came out as UNKNOWN with probe_error. The layer's own tests
+// could not see it, because they end where Ask returns - one call before the
+// orchestrator decides whether to believe it.
+//
+// SO THIS ASKS THE QUESTION FROM THE OTHER SIDE: a layer that assessed something
+// and found it wrong has to arrive in the report saying so, with the exit code
+// that follows from it.
+func TestAVerdictFromALayerReachesTheReportIntact(t *testing.T) {
+	cases := []struct {
+		answered status.Status
+		wantCode exitcode.Code
+	}{
+		{status.Warn, exitcode.Inconclusive},
+		{status.Fail, exitcode.Diagnosis},
+	}
+
+	for _, tc := range cases {
+		o := baseOptions(newClock())
+		o.Layers[layer.TLS] = func(context.Context) Answer {
+			return Answer{Status: tc.answered, Detail: "the two views of this name share no address"}
+		}
+
+		r, err := Execute(context.Background(), o)
+		if err != nil {
+			t.Fatalf("%s: the walk failed: %v", tc.answered, err)
+		}
+		if err := report.Validate(r); err != nil {
+			t.Fatalf("%s: the report the walk produced is not valid:\n%v", tc.answered, err)
+		}
+
+		row := rowFor(t, r, layer.TLS)
+		if row.Status != tc.answered {
+			t.Errorf("a layer answered %s and the report says %s with the reason %q",
+				tc.answered, row.Status, row.Reason)
+		}
+		if row.Detail == "" {
+			t.Errorf("%s: the sentence the layer wrote did not survive", tc.answered)
+		}
+		// The degradation note is the tell. A row can also read WARN because
+		// somebody wrote WARN into the degraded path, and then this test would pass
+		// while the layer's answer was still being thrown away.
+		if noteNames(r.Notes, layer.TLS) {
+			t.Errorf("%s: the layer was degraded even though its answer was well formed", tc.answered)
+		}
+		if r.Verdict.ExitCode != tc.wantCode {
+			t.Errorf("a layer answering %s ended the run with %v, want %v", tc.answered, r.Verdict.ExitCode, tc.wantCode)
 		}
 	}
 }
@@ -628,9 +690,14 @@ func TestMaskingReachesTheDetailLineAndTheNotes(t *testing.T) {
 		Detail: "nothing reads https://proxy.corp:8080 yet",
 	}}
 	o.Layers[layer.Context] = func(context.Context) Answer {
+		// NO REASON, AND THAT IS LOAD-BEARING - ADR41. A WARN carrying one is
+		// itself a contract breach now, so this layer would be degraded, its
+		// sentence replaced with the orchestrator's own, and the assertion below
+		// would pass whether masking ran or not. The mutation register found
+		// exactly that: the entry for "masking skips detail lines and notes"
+		// survived, against a test that reads as if it were watching.
 		return Answer{
 			Status: status.Warn,
-			Reason: status.ReasonAccessDenied,
 			Detail: "could not read https://proxy.corp:8080",
 		}
 	}
@@ -638,6 +705,11 @@ func TestMaskingReachesTheDetailLineAndTheNotes(t *testing.T) {
 	r, err := Execute(context.Background(), o)
 	if err != nil {
 		t.Fatalf("the walk failed: %v", err)
+	}
+	// The layer has to have survived intact, or the sentence being checked is not
+	// the one the layer wrote - OBS56.
+	if noteNames(r.Notes, layer.Context) {
+		t.Fatal("the layer was degraded, so the detail line below is the orchestrator's and not the one under test")
 	}
 	if detail := rowFor(t, r, layer.Context).Detail; strings.Contains(detail, "proxy.corp") {
 		t.Errorf("a host survived in a detail line: %q", detail)

@@ -360,7 +360,11 @@ func contractBreach(answer Answer) string {
 		return fmt.Sprintf("reported %s with the reason %q, which is outside the closed list", answer.Status, answer.Reason)
 	case !answer.Status.RequiresReason() && answer.Reason != "":
 		return fmt.Sprintf("reported %s and still carried the reason %q", answer.Status, answer.Reason)
-	case answer.Status.RequiresReason() && answer.Detail == "":
+	case answer.Status.RequiresDetail() && answer.Detail == "":
+		// THE SENTENCE IS REQUIRED OF EVERY STATUS BUT PASS, and it is asked here
+		// rather than through RequiresReason because those two stopped being the
+		// same question: a layer that ASSESSED something and found it wrong owes
+		// the reader words, and owes the closed reason list nothing.
 		return fmt.Sprintf("reported %s without a detail line saying what happened", answer.Status)
 	}
 	// The findings are checked HERE and not only in the report validator, and the

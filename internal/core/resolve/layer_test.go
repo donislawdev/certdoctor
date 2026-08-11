@@ -905,45 +905,72 @@ func TestTheSystemViewIsNamedRatherThanDroppedWhenTheBudgetIsGone(t *testing.T) 
 	}
 }
 
-// TestEveryDivergenceClassIsReachedAndOnlyTwoCarryAVerdict is D13 and ADR38 as
-// one table, and the ratio in the name is the decision it defends.
+// TestEveryDivergenceClassIsReachedAndOnlyThreeCarryAVerdict is D13, ADR38 and
+// ADR40 as one table, and the ratio in the name is the decision it defends.
 //
 // Probe S4 measured the two views disagreeing on five names out of five. A layer
 // that warned on "they differ" would therefore warn in almost every run on
 // Windows, which is the shape ADR4 names as the way a tool gets switched off. So
-// four of the six classes are named and left alone, and the test asserts the
-// STATUS as well as the class - a table that only checked the class would pass
-// just as well if every one of them raised a warning.
-func TestEveryDivergenceClassIsReachedAndOnlyTwoCarryAVerdict(t *testing.T) {
+// most of the classes are named and left alone, and the test asserts the STATUS
+// as well as the class - a table that only checked the class would pass just as
+// well if every one of them raised a warning.
+//
+// IT NOW ASSERTS THAT THE TABLE COVERS THE REGISTRY, and that assertion is here
+// because its absence cost a real defect. agree_none was reachable in production
+// for a whole slice while this table looked complete: a class nobody wrote a row
+// for is a class nobody checked the status of, and the list is closed precisely
+// so that this can be asked mechanically.
+func TestEveryDivergenceClassIsReachedAndOnlyThreeCarryAVerdict(t *testing.T) {
 	const a, b, c = "192.0.2.10", "192.0.2.11", "192.0.2.12"
 
 	cases := []struct {
-		name       string
-		direct     []string
-		system     []string
-		want       report.Divergence
-		wantStatus status.Status
+		name   string
+		direct []string
+		system []string
+		// answeredEmpty turns an empty address list from silence into an ANSWER
+		// that carried no address - NXDOMAIN from every resolver and a system
+		// lookup that came back with nothing. Those are different facts about
+		// somebody's network, and telling them apart is the whole of ADR40.
+		answeredEmpty bool
+		want          report.Divergence
+		wantStatus    status.Status
 	}{
-		{"the same addresses", []string{a, b}, []string{b, a}, report.DivergenceAgree, status.Pass},
-		{"ours has more", []string{a, b}, []string{a}, report.DivergenceSuperset, status.Pass},
-		{"theirs has more", []string{a}, []string{a, b}, report.DivergenceSuperset, status.Pass},
-		{"nothing in common", []string{a}, []string{b}, report.DivergenceDisjoint, status.Warn},
-		{"only ours answered", []string{a}, nil, report.DivergenceOneSided, status.Pass},
-		{"only theirs answered", nil, []string{a}, report.DivergenceOneSided, status.Pass},
-		{"neither answered", nil, nil, report.DivergenceNeitherAnswered, status.Fail},
+		{"the same addresses", []string{a, b}, []string{b, a}, false, report.DivergenceAgree, status.Pass},
+		{"ours has more", []string{a, b}, []string{a}, false, report.DivergenceSuperset, status.Pass},
+		{"theirs has more", []string{a}, []string{a, b}, false, report.DivergenceSuperset, status.Pass},
+		{"nothing in common", []string{a}, []string{b}, false, report.DivergenceDisjoint, status.Warn},
+		{"only ours answered", []string{a}, nil, false, report.DivergenceOneSided, status.Pass},
+		{"only theirs answered", nil, []string{a}, false, report.DivergenceOneSided, status.Pass},
+		{"neither answered", nil, nil, false, report.DivergenceNeitherAnswered, status.Fail},
 		// ADR38. Five classes did not cover this and a rotating subset produces it
 		// routinely - one address in both, one in each alone.
-		{"a shared address and one each", []string{a, b}, []string{b, c}, report.DivergenceOverlap, status.Pass},
+		{"a shared address and one each", []string{a, b}, []string{b, c}, false, report.DivergenceOverlap, status.Pass},
+		// ADR40, and this row is the one the table was missing. Both lenses reply,
+		// neither reply carries an address, and the set comparison below would call
+		// two empty sets equal - which is how a name that resolves nowhere came out
+		// as agreement, with a pass under it.
+		{"both said there is no such name", nil, nil, true, report.DivergenceAgreeNone, status.Fail},
 	}
 
+	covered := map[report.Divergence]bool{}
 	for _, tc := range cases {
+		covered[tc.want] = true
 		t.Run(tc.name, func(t *testing.T) {
-			in := workingInput(answeringWith(tc.direct))
+			exchange := answeringWith(tc.direct)
+			if len(tc.direct) == 0 && tc.answeredEmpty {
+				exchange = answeringNoSuchName()
+			}
+			in := workingInput(exchange)
 			in.Resolvers = []string{"192.0.2.53"}
-			if len(tc.system) == 0 {
-				in.System = systemAnswering(SystemAnswer{NoAnswer: report.NoAnswerTimeout})
-			} else {
+			switch {
+			case len(tc.system) > 0:
 				in.System = systemAnswering(SystemAnswer{Addresses: tc.system})
+			case tc.answeredEmpty:
+				// An answer holding no address, which is what the platform hands
+				// back for a name that does not exist. Not the same as silence.
+				in.System = systemAnswering(SystemAnswer{})
+			default:
+				in.System = systemAnswering(SystemAnswer{NoAnswer: report.NoAnswerTimeout})
 			}
 
 			got := Ask(context.Background(), in)
@@ -953,14 +980,86 @@ func TestEveryDivergenceClassIsReachedAndOnlyTwoCarryAVerdict(t *testing.T) {
 					tc.direct, tc.system, row.NameResolution.Divergence, tc.want)
 			}
 			if got.Status != tc.wantStatus {
-				t.Errorf("class %q came with status %s, want %s - only disjoint and neither_answered carry a verdict",
-					tc.want, got.Status, tc.wantStatus)
+				t.Errorf("class %q came with status %s, want %s - only disjoint, neither_answered and agree_none "+
+					"carry a verdict", tc.want, got.Status, tc.wantStatus)
 			}
 			if broken := row.Breach(); broken != "" {
 				t.Errorf("the row is refused by its own contract: %s", broken)
 			}
 		})
 	}
+
+	// THE TABLE HAS TO COVER THE REGISTRY, and this is the assertion whose absence
+	// let agree_none reach production unexamined. A class with no row here has
+	// nobody asking what status it carries.
+	for _, class := range report.AllDivergences {
+		if !covered[class] {
+			t.Errorf("the class %q has no row in this table, so nothing here says which status it carries", class)
+		}
+	}
+}
+
+// TestANameThatResolvesNowhereIsNotCalledAgreement is the sentence, which is the
+// part of this a person actually reads.
+//
+// MEASURED BY RUNNING THE BINARY, NOT REASONED ABOUT. A target under .invalid
+// produced four NXDOMAIN rows, a system view with no address, and the line "both
+// views resolved this name to the same addresses" - about a name that resolves
+// nowhere - with a PASS in front of it. Nothing in the tree was red.
+//
+// THE ROWS ARE ASSERTED AS WELL AS THE VERDICT, and that is OBS56 applied to this
+// test's own fixture. A status of FAIL is also what neither_answered produces, so
+// a fixture where the resolvers simply stayed silent would satisfy a check on the
+// status alone - and would then be passing for a reason this test is not about.
+// The rows carrying NXDOMAIN are what says both resolvers ANSWERED.
+func TestANameThatResolvesNowhereIsNotCalledAgreement(t *testing.T) {
+	in := workingInput(answeringNoSuchName())
+	in.System = systemAnswering(SystemAnswer{})
+
+	got := Ask(context.Background(), in)
+
+	if got.Status != status.Fail {
+		t.Errorf("a name that resolves no way at all came back as %s", got.Status)
+	}
+	if strings.Contains(got.Detail, "same addresses") {
+		t.Errorf("the sentence claims the views agreed on addresses neither of them found: %q", got.Detail)
+	}
+	if !strings.Contains(got.Detail, "neither") {
+		t.Errorf("the sentence does not say that neither view found an address: %q", got.Detail)
+	}
+
+	row := systemRowOf(t, got)
+	if row.NameResolution.Divergence != report.DivergenceAgreeNone {
+		t.Errorf("the comparison came out as %q, want %q", row.NameResolution.Divergence, report.DivergenceAgreeNone)
+	}
+
+	// The other half of the fixture, without which the check above would be
+	// satisfied by two resolvers that never replied.
+	answers := 0
+	for _, finding := range got.Findings {
+		if finding.NameResolution.View != report.ViewDirect {
+			continue
+		}
+		if finding.NameResolution.ResponseCode != "NXDOMAIN" {
+			t.Errorf("a direct row reads %q, so this fixture is not the one this test is about",
+				finding.NameResolution.ResponseCode)
+		}
+		answers++
+	}
+	if answers == 0 {
+		t.Fatal("no direct row was produced at all, so nothing here established that the resolvers answered")
+	}
+}
+
+// answeringNoSuchName replies NXDOMAIN to every query, carrying no address.
+//
+// It is the difference between a resolver that said "there is no such name" and
+// one that said nothing at all - answeringWith folds the second into an empty
+// list, and ADR40 turns on telling them apart.
+func answeringNoSuchName() Exchange {
+	return answering(func(id uint16, recordType dnsmsg.Type) ([]byte, error) {
+		return replyWith(id, recordType, 3), nil
+	})
 }
 
 // answeringWith replies with a fixed address list for every query, or with a

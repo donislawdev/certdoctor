@@ -134,8 +134,10 @@ const (
 // views disagreeing on five names out of five, so "the views differ" is the
 // normal state of a working machine and a warning built on it would fire in
 // nearly every run on Windows. That is the shape ADR4 warns about: a tool that
-// cries wolf is switched off within a week. Only two of these five carry a
-// verdict, and the other three are named and left alone.
+// cries wolf is switched off within a week. Three of these classes carry a
+// verdict and the rest are named and left alone - the ratio is the decision,
+// and the count is deliberately not written here because it has already gone
+// stale twice, once per class added.
 //
 // THE LIST IS CLOSED AND IT DESCRIBES OUR OWN COMPARISON, so an unrecognised
 // value is a defect here rather than news from anybody's network.
@@ -177,6 +179,28 @@ const (
 	// large site - the exact failure mode D13 was written to avoid, arriving
 	// through the gap in its own list.
 	DivergenceOverlap Divergence = "overlap"
+	// DivergenceAgreeNone - both views answered, and neither answer carried an
+	// address.
+	//
+	// A SEVENTH CLASS, AND IT WAS MEASURED RATHER THAN REASONED ABOUT. Running
+	// the binary against a name under .invalid produced four NXDOMAIN rows, a
+	// system view with no address, and the sentence "both views resolved this
+	// name to the same addresses" - about a name that resolves nowhere. Two
+	// empty sets compare equal, so the classifier reached agree, which carries
+	// a pass. That is the shape OBS39 named in a byte comparison, arriving here.
+	//
+	// IT IS NOT neither_answered, AND THE DISTINCTION IS THE POINT. That class
+	// means nobody replied - a cable, a firewall, a resolver that stayed silent.
+	// Here BOTH resolvers replied, promptly and authoritatively, and what they
+	// said was "there is no such name". Folding the two together would be the
+	// same move ADR38 refused for disjoint: a new fact pushed into a class that
+	// means something else, where it reads as a measurement of the wire.
+	//
+	// IT CARRIES A VERDICT, and that is D13 read literally: a name that resolves
+	// no way at all is a failure. The user typed a URL and there is nothing to
+	// connect to - which is a diagnosis, and usually a typo or a name that only
+	// exists inside a network this machine is not on.
+	DivergenceAgreeNone Divergence = "agree_none"
 )
 
 var divergenceMeanings = map[Divergence]string{
@@ -186,6 +210,7 @@ var divergenceMeanings = map[Divergence]string{
 	DivergenceOneSided:        "one view resolved this name and the other did not",
 	DivergenceNeitherAnswered: "neither view resolved this name",
 	DivergenceOverlap:         "both views answered, share an address, and each has one the other lacks",
+	DivergenceAgreeNone:       "both views answered and neither found an address for this name",
 }
 
 // AllDivergences lists every class exactly once, in declaration order.
@@ -196,9 +221,14 @@ var AllDivergences = []Divergence{
 	DivergenceOneSided,
 	DivergenceNeitherAnswered,
 	DivergenceOverlap,
+	DivergenceAgreeNone,
 }
 
-// Valid reports whether d is one of the five.
+// Valid reports whether d is one of the named classes.
+//
+// The count used to be written here and went stale twice, once per class added
+// - the list itself is above and does not need restating in a sentence nobody
+// updates.
 func (d Divergence) Valid() bool {
 	_, ok := divergenceMeanings[d]
 	return ok
@@ -524,8 +554,8 @@ func (n NameResolution) breach(source Source) string {
 	// CHECKED BEFORE THE PER-VIEW RULES, because a class outside the closed list
 	// is a defect in our own comparison whichever row it turned up on.
 	if n.Divergence != "" && !n.Divergence.Valid() {
-		return fmt.Sprintf("says the two views of %s diverge as %q, which is outside the five classes D13 names",
-			n.Name, n.Divergence)
+		return fmt.Sprintf("says the two views of %s diverge as %q, which is outside the closed list of classes "+
+			"this program names", n.Name, n.Divergence)
 	}
 	if n.View == ViewDirect && n.Divergence != "" {
 		// THE COMPARISON HAPPENS ONCE AND THIS IS WHERE IT WOULD QUIETLY HAPPEN

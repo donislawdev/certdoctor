@@ -156,15 +156,41 @@ func TestValidateRejectsAProblemWithoutADetail(t *testing.T) {
 	requireRejected(t, r, "without a detail line")
 }
 
-// TestValidateRejectsASuccessCarryingAReason is the other side of the same
-// rule. A row that passed and still explains itself means somebody assembled it
-// from two different code paths.
-func TestValidateRejectsASuccessCarryingAReason(t *testing.T) {
-	r := wellFormedReport()
-	r.Layers[2].Status = status.Pass
-	r.Layers[2].Detail = ""
-	r.Verdict = Assess(r.Layers)
-	requireRejected(t, r, "passed and still carries the reason")
+// TestValidateRejectsAnAssessedLayerCarryingAReason is the other side of the
+// same rule. A row that reached a verdict and still carries a reason from the
+// "could not be assessed" list was assembled from two different code paths.
+//
+// IT COVERS FAIL AND WARN AS WELL AS PASS, and that is the whole point of the
+// narrowing: the reason vocabulary belongs to UNKNOWN alone, so a failing layer
+// carrying one is the same defect as a passing layer carrying one.
+func TestValidateRejectsAnAssessedLayerCarryingAReason(t *testing.T) {
+	for _, assessed := range []status.Status{status.Pass, status.Warn, status.Fail} {
+		r := wellFormedReport()
+		r.Layers[2].Status = assessed
+		if assessed == status.Pass {
+			r.Layers[2].Detail = ""
+		}
+		r.Verdict = Assess(r.Layers)
+		requireRejected(t, r, "still carries the reason")
+	}
+}
+
+// TestValidateRejectsAVerdictWithoutASentence is the ban on silence where it
+// stopped being enforced by the reason rule.
+//
+// A layer that says something is wrong and says nothing else is a red mark with
+// nothing beside it. Until the reason rule narrowed, this was checked as a side
+// effect of that one - so it needs its own name now, or narrowing again would
+// drop it without a single test going red.
+func TestValidateRejectsAVerdictWithoutASentence(t *testing.T) {
+	for _, assessed := range []status.Status{status.Warn, status.Fail} {
+		r := wellFormedReport()
+		r.Layers[2].Status = assessed
+		r.Layers[2].Reason = ""
+		r.Layers[2].Detail = ""
+		r.Verdict = Assess(r.Layers)
+		requireRejected(t, r, "without a detail line")
+	}
 }
 
 func TestValidateRejectsAReasonOutsideTheClosedList(t *testing.T) {

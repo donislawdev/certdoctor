@@ -15,6 +15,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
+	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
 // aTarget is the URL every check uses unless it is about the URL itself.
@@ -292,6 +293,203 @@ func TestTheShippedBinaryAnswersEveryMetaSwitchFromItself(t *testing.T) {
 	// silently stopped reaching the binary.
 	if len(license.stdout) < 30_000 {
 		t.Errorf("--license printed %d bytes, which is too short to be the whole text", len(license.stdout))
+	}
+}
+
+// ------------------------------------------------------------ group C2, L1
+
+// resolutionRow is the body L1 fills in, decoded the way a consumer would.
+type resolutionRow struct {
+	Name         string   `json:"name"`
+	View         string   `json:"view"`
+	Resolver     *string  `json:"resolver"`
+	QueryType    *string  `json:"query_type"`
+	ResponseCode *string  `json:"response_code"`
+	NoAnswer     *string  `json:"no_answer"`
+	Addresses    []string `json:"addresses"`
+	Divergence   *string  `json:"divergence"`
+}
+
+type layerRow struct {
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	Reason   string `json:"reason"`
+	Detail   string `json:"detail"`
+	Findings []struct {
+		Kind           string         `json:"kind"`
+		NameResolution *resolutionRow `json:"name_resolution"`
+	} `json:"findings"`
+}
+
+// resolutionLayer runs the binary against a name that cannot exist and returns
+// L1's row, or SKIPS LOUDLY.
+//
+// THE SKIP IS THE POINT AND NOT AN ESCAPE HATCH - OBS46. This suite was, until
+// L1, a gate that needed no network at all, and that quiet property is what made
+// it repeatable in CI and on a train. L1 ends it by definition: a machine with no
+// resolver configured, or with its DNS server behind a cut cable, cannot answer
+// these questions. Such a run must say what went unestablished rather than pass
+// having checked nothing - which is the failure shape this whole suite exists
+// against.
+//
+// The target is under .invalid, reserved by RFC 2606 and delegated to nobody, so
+// the query never leaves the user's own network and NXDOMAIN comes back from the
+// local resolver. That keeps this repeatable without the internet.
+func resolutionLayer(t *testing.T, args ...string) (layerRow, string) {
+	t.Helper()
+
+	r := runProgram(t, append([]string{anUnresolvableTarget, "--json"}, args...)...)
+	if r.stdout == "" {
+		t.Fatalf("the run produced no document at all: %s", r.stderr)
+	}
+	if err := render.ValidateDocument([]byte(r.stdout)); err != nil {
+		t.Fatalf("a real run produced a document its own schema refuses:\n%v", err)
+	}
+
+	var document struct {
+		Layers []layerRow `json:"layers"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &document); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+
+	for _, row := range document.Layers {
+		if row.ID != string(layer.Resolution) {
+			continue
+		}
+		if row.Status == "UNKNOWN" {
+			t.Skipf("NOT CHECKED: this machine's name resolution could not be exercised (%s: %s), so nothing was "+
+				"established about how the binary reports the two views. This is a skip, not a pass.",
+				row.Reason, row.Detail)
+		}
+		return row, r.stdout
+	}
+	t.Fatalf("the document carries no row for %s at all", layer.Resolution)
+	return layerRow{}, ""
+}
+
+// TestTheShippedBinaryShowsBothViewsOfAName is D3 checked on the real binary,
+// against a real resolver, and it asks about STRUCTURE rather than content.
+//
+// WHY NOT CONTENT - OBS46. Which addresses come back is a fact about somebody's
+// network and a moving one: the resolver behind a large site hands out a
+// rotating subset, which this suite already reported once as a defect in our own
+// output. What the product promises is that both lenses are present, labelled,
+// and told apart - and that survives being run anywhere.
+func TestTheShippedBinaryShowsBothViewsOfAName(t *testing.T) {
+	row, _ := resolutionLayer(t)
+
+	direct, system := 0, 0
+	for _, finding := range row.Findings {
+		body := finding.NameResolution
+		if body == nil {
+			t.Errorf("a finding of kind %q in L1 carries no resolution body", finding.Kind)
+			continue
+		}
+		if body.Name == "" {
+			t.Error("a row says nothing about which name it answers for")
+		}
+		switch body.View {
+		case "direct":
+			direct++
+			// The three columns the direct view MUST fill: this is the half of the
+			// K2 contract that a plausible mistake leaves empty.
+			if body.Resolver == nil || *body.Resolver == "" {
+				t.Error("a direct row does not name the resolver it asked")
+			}
+			if body.QueryType == nil || *body.QueryType == "" {
+				t.Error("a direct row does not say which record type it asked for")
+			}
+			if body.Divergence != nil {
+				t.Errorf("a direct row carries the comparison %q, which describes the pair of views", *body.Divergence)
+			}
+		case "system":
+			system++
+			// And the three it MUST NOT: the platform resolves a name without
+			// saying who answered, so filling these in would be invention that
+			// reads like measurement.
+			if body.Resolver != nil || body.QueryType != nil || body.ResponseCode != nil {
+				t.Errorf("the system row claims to know resolver=%v query_type=%v response_code=%v, "+
+					"none of which this system reports", body.Resolver, body.QueryType, body.ResponseCode)
+			}
+		default:
+			t.Errorf("a row was seen through the view %q, which is neither lens", body.View)
+		}
+	}
+
+	if direct == 0 {
+		t.Error("the report holds no direct view at all, so D3 is half unmet")
+	}
+	if system != 1 {
+		t.Errorf("the report holds %d system rows, want exactly one - there is one platform to ask", system)
+	}
+}
+
+// TestTheShippedBinaryClassifiesTheTwoViewsAgainstEachOther is the other half of
+// P3: the comparison exists, sits where ADR37 put it, and carries a class from
+// the closed list.
+//
+// IT DOES NOT ASSERT WHICH CLASS, and that is deliberate. The class is a fact
+// about the machine this runs on - superset on a host that sees AAAA records,
+// agree_none for a name nobody has - and pinning one here would make this check
+// fail on a correctly working machine somewhere else.
+func TestTheShippedBinaryClassifiesTheTwoViewsAgainstEachOther(t *testing.T) {
+	row, _ := resolutionLayer(t)
+
+	known := map[string]bool{}
+	for _, class := range report.AllDivergences {
+		known[class.String()] = true
+	}
+
+	classified := 0
+	for _, finding := range row.Findings {
+		body := finding.NameResolution
+		if body == nil || body.View != "system" || body.Divergence == nil {
+			continue
+		}
+		classified++
+		if !known[*body.Divergence] {
+			t.Errorf("the two views were classified as %q, which is outside the closed list", *body.Divergence)
+		}
+	}
+	if classified != 1 {
+		t.Errorf("%d rows carry the comparison, want exactly one - there is one comparison per run", classified)
+	}
+
+	// The verdict has to follow from it rather than being decided elsewhere. A
+	// name under .invalid resolves nowhere, so a layer that assessed it and stayed
+	// silent about the failure would be the shape D13 was written against.
+	if row.Status == "FAIL" && row.Detail == "" {
+		t.Error("the layer failed and said nothing about why")
+	}
+}
+
+// TestTheShippedBinaryKeepsRealResolverAddressesOutOfARedactedReport is ADR32 on
+// the one surface where the addresses are real.
+//
+// Every test of masking inside the program feeds it invented values. This is the
+// only place where the resolvers are THIS MACHINE'S, read from its own
+// configuration - which is the case the rule was written for: a report pasted
+// into a ticket naming somebody's internal DNS server.
+func TestTheShippedBinaryKeepsRealResolverAddressesOutOfARedactedReport(t *testing.T) {
+	row, _ := resolutionLayer(t, "--redact")
+
+	named := 0
+	for _, finding := range row.Findings {
+		body := finding.NameResolution
+		if body == nil || body.Resolver == nil || *body.Resolver == "" {
+			continue
+		}
+		named++
+		// A pseudonym, not an address. Checked by shape rather than by comparing
+		// against this machine's real resolvers, because reading those here would
+		// put them in the test's own output.
+		if !strings.HasPrefix(*body.Resolver, "[") || !strings.HasSuffix(*body.Resolver, "]") {
+			t.Errorf("a redacted report names the resolver %q, which is not a pseudonym", *body.Resolver)
+		}
+	}
+	if named == 0 {
+		t.Error("no row names a resolver at all, so nothing here established that masking reached one")
 	}
 }
 
