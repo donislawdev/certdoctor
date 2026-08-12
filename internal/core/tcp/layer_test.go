@@ -339,3 +339,49 @@ func TestEveryRowSaysWhichAddressAndPortItIsAbout(t *testing.T) {
 		}
 	}
 }
+
+// TestSwitchingEveryBudgetOffMeansNoLimitRatherThanNoAttempt is OBS62, and the
+// defect it pins was reported by this layer as a fact about somebody's network.
+//
+// BOTH FLAGS DOCUMENT ZERO AS "no limit", and one of them is suggested by the
+// tool's own error text - "Give 0 if that is what you want". With both switched
+// off there is no layer deadline and no per-attempt cap, and limitFor used to
+// answer zero, which every call site here reads as "no time left, do not try".
+// Measured on the shipped binary: every address came back not_attempted, the
+// layer said none of them accepted a connection, and L1 above it said neither
+// view answered - on a machine where the name resolves in milliseconds.
+//
+// IT ASSERTS BOTH HALVES. That the attempts happen, and that no deadline was
+// invented for them: capping an uncapped attempt at some arbitrary value would
+// turn one wrong answer into a quieter one.
+func TestSwitchingEveryBudgetOffMeansNoLimitRatherThanNoAttempt(t *testing.T) {
+	var asked int
+	var deadlines int
+	in := workingInput(func(ctx context.Context, _ string, _ int) (io.Closer, error) {
+		asked++
+		if _, set := ctx.Deadline(); set {
+			deadlines++
+		}
+		return nil, ErrRefused
+	})
+	in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
+	// --probe-timeout 0, and context.Background() below is --timeout 0.
+	in.PerAddress = 0
+
+	got := Ask(context.Background(), in)
+
+	if asked != 2 {
+		t.Errorf("two addresses produced %d attempt(s) when the caller asked for no limits", asked)
+	}
+	if deadlines != 0 {
+		t.Errorf("%d attempt(s) were given a deadline of their own when nothing caps them", deadlines)
+	}
+	if got.Status != status.Fail {
+		t.Errorf("two refused addresses gave %s", got.Status)
+	}
+	for _, finding := range got.Findings {
+		if finding.TCPConnect.Outcome == report.OutcomeNotAttempted {
+			t.Errorf("an address was reported as never tried while the caller had asked for no limit at all")
+		}
+	}
+}

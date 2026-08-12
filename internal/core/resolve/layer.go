@@ -190,6 +190,20 @@ type Result struct {
 	Addresses []string
 }
 
+// unlimited is what limitFor answers when nothing caps one query at all.
+//
+// ZERO CANNOT CARRY THIS MEANING, AND THAT COLLISION IS THE WHOLE REASON THIS
+// CONSTANT EXISTS. Zero at the call site means "no time is left, do not ask",
+// while zero in PerQuery means the caller asked for NO LIMIT - two opposite
+// meanings riding on one value. MEASURED, NOT REASONED: with --timeout 0 and
+// --probe-timeout 0, both documented as "zero means no limit", this layer asked
+// nothing and reported that neither view answered - a FAIL about somebody's DNS
+// on a machine where the name resolves in milliseconds. OBS62.
+//
+// The convention is borrowed rather than invented: run.remaining already answers
+// a negative duration for "this run has no overall budget".
+const unlimited time.Duration = -1
+
 // Sentences for the cases where the layer establishes nothing. They are
 // constants so that the same wording cannot drift between here and a test.
 const (
@@ -486,12 +500,18 @@ func boolToInt(b bool) int {
 // askSystem asks the platform once, inside its own share of the budget.
 func (in Input) askSystem(ctx context.Context, queriesLeft int) report.Finding {
 	remaining := in.limitFor(ctx, queriesLeft)
-	if remaining <= 0 {
+	if remaining == 0 {
 		return in.systemFinding(SystemAnswer{NoAnswer: report.NoAnswerNotAsked}, 0)
 	}
 
-	queryCtx, cancel := context.WithTimeout(ctx, remaining)
-	defer cancel()
+	// An unlimited query gets no deadline of its own rather than one of zero -
+	// OBS62, and the constant carries the measurement.
+	queryCtx := ctx
+	if remaining > 0 {
+		limited, cancel := context.WithTimeout(ctx, remaining)
+		defer cancel()
+		queryCtx = limited
+	}
 
 	started := in.Now()
 	answer := in.System(queryCtx, in.Name)
@@ -724,7 +744,7 @@ func (in Input) answeredDetail(t tallies) string {
 // shrinks as the walk goes on and grows again whenever somebody answers early.
 func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.Type, queriesLeft int) report.Finding {
 	remaining := in.limitFor(ctx, queriesLeft)
-	if remaining <= 0 {
+	if remaining == 0 {
 		return in.finding(resolver, recordType, answer{noAnswer: report.NoAnswerNotAsked})
 	}
 
@@ -744,8 +764,12 @@ func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.T
 		return in.finding(resolver, recordType, answer{noAnswer: report.NoAnswerUnreadableAnswer})
 	}
 
-	queryCtx, cancel := context.WithTimeout(ctx, remaining)
-	defer cancel()
+	queryCtx := ctx
+	if remaining > 0 {
+		limited, cancel := context.WithTimeout(ctx, remaining)
+		defer cancel()
+		queryCtx = limited
+	}
 
 	started := in.Now()
 	reply, err := in.Exchange(queryCtx, resolver, query)
@@ -789,9 +813,17 @@ func (in Input) limitFor(ctx context.Context, queriesLeft int) time.Duration {
 	deadline, set := ctx.Deadline()
 	if !set {
 		// No layer deadline at all: there is nothing to divide, and the query's
-		// own limit is the only thing left. Zero here means the caller asked for
-		// no limit and got one, which is what it asked for.
-		return in.PerQuery
+		// own limit is the only thing left - unless there is not one either, and
+		// then nothing caps this query at all.
+		//
+		// THE COMMENT THAT STOOD HERE SAID THE CALLER "asked for no limit and got
+		// one, which is what it asked for", AND IT WAS FALSE. It answered zero,
+		// which every call site reads as "no time left, do not ask" - so the run
+		// that switched both budgets off asked nothing at all. OBS62.
+		if in.PerQuery > 0 {
+			return in.PerQuery
+		}
+		return unlimited
 	}
 	left := deadline.Sub(in.Now())
 	if left <= 0 {

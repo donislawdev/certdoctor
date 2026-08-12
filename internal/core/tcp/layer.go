@@ -103,6 +103,21 @@ type Result struct {
 	Findings []report.Finding
 }
 
+// unlimited is what limitFor answers when nothing caps one attempt at all.
+//
+// ZERO CANNOT CARRY THIS MEANING, AND THAT COLLISION IS THE WHOLE REASON THIS
+// CONSTANT EXISTS. Zero at the call site means "no time is left, do not try",
+// while zero in PerAddress means the caller asked for NO LIMIT - two opposite
+// meanings riding on one value. MEASURED, NOT REASONED: with --timeout 0 and
+// --probe-timeout 0, both documented as "zero means no limit" and one of them
+// suggested by the tool's own error text, every address came back not_attempted
+// and L1 reported that neither view answered - a FAIL about somebody's DNS on a
+// machine where the name resolves in milliseconds. OBS62.
+//
+// The convention is borrowed rather than invented: run.remaining already answers
+// a negative duration for "this run has no overall budget".
+const unlimited time.Duration = -1
+
 // Sentences for the cases where the layer establishes nothing.
 const (
 	noConnect   = "no way to open a connection was supplied, so nothing about reachability was established"
@@ -168,14 +183,21 @@ func (in Input) unusable() string {
 // because a report with fewer rows reads as a name with fewer addresses.
 func (in Input) tryOne(ctx context.Context, address string, left int) report.Finding {
 	remaining := in.limitFor(ctx, left)
-	if remaining <= 0 {
+	if remaining == 0 {
 		// NOT A TIMEOUT. Nothing was sent, so nothing failed to answer - this row
 		// is about our budget, not about their network.
 		return in.finding(address, report.OutcomeNotAttempted, 0)
 	}
 
-	attemptCtx, cancel := context.WithTimeout(ctx, remaining)
-	defer cancel()
+	// AN UNLIMITED ATTEMPT GETS NO DEADLINE OF ITS OWN rather than a deadline of
+	// zero, and the difference is the whole of OBS62: this attempt is capped by
+	// nothing, so wrapping it in a limit here would be inventing one.
+	attemptCtx := ctx
+	if remaining > 0 {
+		limited, cancel := context.WithTimeout(ctx, remaining)
+		defer cancel()
+		attemptCtx = limited
+	}
 
 	started := in.Now()
 	conn, err := in.Connect(attemptCtx, address, in.Port)
@@ -215,8 +237,12 @@ func (in Input) limitFor(ctx context.Context, addressesLeft int) time.Duration {
 	deadline, set := ctx.Deadline()
 	if !set {
 		// No layer deadline at all: there is nothing to divide, and the attempt's
-		// own limit is the only thing left.
-		return in.PerAddress
+		// own limit is the only thing left - unless there is not one either, and
+		// then nothing caps this attempt at all.
+		if in.PerAddress > 0 {
+			return in.PerAddress
+		}
+		return unlimited
 	}
 	// THE CLOCK IS THE PORT AND NEVER time.Until. Reading the real clock here
 	// while the rest of the layer reads the injected one would make the budget

@@ -1498,3 +1498,51 @@ func TestANameThatCannotBeAskedAboutIsARowNotACrash(t *testing.T) {
 		}
 	}
 }
+
+// TestSwitchingEveryBudgetOffMeansNoLimitRatherThanNoAsking is OBS62, one layer
+// up from where it was found and louder here.
+//
+// THE COMMENT THAT USED TO STAND IN limitFor CLAIMED THIS ALREADY WORKED - "the
+// caller asked for no limit and got one, which is what it asked for" - while the
+// function answered zero and every call site reads zero as "no time left". So
+// with --timeout 0 and --probe-timeout 0, both documented as "no limit", this
+// layer sent NOTHING and the report said neither view got any answer at all for
+// the name. Measured on the shipped binary against example.com.
+//
+// A FALSE FAIL ABOUT SOMEBODY'S DNS IS THE WORST THING THIS PROGRAM CAN SAY -
+// inviolable rules 15 and 21 - which is why the rule gets a named test in each
+// layer rather than one shared one: the arithmetic is duplicated, so it can be
+// broken in one place while the other stays green.
+func TestSwitchingEveryBudgetOffMeansNoLimitRatherThanNoAsking(t *testing.T) {
+	var asked int
+	var deadlines int
+	in := workingInput(func(ctx context.Context, _ string, query []byte) ([]byte, error) {
+		asked++
+		if _, set := ctx.Deadline(); set {
+			deadlines++
+		}
+		id := uint16(query[0])<<8 | uint16(query[1])
+		wanted := dnsmsg.Type(uint16(query[len(query)-4])<<8 | uint16(query[len(query)-3]))
+		return replyWith(id, wanted, 0, addressFor(wanted)), nil
+	})
+	// --probe-timeout 0, and context.Background() below is --timeout 0.
+	in.PerQuery = 0
+
+	got := Ask(context.Background(), in)
+
+	// Two resolvers, two record types.
+	if asked != 4 {
+		t.Errorf("the layer sent %d quer(ies) when the caller asked for no limits, expected 4", asked)
+	}
+	if deadlines != 0 {
+		t.Errorf("%d quer(ies) were given a deadline of their own when nothing caps them", deadlines)
+	}
+	if got.Status == status.Unknown {
+		t.Errorf("switching every budget off left the layer unable to establish anything: %s / %s", got.Reason, got.Detail)
+	}
+	for _, finding := range got.Findings {
+		if finding.NameResolution.NoAnswer == report.NoAnswerNotAsked {
+			t.Errorf("a resolver was reported as never asked while the caller had asked for no limit at all")
+		}
+	}
+}
