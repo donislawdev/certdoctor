@@ -1,0 +1,32 @@
+; The one zone this bench is authoritative for.
+;
+; Each name below exists to produce ONE fact certdoctor has to report correctly.
+; A name absent from this file gets NXDOMAIN from an AUTHORITATIVE server, which
+; is not the same fact as NXDOMAIN invented by a resolver in the middle.
+$ORIGIN ok.test.
+$TTL 60
+
+@   IN SOA ns.ok.test. admin.ok.test. (
+        1          ; serial
+        7200       ; refresh
+        3600       ; retry
+        1209600    ; expire
+        3600 )     ; minimum
+
+@   IN NS  ns.ok.test.
+ns  IN A   172.28.0.53
+
+; A records and no AAAA. Asking for AAAA gets NOERROR with no answer - NODATA -
+; which is a different fact from "the name does not exist" and is one of the
+; three certdoctor asks the resolvers directly in order to tell apart.
+only4   IN A     192.0.2.10
+
+; Both record types, so the union of the direct view holds four addresses while
+; the platform hands back a filtered list.
+dual    IN A     192.0.2.20
+dual    IN AAAA  2001:db8::20
+
+; The address DNS knows for this name. The verification run also gives the
+; container a hosts entry pointing somewhere else entirely, and the two views
+; then share no address at all.
+split   IN A     192.0.2.30

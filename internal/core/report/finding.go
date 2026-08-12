@@ -179,8 +179,8 @@ const (
 	// large site - the exact failure mode D13 was written to avoid, arriving
 	// through the gap in its own list.
 	DivergenceOverlap Divergence = "overlap"
-	// DivergenceAgreeNone - both views answered, and neither answer carried an
-	// address.
+	// DivergenceAgreeNone - neither view found an address, and at least one of
+	// them said so rather than staying silent.
 	//
 	// A SEVENTH CLASS, AND IT WAS MEASURED RATHER THAN REASONED ABOUT. Running
 	// the binary against a name under .invalid produced four NXDOMAIN rows, a
@@ -191,10 +191,17 @@ const (
 	//
 	// IT IS NOT neither_answered, AND THE DISTINCTION IS THE POINT. That class
 	// means nobody replied - a cable, a firewall, a resolver that stayed silent.
-	// Here BOTH resolvers replied, promptly and authoritatively, and what they
-	// said was "there is no such name". Folding the two together would be the
-	// same move ADR38 refused for disjoint: a new fact pushed into a class that
-	// means something else, where it reads as a measurement of the wire.
+	// Here somebody replied, promptly and authoritatively, and what they said was
+	// "there is no such name". Folding the two together would be the same move
+	// ADR38 refused for disjoint: a new fact pushed into a class that means
+	// something else, where it reads as a measurement of the wire.
+	//
+	// IT WIDENED ONCE, IN ADR42, AND THE WIDENING IS WORTH KNOWING. It used to
+	// require BOTH views to have answered. A SERVFAIL from the only resolver
+	// beside a system view that said nothing therefore fell through to one_sided,
+	// which claims one lens resolved the name - and neither had. What the class
+	// asserts now is narrower and truer: no address anywhere, and we know it
+	// because somebody answered rather than because everybody went quiet.
 	//
 	// IT CARRIES A VERDICT, and that is D13 read literally: a name that resolves
 	// no way at all is a failure. The user typed a URL and there is nothing to
@@ -206,11 +213,11 @@ const (
 var divergenceMeanings = map[Divergence]string{
 	DivergenceAgree:           "both views resolved this name to the same addresses",
 	DivergenceSuperset:        "one view returned everything the other did and more",
-	DivergenceDisjoint:        "both views answered and share no address",
+	DivergenceDisjoint:        "both views found addresses and share none of them",
 	DivergenceOneSided:        "one view resolved this name and the other did not",
-	DivergenceNeitherAnswered: "neither view resolved this name",
-	DivergenceOverlap:         "both views answered, share an address, and each has one the other lacks",
-	DivergenceAgreeNone:       "both views answered and neither found an address for this name",
+	DivergenceNeitherAnswered: "neither view got any answer at all for this name",
+	DivergenceOverlap:         "both views found addresses, share one, and each has one the other lacks",
+	DivergenceAgreeNone:       "neither view found an address for this name, and at least one of them said so",
 }
 
 // AllDivergences lists every class exactly once, in declaration order.

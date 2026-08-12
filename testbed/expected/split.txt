@@ -1,0 +1,33 @@
+# The two views made to disagree completely.
+#
+# HOW, AND WHY IT IS NOT SPLIT-HORIZON DNS. Pointing two resolvers at different
+# answers does NOT produce this: the direct view compares the UNION of every
+# resolver's answer (ADR31), so a second resolver adds its address to ours and
+# the platform then holds a subset - superset, not disjoint.
+#
+# The one thing the two views can never share is the hosts file. certdoctor's own
+# view never reads it under any configuration, and the platform reads it first.
+# So the verification run gives the container a hosts entry pointing this name
+# somewhere the zone does not, and the views end up with nothing in common.
+#
+# It is also the more common fault in real life: a forgotten line in a hosts file
+# outlives whoever added it.
+
+target=https://split.ok.test/
+
+direct_a=NOERROR
+direct_aaaa=NODATA
+
+# What each lens sees. The zone says one thing, the hosts file says another.
+addresses_direct=192.0.2.30
+addresses_system=198.51.100.30
+
+# Sharing no address at all is the one class that carries a warning, because
+# split-horizon DNS and a leak past a VPN look exactly like this from here.
+l1_status=WARN
+divergence=disjoint
+divergence_forbidden=agree,superset,overlap,agree_none,neither_answered,one_sided
+
+# A warning does not redden a run on its own - ADR4 - and six layers are still
+# unknown, so the run stays inconclusive rather than becoming a diagnosis.
+exit_code=5

@@ -293,29 +293,36 @@ func Ask(ctx context.Context, in Input) Result {
 // COMPARISON IS BY SET, NOT BY ORDER. Resolvers rotate the order they hand
 // addresses back - the acceptance suite already caught that once, reporting a
 // working load balancer as a defect in our output.
+// THE QUESTION IS "DID THIS LENS FIND AN ADDRESS", NOT "DID A REPLY ARRIVE", AND
+// GETTING THAT WRONG COST THREE DEFECTS OF ONE FAMILY - ADR42. A reply is not a
+// resolution: NXDOMAIN, NODATA and SERVFAIL all arrive promptly and carry no
+// address at all. Classifying on arrival produced, in turn, a name under .invalid
+// reported as agreement (ADR40), a lens with addresses against a lens with an
+// empty answer reported as superset (OBS57), and a SERVFAIL reported as one lens
+// having resolved the name when neither had (OBS60).
+//
+// WHETHER A REPLY ARRIVED STILL MATTERS, in exactly one place: it separates "both
+// said there is no such name" from "nobody said anything". Those send a reader to
+// two different places - a typo, or a cable - which is the whole of ADR40 and is
+// kept.
 func classify(direct, system []string, directAnswered, systemAnswered bool) report.Divergence {
-	switch {
-	case !directAnswered && !systemAnswered:
-		return report.DivergenceNeitherAnswered
-	case !directAnswered || !systemAnswered:
-		return report.DivergenceOneSided
-	}
-
 	inDirect := setOf(direct)
 	inSystem := setOf(system)
 
-	// BOTH LENSES REPLIED AND NEITHER REPLY CARRIED AN ADDRESS. This is checked
-	// before the set comparison below, because that comparison would call two
-	// empty sets equal and reach agree - which is how a name under .invalid came
-	// out as a pass, under the sentence "both views resolved this name to the
-	// same addresses". Two empty things comparing equal is the shape OBS39 named
-	// in a byte guard, arriving in a classifier.
-	//
-	// IT IS ITS OWN CLASS RATHER THAN neither_answered: both resolvers replied,
-	// promptly and authoritatively, and what they said was that the name does
-	// not exist. Reporting that as silence would point at the wire.
-	if len(inDirect) == 0 && len(inSystem) == 0 {
+	switch {
+	case len(inDirect) == 0 && len(inSystem) == 0:
+		// Neither lens found an address. The name resolves no way at all, and the
+		// only remaining question is whether anybody answered to say so.
+		if !directAnswered && !systemAnswered {
+			return report.DivergenceNeitherAnswered
+		}
 		return report.DivergenceAgreeNone
+	case len(inDirect) == 0 || len(inSystem) == 0:
+		// One lens resolved the name and the other did not - which is what the
+		// class says, and now it is true. It used to be reached only when a lens
+		// stayed silent, so a lens answering "no such name" beside a lens holding
+		// addresses came out as superset instead.
+		return report.DivergenceOneSided
 	}
 
 	shared, onlyDirect, onlySystem := 0, 0, 0

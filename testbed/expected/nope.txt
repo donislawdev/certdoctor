@@ -1,0 +1,29 @@
+# A name that does not exist, refused by the server that OWNS the zone.
+#
+# WHY THIS IS NOT THE SAME TEST AS THE ONE UNDER .invalid IN THE ACCEPTANCE
+# SUITE. There, NXDOMAIN arrives from whichever resolver the developer's machine
+# happens to use, and Docker's embedded resolver is known to MANUFACTURE that
+# code where the real answer was SERVFAIL (OBS41, measured). Here the answer
+# comes from the authoritative server for ok.test, which is the only place a
+# "no such name" can be established rather than reported.
+
+target=https://nope.ok.test/
+
+direct_a=NXDOMAIN
+direct_aaaa=NXDOMAIN
+
+# Both lenses answer, promptly and authoritatively, and neither answer carries an
+# address. That is agree_none - ADR40 - and it carries a verdict: the user typed
+# a URL and there is nothing to connect to.
+addresses=
+l1_status=FAIL
+divergence=agree_none
+
+# Never neither_answered: that class means nobody replied, and everybody replied
+# here. Never agree: two empty answers are not an agreement about an address, and
+# calling them one is the defect ADR40 was written to fix.
+divergence_forbidden=agree,neither_answered,superset,disjoint,one_sided,overlap
+
+# A layer reporting FAIL makes the run a diagnosis rather than an inability to
+# make one, whatever the six unwritten layers say.
+exit_code=4

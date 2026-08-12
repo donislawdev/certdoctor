@@ -1,0 +1,30 @@
+# A name with both record types.
+#
+# THIS ONE ALLOWS TWO CLASSES AND NAMES WHY, rather than pinning the one that
+# happens to come out. Whether the platform hands back the AAAA record depends on
+# whether the container has IPv6 at all, and that is a property of the machine
+# running the bench rather than of certdoctor. A verdict pinned to one of them
+# would fail on a correctly working setup somewhere else, and a check that fails
+# for reasons nobody controls teaches people to rerun it.
+
+target=https://dual.ok.test/
+
+direct_a=NOERROR
+direct_aaaa=NOERROR
+
+# The direct view asks for both record types by name, so its union always holds
+# both addresses. The system view holds the v4 one and may or may not hold the
+# v6 one.
+addresses=192.0.2.20
+l1_status=PASS
+
+# agree if the platform returned both, superset if it filtered the AAAA out. D13
+# calls superset a fact about OUR INSTRUMENT rather than about the network, which
+# is exactly what it would be here.
+divergence=agree|superset
+
+# What it can never be: the two views share 192.0.2.20, so they are not disjoint,
+# and both found an address, so neither is empty.
+divergence_forbidden=disjoint,agree_none,one_sided,overlap
+
+exit_code=5

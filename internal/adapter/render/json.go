@@ -33,7 +33,22 @@ import (
 // them - divergence is declared as text rather than as an enumeration, so a
 // validator accepts the new class in silence. The version is the only place
 // that says it out loud.
-const SchemaVersion = "1.4"
+//
+// 1.5 MOVES FOR SOMETHING SUBTLER AND ARGUABLY WORSE FOR A CONSUMER: no field
+// changed, no value was added or removed, and two of them changed WHAT THEY
+// MEAN - ADR42. agree_none now covers a run where only one lens answered, and
+// one_sided covers a lens that answered without finding an address. Code
+// branching on either keeps compiling and starts seeing those values in
+// situations it did not before.
+//
+// WHY MINOR AND NOT MAJOR, since the rule above reserves major for changed
+// meaning. That rule is written about FIELDS - a renamed or repurposed key
+// breaks a reader outright. Here the document's shape is untouched and the
+// closed list is the same seven, so a consumer that ignores what it does not
+// know is unaffected and one that branches gets a truer answer in a case where
+// the old one was measurably wrong. Nothing is released, which is the reason
+// this costs nothing today and will not be true at the first release.
+const SchemaVersion = "1.5"
 
 // JSON renders the machine readable report.
 //

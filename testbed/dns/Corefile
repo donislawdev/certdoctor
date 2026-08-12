@@ -1,0 +1,39 @@
+# Zones for the DNS bench. Every name here is under .test, which RFC 2606
+# reserves for exactly this and which therefore belongs to nobody.
+#
+# The addresses are from RFC 5737 (192.0.2.0/24, 198.51.100.0/24) and RFC 3849
+# (2001:db8::/32), reserved for documentation. A bench must never hand out an
+# address somebody actually answers on.
+
+ok.test:53 {
+    file /etc/coredns/ok.test.zone
+    errors
+}
+
+# A name whose resolver is broken rather than absent. Measured on this image:
+# forwarding to an unroutable address produces SILENCE, not SERVFAIL, so the
+# response code has to be stated outright - docs/17 section 6d.
+servfail.test:53 {
+    template ANY ANY {
+        rcode SERVFAIL
+    }
+    errors
+}
+
+# A resolver that refuses to answer at all, which is a different fact again.
+refused.test:53 {
+    template ANY ANY {
+        rcode REFUSED
+    }
+    errors
+}
+
+# Everything else is NXDOMAIN from here rather than a trip to the internet. This
+# bench answers the same way with the network unplugged, which is the property
+# that makes it usable as an oracle.
+. {
+    template ANY ANY {
+        rcode NXDOMAIN
+    }
+    errors
+}

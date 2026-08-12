@@ -952,6 +952,49 @@ func TestEveryDivergenceClassIsReachedAndOnlyThreeCarryAVerdict(t *testing.T) {
 		{"both said there is no such name", nil, nil, true, report.DivergenceAgreeNone, status.Fail},
 	}
 
+	// ADR42, and these two are here because the bench found them rather than
+	// anybody reading the code. Both need a lens that ANSWERED WITHOUT AN ADDRESS
+	// beside a lens in a different state, which the table above cannot express -
+	// its empty list means either silence or an empty answer, for both lenses at
+	// once.
+	t.Run("a SERVFAIL beside a silent platform is not one lens succeeding", func(t *testing.T) {
+		// OBS60, measured on the testbed: our own view answered SERVFAIL and the
+		// platform said nothing. The name resolves no way at all, and this used to
+		// come back as one_sided with a PASS under it, claiming one view had
+		// resolved it.
+		in := workingInput(answeringServerFailure())
+		in.Resolvers = []string{"192.0.2.53"}
+		in.System = systemAnswering(SystemAnswer{NoAnswer: report.NoAnswerTimeout})
+
+		got := Ask(context.Background(), in)
+		if class := systemRowOf(t, got).NameResolution.Divergence; class != report.DivergenceAgreeNone {
+			t.Errorf("a SERVFAIL beside a silent platform classified as %q, want %q", class, report.DivergenceAgreeNone)
+		}
+		if got.Status != status.Fail {
+			t.Errorf("a name that resolves no way at all came back as %s", got.Status)
+		}
+		if strings.Contains(got.Detail, "one view resolved") {
+			t.Errorf("the sentence says a view resolved the name and none did: %q", got.Detail)
+		}
+	})
+
+	t.Run("addresses beside an empty answer is one lens succeeding", func(t *testing.T) {
+		// OBS57, the mirror image. One lens holds addresses, the other answered
+		// and found none - which is one_sided, and used to be superset. Superset
+		// claims one view contains the other, and an empty view contains nothing.
+		in := workingInput(answeringWith([]string{"192.0.2.10"}))
+		in.Resolvers = []string{"192.0.2.53"}
+		in.System = systemAnswering(SystemAnswer{})
+
+		got := Ask(context.Background(), in)
+		if class := systemRowOf(t, got).NameResolution.Divergence; class != report.DivergenceOneSided {
+			t.Errorf("addresses beside an empty answer classified as %q, want %q", class, report.DivergenceOneSided)
+		}
+		if got.Status != status.Pass {
+			t.Errorf("one lens resolving the name came back as %s", got.Status)
+		}
+	})
+
 	covered := map[report.Divergence]bool{}
 	for _, tc := range cases {
 		covered[tc.want] = true
@@ -1049,6 +1092,17 @@ func TestANameThatResolvesNowhereIsNotCalledAgreement(t *testing.T) {
 	if answers == 0 {
 		t.Fatal("no direct row was produced at all, so nothing here established that the resolvers answered")
 	}
+}
+
+// answeringServerFailure replies SERVFAIL to every query.
+//
+// It is a REPLY carrying no address, which is the state that separates ADR42
+// from what came before: the resolver was reached and answered, and the answer
+// was that it could not resolve the name.
+func answeringServerFailure() Exchange {
+	return answering(func(id uint16, recordType dnsmsg.Type) ([]byte, error) {
+		return replyWith(id, recordType, 2), nil
+	})
 }
 
 // answeringNoSuchName replies NXDOMAIN to every query, carrying no address.

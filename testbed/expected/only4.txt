@@ -1,0 +1,29 @@
+# A name with A records and no AAAA.
+#
+# WRITTEN FROM THE ZONE FILE, BEFORE certdoctor WAS EVER POINTED AT THIS BENCH.
+# That order is the whole value of this file - a verdict written after a run is a
+# transcript of what the program does, and it will agree with the program however
+# wrong the program is.
+
+target=https://only4.ok.test/
+
+# The zone declares one A record and no AAAA at all. Asking for AAAA therefore
+# gets NOERROR with an empty answer section - NODATA - which is a different fact
+# from "no such name" and is one of the three certdoctor queries resolvers
+# directly in order to tell apart.
+direct_a=NOERROR
+direct_aaaa=NODATA
+
+# The union of the direct view is one address, and the platform resolving the
+# same name through the same server can only arrive at the same one.
+addresses=192.0.2.10
+l1_status=PASS
+divergence=agree
+
+# Never these: both lenses answered and both found the same address, so there is
+# nothing disjoint about them and neither of them came back empty.
+divergence_forbidden=disjoint,agree_none,one_sided
+
+# Six layers are still unwritten and report UNKNOWN, so the run cannot be
+# conclusive whatever L1 says.
+exit_code=5

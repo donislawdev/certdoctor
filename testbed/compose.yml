@@ -1,0 +1,40 @@
+# The testbed's DNS bench.
+#
+# WHY A FIXED SUBNET AND A FIXED ADDRESS. certdoctor asks the resolvers a machine
+# is CONFIGURED to use - it has no switch for "ask that one over there" - so the
+# only honest way to point it at this server is to run it in a container whose
+# resolv.conf names this server. That needs an address known before the container
+# starts, which a dynamically assigned one is not.
+#
+# IT ALSO SIDESTEPS A MEASURED TRAP. Docker's own embedded resolver REWRITES
+# answers: SERVFAIL comes back as NXDOMAIN and AAAA records disappear (OBS41,
+# measured). Those are precisely the three facts this bench exists to produce, so
+# queries have to reach this server directly rather than through Docker's.
+#
+# Nothing here forwards anywhere. A name this bench does not know answers
+# NXDOMAIN from its own catch-all rather than travelling to the internet, so the
+# bench behaves the same on a train as in CI.
+name: certdoctor-testbed
+
+services:
+  dns:
+    image: coredns/coredns:latest
+    command: -conf /etc/coredns/Corefile
+    volumes:
+      - ./dns:/etc/coredns:ro
+    networks:
+      testbed:
+        ipv4_address: 172.28.0.53
+    healthcheck:
+      # The bench is useless until it answers, and a verification run that starts
+      # a millisecond too early reads as a broken product rather than as a race.
+      test: ["CMD", "/coredns", "-version"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+
+networks:
+  testbed:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

@@ -1,0 +1,38 @@
+# A name whose server answers SERVFAIL to everything.
+#
+# THIS FILE IS DERIVED FROM THE PRODUCT'S CONTRACT, NOT FROM ITS CODE, AND THE
+# DISTINCTION MATTERS MOST HERE. D13 says a name that resolves no way at all is a
+# failure, and ADR40 says two answers that carry no address are agreement about
+# there being none. A SERVFAIL is an answer, and it carries no address. So the
+# expectation below follows from what this program promises.
+#
+# It is written knowing that the code may well disagree, because the system lens
+# has no response code to report and may come back as "did not answer" rather
+# than "answered with nothing" - which would classify as one_sided and pass. IF
+# THAT IS WHAT HAPPENS, IT IS A FINDING RATHER THAN A FAILURE OF THIS FILE, and
+# it belongs in the same family as OBS57. The oracle is allowed to disagree with
+# the implementation. That is what it is for.
+
+target=https://servfail.test/
+
+direct_a=SERVFAIL
+direct_aaaa=SERVFAIL
+
+addresses=
+l1_status=FAIL
+divergence=agree_none
+
+# MEASURED 2026-08-12, AND THE FIRST RUN DISAGREED. certdoctor answered PASS /
+# one_sided / exit 5, claiming one view had resolved a name neither of them
+# resolved. The expectation above was written from the contract before any of
+# that, which is the only reason the disagreement was visible at all.
+#
+# CLOSED THE SAME DAY BY ADR42: the classifier now asks whether a lens found an
+# ADDRESS rather than whether a reply arrived. This file was not edited to match
+# the program - the program was changed to match this file.
+
+# Never agree: there is no address to agree about. Never superset: neither view
+# contains the other when both are empty.
+divergence_forbidden=agree,superset,overlap,disjoint
+
+exit_code=4
