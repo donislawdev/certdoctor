@@ -1094,6 +1094,69 @@ func TestANameThatResolvesNowhereIsNotCalledAgreement(t *testing.T) {
 	}
 }
 
+// TestTheAddressesForTheNextLayerCoverBothLensesAndEveryPathOut is the first
+// thing this program hands from one layer to another.
+//
+// L3 opens a connection per address, and the addresses do not exist until this
+// layer has run - unlike everything else a layer needs, which the entry point
+// assembles before the walk. So this field is the whole seam, and it has two ways
+// to be wrong that a casual test would miss.
+//
+// ONE LENS ONLY. Taking the direct view alone would drop an address the platform
+// would actually hand a runtime - which on a machine reading its hosts file is
+// the address the user's connection really goes to.
+//
+// FILLED IN ON ONE PATH ONLY. The walk returns from seven places. This asserts a
+// failing path as well as the ordinary one, because "collected on the happy path"
+// is exactly the shape that hands the next layer an empty list and makes a
+// machine with working DNS look like one with nothing to connect to.
+func TestTheAddressesForTheNextLayerCoverBothLensesAndEveryPathOut(t *testing.T) {
+	const ours, theirs = "192.0.2.10", "198.51.100.30"
+
+	in := workingInput(answeringWith([]string{ours}))
+	in.Resolvers = []string{"192.0.2.53"}
+	in.System = systemAnswering(SystemAnswer{Addresses: []string{theirs}})
+
+	got := Ask(context.Background(), in)
+	if !contains(got.Addresses, ours) {
+		t.Errorf("the address our own view found is not being handed on: %v", got.Addresses)
+	}
+	if !contains(got.Addresses, theirs) {
+		t.Errorf("the address the platform found is not being handed on: %v", got.Addresses)
+	}
+
+	// A verdict path, not the pass path. This one ends before the sentence the
+	// ordinary run produces, and it still has addresses to hand over - one lens
+	// found some, which is exactly when the next layer has work to do.
+	disjoint := Ask(context.Background(), in)
+	if len(disjoint.Addresses) != 2 {
+		t.Errorf("a run ending in a verdict handed on %v", disjoint.Addresses)
+	}
+
+	// The same address from two resolvers is one place to connect to, not two.
+	twice := workingInput(answeringWith([]string{ours}))
+	twice.System = systemAnswering(SystemAnswer{Addresses: []string{ours}})
+	if list := Ask(context.Background(), twice).Addresses; len(list) != 1 {
+		t.Errorf("one address seen through both lenses came out as %v", list)
+	}
+
+	// And a layer that never looked hands on nil rather than an empty list -
+	// ADR20, the same distinction findings themselves carry.
+	blind := workingInput(nil)
+	if list := Ask(context.Background(), blind).Addresses; list != nil {
+		t.Errorf("a layer that could not look claims to have established that there are no addresses: %v", list)
+	}
+}
+
+func contains(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
 // TestTheSystemRowDoesNotClaimToHaveResolvedANameItFoundNoAddressFor is OBS59,
 // and it is the last floor of a defect this project fixed twice above it.
 //

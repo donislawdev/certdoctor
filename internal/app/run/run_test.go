@@ -779,6 +779,51 @@ func resolutionFinding(name, resolver string) Answer {
 // untouched - and nothing would have said so. That is inviolable rule 17 broken
 // by an omission rather than a decision, which is the only way it ever gets
 // broken.
+// TestAConnectionFindingSurvivesMaskingUnchanged is the deliberate no-op in the
+// masking table, checked rather than assumed.
+//
+// Every field in that body is an address or a number, and addresses a name
+// resolved to are never masked - they are the answer somebody came for. The
+// entry exists so that a missing one and a decided one cannot look alike; this
+// test is what makes the decision checkable rather than a comment.
+func TestAConnectionFindingSurvivesMaskingUnchanged(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.TCP] = func(context.Context) Answer {
+		return Answer{
+			Status: status.Pass,
+			Detail: "1 of 1 address(es) accepted a connection",
+			Findings: []report.Finding{{
+				Kind:    report.FindingTCPConnect,
+				Summary: "192.0.2.10 accepted a connection on port 443",
+				Source:  report.SourceDetected,
+				TCPConnect: &report.TCPConnect{
+					Address: "192.0.2.10", Port: 443, Outcome: report.OutcomeConnected, DurationMS: 12,
+				},
+			}},
+		}
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+	row := rowFor(t, r, layer.TCP)
+	if noteNames(r.Notes, layer.TCP) {
+		t.Fatal("the layer was degraded, so what follows is not what it handed over")
+	}
+	if len(row.Findings) != 1 {
+		t.Fatalf("one finding went in and %d came out", len(row.Findings))
+	}
+	body := row.Findings[0].TCPConnect
+	if body.Address != "192.0.2.10" {
+		t.Errorf("the address a name resolved to was masked to %q - it is the answer somebody came for", body.Address)
+	}
+	if body.Port != 443 || body.Outcome != report.OutcomeConnected || body.DurationMS != 12 {
+		t.Errorf("masking changed a field nobody asked it to: %+v", *body)
+	}
+}
+
 func TestEveryFindingKindSaysHowItIsMasked(t *testing.T) {
 	if len(maskedBodies) != len(report.AllFindingKinds) {
 		t.Fatalf("%d kinds of finding are declared and %d of them say how they are masked - one list was edited alone",

@@ -26,10 +26,12 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/output"
 	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
+	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
+	coretcp "github.com/donislawdev/certdoctor/internal/core/tcp"
 )
 
 func main() {
@@ -124,6 +126,13 @@ func liveEnvironment() environment {
 		// the whole of ADR35 in one argument.
 		system: func(targets *allowed.Targets) resolve.SystemLookup {
 			return dns.System(dial.Permission(targets, nil))
+		},
+		// L3's connection, and the third place in this program that can open one.
+		// It asks the SAME rule as both lines above - dial.Permission, consumed
+		// rather than copied - so the question "may this run reach that address"
+		// has one answer in one place for every layer that asks it.
+		connect: func(targets *allowed.Targets) coretcp.Connect {
+			return tcp.Connect(dial.Permission(targets, nil))
 		},
 		queryID: queryID,
 	}

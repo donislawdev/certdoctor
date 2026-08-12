@@ -27,3 +27,9 @@ divergence_forbidden=agree,neither_answered,superset,disjoint,one_sided,overlap
 # A layer reporting FAIL makes the run a diagnosis rather than an inability to
 # make one, whatever the six unwritten layers say.
 exit_code=4
+
+# And L3 has nothing to do, which is NOT a failure of L3. The name resolving
+# nowhere is L1's finding and L1 already reports FAIL for it - a second FAIL here
+# would count one broken name as two broken things in the verdict.
+l3_status=UNKNOWN
+l3_outcome=

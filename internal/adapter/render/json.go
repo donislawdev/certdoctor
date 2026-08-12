@@ -131,6 +131,7 @@ type jsonFinding struct {
 	// are looking at.
 	EnvironmentVariable *jsonEnvironmentVariable `json:"environment_variable"`
 	NameResolution      *jsonNameResolution      `json:"name_resolution"`
+	TCPConnect          *jsonTCPConnect          `json:"tcp_connect"`
 }
 
 type jsonNameResolution struct {
@@ -152,6 +153,19 @@ type jsonNameResolution struct {
 	// class of the ONE comparison this layer makes, so it sits on the row that
 	// completes it rather than being copied onto each of the others.
 	Divergence *string `json:"divergence"`
+}
+
+type jsonTCPConnect struct {
+	// Address is where the connection went, and is always an address rather than
+	// a name - the core refuses a name here, because answering "what does this
+	// resolve to" is the previous layer's job.
+	Address string `json:"address"`
+	Port    int    `json:"port"`
+	// Outcome is from a closed list, unlike a DNS response code: this word is one
+	// WE choose for what the operating system told us, so an unknown value is a
+	// defect here rather than news from a network.
+	Outcome    string `json:"outcome"`
+	DurationMS int64  `json:"duration_ms"`
 }
 
 type jsonEnvironmentVariable struct {
@@ -269,9 +283,29 @@ func findingsOf(row report.LayerResult) *[]jsonFinding {
 			Source:              finding.Source.String(),
 			EnvironmentVariable: environmentVariableOf(finding),
 			NameResolution:      nameResolutionOf(finding),
+			TCPConnect:          tcpConnectOf(finding),
 		})
 	}
 	return &found
+}
+
+// tcpConnectOf encodes the connection body.
+//
+// Every field is present on every row: an address, a port, an outcome and a
+// duration are established for each attempt, including the ones that never left
+// this machine - where the duration is zero and the contract refuses anything
+// else.
+func tcpConnectOf(finding report.Finding) *jsonTCPConnect {
+	if finding.TCPConnect == nil {
+		return nil
+	}
+	attempt := *finding.TCPConnect
+	return &jsonTCPConnect{
+		Address:    attempt.Address,
+		Port:       attempt.Port,
+		Outcome:    attempt.Outcome.String(),
+		DurationMS: attempt.DurationMS,
+	}
 }
 
 func nameResolutionOf(finding report.Finding) *jsonNameResolution {

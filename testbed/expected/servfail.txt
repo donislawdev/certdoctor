@@ -36,3 +36,8 @@ divergence=agree_none
 divergence_forbidden=agree,superset,overlap,disjoint
 
 exit_code=4
+
+# No address was found, so L3 has nothing to connect to - and that is not a
+# failure of L3. The exit code stays 4 because L1 already reports one.
+l3_status=UNKNOWN
+l3_outcome=

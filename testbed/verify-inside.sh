@@ -120,9 +120,28 @@ check_scenario() {
     say "the run ended with $code, expected $want_exit"
   fi
 
+  # L3 CONNECTS TO WHAT L1 FOUND, and this bench is the only place where the
+  # addresses are known in advance: every one of them is from a documentation
+  # range, so nothing routes and the outcome cannot depend on whose network this
+  # runs on. Only the STATUS and the SHAPE of the failure are checked - which of
+  # the two honest failures a machine produces is a property of that machine.
+  local want_l3 want_outcome got_l3 got_outcome
+  want_l3="$(value "$file" l3_status)"
+  want_outcome="$(value "$file" l3_outcome)"
+  got_l3="$(echo "$document" | jq -r '.layers[] | select(.id=="L3") | .status')"
+  got_outcome="$(echo "$document" | jq -r '[.layers[] | select(.id=="L3") | .findings[]? | .tcp_connect.outcome] | first // ""')"
+
+  if [ -n "$want_l3" ] && [ "$got_l3" != "$want_l3" ]; then
+    say "L3 says $got_l3, expected $want_l3"
+  fi
+  if [ -n "$want_outcome" ] && ! echo "$want_outcome" | tr '|' '
+' | grep -qx "$got_outcome"; then
+    say "the first connection came out as $got_outcome, expected one of $want_outcome"
+  fi
+
   local sentence
   sentence="$(echo "$document" | jq -r '.layers[] | select(.id=="L1") | .detail')"
-  echo "    certdoctor: $got_status / $got_divergence / exit $code"
+  echo "    certdoctor: L1 $got_status / $got_divergence | L3 $got_l3 / ${got_outcome:-no rows} | exit $code"
   echo "    sentence:   $sentence"
 
   if [ "$got_status" = "$want_status" ]; then

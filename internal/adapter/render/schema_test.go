@@ -444,3 +444,114 @@ func resolutionBody(d map[string]any) map[string]any {
 	}
 	return nil
 }
+
+// bodyFixtures is one well formed finding per declared kind.
+//
+// IT IS CHECKED AGAINST THE REGISTRY rather than maintained by hand, so a fourth
+// kind of finding cannot be declared without somebody meeting this list.
+var bodyFixtures = map[report.FindingKind]report.Finding{
+	report.FindingEnvironmentVariable: {
+		Kind:                report.FindingEnvironmentVariable,
+		Summary:             "HTTPS_PROXY is set",
+		Source:              report.SourceDetected,
+		EnvironmentVariable: &report.EnvironmentVariable{Name: "HTTPS_PROXY", Value: "http://proxy.example:8080", Set: true},
+	},
+	report.FindingNameResolution: {
+		Kind:    report.FindingNameResolution,
+		Summary: "192.0.2.53 answered NOERROR for example.com A",
+		Source:  report.SourceDetected,
+		NameResolution: &report.NameResolution{
+			Name: "example.com", View: report.ViewDirect, Resolver: "192.0.2.53",
+			QueryType: "A", ResponseCode: "NOERROR", Addresses: []string{"192.0.2.10"}, DurationMS: 12,
+		},
+	},
+	report.FindingTCPConnect: {
+		Kind:    report.FindingTCPConnect,
+		Summary: "192.0.2.10 accepted a connection on port 443",
+		Source:  report.SourceDetected,
+		TCPConnect: &report.TCPConnect{
+			Address: "192.0.2.10", Port: 443, Outcome: report.OutcomeConnected, DurationMS: 12,
+		},
+	},
+}
+
+// TestEveryKindOfFindingReachesBothSurfaces is the guard whose absence would let
+// a new kind of finding be invisible in the output while every test stayed green.
+//
+// THE MASKING TABLE ALREADY HAD ONE AND THAT IS WHY IT HAS ONE: a second kind
+// would otherwise have crossed the assembly path untouched. The encoder and the
+// terminal renderer had no equivalent - a kind added without a branch in either
+// would have produced a document with a null where its body belongs, and a row
+// on screen with an empty value, with nothing anywhere going red.
+//
+// It asks about STRUCTURE, not wording: the body is present under a key equal to
+// its kind, the document still matches its own schema, and the summary reaches
+// the terminal page. What each surface says is the business of tests that name
+// the kind.
+func TestEveryKindOfFindingReachesBothSurfaces(t *testing.T) {
+	if len(bodyFixtures) != len(report.AllFindingKinds) {
+		t.Fatalf("%d kinds are declared and %d have a fixture here - one list was edited alone",
+			len(report.AllFindingKinds), len(bodyFixtures))
+	}
+
+	for _, kind := range report.AllFindingKinds {
+		finding, present := bodyFixtures[kind]
+		if !present {
+			t.Errorf("the kind %q has no fixture, so nothing here says it can be rendered at all", kind)
+			continue
+		}
+		if broken := finding.Breach(); broken != "" {
+			t.Errorf("the fixture for %q is not a valid finding: %s", kind, broken)
+			continue
+		}
+
+		r := everyStatusReport()
+		for i := range r.Layers {
+			if r.Layers[i].ID == layer.Resolution {
+				r.Layers[i].Findings = []report.Finding{finding}
+			}
+		}
+
+		document, err := Encode(r)
+		if err != nil {
+			t.Errorf("%q: encoding failed: %v", kind, err)
+			continue
+		}
+		if err := ValidateDocument(document); err != nil {
+			t.Errorf("%q: the document no longer matches its own schema: %v", kind, err)
+		}
+
+		var decoded map[string]any
+		if err := json.Unmarshal(document, &decoded); err != nil {
+			t.Fatalf("%q: decoding: %v", kind, err)
+		}
+		if body := bodyOfKind(decoded, string(kind)); body == nil {
+			t.Errorf("%q: the encoder produced no body under that key, so the finding is null in --json", kind)
+		}
+
+		var page strings.Builder
+		if err := (Terminal{}).Render(&page, r); err != nil {
+			t.Errorf("%q: the terminal renderer failed: %v", kind, err)
+			continue
+		}
+		if !strings.Contains(page.String(), finding.Summary) {
+			t.Errorf("%q: the summary never reaches the terminal page", kind)
+		}
+	}
+}
+
+// bodyOfKind digs out the first body sitting under the given key.
+func bodyOfKind(d map[string]any, key string) map[string]any {
+	for _, row := range d["layers"].([]any) {
+		findings, ok := row.(map[string]any)["findings"].([]any)
+		if !ok {
+			continue
+		}
+		for _, finding := range findings {
+			if body, ok := finding.(map[string]any)[key].(map[string]any); ok {
+				return body
+			}
+		}
+	}
+	return nil
+}

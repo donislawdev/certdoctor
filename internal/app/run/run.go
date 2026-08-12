@@ -225,7 +225,24 @@ func (o Options) maskFinding(finding *report.Finding) {
 var maskedBodies = map[report.FindingKind]func(*redact.Redaction, *report.Finding){
 	report.FindingEnvironmentVariable: maskEnvironmentVariable,
 	report.FindingNameResolution:      maskNameResolution,
+	report.FindingTCPConnect:          maskTCPConnect,
 }
+
+// maskTCPConnect is the entry that had to be WRITTEN in order to say that this
+// body needs nothing masked.
+//
+// EVERY FIELD IN IT IS EITHER AN ADDRESS OR A NUMBER. Addresses a name resolved
+// to are never masked - they are the answer somebody came for, decided at ADR26
+// and narrowed at ADR32, which masks a RESOLVER's address because that one is
+// infrastructure rather than an answer. There is no resolver here: this layer
+// connects to the target's own addresses.
+//
+// SO WHY EXIST AT ALL, RATHER THAN LEAVING THE KIND OUT OF THE TABLE. Because a
+// missing entry and a deliberate no-op look identical from outside, and only one
+// of them is a decision. The guard walking this map against the registry turned
+// red the moment the third kind was declared, which is the whole point of it -
+// and answering that with silence would waste the guard.
+func maskTCPConnect(*redact.Redaction, *report.Finding) {}
 
 func maskEnvironmentVariable(r *redact.Redaction, finding *report.Finding) {
 	variable := *finding.EnvironmentVariable

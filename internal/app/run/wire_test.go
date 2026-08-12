@@ -2,8 +2,10 @@ package run
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/layer"
 	"github.com/donislawdev/certdoctor/internal/core/machine"
@@ -11,6 +13,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	"github.com/donislawdev/certdoctor/internal/core/status"
+	"github.com/donislawdev/certdoctor/internal/core/tcp"
 )
 
 func envOf(pairs map[string]string) machine.Lookup {
@@ -27,7 +30,7 @@ func envOf(pairs map[string]string) machine.Lookup {
 // would be caught eventually - but as an internal failure with no report, which
 // is a much worse way to learn that somebody added a ninth layer.
 func TestWireStillCoversEveryDeclaredLayer(t *testing.T) {
-	layers := Wire(envOf(nil), resolve.Input{})
+	layers := Wire(Wiring{Environment: envOf(nil)})
 
 	if len(layers) != len(layer.All) {
 		t.Fatalf("the wiring holds %d layers, the registry declares %d", len(layers), len(layer.All))
@@ -45,7 +48,7 @@ func TestWireStillCoversEveryDeclaredLayer(t *testing.T) {
 // answering "not implemented", and every other test here would stay green -
 // because they all assert on shapes that the stub satisfies too.
 func TestWiringPutsTheContextLayerInPlaceOfTheStub(t *testing.T) {
-	answer := Wire(envOf(map[string]string{"HTTPS_PROXY": "http://proxy.example:8080"}), resolve.Input{})[layer.Context](context.Background())
+	answer := Wire(Wiring{Environment: envOf(map[string]string{"HTTPS_PROXY": "http://proxy.example:8080"})})[layer.Context](context.Background())
 
 	if answer.Status != status.Pass {
 		t.Fatalf("L0 answered %s with a readable environment, want %s", answer.Status, status.Pass)
@@ -62,18 +65,17 @@ func TestWiringPutsTheContextLayerInPlaceOfTheStub(t *testing.T) {
 // rather than derived, so that a layer starting to answer for itself has to be
 // added here deliberately - the alternative is a wiring that quietly answers for
 // all eight while the tool claims to have checked things it has not.
-var written = map[layer.ID]bool{layer.Context: true, layer.Resolution: true}
+var written = map[layer.ID]bool{layer.Context: true, layer.Resolution: true, layer.TCP: true}
 
 // TestTheUnwrittenLayersStillSayTheyAreNotWritten is the other side of the
 // override.
 //
-// IT COUNTED SEVEN UNTIL 2026-08-10 AND NOW COUNTS SIX, which is the whole
-// reason the list above exists rather than a subtraction from eight. A number in
-// the name of a test goes stale silently, and a test asserting the stub for a
-// layer that has since grown code would have to be loosened to pass - which is
-// how a guard turns into decoration.
+// THE COUNT IS NOT WRITTEN HERE and the list above is, which is the whole point:
+// it has changed three times already. A number in the name of a test goes stale
+// silently, and a test asserting the stub for a layer that has since grown code
+// would have to be loosened to pass - which is how a guard turns into decoration.
 func TestTheUnwrittenLayersStillSayTheyAreNotWritten(t *testing.T) {
-	layers := Wire(envOf(nil), resolve.Input{})
+	layers := Wire(Wiring{Environment: envOf(nil)})
 
 	checked := 0
 	for _, id := range layer.All {
@@ -102,7 +104,7 @@ func TestTheUnwrittenLayersStillSayTheyAreNotWritten(t *testing.T) {
 // from one that was never written. Both are unknown, and only one of them can be
 // fixed by supplying a port - so the sentence has to say which.
 func TestALayerWithNoPortsAnswersForItselfRatherThanAsAStub(t *testing.T) {
-	answer := Wire(envOf(nil), resolve.Input{})[layer.Resolution](context.Background())
+	answer := Wire(Wiring{Environment: envOf(nil)})[layer.Resolution](context.Background())
 
 	if answer.Status != status.Unknown {
 		t.Errorf("L1 with no ports answered %s", answer.Status)
@@ -124,7 +126,7 @@ func TestALayerWithNoPortsAnswersForItselfRatherThanAsAStub(t *testing.T) {
 func TestWithNoEnvironmentPortTheRunStillProducesAReport(t *testing.T) {
 	clock := newClock()
 	options := baseOptions(clock)
-	options.Layers = Wire(nil, resolve.Input{})
+	options.Layers = Wire(Wiring{})
 
 	finished, err := Execute(context.Background(), options)
 	if err != nil {
@@ -184,10 +186,10 @@ func TestTheOrchestratorMasksWhatTheContextLayerFound(t *testing.T) {
 	const secret = "s3kret"
 	clock := newClock()
 	options := baseOptions(clock)
-	options.Layers = Wire(envOf(map[string]string{
+	options.Layers = Wire(Wiring{Environment: envOf(map[string]string{
 		"HTTPS_PROXY":                  "http://someone:" + secret + "@proxy.example:8080",
 		"NODE_TLS_REJECT_UNAUTHORIZED": "0",
-	}), resolve.Input{})
+	})})
 
 	finished, err := Execute(context.Background(), options)
 	if err != nil {
@@ -235,7 +237,7 @@ func TestTheOrchestratorMasksWhatTheContextLayerFound(t *testing.T) {
 // stateless, and a defect the day one is not.
 func TestTheLayerKeepsTheRawEvidenceItHandedOver(t *testing.T) {
 	const raw = "http://someone:s3kret@proxy.example:8080"
-	answer := Wire(envOf(map[string]string{"HTTPS_PROXY": raw}), resolve.Input{})[layer.Context](context.Background())
+	answer := Wire(Wiring{Environment: envOf(map[string]string{"HTTPS_PROXY": raw})})[layer.Context](context.Background())
 
 	options := baseOptions(newClock())
 	options.Redaction = redact.New(redact.Credentials)
@@ -247,5 +249,78 @@ func TestTheLayerKeepsTheRawEvidenceItHandedOver(t *testing.T) {
 		if finding.EnvironmentVariable.Name == "HTTPS_PROXY" && finding.EnvironmentVariable.Value != raw {
 			t.Errorf("masking reached back into the layer's own evidence: %q", finding.EnvironmentVariable.Value)
 		}
+	}
+}
+
+// TestTheAddressesL1FoundReachL3AndTheAllowedSet is the seam, checked from both
+// ends.
+//
+// It is the first thing in this program that one layer hands to another, and it
+// has two consumers rather than one: L3 connects to those addresses, and the set
+// of places this run may reach has to learn about them first. Missing either
+// makes a working machine look broken - L3 with no addresses reports nothing to
+// do, and L3 with addresses nobody authorised reports every connection refused by
+// our own rule.
+//
+// THE ORDER IS WHAT MAKES IT WORK AND IT IS NOW LOAD-BEARING: the orchestrator
+// walks layers in registry order, so L1 finishes before L3 starts.
+func TestTheAddressesL1FoundReachL3AndTheAllowedSet(t *testing.T) {
+	var authorised []string
+	var seenByL3 []string
+
+	w := Wiring{
+		Environment: envOf(nil),
+		Resolution: resolve.Input{
+			Name:      "example.com",
+			Resolvers: []string{"192.0.2.53"},
+			Now:       func() time.Time { return time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC) },
+			QueryID:   func() uint16 { return 7 },
+			System: func(context.Context, string) resolve.SystemAnswer {
+				return resolve.SystemAnswer{Addresses: []string{"192.0.2.10"}}
+			},
+			Exchange: func(context.Context, string, []byte) ([]byte, error) {
+				return nil, resolve.ErrTimeout
+			},
+			// Without a per-query budget every query is skipped before it starts,
+			// and the layer hands on nothing - which is what this fixture did the
+			// first time and is worth keeping in view: no budget is not the same
+			// as no answer.
+			PerQuery: 2 * time.Second,
+		},
+		Reach: tcp.Input{
+			Port:       443,
+			PerAddress: 2 * time.Second,
+			Now:        func() time.Time { return time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC) },
+			Connect: func(_ context.Context, address string, _ int) (io.Closer, error) {
+				seenByL3 = append(seenByL3, address)
+				return nil, tcp.ErrRefused
+			},
+		},
+		Authorise: func(addresses []string) { authorised = append(authorised, addresses...) },
+	}
+
+	layers := Wire(w)
+	layers[layer.Resolution](context.Background())
+	layers[layer.TCP](context.Background())
+
+	if len(authorised) != 1 || authorised[0] != "192.0.2.10" {
+		t.Errorf("the allowed set was told about %v, and L1 found 192.0.2.10", authorised)
+	}
+	if len(seenByL3) != 1 || seenByL3[0] != "192.0.2.10" {
+		t.Errorf("L3 tried %v, and L1 found 192.0.2.10", seenByL3)
+	}
+}
+
+// TestWithNothingToAuthoriseTheWalkStillRuns covers the nil rule: a forgotten
+// wire must cost this layer and nothing else.
+func TestWithNothingToAuthoriseTheWalkStillRuns(t *testing.T) {
+	layers := Wire(Wiring{Environment: envOf(nil)})
+	answer := layers[layer.TCP](context.Background())
+	if answer.Status != status.Unknown {
+		t.Errorf("L3 with no ports answered %s, want unknown", answer.Status)
+	}
+	// And L1 running with no ports of its own does not take the walk down.
+	if got := layers[layer.Resolution](context.Background()); got.Status != status.Unknown {
+		t.Errorf("L1 with no ports answered %s", got.Status)
 	}
 }

@@ -14,6 +14,16 @@ Barely diagnosable yet, and there has been no release.
 
 ### Added
 
+- **`L3` opens a connection to every address the name resolved to, and says what happened to each one.** This is the first thing certdoctor establishes about connecting rather than about naming. Refused, timed out, reset, no route - four different answers that a browser folds into "cannot connect", and they send you to four different places. Each row carries the address, the port and how long the attempt took.
+
+  **One row per address, never folded together.** A name behind four addresses where one is unreachable is the "hangs for thirty seconds, then works" fault, and a single summary row would report it as either working or broken - both wrong.
+
+  **Some addresses failing is not a warning.** If anything answers, the layer passes and the sentence says how many of how many, and across which families - because a machine without IPv6 has every IPv6 address fail on every run against every name, and a warning there would fire constantly on a working machine. If nothing answers at all, that is a failure.
+
+  **An address that was never tried says so** rather than claiming a timeout: running out of budget is a fact about certdoctor, and a timeout is a fact about your network.
+
+  **A name that resolved nowhere leaves this layer with nothing to do**, and it reports exactly that instead of failing a second time for a fault the previous layer already reported.
+
 - **`L1` answers what a name resolves to, asking the resolvers this machine is configured to use.** This is the first thing certdoctor does that leaves your own process. It reads the resolvers out of the registry and the IP helper API on Windows, and out of `/etc/resolv.conf` elsewhere, then asks each of them separately for `A` and for `AAAA` - and reports one row per answer rather than one row per name, because a resolver that answers for one record type and not the other is the whole "hangs for thirty seconds, then works" class of problem.
 
   **Each row says which resolver answered, what it answered, and how long it took.** `NXDOMAIN`, `SERVFAIL` and `NODATA` are told apart and reported as themselves. That distinction is the reason this layer asks the resolvers directly instead of using the one built into Go: the standard resolver collapses "the name does not exist" and "resolving it failed" into a single message, and those two send you to two different places.

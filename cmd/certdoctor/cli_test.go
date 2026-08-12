@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -1146,5 +1147,60 @@ func TestAMissingNameSourcesFileIsNotAFailure(t *testing.T) {
 				t.Errorf("declared is %v, want %v", got.Declared, c.want.Declared)
 			}
 		})
+	}
+}
+
+// TestThePortComesFromTheURLOrItsScheme covers the one number L3 connects to.
+//
+// GUESSING WRONG HERE MEANS CONNECTING SOMEWHERE THE USER DID NOT ASK ABOUT, so
+// there are exactly two defaults and no third: the two schemes this program
+// accepts. An explicit port always wins, including when it is unusual.
+func TestThePortComesFromTheURLOrItsScheme(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want int
+	}{
+		{"https://example.com", 443},
+		{"http://example.com", 80},
+		{"https://example.com:8443", 8443},
+		{"http://example.com:8080", 8080},
+		// A port the URL parser accepts and nobody would type by accident.
+		{"https://example.com:1", 1},
+	}
+	for _, tc := range cases {
+		parsed, err := url.Parse(tc.raw)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.raw, err)
+		}
+		if got := portOf(parsed); got != tc.want {
+			t.Errorf("%s connects on port %d, want %d", tc.raw, got, tc.want)
+		}
+	}
+}
+
+// TestOnlyDialableAddressesWidenTheAllowedSet is inviolable rule 16 at the third
+// of its five derivations - the first one that cannot be known before the run.
+//
+// The set holds address and port joined, and the dialler must be handed the same
+// string. An address that will not parse is left OUT rather than joined into
+// something nothing can dial: leaving it out changes nothing about what this run
+// can reach, and L3 still reports a row saying it was refused.
+func TestOnlyDialableAddressesWidenTheAllowedSet(t *testing.T) {
+	parsed, err := url.Parse("https://example.com")
+	if err != nil {
+		t.Fatalf("preparing: %v", err)
+	}
+	targets := allowed.New()
+	authoriser(parsed, targets)([]string{"192.0.2.10", "2001:db8::10", "not-an-address", ""})
+
+	for _, want := range []string{"192.0.2.10:443", "[2001:db8::10]:443"} {
+		if _, permitted := targets.Permits(want); !permitted {
+			t.Errorf("%s was not added, so L3 would refuse a place this run resolved to", want)
+		}
+	}
+	for _, never := range []string{"not-an-address:443", "192.0.2.11:443", "192.0.2.10:80"} {
+		if _, permitted := targets.Permits(never); permitted {
+			t.Errorf("%s is permitted and nothing derived it", never)
+		}
 	}
 }

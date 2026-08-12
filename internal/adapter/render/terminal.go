@@ -275,8 +275,28 @@ func findingValue(finding report.Finding) string {
 		return variable.Value
 	case finding.NameResolution != nil:
 		return resolutionValue(*finding.NameResolution)
+	case finding.TCPConnect != nil:
+		return connectValue(*finding.TCPConnect)
 	}
 	return ""
+}
+
+// connectValue is the port and how long the attempt took.
+//
+// THE OUTCOME IS DELIBERATELY NOT HERE, for the same reason the response code is
+// not in the resolution value one function down: it belongs in the summary, the
+// line every surface renders without knowing the kind. An outcome visible only
+// in a column this renderer happens to print would vanish the day a markdown
+// renderer exists.
+//
+// The address is not repeated either - it is the row's name, printed beside it.
+func connectValue(attempt report.TCPConnect) string {
+	if !attempt.Outcome.Reached() {
+		// Nothing was attempted, so there is no time to show. Saying "0 ms" here
+		// would be a measurement of something that did not happen.
+		return fmt.Sprintf("port %d", attempt.Port)
+	}
+	return fmt.Sprintf("port %d, %d ms", attempt.Port, attempt.DurationMS)
 }
 
 // resolutionValue is the addresses, and the time it took to get them.

@@ -122,6 +122,21 @@ var intraLayerEdges = map[string][]string{
 		"internal/core/report",
 		"internal/core/status",
 	},
+	// L3 opens a connection per address and grades what came back, so it needs
+	// the same two as L0 and L1 and nothing else. The arrow runs one way and
+	// cannot run back.
+	//
+	// WHAT IS DELIBERATELY NOT HERE IS THE INTERESTING PART: this layer does
+	// NOT import internal/core/resolve, although the addresses it connects to are
+	// the ones L1 found. A layer importing the layer before it would turn a
+	// pipeline into a chain welded at both ends - L3 would know how DNS answers
+	// are shaped, and moving either would move both. The addresses arrive instead
+	// as a function in this layer's own Input, which the entry point supplies, so
+	// the two layers share a list of strings and no types at all.
+	"internal/core/tcp": {
+		"internal/core/report",
+		"internal/core/status",
+	},
 	// The DNS plumbing takes a dialler and the dialler carries the rule about
 	// where this program may connect, so the arrow runs from the thing that uses
 	// a socket to the thing that decides whether it may have one. It cannot run

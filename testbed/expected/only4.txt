@@ -26,4 +26,20 @@ divergence_forbidden=disjoint,agree_none,one_sided
 
 # Six layers are still unwritten and report UNKNOWN, so the run cannot be
 # conclusive whatever L1 says.
-exit_code=5
+exit_code=4
+
+# L3 connects to what this name resolved to. The zone hands out 192.0.2.10, from
+# the range RFC 5737 reserves for documentation - so nothing anywhere routes it,
+# and the attempt cannot succeed no matter whose machine runs this bench.
+#
+# WHICH FAILURE IT IS depends on the network this runs on: a machine that knows
+# it has no route says so at once, one that does not simply waits. Both are
+# honest, so the expectation names the pair rather than pinning the one that
+# happens to come out here.
+l3_status=FAIL
+l3_outcome=timeout|unreachable
+
+# THE EXIT CODE MOVED WHEN L3 ARRIVED, and the expectation says why rather than
+# being quietly corrected: every address in this zone is from a documentation
+# range, so nothing routes and L3 reports FAIL. A failing layer makes the run a
+# diagnosis, whatever the unwritten layers say.

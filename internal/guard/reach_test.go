@@ -8,17 +8,22 @@ import (
 
 // dialAllowlist names the files allowed to reach the network.
 //
-// IT WAS EMPTY UNTIL 2026-08-10 AND HAS TWO ENTRIES, which is still a number
-// somebody can hold in their head. An entry here is not a formality: it means
-// there is one more place in this program where a connection can begin, and the
-// promise of inviolable rule 16 - that certdoctor connects only to what it
-// derived from the user's own question - rests on how few such places there are.
-// Each entry goes in together with the code it covers, never ahead of it.
+// IT WAS EMPTY UNTIL 2026-08-10 AND THE COUNT IS DELIBERATELY NOT WRITTEN HERE
+// ANY MORE - it went stale the first time the list grew, and a number in a
+// comment above the thing it counts is a number nobody updates. Read the entries.
 //
-// THE TWO ARE THE TWO LENSES OF L1 AND NOTHING ELSE: the socket our own queries
-// go out of, and the dialler net.Resolver is handed for the system view. Both
-// consult the same refusal rule. A third entry means a third way to start a
-// connection, and it should be as hard to add as these two were.
+// An entry here is not a formality: it means there is one more place in this
+// program where a connection can begin, and the promise of inviolable rule 16 -
+// that certdoctor connects only to what it derived from the user's own question -
+// rests on how few such places there are. Each entry goes in together with the
+// code it covers, never ahead of it.
+//
+// THE ENTRIES ARE TWO LENSES OF L1 AND ONE LAYER BELOW IT, and nothing else:
+// the socket our own DNS queries go out of, the dialler net.Resolver is handed
+// for the system view, and the connection L3 opens per address. All three consult
+// the SAME refusal rule rather than three copies of it. A fourth entry means a
+// fourth way to start a connection, and it should be as hard to add as these
+// three were.
 //
 // THE GUARD WAS WRITTEN BEFORE THERE WAS ANYTHING TO CATCH, at P3a, and that is
 // why this list could start at zero. A guard written afterwards arrives to find
@@ -42,6 +47,17 @@ var dialAllowlist = map[string]bool{
 	// instead: dial.Permission, consumed rather than copied, so an entry in the
 	// mutation register aimed at the refusal still aims at both diallers.
 	"internal/adapter/dns/system.go": true,
+
+	// The connection L3 opens to each address a name resolved to, added
+	// 2026-08-12 with the code it covers. It is the first place in this program
+	// that connects to the TARGET rather than to infrastructure - a resolver is
+	// something we ask about the target, this is the target itself.
+	//
+	// It does not go through dial.Guarded either, and for a different reason than
+	// system.go: this port hands back an io.Closer, because L3 only needs to know
+	// whether the connection opens and closes it at once. It asks dial.Permission
+	// directly - the same function, consumed rather than copied.
+	"internal/adapter/tcp/network.go": true,
 }
 
 // networkPackages are the standard library imports that can open a connection.

@@ -30,4 +30,14 @@ divergence_forbidden=agree,superset,overlap,agree_none,neither_answered,one_side
 
 # A warning does not redden a run on its own - ADR4 - and six layers are still
 # unknown, so the run stays inconclusive rather than becoming a diagnosis.
-exit_code=5
+exit_code=4
+
+# THE EXIT CODE MOVED WHEN L3 ARRIVED, and the expectation says why rather than
+# being quietly corrected: every address in this zone is from a documentation
+# range, so nothing routes and L3 reports FAIL. A failing layer makes the run a
+# diagnosis, whatever the unwritten layers say.
+
+# Both lenses point somewhere in a documentation range, so neither address is
+# reachable and this layer fails whichever one it tries.
+l3_status=FAIL
+l3_outcome=timeout|unreachable

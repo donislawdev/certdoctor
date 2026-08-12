@@ -8,18 +8,21 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	certdoctor "github.com/donislawdev/certdoctor"
 	"github.com/donislawdev/certdoctor/internal/adapter/dns"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
+	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	"github.com/donislawdev/certdoctor/internal/app/run"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
+	coretcp "github.com/donislawdev/certdoctor/internal/core/tcp"
 )
 
 const (
@@ -79,6 +82,10 @@ type environment struct {
 	// resolvers - and handing the dialler a set assembled elsewhere is how a
 	// guard ends up checking against something other than what is dialled.
 	exchange func(*allowed.Targets) resolve.Exchange
+	// connect builds the way L3 opens a connection, given the same set. It is a
+	// seam for the same reason exchange is: a test that really dialled would
+	// pass or fail depending on whose network it ran on.
+	connect func(*allowed.Targets) coretcp.Connect
 	// system builds the second lens: the platform asked the way any other program
 	// on this machine would ask it.
 	//
@@ -134,7 +141,12 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 	targets := allowedTargets(parsed, found)
 
 	finished, walkFault := walk(ctx, o, env, targetReduction{target: shown, removed: removed}, redaction,
-		resolutionInput(o, env, parsed, found, foundErr, targets))
+		run.Wiring{
+			Environment: env.lookupEnv,
+			Resolution:  resolutionInput(o, env, parsed, found, foundErr, targets),
+			Reach:       reachInput(o, env, parsed, targets),
+			Authorise:   authoriser(parsed, targets),
+		})
 	if walkFault != nil {
 		return complain(env, walkFault)
 	}
@@ -157,7 +169,7 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 // verdict that disagrees with the rows beneath it is an internal failure, never
 // something to print and let the reader sort out.
 func walk(ctx context.Context, o *options, env environment, shown targetReduction, redaction *redact.Redaction,
-	resolution resolve.Input) (report.Report, *fault) {
+	wiring run.Wiring) (report.Report, *fault) {
 	finished, err := run.Execute(ctx, run.Options{
 		Tool:        report.Tool{Name: toolName, Version: toolVersion},
 		Target:      shown.target,
@@ -167,7 +179,7 @@ func walk(ctx context.Context, o *options, env environment, shown targetReductio
 		Budget:      budget(o.timeout),
 		LayerBudget: budget(o.probeTimeout),
 		Now:         env.now,
-		Layers:      run.Wire(env.lookupEnv, resolution),
+		Layers:      run.Wire(wiring),
 		Notes:       pendingNotes(shown, env.privilege),
 	})
 	if err != nil {
@@ -428,6 +440,64 @@ func resolutionInput(o *options, env environment, parsed *url.URL, found dns.Nam
 		Now:            env.now,
 		PerQuery:       budget(o.probeTimeout),
 	}
+}
+
+// reachInput is everything L3 was given, except the addresses - those do not
+// exist until L1 has run, and the orchestrator supplies them.
+func reachInput(o *options, env environment, parsed *url.URL, targets *allowed.Targets) coretcp.Input {
+	var connect coretcp.Connect
+	if env.connect != nil {
+		connect = env.connect(targets)
+	}
+	return coretcp.Input{
+		Port:       portOf(parsed),
+		Connect:    connect,
+		Now:        env.now,
+		PerAddress: budget(o.probeTimeout),
+	}
+}
+
+// authoriser widens the allowed set by the addresses the target resolved to -
+// the third of the five derivations rule 16 permits, and the first that cannot
+// be known before the run starts.
+//
+// IT JOINS THE PORT HERE, in the one place that knows what the user asked for.
+// The set compares strings, so the address it holds has to be spelled exactly as
+// the dialler will spell it - which is why both sides go through tcp.Target
+// rather than joining a host and a port twice.
+//
+// AN ADDRESS THAT WILL NOT PARSE IS LEFT OUT rather than swallowed: nothing can
+// dial it, so leaving it out changes nothing about what this run can reach, and
+// L3 still produces a row saying it was refused.
+func authoriser(parsed *url.URL, targets *allowed.Targets) func([]string) {
+	port := portOf(parsed)
+	return func(addresses []string) {
+		for _, address := range addresses {
+			dialable, err := tcp.Target(address, port)
+			if err != nil {
+				continue
+			}
+			_ = targets.Allow(dialable, allowed.ReasonResolvedAddress)
+		}
+	}
+}
+
+// portOf is the port this run will try, from the URL or from its scheme.
+//
+// A URL WITHOUT A PORT IS THE ORDINARY CASE and the scheme is what decides it.
+// Guessing wrong here would mean connecting somewhere the user did not ask
+// about, so the two schemes this program accepts are the two named below and
+// there is no third default.
+func portOf(parsed *url.URL) int {
+	if explicit := parsed.Port(); explicit != "" {
+		if port, err := strconv.Atoi(explicit); err == nil {
+			return port
+		}
+	}
+	if parsed.Scheme == "http" {
+		return 80
+	}
+	return 443
 }
 
 // standingNotes are the shortfalls this build has no matter what it is asked to

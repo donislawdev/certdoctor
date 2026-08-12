@@ -1,6 +1,13 @@
 package report
 
-import "fmt"
+import (
+	"fmt"
+	// net/netip parses an address and reaches nothing, which is why the reach
+	// guard does not list it beside net - the same reason net/url is absent from
+	// that list. It is here so a connection row can refuse a host name where an
+	// address belongs.
+	"net/netip"
+)
 
 // FindingKind says what sort of fact a finding carries.
 //
@@ -17,6 +24,8 @@ const (
 	// FindingNameResolution - one answer to "what does this name resolve to",
 	// seen through one of the two lenses L1 looks through.
 	FindingNameResolution FindingKind = "name_resolution"
+	// FindingTCPConnect - one attempt to open a TCP connection to one address.
+	FindingTCPConnect FindingKind = "tcp_connect"
 )
 
 // findingKindMeanings is the registry. The registry test refuses a kind that is
@@ -24,6 +33,7 @@ const (
 var findingKindMeanings = map[FindingKind]string{
 	FindingEnvironmentVariable: "an environment variable that decides trust or proxying",
 	FindingNameResolution:      "one answer to what a name resolves to, through one named lens",
+	FindingTCPConnect:          "one attempt to open a TCP connection to one address",
 }
 
 // AllFindingKinds lists every kind exactly once, in declaration order.
@@ -45,6 +55,7 @@ var findingKindMeanings = map[FindingKind]string{
 var AllFindingKinds = []FindingKind{
 	FindingEnvironmentVariable,
 	FindingNameResolution,
+	FindingTCPConnect,
 }
 
 // ResolutionView says which of the two lenses an answer was seen through.
@@ -357,6 +368,129 @@ type Finding struct {
 	EnvironmentVariable *EnvironmentVariable
 	// NameResolution is set when Kind is FindingNameResolution.
 	NameResolution *NameResolution
+	// TCPConnect is set when Kind is FindingTCPConnect.
+	TCPConnect *TCPConnect
+}
+
+// ConnectOutcome is what happened when we tried to open one TCP connection.
+//
+// THE LIST IS CLOSED, UNLIKE ResponseCode AND FOR THE OPPOSITE REASON. A DNS
+// response code arrives ON THE WIRE, so a value nobody recognises is news from
+// somebody's network and is reported as itself. An outcome here is a name WE
+// give to what the operating system told us, so a value outside this list is a
+// defect in our own translation.
+type ConnectOutcome string
+
+const (
+	// OutcomeConnected - the connection was established. It says nothing about
+	// what is listening there, which is L4's question.
+	OutcomeConnected ConnectOutcome = "connected"
+	// OutcomeRefused - something answered and said no. The address is reachable
+	// and nothing is accepting on that port.
+	OutcomeRefused ConnectOutcome = "refused"
+	// OutcomeTimeout - nothing answered before the deadline. It is the shape a
+	// silently dropping firewall makes, and it is NOT the same as refused: one
+	// means "reached, and declined", the other "we never found out".
+	OutcomeTimeout ConnectOutcome = "timeout"
+	// OutcomeReset - the connection was torn down rather than refused or
+	// accepted. Some middleboxes do this to traffic they dislike.
+	OutcomeReset ConnectOutcome = "reset"
+	// OutcomeUnreachable - the network said there is no route. The commonest
+	// honest cause is an IPv6 address on a machine with no IPv6.
+	OutcomeUnreachable ConnectOutcome = "unreachable"
+	// OutcomeRefusedByRule - the allowed set refused this address, so nothing was
+	// ever sent.
+	//
+	// IT IS A FACT ABOUT US AND MUST NEVER READ AS ONE ABOUT THEIR NETWORK. The
+	// same distinction NoAnswerRefusedByRule draws for L1: "we were not allowed
+	// to ask" and "we asked and nobody answered" send a reader to two different
+	// places, and only one of them is their firewall.
+	OutcomeRefusedByRule ConnectOutcome = "refused_by_rule"
+	// OutcomeNotAttempted - the layer ran out of its budget before this address.
+	//
+	// IT IS REPORTED RATHER THAN OMITTED, inviolable rule 1, and it is DELIBERATELY
+	// NOT timeout. A timeout is a statement about somebody's network: we asked and
+	// nothing came back. This is a statement about us: we never asked, because an
+	// earlier address spent the time. Folding it into timeout would put our own
+	// arithmetic into a row a reader takes as a measurement of their firewall -
+	// the same confusion ADR36 fixed for L1 after measuring it.
+	OutcomeNotAttempted ConnectOutcome = "not_attempted"
+)
+
+var connectOutcomeMeanings = map[ConnectOutcome]string{
+	OutcomeConnected:     "the connection was established",
+	OutcomeRefused:       "something answered and refused the connection",
+	OutcomeTimeout:       "nothing answered before the deadline",
+	OutcomeReset:         "the connection was reset rather than refused or accepted",
+	OutcomeUnreachable:   "the network reported no route to this address",
+	OutcomeRefusedByRule: "this run was not allowed to connect to this address",
+	OutcomeNotAttempted:  "this address was never tried, because the layer ran out of time first",
+}
+
+// AllConnectOutcomes lists every outcome exactly once, in declaration order.
+var AllConnectOutcomes = []ConnectOutcome{
+	OutcomeConnected,
+	OutcomeRefused,
+	OutcomeTimeout,
+	OutcomeReset,
+	OutcomeUnreachable,
+	OutcomeRefusedByRule,
+	OutcomeNotAttempted,
+}
+
+// Valid reports whether o is one of the declared outcomes.
+func (o ConnectOutcome) Valid() bool {
+	_, ok := connectOutcomeMeanings[o]
+	return ok
+}
+
+// Meaning returns the English sentence for o, or the empty string outside the
+// list.
+func (o ConnectOutcome) Meaning() string { return connectOutcomeMeanings[o] }
+
+// String makes ConnectOutcome printable without a conversion at every call site.
+func (o ConnectOutcome) String() string { return string(o) }
+
+// Reached reports whether the attempt actually left this machine.
+//
+// It is the difference between a row that says something about the target and a
+// row that says something about us. A refusal by our own allowed set never
+// reached anybody.
+func (o ConnectOutcome) Reached() bool {
+	return o != OutcomeRefusedByRule && o != OutcomeNotAttempted
+}
+
+// TCPConnect is the body of a connection finding: one attempt, to one address.
+//
+// ONE FINDING PER ADDRESS, for the same reason L1 produces one per answer. A
+// name behind four addresses where one is unreachable is the "hangs, then works"
+// class of fault, and a single folded row would report it as either working or
+// broken - both of which are wrong.
+type TCPConnect struct {
+	// Address is where we tried to connect, and it is an ADDRESS.
+	//
+	// NEVER A HOST NAME, and the contract refuses one. L3 connects to addresses
+	// that L1 resolved; a name here would be a second, quieter answer to the
+	// question L1 already answered, and the two would drift.
+	Address string
+	// Port is the port that was tried.
+	//
+	// It repeats on every row although every row in one run shares it, for the
+	// same reason the body sits under a key equal to its kind: this document is
+	// read in a ticket, without the schema beside it.
+	Port int
+	// Outcome is what happened, from the closed list above.
+	Outcome ConnectOutcome
+	// DurationMS is how long the attempt took, in whole milliseconds.
+	//
+	// IT IS ZERO WHEN NOTHING WAS ATTEMPTED, and the contract refuses anything
+	// else in that case. A duration beside "we were not allowed to try" would be
+	// a measurement of something that did not happen.
+	//
+	// ONE OBSERVATION, NEVER A COMPARISON - D13 part 2, decided for L1 and
+	// binding here for the same measured reason: the second attempt benefits from
+	// whatever the first one warmed.
+	DurationMS int64
 }
 
 // NameResolution is the body of a name resolution finding: one answer, through
@@ -467,6 +601,7 @@ type EnvironmentVariable struct {
 var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingEnvironmentVariable: func(f Finding) bool { return f.EnvironmentVariable != nil },
 	FindingNameResolution:      func(f Finding) bool { return f.NameResolution != nil },
+	FindingTCPConnect:          func(f Finding) bool { return f.TCPConnect != nil },
 }
 
 // Breach names what is wrong with a finding, or returns the empty string for one
@@ -518,6 +653,43 @@ func (f Finding) bodyBreach() string {
 		return f.EnvironmentVariable.breach()
 	case f.NameResolution != nil:
 		return f.NameResolution.breach(f.Source)
+	case f.TCPConnect != nil:
+		return f.TCPConnect.breach()
+	}
+	return ""
+}
+
+// breach refuses the states that would make a connection row say something
+// nobody measured.
+//
+// HALF OF THIS IS PROHIBITIONS AND THAT IS WHERE ITS VALUE IS, the same shape
+// the resolution body has. The two most useful columns of this row - the address
+// and the time - are the two a plausible mistake fills in wrongly, and a filled
+// in row reads like a measurement.
+func (t *TCPConnect) breach() string {
+	if t.Address == "" {
+		return "carries a connection attempt to no address at all"
+	}
+	if _, err := netip.ParseAddr(t.Address); err != nil {
+		// THE ONE THAT MATTERS: a host name where an address belongs. L1 answers
+		// what a name resolves to; this layer connects to what came back. A name
+		// here would be a second answer to L1's question, arriving from a layer
+		// that never asked it.
+		return fmt.Sprintf("says it connected to %q, which is a name rather than an address - "+
+			"this layer connects to what the previous one resolved", t.Address)
+	}
+	switch {
+	case t.Port < 1 || t.Port > 65535:
+		return fmt.Sprintf("carries port %d, which is not a port", t.Port)
+	case !t.Outcome.Valid():
+		return fmt.Sprintf("carries the outcome %q, which is outside the closed list", t.Outcome)
+	case t.DurationMS < 0:
+		return fmt.Sprintf("says connecting to %s took %d milliseconds", t.Address, t.DurationMS)
+	case !t.Outcome.Reached() && t.DurationMS != 0:
+		// An attempt that never left this machine - refused by our own rule, or
+		// never tried at all - has nothing whose duration this could be.
+		return fmt.Sprintf("says %s was never actually tried (%s) and still reports %d milliseconds spent",
+			t.Address, t.Outcome, t.DurationMS)
 	}
 	return ""
 }

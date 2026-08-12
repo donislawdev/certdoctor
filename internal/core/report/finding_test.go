@@ -493,3 +493,109 @@ func TestADirectAnswerMaySayWhyThereWasNoAnswer(t *testing.T) {
 		t.Errorf("a system view that timed out was refused: %s", breach)
 	}
 }
+
+// TestEveryConnectOutcomeIsDeclaredOnce is the registry test this closed list
+// needs, and the reason it is closed at all.
+//
+// A DNS response code arrives ON THE WIRE, so an unknown one is news from
+// somebody's network and is reported as itself. An outcome here is a word WE
+// choose for what the operating system told us, so a value outside the list is a
+// defect in our own translation - and this is what refuses one.
+func TestEveryConnectOutcomeIsDeclaredOnce(t *testing.T) {
+	if len(AllConnectOutcomes) != len(connectOutcomeMeanings) {
+		t.Fatalf("the list has %d outcomes and the registry has %d - one was edited alone",
+			len(AllConnectOutcomes), len(connectOutcomeMeanings))
+	}
+	seen := map[ConnectOutcome]bool{}
+	for _, outcome := range AllConnectOutcomes {
+		if seen[outcome] {
+			t.Errorf("%q appears twice in the list", outcome)
+		}
+		seen[outcome] = true
+		if !outcome.Valid() {
+			t.Errorf("%q is listed and not valid", outcome)
+		}
+		if outcome.Meaning() == "" {
+			t.Errorf("%q has no meaning, so a reader gets a bare word", outcome)
+		}
+		if outcome.String() != string(outcome) {
+			t.Errorf("%q does not print as itself", outcome)
+		}
+	}
+	if ConnectOutcome("invented").Valid() {
+		t.Error("a value nobody declared passed as valid")
+	}
+	if ConnectOutcome("invented").Meaning() != "" {
+		t.Error("a value nobody declared has a meaning")
+	}
+}
+
+// TestOnlyTheAttemptsThatLeftThisMachineCountAsReached separates the two facts
+// this layer must never confuse.
+//
+// A refusal by our own rule and an address the budget never reached both opened
+// nothing - they are statements about US. Everything else is a statement about
+// somebody's network, and the report sends a reader to two different places
+// depending on which it is.
+func TestOnlyTheAttemptsThatLeftThisMachineCountAsReached(t *testing.T) {
+	ours := map[ConnectOutcome]bool{OutcomeRefusedByRule: true, OutcomeNotAttempted: true}
+	for _, outcome := range AllConnectOutcomes {
+		if got := outcome.Reached(); got == ours[outcome] {
+			t.Errorf("%q reports Reached()=%v, and it is %sa fact about this machine",
+				outcome, got, map[bool]string{true: "", false: "not "}[ours[outcome]])
+		}
+	}
+}
+
+// TestAConnectionRowRefusesWhatNobodyMeasured is the half of this contract that
+// is prohibitions, and the half that carries its value.
+func TestAConnectionRowRefusesWhatNobodyMeasured(t *testing.T) {
+	sound := func() Finding {
+		return Finding{
+			Kind: FindingTCPConnect, Summary: "192.0.2.10 accepted a connection", Source: SourceDetected,
+			TCPConnect: &TCPConnect{Address: "192.0.2.10", Port: 443, Outcome: OutcomeConnected, DurationMS: 12},
+		}
+	}
+	if broken := sound().Breach(); broken != "" {
+		t.Fatalf("a well formed row is refused: %s", broken)
+	}
+
+	cases := []struct {
+		name   string
+		damage func(*TCPConnect)
+		says   string
+	}{
+		{"no address", func(b *TCPConnect) { b.Address = "" }, "no address"},
+		// THE ONE THAT MATTERS. L1 answers what a name resolves to; a name here
+		// would be a second answer to that question from a layer that never asked.
+		{"a host name where an address belongs", func(b *TCPConnect) { b.Address = "example.com" }, "name rather than an address"},
+		{"a port that is not a port", func(b *TCPConnect) { b.Port = 0 }, "not a port"},
+		{"an outcome nobody declared", func(b *TCPConnect) { b.Outcome = "invented" }, "outside the closed list"},
+		{"a negative duration", func(b *TCPConnect) { b.DurationMS = -1 }, "milliseconds"},
+		// A duration on an attempt that never left this machine is a measurement
+		// of something that did not happen - and it is the field a plausible
+		// mistake fills in, because every other row has one.
+		{"time spent on an attempt nobody made", func(b *TCPConnect) {
+			b.Outcome = OutcomeRefusedByRule
+			b.DurationMS = 7
+		}, "never actually tried"},
+		{"time spent on an address never tried", func(b *TCPConnect) {
+			b.Outcome = OutcomeNotAttempted
+			b.DurationMS = 7
+		}, "never actually tried"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			finding := sound()
+			tc.damage(finding.TCPConnect)
+			broken := finding.Breach()
+			if broken == "" {
+				t.Fatal("the contract accepted a row it should refuse")
+			}
+			if !strings.Contains(broken, tc.says) {
+				t.Errorf("the refusal reads %q, which does not name what is wrong", broken)
+			}
+		})
+	}
+}

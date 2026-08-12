@@ -107,6 +107,17 @@ var schema = object(map[string]node{
 				"addresses":   array(text()),
 				"duration_ms": number(),
 			})),
+			// The third body. Every field is present on every row of this kind:
+			// an address, a port, an outcome from a closed list and a duration
+			// are established for each attempt, including the ones that never
+			// left this machine - where the duration is zero and the core
+			// refuses anything else.
+			"tcp_connect": nullable(object(map[string]node{
+				"address":     text(),
+				"port":        number(),
+				"outcome":     text(),
+				"duration_ms": number(),
+			})),
 		}))),
 	})),
 	"notes": array(object(map[string]node{

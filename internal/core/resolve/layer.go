@@ -168,6 +168,26 @@ type Result struct {
 	// Nil means this layer did not look and an empty slice means it looked and
 	// found nothing, and the two are kept apart deliberately - ADR20.
 	Findings []report.Finding
+	// Addresses is every address this name resolved to, through EITHER lens,
+	// deduplicated and in the order they were first seen.
+	//
+	// IT EXISTS FOR THE NEXT LAYER RATHER THAN FOR THE REPORT, and it is the first
+	// thing in this program that one layer hands to another. L3 opens a connection
+	// per address, and the addresses only exist once this layer has run - unlike
+	// everything else a layer needs, which the entry point can assemble before the
+	// walk starts.
+	//
+	// IT IS A FIELD AND NOT SOMETHING READ BACK OUT OF Findings, deliberately.
+	// Digging it out of the findings would mean the code doing the digging has to
+	// understand what a name_resolution body is, and the one place that carries
+	// findings between layers - the orchestrator - deliberately does not look
+	// inside them. It carries them and nothing else.
+	//
+	// BOTH LENSES, because the user's connection can land on any of them: what our
+	// own query saw and what the platform would hand a runtime are both addresses
+	// somebody's next TCP connection might go to. The classification of how those
+	// two differ is a separate question, already answered above.
+	Addresses []string
 }
 
 // Sentences for the cases where the layer establishes nothing. They are
@@ -183,11 +203,25 @@ const (
 // Ask walks every resolver and every record type once, and reports what came
 // back.
 //
+// THE ADDRESSES ARE COLLECTED HERE, ON EVERY PATH OUT, AND THAT IS WHY THIS
+// WRAPPER EXISTS. The walk below returns from seven places, and a field filled in
+// at each of them is a field somebody forgets at the eighth - which would hand
+// the next layer an empty list and make a machine with working DNS look like one
+// with nothing to connect to. One place cannot forget.
+func Ask(ctx context.Context, in Input) Result {
+	result := in.walk(ctx)
+	result.Addresses = addressesOf(result.Findings)
+	return result
+}
+
+// walk is the layer itself. Ask wraps it so that everything it returns passes
+// through one place on the way out.
+//
 // WHAT IT DELIBERATELY DOES NOT DO YET: compare views. This is the direct view
 // alone - our own queries to named resolvers - and the system view arrives in the
 // next slice together with the divergence classification from D13. The report
 // says so in a note rather than leaving the reader to notice one lens missing.
-func Ask(ctx context.Context, in Input) Result {
+func (in Input) walk(ctx context.Context) Result {
 	if broken := in.unusable(); broken != "" {
 		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: broken}
 	}
@@ -383,6 +417,23 @@ type tallies struct {
 // IT SKIPS THE SYSTEM ROW BY CONSTRUCTION, because it is called before that row
 // is appended. Reading the view field instead would work today and would break
 // silently the day a third row kind appears.
+// addressesOf is every address any lens returned, deduplicated, in the order
+// first seen.
+//
+// It is the same fold as unionOf and is called on the WHOLE set of findings
+// rather than on the direct ones alone: the classification compares one lens
+// against the other, while the next layer needs everywhere this name might send
+// a connection.
+func addressesOf(findings []report.Finding) []string {
+	if findings == nil {
+		// Nil in, nil out - a layer that never looked has not established that
+		// there are no addresses, and ADR20 keeps those two apart everywhere else
+		// in this program.
+		return nil
+	}
+	return unionOf(findings)
+}
+
 func unionOf(direct []report.Finding) []string {
 	seen := map[string]bool{}
 	out := []string{}

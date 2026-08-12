@@ -57,3 +57,5 @@ github.com/donislawdev/certdoctor/internal/core/resolve 100
 github.com/donislawdev/certdoctor/internal/core/report 87
 github.com/donislawdev/certdoctor/internal/core/status 82
 github.com/donislawdev/certdoctor/internal/guard 84
+github.com/donislawdev/certdoctor/internal/core/tcp 98
+github.com/donislawdev/certdoctor/internal/adapter/tcp 84
