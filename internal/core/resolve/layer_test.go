@@ -1094,6 +1094,36 @@ func TestANameThatResolvesNowhereIsNotCalledAgreement(t *testing.T) {
 	}
 }
 
+// TestTheSystemRowDoesNotClaimToHaveResolvedANameItFoundNoAddressFor is OBS59,
+// and it is the last floor of a defect this project fixed twice above it.
+//
+// The layer's own sentence stopped claiming a name resolved when it did not -
+// ADR40, then ADR42. The ROW underneath it went on saying "the system view
+// resolved this name to 0 address(es)", which is the same word used untruthfully
+// about the same fact. The harm is smaller because the row carries an empty
+// address list right beside it, and it is still the line somebody pastes into a
+// ticket.
+func TestTheSystemRowDoesNotClaimToHaveResolvedANameItFoundNoAddressFor(t *testing.T) {
+	in := workingInput(answeringNoSuchName())
+	in.System = systemAnswering(SystemAnswer{})
+
+	row := systemRowOf(t, Ask(context.Background(), in))
+
+	if strings.Contains(row.Summary, "resolved") {
+		t.Errorf("the row says the name was resolved when no address was found: %q", row.Summary)
+	}
+	if !strings.Contains(row.Summary, "no address") {
+		t.Errorf("the row does not say what actually happened: %q", row.Summary)
+	}
+	// The other side, without which the check above is satisfied by a sentence
+	// that never says "resolved" at all - including for a lookup that worked.
+	found := workingInput(answeringWith([]string{"192.0.2.10"}))
+	found.System = systemAnswering(SystemAnswer{Addresses: []string{"192.0.2.10"}})
+	if summary := systemRowOf(t, Ask(context.Background(), found)).Summary; !strings.Contains(summary, "resolved") {
+		t.Errorf("a lookup that did find an address no longer says so: %q", summary)
+	}
+}
+
 // answeringServerFailure replies SERVFAIL to every query.
 //
 // It is a REPLY carrying no address, which is the state that separates ADR42

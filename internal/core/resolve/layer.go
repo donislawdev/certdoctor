@@ -512,6 +512,17 @@ func systemSummaryOf(name string, a SystemAnswer, source report.Source, sources 
 		return fmt.Sprintf("the system view got no answer for %s %s: %s", name, how, a.NoAnswer.Meaning())
 	}
 	how += sourcesNote(source, sources, failed)
+	if len(a.Addresses) == 0 {
+		return fmt.Sprintf("the system view found no address for %s %s", name, how)
+	}
+	// AN ANSWER WITH NO ADDRESS IS NOT A RESOLUTION, AND SAYING "resolved it to 0
+	// address(es)" IS THE SAME WORD USED UNTRUTHFULLY - OBS59. It is the last
+	// trace of the family ADR40 and ADR42 closed one floor up: the layer's own
+	// sentence stopped claiming this, while the row underneath it still did.
+	// Smaller harm, because the row carries an empty address list beside it and
+	// the layer above says FAIL - but a reader quoting one line into a ticket
+	// quotes this one.
+
 	return fmt.Sprintf("the system view resolved %s to %d address(es) %s", name, len(a.Addresses), how)
 }
 
