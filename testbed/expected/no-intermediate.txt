@@ -1,0 +1,58 @@
+# A server that does not send its intermediate certificate - scenario S-5.
+#
+# THIS FILE IS DERIVED FROM THE BENCH'S CONFIGURATION AND FROM THE PRODUCT'S
+# CONTRACT, NOT FROM ITS CODE - and here it is derived from the configuration
+# BEFORE that configuration was written, which is the strongest form available.
+# The chain is minted root -> intermediate -> leaf, and nginx is handed the leaf
+# ALONE rather than a bundle. So a client that does not already hold the
+# intermediate cannot build a path to the root, no matter how much it trusts the
+# root.
+#
+# WHY THIS SCENARIO IS THE HARDEST ONE IN docs/21 AND WHY IT IS WORTH BUILDING
+# TWO SLICES BEFORE ANYTHING CAN READ IT. Every runtime on the machine fails, and
+# the correct answer is still "do nothing on your machine" - the fault is the
+# server's. A verdict computed from the statistics of the trust matrix would
+# answer the exact opposite here and send somebody to reinstall their own
+# certificates. This file is the guard against that, written down before the
+# layer that could get it wrong exists.
+#
+# TWO HALVES, AND ONLY THE FIRST IS CHECKABLE TODAY. The lines under "bench"
+# describe what the bench presents on the wire and are verifiable now with
+# openssl, which is not our code. The lines under "P6" describe what certdoctor
+# must say once L4 exists. Nothing reads the second half yet, and verify.sh says
+# so out loud rather than passing over it in silence.
+
+target=https://partner.test/
+
+# --- bench: verifiable today with an independent tool ---
+#
+# One certificate, not two. This single number IS the scenario: were the bundle
+# served instead, everything below would be an ordinary working site.
+chain_certs_presented=1
+leaf_subject_cn=partner.test
+leaf_issuer_cn=certdoctor testbed intermediate
+intermediate_presented=no
+
+# What openssl says when it cannot build the path. Recorded because it is the
+# error a user pastes into a ticket, and because it is the same fact from an
+# independent implementation - the second layer of the oracle from docs/21
+# section 2.
+openssl_verify_error=unable to get local issuer certificate
+
+# --- P6: nothing reads these yet ---
+#
+# FAIL rather than WARN: the site cannot be used by anything that does not
+# already hold the intermediate, which is every fresh runtime.
+l4_status=FAIL
+
+# The whole point of S-5. The verdict names the SERVER, and must never name this
+# machine or its runtimes - even though every row of the trust matrix is red.
+verdict_blames=server
+verdict_blames_forbidden=machine,runtime,store
+
+# There is no command for the user to run. A generated fix here would be a fix
+# for somebody else's server, which we cannot reach - so the deliverable is
+# evidence to paste into a report instead.
+remediation_command=
+
+exit_code=4

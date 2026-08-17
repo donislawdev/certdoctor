@@ -1,0 +1,56 @@
+# Traffic re-signed by a CA local to this machine - scenario S-1.
+#
+# THE ONE THING THIS SCENARIO EXISTS TO PROVE: that detecting interception does
+# NOT depend on recognising a vendor's name. mitmproxy's root is not called
+# Zscaler, Netskope or anything else on any list we could write. If certdoctor
+# needs the name to notice, the whole of L4 is built the wrong way round - O11,
+# and docs/24 says the structural test is the primary one with the vendor list
+# used ONLY to put a name to what was already detected.
+#
+# HOW THE BENCH PRODUCES IT. The same target as no-intermediate.txt, reached
+# through the proxy instead of directly. mitmproxy terminates the connection and
+# presents a leaf it minted itself, signed by a root it generated at startup - a
+# root that exists nowhere but this machine and is in no trust store on it. That
+# is the shape of every TLS-inspecting middlebox, without buying one.
+#
+# WHY THE ROOT IS NOT IMPORTED ANYWHERE, decided 2026-08-17. docs/21 S-1 has the
+# root imported into the system store and not into Node's, which is what makes
+# the trust matrix show some runtimes passing and others failing. THAT IMPORT IS
+# NOT PART OF THIS SLICE: it changes the trust store of a real machine, docker
+# compose down does not undo it, and today there is no layer that could show
+# whether it did anything. It lands with P6, where L4 can measure it. So the
+# expectation below is the narrower one - detected, trusted by nothing - and the
+# matrix half of S-1 is deliberately absent rather than quietly assumed.
+
+target=https://partner.test/
+proxy=http://172.28.0.81:8080
+
+# --- bench: verifiable today with an independent tool ---
+#
+# The leaf presented through the proxy is NOT the one the origin serves. Its
+# issuer is mitmproxy's own root, and that is the whole detection.
+leaf_subject_cn=partner.test
+leaf_issuer_cn_contains=mitmproxy
+issuer_differs_from_origin=yes
+
+# The origin's own issuer, for comparison. Two different issuers for one name,
+# depending only on whether the proxy is in the way.
+origin_leaf_issuer_cn=certdoctor testbed intermediate
+
+# No store on this machine holds it, which is why a browser would complain too.
+root_in_any_trust_store=no
+
+# --- P6: nothing reads these yet ---
+#
+# Detected structurally. The vendor name is expected to be ABSENT and that is a
+# pass, not a gap: "no name" must never read as "no detection".
+l4_status=FAIL
+interception_detected=yes
+interception_vendor_named=no
+
+# The language has to stay careful. Telling somebody they have a MITM when they
+# do not is real harm, not a cosmetic defect - inviolable rule 21 - so the
+# evidence has to travel with the claim.
+evidence_includes=issuer,fingerprint
+
+exit_code=4

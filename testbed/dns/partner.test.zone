@@ -1,0 +1,25 @@
+; The one zone on this bench that points at something which ANSWERS.
+;
+; EVERY OTHER NAME HERE RESOLVES INTO A DOCUMENTATION RANGE ON PURPOSE, so that
+; a run against the DNS bench cannot accidentally open a connection to anything.
+; This zone is the deliberate exception: scenarios S-1 and S-5 are about what a
+; server PRESENTS during a handshake, and there is no way to ask that question of
+; an address nobody listens on.
+;
+; The address is inside the bench's own subnet and is unreachable from anywhere
+; else, so the exception does not widen past this compose file.
+$ORIGIN partner.test.
+$TTL 60
+
+@   IN SOA ns.partner.test. admin.partner.test. (
+        1          ; serial
+        7200       ; refresh
+        3600       ; retry
+        1209600    ; expire
+        3600 )     ; minimum
+
+@   IN NS  ns.partner.test.
+ns  IN A   172.28.0.53
+
+; The server holding a leaf whose intermediate it never sends - S-5.
+@   IN A   172.28.0.80

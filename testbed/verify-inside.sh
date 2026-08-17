@@ -149,6 +149,36 @@ check_scenario() {
   fi
 }
 
+# THE BENCH IS ASKED WHETHER IT IS SERVING THE CONFIGURATION IN THIS WORKING
+# TREE, BEFORE ANYTHING ELSE - and this check exists because the trap it catches
+# was walked into on 2026-08-17, while adding the partner zone.
+#
+# The Corefile is a bind mount, so editing it changes the file the container sees
+# immediately. CoreDNS reads it ONCE, at startup. "docker compose up -d" then
+# reports every container started, healthy and green, while the bench answers
+# from the previous configuration - a run that did less than it promised and
+# looked complete, which is inviolable rule 1 from the wrong side.
+#
+# It is checked on partner.test because that zone is the newest, so it is the one
+# a stale process is most likely to be missing.
+bench_serves_this_tree() {
+  local got
+  got="$(dig +short "@172.28.0.53" partner.test A 2>/dev/null | head -1)"
+  if [ "$got" = "172.28.0.80" ]; then
+    return 0
+  fi
+  echo "testbed: THE BENCH IS NOT SERVING THE CONFIGURATION IN THIS WORKING TREE."
+  echo "testbed: partner.test answered '${got:-nothing}', and the zone file says 172.28.0.80."
+  echo "testbed: CoreDNS reads the Corefile once, at startup, and a bind mount does not"
+  echo "testbed: restart it - so an edited zone is invisible until the container is."
+  echo "testbed: fix:  docker compose -f testbed/compose.yml restart dns"
+  return 1
+}
+
+if ! bench_serves_this_tree; then
+  exit 1
+fi
+
 echo "testbed: asking the bench, then asking certdoctor, then comparing"
 echo
 
@@ -170,6 +200,37 @@ echo "198.51.100.30 split.ok.test" >> /etc/hosts
 check_scenario split
 
 echo
+
+# WHAT THIS RUN DID NOT ASSESS, SAID OUT LOUD RATHER THAN LEFT AS SILENCE.
+#
+# P4b put two benches in place - a server that withholds its intermediate, and a
+# proxy that re-signs traffic - and NOTHING HERE CAN JUDGE THEM, because the
+# layer that would (L4) does not exist until P6. Their expectations are written
+# down already, which is the whole point of building the bench first, but an
+# expectation nobody checks is not coverage.
+#
+# The list builds itself: any expectation file naming l4_status is by definition
+# beyond what this script can ask today. So it cannot go stale by somebody adding
+# a file and forgetting this block, and it empties itself when L4 arrives.
+deferred=0
+for file in "$expected"/*.txt; do
+  [ -e "$file" ] || continue
+  if [ -n "$(value "$file" l4_status)" ]; then
+    if [ "$deferred" -eq 0 ]; then
+      echo "testbed: NOT ASSESSED HERE - benches whose reader does not exist yet:"
+    fi
+    deferred=$((deferred + 1))
+    echo "    $(basename "$file" .txt)  ->  $(value "$file" target)"
+    echo "        expects L4 $(value "$file" l4_status), and there is no L4 yet. Waiting for P6."
+  fi
+done
+if [ "$deferred" -gt 0 ]; then
+  echo "testbed: those $deferred expectation(s) were written from the bench's configuration"
+  echo "testbed: BEFORE anything could read them, which is the only order that makes them"
+  echo "testbed: an oracle rather than a transcript. Verify them by hand with openssl."
+  echo
+fi
+
 echo "testbed: $passed agreed, $failed differed, $notes noted"
 
 if [ "$failed" -gt 0 ]; then

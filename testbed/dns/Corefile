@@ -1,12 +1,24 @@
 # Zones for the DNS bench. Every name here is under .test, which RFC 2606
 # reserves for exactly this and which therefore belongs to nobody.
 #
-# The addresses are from RFC 5737 (192.0.2.0/24, 198.51.100.0/24) and RFC 3849
-# (2001:db8::/32), reserved for documentation. A bench must never hand out an
-# address somebody actually answers on.
+# Most of the addresses are from RFC 5737 (192.0.2.0/24, 198.51.100.0/24) and RFC
+# 3849 (2001:db8::/32), reserved for documentation, so that a run against this
+# bench cannot accidentally connect to anything.
+#
+# ONE ZONE IS A DELIBERATE EXCEPTION AND IT IS NAMED HERE RATHER THAN DISCOVERED
+# LATER: partner.test points at a server on this bench's own subnet, because
+# scenarios S-1 and S-5 ask what a server PRESENTS during a handshake, and that
+# question cannot be put to an address nobody listens on. The exception stops at
+# this compose file - 172.28.0.0/16 is unreachable from anywhere else.
 
 ok.test:53 {
     file /etc/coredns/ok.test.zone
+    errors
+}
+
+# The only name here that answers on the wire. See the zone file for why.
+partner.test:53 {
+    file /etc/coredns/partner.test.zone
     errors
 }
 
