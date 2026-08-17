@@ -136,6 +136,13 @@ var intraLayerEdges = map[string][]string{
 	"internal/core/tcp": {
 		"internal/core/report",
 		"internal/core/status",
+		// The shared fan-out. L3 and L4 make the same promise about the same
+		// addresses - results placed by position, at most eight at a time, every
+		// goroutine waited for - and ADR45 says that promise lives in ONE place
+		// rather than being written out twice. A copy of a rule that already has
+		// mutation entries disarms them and reports SKIP, which is the measured
+		// shape of OBS50.
+		"internal/core/fanout",
 	},
 	// The DNS plumbing takes a dialler and the dialler carries the rule about
 	// where this program may connect, so the arrow runs from the thing that uses

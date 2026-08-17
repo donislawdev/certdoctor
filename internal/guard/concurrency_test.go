@@ -81,8 +81,15 @@ var lockOnlyAllowlist = map[string]bool{
 // what stays true of rule 1 is that Connect and tryOne are still synchronous
 // functions that do not know anybody runs them in parallel.
 var fanOutAllowlist = map[string]bool{
-	// L3's fan-out. One WaitGroup per wave, one write per index, no channel.
-	"internal/core/tcp/fanout.go": true,
+	// THE ONE FILE IN THIS PROGRAM THAT STARTS A GOROUTINE. One WaitGroup per
+	// wave, one write per index, no channel.
+	//
+	// IT IS SHARED BY L3 AND L4 RATHER THAN COPIED INTO EACH - ADR45. That keeps
+	// this list one entry long, which is the number worth defending: a second
+	// entry here would mean a second place where the same promise is made, and
+	// the first thing to notice would be the mutation register reporting SKIP
+	// rather than anybody reading the code (OBS50).
+	"internal/core/fanout/fanout.go": true,
 }
 
 // TestALockOnlyFileMayHoldALockAndNothingElse is the canary for the narrow
