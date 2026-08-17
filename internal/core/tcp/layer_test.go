@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,33 +20,55 @@ import (
 // on every path" is the property that is checkable everywhere, unlike counting
 // file descriptors, which is not portable and answers a question about the
 // operating system - docs/22 section 6a.
+//
+// IT COUNTS ATOMICALLY BECAUSE THE LAYER NOW CLOSES FROM SEVERAL GOROUTINES.
+// docs/22 section 2 ends with that warning and this is the file it was written
+// about: a double that races is a flaky test, and a flaky test teaches retrying
+// instead of looking.
 type closer struct {
-	closed int
-	failed bool
+	closed atomic.Int64
+	failed atomic.Bool
 }
 
 func (c *closer) Close() error {
-	c.closed++
-	if c.closed > 1 {
-		c.failed = true
+	if c.closed.Add(1) > 1 {
+		c.failed.Store(true)
 	}
 	return nil
 }
 
-func fixedClock() func() time.Time {
-	at := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
-	return func() time.Time {
-		at = at.Add(3 * time.Millisecond)
-		return at
-	}
+// handles collects the connections a test handed out, from whichever goroutine
+// asked for one.
+type handles struct {
+	mu   sync.Mutex
+	kept []*closer
 }
 
+func (h *handles) fresh() *closer {
+	made := &closer{}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.kept = append(h.kept, made)
+	return made
+}
+
+func (h *handles) all() []*closer {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]*closer(nil), h.kept...)
+}
+
+// workingInput reads the clock through safeClock, the one this package already
+// has. A SECOND CLOCK OF ITS OWN WOULD BE A COPY OF A RULE THAT ALREADY HAS ONE
+// - OBS50, measured on a boundary function - and nothing here asserts a
+// particular number of milliseconds, only that an attempt which never left this
+// machine carries none.
 func workingInput(connect Connect) Input {
 	return Input{
 		Addresses:  func() []string { return []string{"192.0.2.10"} },
 		Port:       443,
 		Connect:    connect,
-		Now:        fixedClock(),
+		Now:        safeClock(),
 		PerAddress: 2 * time.Second,
 	}
 }
@@ -224,8 +248,8 @@ func TestOneReachableAddressIsAPassAndTheSentenceSaysHowMany(t *testing.T) {
 	if !strings.Contains(got.Detail, "IPv6") {
 		t.Errorf("the sentence does not name the families it tried: %q", got.Detail)
 	}
-	if opened.closed != 1 || opened.failed {
-		t.Errorf("the connection that opened was closed %d times", opened.closed)
+	if opened.closed.Load() != 1 || opened.failed.Load() {
+		t.Errorf("the connection that opened was closed %d times", opened.closed.Load())
 	}
 }
 
@@ -238,7 +262,7 @@ func TestOneReachableAddressIsAPassAndTheSentenceSaysHowMany(t *testing.T) {
 // from real handles, because "closed exactly once" is checkable everywhere while
 // counting descriptors answers a question about the operating system.
 func TestNoPathLeavesAConnectionOpen(t *testing.T) {
-	handles := []*closer{}
+	opened := &handles{}
 	in := workingInput(func(_ context.Context, address string, _ int) (io.Closer, error) {
 		switch address {
 		case "192.0.2.11":
@@ -246,52 +270,56 @@ func TestNoPathLeavesAConnectionOpen(t *testing.T) {
 		case "192.0.2.12":
 			// A connection handed back TOGETHER with an error. The io contract
 			// permits it, and a caller that returns early on err leaks it.
-			handle := &closer{}
-			handles = append(handles, handle)
-			return handle, ErrReset
+			return opened.fresh(), ErrReset
 		}
-		handle := &closer{}
-		handles = append(handles, handle)
-		return handle, nil
+		return opened.fresh(), nil
 	})
 	in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11", "192.0.2.12"} }
 
 	Ask(context.Background(), in)
 
-	if len(handles) == 0 {
+	kept := opened.all()
+	if len(kept) == 0 {
 		t.Fatal("no connection was opened at all, so nothing here established anything")
 	}
-	for i, handle := range handles {
-		if handle.closed != 1 || handle.failed {
-			t.Errorf("connection %d was closed %d times", i, handle.closed)
+	for i, handle := range kept {
+		if handle.closed.Load() != 1 || handle.failed.Load() {
+			t.Errorf("connection %d was closed %d times", i, handle.closed.Load())
 		}
 	}
 }
 
-// TestOneSlowAddressDoesNotSpendTheWholeLayer is ADR36, measured for L1 and
-// binding here for the same reason.
+// TestAnAttemptGetsThePerAddressCapOrWhatIsLeftOfTheLayer is ADR44, and it
+// replaces the test that pinned ADR36's division here.
 //
-// With a fixed per-attempt limit, the first address is entitled to the whole
-// budget - so one address behind a silently dropping firewall means the working
-// ones are never tried, and the layer reports a machine that cannot connect while
-// the second address would have answered instantly.
-func TestOneSlowAddressDoesNotSpendTheWholeLayer(t *testing.T) {
+// THE DIVISION WENT AWAY BECAUSE ITS PREMISE DID, NOT BECAUSE THE PROPERTY IT
+// DEFENDED STOPPED MATTERING. "One silent address must not spend the whole
+// layer" is still true and is still tested - by
+// TestASilentAddressNoLongerTakesTimeFromTheOthers, which asserts it directly
+// instead of through arithmetic that only approximated it. What is pinned here is
+// the narrower statement left over: an attempt may have the per-address cap, or
+// what remains of the layer, whichever is smaller.
+func TestAnAttemptGetsThePerAddressCapOrWhatIsLeftOfTheLayer(t *testing.T) {
 	in := workingInput(connectFailing(ErrRefused))
 	in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11", "192.0.2.12"} }
-	in.PerAddress = time.Hour
 
-	deadline := in.Now().Add(3 * time.Second)
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	// Three seconds left, an hour allowed per address: the layer's budget is the
+	// tighter of the two, and ALL of it is on offer. Divided by the three
+	// addresses, as it used to be, this would come back at about one second.
+	in.PerAddress = time.Hour
+	ctx, cancel := context.WithDeadline(context.Background(), in.Now().Add(3*time.Second))
 	defer cancel()
 
-	if share := in.limitFor(ctx, 3); share > 1200*time.Millisecond {
-		t.Errorf("the first of three addresses may spend %s of a three second budget", share)
+	got := in.limitFor(ctx)
+	if got <= 2900*time.Millisecond || got > 3*time.Second {
+		t.Errorf("an attempt was offered %s of a three second budget that nothing else is competing for", got)
 	}
-	// And the layer's own limit still caps it when the layer limit is the tighter
-	// of the two, which is the direction the flag documents.
+
+	// And the flag still caps it when the flag is the tighter of the two, which
+	// is the direction the flag documents.
 	in.PerAddress = 200 * time.Millisecond
-	if share := in.limitFor(ctx, 1); share != 200*time.Millisecond {
-		t.Errorf("the per-address limit stopped applying: %s", share)
+	if got := in.limitFor(ctx); got != 200*time.Millisecond {
+		t.Errorf("the per-address limit stopped applying: %s", got)
 	}
 }
 
@@ -307,9 +335,12 @@ func TestEveryRowSaysWhichAddressAndPortItIsAbout(t *testing.T) {
 	// The mutation register found this: an entry replacing the port with zero
 	// survived, because the row's port comes from Input and the assertions only
 	// read the row.
+	var mu sync.Mutex
 	var asked []int
 	in := workingInput(func(_ context.Context, _ string, port int) (io.Closer, error) {
+		mu.Lock()
 		asked = append(asked, port)
+		mu.Unlock()
 		return nil, ErrRefused
 	})
 	in.Addresses = func() []string { return []string{"192.0.2.10", "2001:db8::10"} }
@@ -355,12 +386,11 @@ func TestEveryRowSaysWhichAddressAndPortItIsAbout(t *testing.T) {
 // invented for them: capping an uncapped attempt at some arbitrary value would
 // turn one wrong answer into a quieter one.
 func TestSwitchingEveryBudgetOffMeansNoLimitRatherThanNoAttempt(t *testing.T) {
-	var asked int
-	var deadlines int
+	var asked, deadlines atomic.Int64
 	in := workingInput(func(ctx context.Context, _ string, _ int) (io.Closer, error) {
-		asked++
+		asked.Add(1)
 		if _, set := ctx.Deadline(); set {
-			deadlines++
+			deadlines.Add(1)
 		}
 		return nil, ErrRefused
 	})
@@ -370,11 +400,11 @@ func TestSwitchingEveryBudgetOffMeansNoLimitRatherThanNoAttempt(t *testing.T) {
 
 	got := Ask(context.Background(), in)
 
-	if asked != 2 {
-		t.Errorf("two addresses produced %d attempt(s) when the caller asked for no limits", asked)
+	if asked.Load() != 2 {
+		t.Errorf("two addresses produced %d attempt(s) when the caller asked for no limits", asked.Load())
 	}
-	if deadlines != 0 {
-		t.Errorf("%d attempt(s) were given a deadline of their own when nothing caps them", deadlines)
+	if deadlines.Load() != 0 {
+		t.Errorf("%d attempt(s) were given a deadline of their own when nothing caps them", deadlines.Load())
 	}
 	if got.Status != status.Fail {
 		t.Errorf("two refused addresses gave %s", got.Status)

@@ -144,14 +144,15 @@ func Ask(ctx context.Context, in Input) Result {
 		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: nothingToDo}
 	}
 
-	findings := make([]report.Finding, 0, len(addresses))
+	// THE ATTEMPTS RUN SIDE BY SIDE AND THE ROWS COME BACK IN ADDRESS ORDER. The
+	// fan-out lives in its own file so this one - where every decision this layer
+	// makes is written down - stays under the concurrency guard in full (ADR43).
+	findings := in.fanOut(ctx, addresses)
 	reached := 0
-	for i, address := range addresses {
-		finding := in.tryOne(ctx, address, len(addresses)-i)
+	for _, finding := range findings {
 		if finding.TCPConnect.Outcome == report.OutcomeConnected {
 			reached++
 		}
-		findings = append(findings, finding)
 	}
 
 	if reached == 0 {
@@ -181,8 +182,8 @@ func (in Input) unusable() string {
 //
 // IT ALWAYS PRODUCES A ROW, including for an address that was never tried,
 // because a report with fewer rows reads as a name with fewer addresses.
-func (in Input) tryOne(ctx context.Context, address string, left int) report.Finding {
-	remaining := in.limitFor(ctx, left)
+func (in Input) tryOne(ctx context.Context, address string) report.Finding {
+	remaining := in.limitFor(ctx)
 	if remaining == 0 {
 		// NOT A TIMEOUT. Nothing was sent, so nothing failed to answer - this row
 		// is about our budget, not about their network.
@@ -228,17 +229,28 @@ func (in Input) tryOne(ctx context.Context, address string, left int) report.Fin
 	return in.finding(address, report.OutcomeConnected, elapsed)
 }
 
-// limitFor is the share of what is left that this attempt may spend - ADR36.
+// limitFor is the longest this attempt may take: the per-address cap or what is
+// left of the layer's budget, whichever is smaller - ADR44.
 //
-// The same arithmetic L1 uses, and for the same measured reason: with a fixed
-// per-attempt limit, one address that never answers spends the whole layer and
-// the working ones are never tried.
-func (in Input) limitFor(ctx context.Context, addressesLeft int) time.Duration {
+// IT USED TO DIVIDE WHAT WAS LEFT BY THE NUMBER OF ADDRESSES STILL TO TRY, and
+// dropping that is not a relaxation of ADR36 but its premise no longer holding.
+// That arithmetic exists because attempts COMPETE for the same time when they run
+// one after another - measured in L1, where one silent resolver spent 10008 ms of
+// a ten second budget and three of four queries were never asked. Attempts that
+// run side by side do not compete: a silent address takes time from nobody,
+// because the others are already running beside it. Keeping the division after
+// the fan-out would penalise a machine for a number of addresses that can no
+// longer be stolen from anyone, and PerAddress would go on meaning something
+// other than its name.
+//
+// ZERO STILL MEANS "no time left, do not try" AND unlimited MEANS "nothing caps
+// this at all" - the collision OBS62 was made of, and the reason those are two
+// values rather than one.
+func (in Input) limitFor(ctx context.Context) time.Duration {
 	deadline, set := ctx.Deadline()
 	if !set {
-		// No layer deadline at all: there is nothing to divide, and the attempt's
-		// own limit is the only thing left - unless there is not one either, and
-		// then nothing caps this attempt at all.
+		// No layer deadline at all: the attempt's own limit is the only thing left
+		// - unless there is not one either, and then nothing caps this attempt.
 		if in.PerAddress > 0 {
 			return in.PerAddress
 		}
@@ -249,17 +261,16 @@ func (in Input) limitFor(ctx context.Context, addressesLeft int) time.Duration {
 	// untestable and, worse, would make it behave differently under test than in
 	// production - the one place a wrong measurement is invisible.
 	left := deadline.Sub(in.Now())
+	// NOTHING LEFT, AND THIS IS WHERE not_attempted COMES FROM: the layer starting
+	// with a budget already spent, or a wave beginning after one ran out. Zero
+	// here and unlimited above are opposite answers, which is the whole of OBS62.
 	if left <= 0 {
 		return 0
 	}
-	share := left
-	if addressesLeft > 1 {
-		share = left / time.Duration(addressesLeft)
-	}
-	if in.PerAddress > 0 && in.PerAddress < share {
+	if in.PerAddress > 0 && in.PerAddress < left {
 		return in.PerAddress
 	}
-	return share
+	return left
 }
 
 // outcomeFor turns one of the sentinels into the word the report shows.

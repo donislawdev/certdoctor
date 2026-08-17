@@ -7,13 +7,22 @@ import (
 	"testing"
 )
 
-// concurrencyAllowlist names the files allowed to hold a concurrency primitive.
+// THERE ARE THREE LISTS BELOW AND THEY GET NARROWER, WHICH IS THE POINT. The
+// first switches this guard off for a whole file. The second and third switch
+// off a single question each, and everything they do NOT excuse stays reported
+// for ever by the same walk that covers every other file. Each has a canary of
+// its own, because a list nobody checks is a hole rather than an exemption.
 //
-// It is empty, and that is the correct state today: there is no orchestrator, so
-// the rule "no concurrency anywhere" is both true and checkable. The
-// orchestrator's file is the first entry it ever gets, and adding that entry is
-// the moment to re-read docs 22 section 2 - a probe is a synchronous function,
-// and the core must not learn that anything runs in parallel.
+// concurrencyAllowlist names the files allowed to hold ANY concurrency
+// primitive.
+//
+// IT IS EMPTY AND HAS STAYED EMPTY THROUGH THREE OCCASIONS THAT WERE MEANT TO
+// FILL IT - the orchestrator (ADR15), the system view's dialler (ADR35) and now
+// L3's fan-out (ADR43). Each time the answer was a narrower exemption instead,
+// for the reason ADR15 gives: an entry here switches the guard off for that file
+// for ever, and in practice nobody ever takes one off again. Anything that can
+// be expressed as "this file may do exactly one more thing" belongs on a list
+// below, not here.
 var concurrencyAllowlist = map[string]bool{}
 
 // lockOnlyAllowlist names files allowed to HOLD A LOCK and nothing else.
@@ -43,6 +52,37 @@ var lockOnlyAllowlist = map[string]bool{
 	// The system view's dialler. It holds one mutex over two fields and starts
 	// nothing - and if it ever does start something, the walk below still says so.
 	"internal/adapter/dns/system.go": true,
+}
+
+// fanOutAllowlist names files allowed to START GOROUTINES over a work set fixed
+// before they start, and nothing else.
+//
+// IT IS THE NARROWEST OF THE THREE. A file here may import sync and may write a
+// go statement. It may NOT open a channel, send on one, receive from one, select,
+// or import sync/atomic - all of those stay reported. The lock-only list above
+// excuses both halves of sync; this one excuses a single package, and the
+// difference is deliberate: a counter shared between goroutines is exactly the
+// shape this list was drawn narrow to keep out.
+//
+// WHY THE CHANNEL STAYS FORBIDDEN, AND THE ARGUMENT IS STRUCTURAL RATHER THAN
+// STYLISTIC - ADR43. The fan-out that needs the narrowest exemption is the same
+// one whose results CANNOT be assembled in completion order: a WaitGroup plus a
+// write to each goroutine's own index in a ready-made slice needs one import and
+// one go statement, and no channel at all. The variant that collects results
+// through a channel needs a WIDER exemption and invites assembling them in the
+// order they finish - which breaks rule 2 of docs 22 section 2, and would make
+// this layer report rows in an order that changes between runs. So the narrow
+// list does not merely permit the right shape, it forces it.
+//
+// THIS IS THE FOURTH CATEGORY docs 22 section 2 NOW CARRIES. Rule 1 there says
+// concurrency lives in the orchestrator alone; ADR15 point 3 says the parallelism
+// belongs INSIDE a layer, one branch per address in L3. L3 is the core, so the
+// two could not both be followed. The document changed rather than the decision -
+// what stays true of rule 1 is that Connect and tryOne are still synchronous
+// functions that do not know anybody runs them in parallel.
+var fanOutAllowlist = map[string]bool{
+	// L3's fan-out. One WaitGroup per wave, one write per index, no channel.
+	"internal/core/tcp/fanout.go": true,
 }
 
 // TestALockOnlyFileMayHoldALockAndNothingElse is the canary for the narrow
@@ -76,6 +116,89 @@ func TestALockOnlyFileMayHoldALockAndNothingElse(t *testing.T) {
 		if !strings.Contains(said, structural) {
 			t.Errorf("a lock-only file got away with a %s, and the exemption was meant to cover the import alone.\nreported:\n%s",
 				structural, said)
+		}
+	}
+}
+
+// TestAFanOutFileMayStartGoroutinesAndNothingElse is the canary for the third
+// and narrowest exemption. Without it that list is a hole nobody checks.
+//
+// It plants a file on the fan-out list and hands the scanner a fixture that
+// imports both halves of sync, starts a goroutine, opens a channel, sends,
+// receives and selects. Two things must stop being reported and five must still
+// be - and the test NAMES all seven rather than counting, because a count passes
+// just as well when the wrong half survives.
+//
+// THE sync/atomic ASSERTION IS THE ONE THAT EARNS THIS TEST. It is the single
+// difference between this list and the lock-only list above, so it is the one a
+// tidying edit would collapse by accident, leaving two lists that look different
+// and behave identically.
+func TestAFanOutFileMayStartGoroutinesAndNothingElse(t *testing.T) {
+	const planted = "internal/adapter/probe/planted.go"
+	fanOutAllowlist[planted] = true
+	defer delete(fanOutAllowlist, planted)
+
+	tr := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "concurrency_violation.go", planted)},
+	}
+	violations := checkConcurrencyContainment(tr)
+
+	var said string
+	for _, v := range violations {
+		said += v.Detail + "\n"
+	}
+	for _, excused := range []string{`import of "sync"`, "go statement"} {
+		if strings.Contains(said, excused) {
+			t.Errorf("a fan-out file was still reported for a %s, which is what this list exists to permit.\nreported:\n%s",
+				excused, said)
+		}
+	}
+	for _, kept := range []string{
+		// The whole reason this list is narrower than the lock-only one.
+		`import of "sync/atomic"`,
+		"channel type", "channel send", "channel receive", "select statement",
+	} {
+		if !strings.Contains(said, kept) {
+			t.Errorf("a fan-out file got away with a %s, and the exemption was meant to cover a WaitGroup alone.\nreported:\n%s",
+				kept, said)
+		}
+	}
+}
+
+// TestEveryConcurrencyExemptionNamesAFileThatExists keeps the three lists from
+// rotting.
+//
+// AN ENTRY POINTING AT A FILE NOBODY WROTE YET, OR AT ONE SINCE RENAMED, IS AN
+// EXEMPTION LYING IN WAIT. It costs nothing while the path is empty and starts
+// excusing whatever turns up there later - under a name somebody chose for other
+// reasons, with nobody re-reading the decision that granted it. The lists are
+// short enough to check by eye, which is exactly why this went unchecked.
+//
+// It is also what makes a new exemption RED BEFORE the code it excuses exists,
+// so the list has to be written first and the file second - the order docs 22
+// section 6a asks for everywhere else.
+func TestEveryConcurrencyExemptionNamesAFileThatExists(t *testing.T) {
+	tr := mustLoadModule(t)
+
+	present := map[string]bool{}
+	for _, sf := range tr.files {
+		present[sf.rel] = true
+	}
+
+	for _, list := range []struct {
+		name    string
+		entries map[string]bool
+	}{
+		{"concurrencyAllowlist", concurrencyAllowlist},
+		{"lockOnlyAllowlist", lockOnlyAllowlist},
+		{"fanOutAllowlist", fanOutAllowlist},
+	} {
+		for entry := range list.entries {
+			if !present[entry] {
+				t.Errorf("%s excuses %q, and there is no such file in this module - an exemption with no code under it excuses whatever lands there next",
+					list.name, entry)
+			}
 		}
 	}
 }
@@ -183,20 +306,25 @@ func checkConcurrencyContainment(tr tree) []Violation {
 			})
 		}
 
-		// A lock-only file is excused THIS question and no other. Everything below
-		// still runs against it, so the day somebody adds a goroutine here the
+		// A narrowly exempted file is excused ONE question and no other. Everything
+		// below still runs against it, so the day somebody adds a channel here the
 		// guard says so - which is the difference between a narrow exemption and
 		// switching the guard off for a file.
-		if !lockOnlyAllowlist[sf.rel] {
-			for _, imp := range importsOf(sf) {
-				if imp.path == "sync" || imp.path == "sync/atomic" {
-					violations = append(violations, Violation{
-						File:   sf.rel,
-						Line:   imp.line,
-						Detail: "import of \"" + imp.path + "\" - concurrency lives in the orchestrator alone",
-					})
-				}
+		for _, imp := range importsOf(sf) {
+			if imp.path != "sync" && imp.path != "sync/atomic" {
+				continue
 			}
+			// A lock needs both halves of the standard library's answer; a fan-out
+			// needs a WaitGroup and nothing else, so sync/atomic stays reported
+			// there - ADR43.
+			if lockOnlyAllowlist[sf.rel] || (fanOutAllowlist[sf.rel] && imp.path == "sync") {
+				continue
+			}
+			violations = append(violations, Violation{
+				File:   sf.rel,
+				Line:   imp.line,
+				Detail: "import of \"" + imp.path + "\" - concurrency lives in the orchestrator alone",
+			})
 		}
 
 		ast.Inspect(sf.file, func(n ast.Node) bool {
@@ -205,6 +333,11 @@ func checkConcurrencyContainment(tr tree) []Violation {
 			}
 			switch node := n.(type) {
 			case *ast.GoStmt:
+				// The one primitive the fan-out list excuses. The walk keeps
+				// descending, so a channel INSIDE the goroutine is still reported.
+				if fanOutAllowlist[sf.rel] {
+					return true
+				}
 				report(node.Pos(), "go statement")
 			case *ast.SelectStmt:
 				report(node.Pos(), "select statement")

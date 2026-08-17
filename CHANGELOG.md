@@ -12,6 +12,14 @@ Barely diagnosable yet, and there has been no release.
 
 `certdoctor <url>` produces a whole report. Two of its eight diagnostic layers now say something about your machine; the other six report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE` - or with `4 DIAGNOSIS` on the first thing certdoctor can now actually diagnose: a name that does not resolve. What exists is the path a real answer will travel, built before any answer, so that there is no point at which this program claims to have checked something it has not.
 
+### Changed
+
+- **`L3` now tries the addresses side by side instead of one after another**, up to eight at a time. On a name behind several addresses this means one address sitting behind a silently dropping firewall no longer eats the time the working ones needed - the others are already being tried beside it. Two things follow that you may notice: attempts are quicker on names with several addresses, and each attempt may now use the whole of what is left of the run's budget rather than a share of it divided between them.
+
+  **The rows still come back in the order the addresses were resolved in**, never in the order the attempts happened to finish, so two reports from the same machine line up row for row.
+
+  **Eight at a time is a ceiling rather than a tuning knob.** How many addresses a name resolves to is decided by whoever answers the DNS query, and without a cap they would be deciding how many connections this machine opens at once - which is not a decision to hand to a stranger, least of all on a network where something is watching for that shape.
+
 ### Added
 
 - **`L3` opens a connection to every address the name resolved to, and says what happened to each one.** This is the first thing certdoctor establishes about connecting rather than about naming. Refused, timed out, reset, no route - four different answers that a browser folds into "cannot connect", and they send you to four different places. Each row carries the address, the port and how long the attempt took.
