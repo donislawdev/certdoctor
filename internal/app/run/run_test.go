@@ -824,6 +824,86 @@ func TestAConnectionFindingSurvivesMaskingUnchanged(t *testing.T) {
 	}
 }
 
+// TestATrustStoreFindingIsMaskedWhereItCarriesAPathAndNowhereElse is the half of
+// maskTrustStore that the table guard cannot check: the guard says an entry
+// EXISTS, this says the entry decides correctly.
+//
+// Both directions are here on purpose. A masking function that masked
+// everything would pass a test checking only that the path changed, and it would
+// take the anchor count with it - evidence that names nobody, removed while
+// protecting nobody.
+func TestATrustStoreFindingIsMaskedWhereItCarriesAPathAndNowhereElse(t *testing.T) {
+	o := baseOptions(newClock())
+	// THE ACCOUNT NAME IS HANDED IN, because redact reads no environment by
+	// design - it masks the names it was given. Which is exactly why the
+	// PRODUCTION list matters: see the note on redactionFor in cli.go.
+	o.Redaction = redact.New(redact.Everything, redact.Name("jdoe"))
+	yes := true
+	o.Layers[layer.TrustMatrix] = func(context.Context) Answer {
+		return Answer{
+			Status: status.Pass,
+			Detail: "1 of 1 store(s) trust the presented chain",
+			Findings: []report.Finding{{
+				Kind:    report.FindingTrustStore,
+				Summary: "OpenJDK 25 trusts the presented chain",
+				Source:  report.SourceDetected,
+				TrustStore: &report.TrustStore{
+					Runtime:              "java",
+					Instance:             `C:\Users\jdoe\jdk-25`,
+					Variant:              "jdk",
+					Architecture:         "x64",
+					StorePath:            `C:\Users\jdoe\jdk-25\lib\security\cacerts`,
+					StoreForm:            report.StoreFile,
+					TrustAnchorCount:     158,
+					TrustsPresentedChain: &yes,
+					SelectedBy:           []string{"JAVA_HOME"},
+				},
+			}},
+		}
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the walk failed: %v", err)
+	}
+	row := rowFor(t, r, layer.TrustMatrix)
+	if noteNames(r.Notes, layer.TrustMatrix) {
+		t.Fatal("the layer was degraded, so what follows is not what it handed over")
+	}
+	if len(row.Findings) != 1 {
+		t.Fatalf("one finding went in and %d came out", len(row.Findings))
+	}
+	body := row.Findings[0].TrustStore
+
+	// THE ACCOUNT NAME MUST NOT SURVIVE ANYWHERE. Checking for the substring
+	// rather than for "the field changed" is deliberate: a masking function that
+	// rewrote the front of the path and left the tail would pass the weaker test.
+	if strings.Contains(body.StorePath, "jdoe") {
+		t.Errorf("the account name survived in the store path: %q", body.StorePath)
+	}
+	if strings.Contains(body.Instance, "jdoe") {
+		t.Errorf("the account name survived in the instance: %q", body.Instance)
+	}
+
+	if body.TrustAnchorCount != 158 {
+		t.Errorf("the anchor count was changed to %d - it names nobody and is evidence", body.TrustAnchorCount)
+	}
+	if body.Runtime != "java" || body.Variant != "jdk" || body.Architecture != "x64" {
+		t.Errorf("masking changed a value that comes from a closed list of ours: %+v", *body)
+	}
+	if body.StoreForm != report.StoreFile {
+		t.Errorf("masking changed the store form to %q", body.StoreForm)
+	}
+	// The NAME of an environment variable is what decides, and it is never the
+	// thing that leaks - ADR19.
+	if len(body.SelectedBy) != 1 || body.SelectedBy[0] != "JAVA_HOME" {
+		t.Errorf("masking touched the names of the variables that select this instance: %v", body.SelectedBy)
+	}
+	if body.TrustsPresentedChain == nil || !*body.TrustsPresentedChain {
+		t.Error("masking changed the verdict itself")
+	}
+}
+
 func TestEveryFindingKindSaysHowItIsMasked(t *testing.T) {
 	if len(maskedBodies) != len(report.AllFindingKinds) {
 		t.Fatalf("%d kinds of finding are declared and %d of them say how they are masked - one list was edited alone",

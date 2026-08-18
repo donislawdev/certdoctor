@@ -449,6 +449,10 @@ func resolutionBody(d map[string]any) map[string]any {
 //
 // IT IS CHECKED AGAINST THE REGISTRY rather than maintained by hand, so a fourth
 // kind of finding cannot be declared without somebody meeting this list.
+// fixtureTrusts exists because the verdict is a pointer: nil is a third state
+// meaning the store could not be read, which is not what this fixture shows.
+var fixtureTrusts = true
+
 var bodyFixtures = map[report.FindingKind]report.Finding{
 	report.FindingEnvironmentVariable: {
 		Kind:                report.FindingEnvironmentVariable,
@@ -515,6 +519,25 @@ var bodyFixtures = map[report.FindingKind]report.Finding{
 					IsCA:              true,
 				},
 			},
+		},
+	},
+	// One of the six Java stores measured on the owner's machine 2026-08-18. The
+	// account name is invented, as the guard in internal/guard requires of any
+	// path in this repository.
+	report.FindingTrustStore: {
+		Kind:    report.FindingTrustStore,
+		Summary: "OpenJDK 25 trusts the presented chain",
+		Source:  report.SourceDetected,
+		TrustStore: &report.TrustStore{
+			Runtime:              "java",
+			Instance:             "jdk-25",
+			Variant:              "jdk",
+			Architecture:         "x64",
+			StorePath:            `C:\Users\jdoe\OpenJDK\jdk-25\lib\security\cacerts`,
+			StoreForm:            report.StoreFile,
+			TrustAnchorCount:     158,
+			TrustsPresentedChain: &fixtureTrusts,
+			SelectedBy:           []string{"JAVA_HOME"},
 		},
 	},
 }

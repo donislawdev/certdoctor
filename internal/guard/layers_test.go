@@ -145,6 +145,14 @@ var intraLayerEdges = map[string][]string{
 		"internal/core/status",
 		"internal/core/fanout",
 	},
+	// L5 needs the report contract to shape its evidence and the status
+	// vocabulary to grade it. It does NOT import internal/core/handshake: the
+	// presented chain arrives through a port on Input, the same seam L4 uses for
+	// addresses, so no layer learns the shape of the one above it.
+	"internal/core/trust": {
+		"internal/core/report",
+		"internal/core/status",
+	},
 	"internal/core/tcp": {
 		"internal/core/report",
 		"internal/core/status",
@@ -173,6 +181,10 @@ var intraLayerEdges = map[string][]string{
 	// link on WSL and on any systemd machine, and a link into a mount from
 	// another host is a remote path wearing a local name.
 	"internal/adapter/dns": {"internal/adapter/dial", "internal/adapter/file"},
+	// The git probe reads config files and a CA bundle, and it does so through
+	// the file port so the refusal rule stays in ONE place - ADR25, ADR35. It is
+	// why this probe is not on fileReadAllowlist: it never opens anything itself.
+	"internal/adapter/probe/git": {"internal/adapter/file"},
 	// L4's handshake needs the address spelled the ONE way the allowed set was
 	// given it, and that spelling lives in the connection adapter as tcp.Target.
 	// The arrow runs from the newer plumbing to the older, and cannot run back:

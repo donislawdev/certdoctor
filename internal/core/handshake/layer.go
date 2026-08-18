@@ -92,6 +92,14 @@ type Certificate struct {
 	DNSNames []string
 	// IsCA is the basic constraint, reported as presented.
 	IsCA bool
+	// Raw is this certificate exactly as it arrived, DER encoded.
+	//
+	// IT DOES NOT REACH THE REPORT AND MUST NOT: report.Certificate is a summary
+	// built for people to read, and these bytes exist for L5, which cannot verify
+	// a path from a summary. They travel BESIDE the summary rather than as a
+	// second list, so the two cannot drift apart - the same reason the leaf
+	// fingerprint is not stored twice.
+	Raw []byte
 	// SelfSigned is set when the certificate issued itself. It is computed on the
 	// adapter side from the signature rather than from the names matching,
 	// because a certificate can name itself as issuer without having signed it.
@@ -162,6 +170,10 @@ type Result struct {
 	Reason   status.Reason
 	Detail   string
 	Findings []report.Finding
+	// Presented is the chain the report shows, DER encoded, leaf first - the seam
+	// L5 reads. It is EMPTY when no handshake completed, and L5 treats that as
+	// nothing to judge rather than as a store failing.
+	Presented [][]byte
 }
 
 // unlimited is what limitFor answers when nothing caps one attempt at all.
@@ -202,7 +214,9 @@ func Ask(ctx context.Context, in Input) Result {
 	}
 
 	shown := in.fanOut(ctx, addresses)
-	return in.grade(addresses, shown)
+	result := in.grade(addresses, shown)
+	result.Presented = presentedOf(shown)
+	return result
 }
 
 // unusable names the port this layer was not given, or returns empty.
@@ -309,4 +323,26 @@ func detailFor(completed, total int, chain []Certificate, complete bool, disagre
 	}
 	return fmt.Sprintf("%d of %d address(es) completed a handshake and presented the same chain of %d certificate(s)",
 		completed, total, len(chain))
+}
+
+// presentedOf returns the chain the report shows, DER encoded, for L5 to verify.
+//
+// IT PICKS THE SAME CHAIN THE REPORT DOES - the first address that completed a
+// handshake, ADR45 - so what L5 judges and what a reader sees are the same
+// certificates. Picking any other would produce a matrix about a chain nobody
+// was shown.
+func presentedOf(outcomes []outcome) [][]byte {
+	for _, o := range outcomes {
+		if o.err != nil || !o.shown.Completed || len(o.shown.Chain) == 0 {
+			continue
+		}
+		raw := make([][]byte, 0, len(o.shown.Chain))
+		for _, certificate := range o.shown.Chain {
+			if len(certificate.Raw) > 0 {
+				raw = append(raw, certificate.Raw)
+			}
+		}
+		return raw
+	}
+	return nil
 }

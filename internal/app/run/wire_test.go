@@ -1,12 +1,14 @@
 package run
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
 	"github.com/donislawdev/certdoctor/internal/core/machine"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
@@ -14,6 +16,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	"github.com/donislawdev/certdoctor/internal/core/status"
 	"github.com/donislawdev/certdoctor/internal/core/tcp"
+	"github.com/donislawdev/certdoctor/internal/core/trust"
 )
 
 func envOf(pairs map[string]string) machine.Lookup {
@@ -70,6 +73,9 @@ var written = map[layer.ID]bool{
 	layer.Resolution: true,
 	layer.TCP:        true,
 	layer.TLS:        true,
+	// L5 joined on 2026-08-18 with P7a. It answers for itself now, so asserting
+	// the stub for it would be asserting that a layer with code has none.
+	layer.TrustMatrix: true,
 }
 
 // TestTheUnwrittenLayersStillSayTheyAreNotWritten is the other side of the
@@ -327,5 +333,110 @@ func TestWithNothingToAuthoriseTheWalkStillRuns(t *testing.T) {
 	// And L1 running with no ports of its own does not take the walk down.
 	if got := layers[layer.Resolution](context.Background()); got.Status != status.Unknown {
 		t.Errorf("L1 with no ports answered %s", got.Status)
+	}
+}
+
+// walkTo runs the layers in order up to and including L5, through the real
+// seams, and hands back what L5 answered.
+//
+// IT GOES THROUGH L1 AND L3 RATHER THAN AROUND THEM, and that is the point: Wire
+// REPLACES the addresses on the L4 input with the ones L3 accepted, so a fixture
+// that sets them directly tests a wiring nobody ships. The first version of this
+// test did exactly that and reported an empty chain.
+func walkTo(t *testing.T, w Wiring) Answer {
+	t.Helper()
+	layers := Wire(w)
+	layers[layer.Resolution](context.Background())
+	layers[layer.TCP](context.Background())
+	layers[layer.TLS](context.Background())
+	return layers[layer.TrustMatrix](context.Background())
+}
+
+// reachableWiring is a run where one address resolves, connects and hand shakes.
+func reachableWiring(shown handshake.Presented, probes map[string]trust.Probe) Wiring {
+	clock := func() time.Time { return time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC) }
+	return Wiring{
+		Environment: envOf(nil),
+		Resolution: resolve.Input{
+			Name:      "example.com",
+			Resolvers: []string{"192.0.2.53"},
+			Now:       clock,
+			QueryID:   func() uint16 { return 7 },
+			System: func(context.Context, string) resolve.SystemAnswer {
+				return resolve.SystemAnswer{Addresses: []string{"192.0.2.10"}}
+			},
+			Exchange: func(context.Context, string, []byte) ([]byte, error) {
+				return nil, resolve.ErrTimeout
+			},
+			PerQuery: 2 * time.Second,
+		},
+		Reach: tcp.Input{
+			Port: 443, PerAddress: 2 * time.Second, Now: clock,
+			Connect: func(context.Context, string, int) (io.Closer, error) {
+				return io.NopCloser(strings.NewReader("")), nil
+			},
+		},
+		Handshake: handshake.Input{
+			Port: 443, ServerName: "example.com", Now: clock,
+			Shake: func(context.Context, string, int, string) (handshake.Presented, error) {
+				return shown, nil
+			},
+		},
+		Trust: trust.Input{Probes: probes},
+	}
+}
+
+// THE THIRD SEAM. L4 says what the server presented and L5 judges THE SAME
+// BYTES - not a chain fetched again and not a different address. Getting this
+// wrong would produce a matrix about a certificate nobody was shown, which no
+// reader could ever catch.
+func TestTheChainL4SawIsTheChainL5Judges(t *testing.T) {
+	presented := []byte{0x30, 0x82, 0x01, 0x02}
+	var judged [][]byte
+
+	walkTo(t, reachableWiring(
+		handshake.Presented{
+			Completed: true,
+			Version:   "TLS 1.3",
+			Chain: []handshake.Certificate{{
+				Subject:           "CN=example.com",
+				Issuer:            "CN=issuer",
+				FingerprintSHA256: "aa",
+				Raw:               presented,
+			}},
+		},
+		map[string]trust.Probe{
+			"git": func(_ context.Context, chain [][]byte) ([]report.TrustStore, error) {
+				judged = chain
+				return nil, nil
+			},
+		}))
+
+	if len(judged) != 1 {
+		t.Fatalf("L5 was handed %d certificate(s), want 1", len(judged))
+	}
+	if !bytes.Equal(judged[0], presented) {
+		t.Errorf("L5 judged %x and L4 saw %x - they must be the same bytes", judged[0], presented)
+	}
+}
+
+// A run where no handshake completed hands L5 nothing, and L5 has to read that
+// as nothing to judge rather than as a store that failed. Blaming a store for
+// our own empty hand is the shape inviolable rule 15 forbids.
+func TestNoHandshakeMeansL5JudgesNothing(t *testing.T) {
+	answer := walkTo(t, reachableWiring(
+		handshake.Presented{Completed: false},
+		map[string]trust.Probe{
+			"git": func(context.Context, [][]byte) ([]report.TrustStore, error) {
+				t.Error("a probe was asked about a chain that was never presented")
+				return nil, nil
+			},
+		}))
+
+	if answer.Status != status.Unknown {
+		t.Errorf("status %s, want UNKNOWN when there was nothing to judge", answer.Status)
+	}
+	if answer.Reason != status.ReasonNothingToCheck {
+		t.Errorf("reason %s, want nothing_to_check", answer.Reason)
 	}
 }

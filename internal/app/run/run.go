@@ -227,6 +227,7 @@ var maskedBodies = map[report.FindingKind]func(*redact.Redaction, *report.Findin
 	report.FindingNameResolution:      maskNameResolution,
 	report.FindingTCPConnect:          maskTCPConnect,
 	report.FindingTLSHandshake:        maskTLSHandshake,
+	report.FindingTrustStore:          maskTrustStore,
 }
 
 // maskTLSHandshake is the first entry that has to say YES TO SOME FIELDS AND NO
@@ -285,6 +286,35 @@ func maskedNames(r *redact.Redaction, names []string) []string {
 		masked = append(masked, r.Text(name))
 	}
 	return masked
+}
+
+// maskTrustStore is the entry where the masked half is a PATH rather than a
+// name, which is a first for this table.
+//
+// WHAT GOES THROUGH MASKING. StorePath is read off this machine and routinely
+// contains the account name - a per-user keystore, a venv, a .gitconfig under
+// C:\Users\<somebody>. Instance is masked for the same reason and it is easy to
+// miss: for java it is a version like "jdk-25" and harmless, but for curl the
+// thing that tells two instances apart IS THE PATH TO THE BINARY, so the field
+// carries whatever the path carried. NotAssessed is an English sentence written
+// about a store that could not be read, and the most useful such sentence names
+// the file it failed on.
+//
+// WHAT NEVER DOES, AND THIS HALF IS THE DECISION. TrustAnchorCount is a number
+// about somebody's configuration and names no person, host or network - it is
+// the same call the fingerprint got one entry up, and masking it would remove
+// evidence while protecting nobody. Runtime, Variant, Architecture, StoreForm
+// and Backend come from closed lists this program declares, so they cannot carry
+// an identity that was not already ours. SelectedBy holds the NAMES of
+// environment variables - "JAVA_HOME", "PATH" - never their values, which is the
+// distinction ADR19 draws: the name is the thing that decides, the value is the
+// thing that leaks.
+func maskTrustStore(r *redact.Redaction, finding *report.Finding) {
+	store := *finding.TrustStore
+	store.StorePath = r.Text(store.StorePath)
+	store.Instance = r.Text(store.Instance)
+	store.NotAssessed = r.Text(store.NotAssessed)
+	finding.TrustStore = &store
 }
 
 // maskTCPConnect is the entry that had to be WRITTEN in order to say that this

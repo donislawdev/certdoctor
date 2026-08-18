@@ -73,7 +73,14 @@ import (
 // THE CONDITION EXPIRES THE MOMENT THIS IS COMMITTED: the argument is available
 // exactly once, before the version leaves the tree. Anything added afterwards
 // raises the minor, whatever anybody thinks about who is reading.
-const SchemaVersion = "1.6"
+//
+// 1.7 IS THE FIRST VERSION THE EXPIRED CONDITION APPLIES TO, and it went up
+// without an argument because there is no longer one available. 1.6 left this
+// tree in 72ee373, so a consumer holding it exists as far as this rule is
+// concerned. 1.7 adds trust_store: a fifth member of the union, one row per
+// STORE rather than per runtime - ADR48 - with no removals and no changed
+// meanings, which is a MINOR by rule 2 of the contract.
+const SchemaVersion = "1.7"
 
 // JSON renders the machine readable report.
 //
@@ -158,6 +165,7 @@ type jsonFinding struct {
 	NameResolution      *jsonNameResolution      `json:"name_resolution"`
 	TCPConnect          *jsonTCPConnect          `json:"tcp_connect"`
 	TLSHandshake        *jsonTLSHandshake        `json:"tls_handshake"`
+	TrustStore          *jsonTrustStore          `json:"trust_store"`
 }
 
 type jsonNameResolution struct {
@@ -396,6 +404,7 @@ func findingsOf(row report.LayerResult) *[]jsonFinding {
 			NameResolution:      nameResolutionOf(finding),
 			TCPConnect:          tcpConnectOf(finding),
 			TLSHandshake:        tlsHandshakeOf(finding),
+			TrustStore:          trustStoreOf(finding),
 		})
 	}
 	return &found
@@ -486,6 +495,68 @@ func tlsHandshakeOf(finding report.Finding) *jsonTLSHandshake {
 			DNSNames: append([]string{}, certificate.DNSNames...),
 			IsCA:     certificate.IsCA,
 		})
+	}
+	return &body
+}
+
+// jsonTrustStore is the fifth body: one row per STORE, never per runtime.
+//
+// A consumer grouping by "runtime" gets a LIST, and that is the contract rather
+// than an inconvenience - ADR48. Measured 2026-08-18: six Java stores and two
+// curl binaries on one machine, and git reading a different store than the curl
+// shipped beside it.
+type jsonTrustStore struct {
+	Runtime      string `json:"runtime"`
+	Instance     string `json:"instance"`
+	Variant      string `json:"variant"`
+	Architecture string `json:"architecture"`
+
+	StorePath string `json:"store_path"`
+	StoreForm string `json:"store_form"`
+	Backend   string `json:"backend"`
+	// TrustAnchorCount is evidence and is never redacted, the same call the
+	// fingerprint got in the body above.
+	TrustAnchorCount int `json:"trust_anchor_count"`
+
+	// TrustsPresentedChain is null when the store could not be assessed, and
+	// NotAssessed carries the reason. THE NULL IS A THIRD STATE, not a false:
+	// "does not trust" sends a person to an administrator and "could not be
+	// read" sends them to a file permission.
+	TrustsPresentedChain *bool   `json:"trusts_presented_chain"`
+	NotAssessed          *string `json:"not_assessed"`
+
+	// SelectedBy is never null. An empty array says nothing on this machine
+	// selects this instance by default, which is true of five of the six Java
+	// stores measured here - and it is an answer, not an absence.
+	SelectedBy []string `json:"selected_by"`
+}
+
+func trustStoreOf(finding report.Finding) *jsonTrustStore {
+	if finding.TrustStore == nil {
+		return nil
+	}
+	store := *finding.TrustStore
+	body := jsonTrustStore{
+		Runtime:              store.Runtime,
+		Instance:             store.Instance,
+		Variant:              store.Variant,
+		Architecture:         store.Architecture,
+		StorePath:            store.StorePath,
+		StoreForm:            store.StoreForm.String(),
+		Backend:              store.Backend,
+		TrustAnchorCount:     store.TrustAnchorCount,
+		TrustsPresentedChain: store.TrustsPresentedChain,
+		SelectedBy:           store.SelectedBy,
+	}
+	if store.NotAssessed != "" {
+		reason := store.NotAssessed
+		body.NotAssessed = &reason
+	}
+	// An empty list is an answer and a null is not, so a store nothing selects
+	// still gets an array - the same distinction dns_names carries in the body
+	// above.
+	if body.SelectedBy == nil {
+		body.SelectedBy = []string{}
 	}
 	return &body
 }

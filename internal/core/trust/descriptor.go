@@ -1,0 +1,118 @@
+// Package trust is L5: what each runtime on this machine makes of the chain the
+// server presented.
+//
+// THE UNIT IS THE STORE, NEVER THE RUNTIME - ADR48. Measured on the owner's
+// machine 2026-08-18: six Java trust stores, two curl binaries on PATH, and git
+// reading a different store than the curl shipped in the same install. A layer
+// answering "does java trust this" with one value would be making the
+// single-store claim this whole product exists to disprove.
+//
+// WHERE THE L4/L5 LINE RUNS - ADR46. L4 says what the server SENT and touches no
+// store at all. This layer says what a store MAKES of it. Neither answer
+// substitutes for the other, and the measured reason is on the bench: an
+// intercepted chain and an honest server missing its intermediate produce the
+// SAME structural verdict, and only a trust store tells them apart.
+package trust
+
+// Source says where a claim about somebody else's runtime came from.
+//
+// THIS TYPE IS INVIOLABLE RULE 18 MADE MACHINE-CHECKABLE. The rule says every
+// claim about another runtime carries its source beside it, and that a claim
+// with no source is a JUDGEMENT rather than a fact. A rule enforced by good
+// intentions is the one this project said it would break first and most
+// expensively, so a descriptor without a source does not compile past its test.
+type Source string
+
+const (
+	// Measured - somebody ran it on a real machine and wrote down what happened.
+	// The strongest evidence here, and still a claim about ONE machine.
+	Measured Source = "measured"
+	// Documentation - the vendor says so, with a link.
+	Documentation Source = "documentation"
+	// Judgement - neither. It is allowed, and it has to SAY so: docs/20 is blunt
+	// that a judgement must never be quoted as a fact.
+	Judgement Source = "judgement"
+)
+
+var sourceMeanings = map[Source]string{
+	Measured:      "run on a real machine, with the result written down",
+	Documentation: "stated by the vendor, with a link",
+	Judgement:     "neither measured nor documented, and must not be quoted as fact",
+}
+
+// Valid reports whether the source is one this program declared.
+func (s Source) Valid() bool {
+	_, ok := sourceMeanings[s]
+	return ok
+}
+
+// Meaning returns the declared meaning.
+func (s Source) Meaning() string { return sourceMeanings[s] }
+
+// String makes Source printable without a conversion at every call site.
+func (s Source) String() string { return string(s) }
+
+// Descriptor is what this program claims about one family of runtime, before it
+// has looked at this machine.
+//
+// Evidence is OUR OWN SENTENCE, and a link where there is one - never somebody
+// else's prose copied in, which ADR21 forbids for a reason that outlives the
+// link: a quotation goes stale silently, while a sentence we wrote is a claim
+// somebody here is answerable for.
+type Descriptor struct {
+	// ID is the identity used in the report and in docs/20.
+	ID string
+	// Runtime is the family name a person reads in the matrix.
+	Runtime string
+	// TrustSource says, in one line, where this family keeps its anchors.
+	TrustSource string
+	// Source and Evidence are the rule 18 pair, and neither may be empty.
+	Source   Source
+	Evidence string
+}
+
+// descriptors is the registry.
+//
+// IT NAMES ONLY THE PROBES THAT EXIST, and that is a decision rather than an
+// omission. docs/20 describes thirteen, and declaring all thirteen while three
+// are implemented would produce a registry whose entries mean nothing on this
+// machine - the same "declared and never filled in" shape ADR16 refuses for
+// schema fields and ADR30 refuses for schema versions. An entry arrives with the
+// code that answers it.
+var descriptors = []Descriptor{
+	{
+		ID:          "git",
+		Runtime:     "git",
+		TrustSource: "http.sslBackend decides: schannel uses the Windows store, openssl uses the file named by http.sslCAInfo",
+		Source:      Measured,
+		Evidence: "Measured on the owner's machine 2026-08-18: git 2.55.0.windows.3 reports http.sslbackend=openssl and " +
+			"http.sslcainfo pointing at its own 229042-byte bundle, both from the SYSTEM level - so adding a CA to the " +
+			"Windows store fixes a browser and does not fix git clone. Read from the config files rather than by running " +
+			"git, which is why this probe needs no process at all.",
+	},
+}
+
+// All returns every declared descriptor, in declaration order.
+func All() []Descriptor {
+	out := make([]Descriptor, len(descriptors))
+	copy(out, descriptors)
+	return out
+}
+
+// Breach names what is wrong with a descriptor, or returns the empty string for
+// one that is well formed. It continues a sentence naming the descriptor.
+func (d Descriptor) Breach() string {
+	switch {
+	case d.ID == "":
+		return "carries no id, and a row in the matrix has to be attributable"
+	case d.Runtime == "":
+		return "carries no runtime name, and the matrix is read by people"
+	case d.TrustSource == "":
+		return "does not say where this runtime keeps its anchors, which is the one thing a descriptor is for"
+	case !d.Source.Valid():
+		return "carries a source outside the registry, and inviolable rule 18 turns on that word"
+	case d.Evidence == "":
+		return "carries a source and no evidence, which is the shape rule 18 exists to refuse"
+	}
+	return ""
+}

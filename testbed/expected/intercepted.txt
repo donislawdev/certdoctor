@@ -7,40 +7,94 @@
 # and docs/24 says the structural test is the primary one with the vendor list
 # used ONLY to put a name to what was already detected.
 #
+# ---------------------------------------------------------------------------
+# REWRITTEN 2026-08-18, AFTER MEASURING THE BENCH INSTEAD OF REASONING ABOUT IT.
+#
+# OBS68 said this file contradicted ADR46. The argument ran: ADR46 had just made
+# the L4 verdict purely structural, mitmproxy sends its own root, so the chain is
+# structurally COMPLETE, so L4 says PASS and the l4_status=FAIL below is wrong.
+# THAT ARGUMENT WAS WRONG, AND NOBODY HAD MEASURED THE PREMISE.
+#
+# Measured 2026-08-18 with openssl s_client from inside the bench network, once
+# directly and once through the proxy, both with -showcerts:
+#
+#   direct    1 certificate   s:CN=partner.test  i:CN=certdoctor testbed intermediate
+#   proxied   1 certificate   s:CN=partner.test  i:CN=mitmproxy, O=mitmproxy
+#
+# mitmproxy DOES NOT send its root. One certificate arrives, its issuer is the
+# subject of nothing that arrived, and the leaf did not sign itself - so the
+# chain is structurally INCOMPLETE and l4_status=FAIL is what ADR46 requires.
+# The expectation was right and the observation about it was wrong.
+#
+# THE SAME MEASUREMENT PRODUCED A LARGER FACT, AND IT IS WHY P7 GOES BEFORE P6b.
+# Structurally this scenario and no-intermediate.txt are THE SAME ANSWER: one
+# certificate, CN=partner.test, chain incomplete, FAIL. The structure does not
+# tell them apart. The only thing that differs is WHO issued the leaf, and "does
+# this machine trust that issuer" is an L5 question that ADR46 keeps out of L4.
+# A P6b heuristic built before L5 exists would therefore have to accuse on the
+# strength of an issuer NAME - the one thing O11 says must never be the primary
+# test, in the slice whose mistakes inviolable rule 21 calls harm.
+# ---------------------------------------------------------------------------
+#
 # HOW THE BENCH PRODUCES IT. The same target as no-intermediate.txt, reached
 # through the proxy instead of directly. mitmproxy terminates the connection and
 # presents a leaf it minted itself, signed by a root it generated at startup - a
 # root that exists nowhere but this machine and is in no trust store on it. That
 # is the shape of every TLS-inspecting middlebox, without buying one.
 #
-# WHY THE ROOT IS NOT IMPORTED ANYWHERE, decided 2026-08-17. docs/21 S-1 has the
-# root imported into the system store and not into Node's, which is what makes
-# the trust matrix show some runtimes passing and others failing. THAT IMPORT IS
-# NOT PART OF THIS SLICE: it changes the trust store of a real machine, docker
-# compose down does not undo it, and today there is no layer that could show
-# whether it did anything. It lands with P6, where L4 can measure it. So the
-# expectation below is the narrower one - detected, trusted by nothing - and the
-# matrix half of S-1 is deliberately absent rather than quietly assumed.
+# WHY NOTHING READS THIS FILE YET, AND THERE ARE TWO REASONS RATHER THAN ONE.
+#
+# FIRST, certdoctor cannot be pointed through a proxy at all. mitmdump listens as
+# a forward proxy on 8080, L0 reads the proxy environment variables and stops
+# there, and dialling through a proxy is L2 - slice P8. openssl reaches it today
+# with -proxy, which is why the bench half below is measured rather than assumed,
+# but our own binary has no such path.
+#
+# SECOND, nothing detects interception yet. That is P6b, and it touches
+# load-bearing change 6.
+#
+# WHY THE ROOT IS NOT IMPORTED ANYWHERE. docs/21 S-1 has the root imported into
+# the system store and not into Node's, which is what makes the trust matrix show
+# some runtimes passing and others failing. THAT IMPORT IS NOT PART OF THIS
+# SLICE: it changes the trust store of a real machine, and docker compose down
+# does not undo it. This file used to say the import lands "with P6, where L4 can
+# measure it" AND THAT SENTENCE IS NO LONGER TRUE - ADR46 forbids L4 from
+# touching any trust store, so the import lands with P7, where L5 can measure it.
+# The expectation below is the narrower one - detected, trusted by nothing - and
+# the matrix half of S-1 is deliberately absent rather than quietly assumed.
 
 target=https://partner.test/
 proxy=http://172.28.0.81:8080
 
-# --- bench: verifiable today with an independent tool ---
+# --- bench: MEASURED 2026-08-18 with an independent tool ---
+#
+#   openssl s_client -proxy 172.28.0.81:8080 -connect partner.test:443
+#           -servername partner.test -showcerts
 #
 # The leaf presented through the proxy is NOT the one the origin serves. Its
 # issuer is mitmproxy's own root, and that is the whole detection.
+chain_certs_presented=1
 leaf_subject_cn=partner.test
 leaf_issuer_cn_contains=mitmproxy
+intermediate_presented=no
 issuer_differs_from_origin=yes
 
 # The origin's own issuer, for comparison. Two different issuers for one name,
-# depending only on whether the proxy is in the way.
+# depending only on whether the proxy is in the way. THE PAIR IS THE SIGNAL, and
+# certdoctor never sees both halves in one run - it sees whichever path it was
+# sent down, which is exactly the position a user is in.
 origin_leaf_issuer_cn=certdoctor testbed intermediate
+
+# Measured beside the issuers, and recorded because it is the kind of number a
+# heuristic reaches for. IT IS NOT A BASIS FOR ONE: short lives are ordinary for
+# public certificates now, and this margin would accuse honest servers.
+leaf_validity_days_proxied=199
+leaf_validity_days_origin=365
 
 # No store on this machine holds it, which is why a browser would complain too.
 root_in_any_trust_store=no
 
-# --- P6: nothing reads these yet ---
+# --- P6b: nothing reads these yet ---
 #
 # Detected structurally. The vendor name is expected to be ABSENT and that is a
 # pass, not a gap: "no name" must never read as "no detection".
@@ -48,9 +102,24 @@ l4_status=FAIL
 interception_detected=yes
 interception_vendor_named=no
 
+# THE HARD PART OF P6b, WRITTEN DOWN HERE BECAUSE THIS IS WHERE IT GETS JUDGED.
+# l4_status=FAIL is the same value no-intermediate.txt expects, reached from the
+# same structural facts, so THE L4 STATUS ALONE CAN NEVER BE THE DETECTION.
+# Whatever detects interception has to name something the two scenarios do not
+# share, and on this bench the only such thing is the issuer of the leaf.
+distinguishable_from_no_intermediate_by=issuer
+
 # The language has to stay careful. Telling somebody they have a MITM when they
 # do not is real harm, not a cosmetic defect - inviolable rule 21 - so the
 # evidence has to travel with the claim.
 evidence_includes=issuer,fingerprint
+
+# --- P7: this half is an L5 question, moved here by ADR46 ---
+#
+# "Is this root trusted" cannot be asked by L4 and must not be: L4 reports what
+# the server presented, L5 reports what this machine makes of it. Once L5 exists,
+# importing the root into the system store and not into Node's turns this file
+# into the full S-1 of docs/21, matrix included.
+trust_matrix_expected=absent-until-P7
 
 exit_code=4

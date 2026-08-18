@@ -1,0 +1,143 @@
+package probe
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"strings"
+	"testing"
+)
+
+// TestHelperProcess is not a test. It is the program the tests below run, which
+// is the standard way to exercise os/exec without depending on a binary that
+// happens to exist on the machine - and this package must work on Windows,
+// Linux and macOS, where no single tool is guaranteed.
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("CERTDOCTOR_HELPER") != "1" {
+		return
+	}
+	switch os.Getenv("CERTDOCTOR_HELPER_MODE") {
+	case "loud":
+		os.Stdout.WriteString("on stdout\n")
+		os.Stderr.WriteString("on stderr\n")
+		os.Exit(0)
+	case "refuse":
+		os.Stderr.WriteString("no\n")
+		os.Exit(3)
+	case "readstdin":
+		buf := make([]byte, 8)
+		n, err := os.Stdin.Read(buf)
+		if err != nil {
+			// End of file is the ANSWER this test wants: a probe never feeds a
+			// child, so a child that waits for input must not hang the run.
+			os.Stdout.WriteString("eof")
+			os.Exit(0)
+		}
+		os.Stdout.WriteString("read " + string(buf[:n]))
+		os.Exit(0)
+	}
+	os.Exit(0)
+}
+
+func self(t *testing.T) string {
+	t.Helper()
+	path, err := os.Executable()
+	if err != nil {
+		t.Skipf("this platform will not say where the test binary is: %v", err)
+	}
+	return path
+}
+
+func helper(t *testing.T, mode string) {
+	t.Helper()
+	t.Setenv("CERTDOCTOR_HELPER", "1")
+	t.Setenv("CERTDOCTOR_HELPER_MODE", mode)
+}
+
+// A BARE NAME IS REFUSED, and this is the rule with the most teeth in ADR49: a
+// name is resolved by somebody else's PATH, so the thing that runs is chosen by
+// configuration this program never read and cannot show in the report. Measured
+// on this machine: two curl.exe on PATH and six Java installs, so "whichever one
+// PATH picks" is never the whole answer anyway.
+func TestABareNameIsRefusedBeforeAnythingRuns(t *testing.T) {
+	_, err := Run(context.Background(), "curl", "--version")
+	if !errors.Is(err, ErrNotAbsolute) {
+		t.Fatalf("a bare name produced %v, want ErrNotAbsolute", err)
+	}
+}
+
+func TestOutputComesBackFromBothStreams(t *testing.T) {
+	helper(t, "loud")
+	out, err := Run(context.Background(), self(t), "-test.run=TestHelperProcess")
+	if err != nil {
+		t.Fatalf("the helper would not run: %v", err)
+	}
+	if !strings.Contains(out.Stdout, "on stdout") {
+		t.Errorf("stdout was lost: %q", out.Stdout)
+	}
+	if !strings.Contains(out.Stderr, "on stderr") {
+		t.Errorf("stderr was lost: %q", out.Stderr)
+	}
+	if out.ExitCode != 0 {
+		t.Errorf("exit code %d, want 0", out.ExitCode)
+	}
+}
+
+// A NON-ZERO EXIT IS AN ANSWER, NOT AN ERROR, and often the interesting one:
+// keytool refusing a keystore is exactly the fact the matrix needs.
+func TestARefusalIsAnAnswerRatherThanAnError(t *testing.T) {
+	helper(t, "refuse")
+	out, err := Run(context.Background(), self(t), "-test.run=TestHelperProcess")
+	if err != nil {
+		t.Fatalf("a non-zero exit came back as an error: %v", err)
+	}
+	if out.ExitCode != 3 {
+		t.Errorf("exit code %d, want 3 - the number is the fact, never the message", out.ExitCode)
+	}
+}
+
+// NOTHING IS WRITTEN TO THE CHILD, so a program that decides to prompt gets end
+// of file and exits rather than hanging this run for ever.
+func TestTheChildGetsNoInput(t *testing.T) {
+	helper(t, "readstdin")
+	out, err := Run(context.Background(), self(t), "-test.run=TestHelperProcess")
+	if err != nil {
+		t.Fatalf("the helper would not run: %v", err)
+	}
+	if !strings.Contains(out.Stdout, "eof") {
+		t.Errorf("the child read something from stdin: %q", out.Stdout)
+	}
+}
+
+func TestAProgramThatIsNotThereIsAnError(t *testing.T) {
+	missing := self(t) + ".not-here"
+	if _, err := Run(context.Background(), missing, "-test.run=TestHelperProcess"); err == nil {
+		t.Fatal("running a program that does not exist reported success")
+	}
+}
+
+func TestACancelledContextStopsTheRun(t *testing.T) {
+	helper(t, "loud")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := Run(ctx, self(t), "-test.run=TestHelperProcess"); err == nil {
+		t.Fatal("a cancelled run reported success")
+	}
+}
+
+func TestOutputIsCapped(t *testing.T) {
+	// capped is exercised directly: making a helper produce a megabyte would slow
+	// this suite down for no extra proof.
+	var buffer bytes.Buffer
+	buffer.Write(make([]byte, OutputLimit+10))
+	if got := len(capped(&buffer)); got != OutputLimit {
+		t.Errorf("capped returned %d bytes, want %d", got, OutputLimit)
+	}
+
+	var small bytes.Buffer
+	small.WriteString("short")
+	if got := capped(&small); got != "short" {
+		t.Errorf("capped altered output that was already short: %q", got)
+	}
+}

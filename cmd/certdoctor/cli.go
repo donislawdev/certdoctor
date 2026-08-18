@@ -24,6 +24,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	coretcp "github.com/donislawdev/certdoctor/internal/core/tcp"
+	"github.com/donislawdev/certdoctor/internal/core/trust"
 )
 
 const (
@@ -68,6 +69,9 @@ type environment struct {
 	// A nil one is legal and means this build has no way to look, which L1
 	// reports as unknown with a reason rather than as a machine with no DNS.
 	nameservers func() (dns.Nameservers, error)
+	// trustProbes are the L5 probes, built with a file port of their own because
+	// the files they read are a different size class from a resolver config.
+	trustProbes func() map[string]trust.Probe
 	// sources reads what this machine records about WHERE it looks names up.
 	//
 	// A nil one, and an error, both mean the same thing to the layer: nothing was
@@ -154,6 +158,7 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 			Resolution:  resolutionInput(o, env, parsed, found, foundErr, targets),
 			Reach:       reachInput(o, env, parsed, targets),
 			Handshake:   handshakeInput(o, env, parsed, targets),
+			Trust:       trustInput(env),
 			Authorise:   authoriser(parsed, targets),
 		})
 	if walkFault != nil {
@@ -548,11 +553,6 @@ func portOf(parsed *url.URL) int {
 // of those layers says so in its own row, with a reason.
 var standingNotes = []report.Note{
 	{
-		Kind:   report.NoteNotImplemented,
-		Field:  "trust_matrix",
-		Detail: "the per runtime trust matrix is not built yet and is absent from this report",
-	},
-	{
 		Kind:   report.NoteUndetermined,
 		Field:  "run.platform.container",
 		Detail: "certdoctor does not detect containers yet, so this is left empty rather than answered no",
@@ -581,6 +581,7 @@ var standingNotes = []report.Note{
 // added to it.
 func pendingNotes(shown targetReduction, privilege report.PrivilegeLevel) []report.Note {
 	notes := append([]report.Note{}, standingNotes...)
+	notes = append(notes, trustCoverageNote())
 	// An unknown privilege level is a legitimate answer and it is also the one
 	// that makes a later comparison of two reports meaningless, so it is never
 	// left to be noticed in the field alone. When the level IS established this
@@ -657,4 +658,60 @@ func deliver(o *options, env environment, document []byte) *fault {
 	// in a path until somebody went looking for the file.
 	fmt.Fprintf(env.stderr, "%s: report written to %s, %d bytes\n", toolName, o.out, len(document))
 	return nil
+}
+
+// trustInput builds what L5 was given, minus the presented chain, which Wire
+// supplies once L4 has run.
+//
+// A MISSING PORT PRODUCES AN EMPTY MAP RATHER THAN A PANIC, and L5 reports that
+// as "nothing was asked" - our own omission named as ours, never as a machine
+// with no runtimes on it.
+func trustInput(env environment) trust.Input {
+	if env.trustProbes == nil {
+		return trust.Input{}
+	}
+	return trust.Input{Probes: env.trustProbes()}
+}
+
+// trustCoverageNote says which runtimes this build is able to ask.
+//
+// IT REPLACED A NOTE THAT WENT STALE THE MOMENT L5 STARTED WORKING, and the
+// replacement is derived rather than written. The old one said the matrix "is
+// not built yet and is absent from this report" - which the binary then printed
+// three lines below a matrix. That is the exact failure the comment on
+// standingNotes warns about, and it was caught by running the program rather
+// than by any test.
+//
+// DELETING IT OUTRIGHT WOULD HAVE BEEN THE OTHER MISTAKE. The matrix is real and
+// it is PARTIAL: docs/20 describes thirteen runtime families and this build has
+// probes for some of them. A report that showed a partial matrix and said
+// nothing would be a run that did less than it promised while looking complete -
+// inviolable rule 1. So the note stays and tells the truth instead, and it is
+// built FROM THE REGISTRY, so the day a probe arrives this sentence changes by
+// itself rather than waiting for somebody to remember it.
+// The registry is a parameter so BOTH branches can be reached from a test - a
+// build with no probes at all is a real state during a port to a new platform,
+// and a branch nothing can execute is a branch nothing proves.
+func trustCoverageNote() report.Note { return coverageNoteFor(trust.All()) }
+
+func coverageNoteFor(descriptors []trust.Descriptor) report.Note {
+	asked := make([]string, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		asked = append(asked, descriptor.Runtime)
+	}
+	if len(asked) == 0 {
+		return report.Note{
+			Kind:   report.NoteNotImplemented,
+			Field:  "trust_matrix",
+			Detail: "this build has no runtime probes, so the trust matrix is empty rather than complete",
+		}
+	}
+	return report.Note{
+		Kind:  report.NoteNotImplemented,
+		Field: "trust_matrix",
+		Detail: fmt.Sprintf(
+			"the trust matrix asks only the runtimes this build has probes for (%s) - the other families are not asked yet, "+
+				"so an absent runtime here means nobody looked rather than nothing was found",
+			strings.Join(asked, ", ")),
+	}
 }

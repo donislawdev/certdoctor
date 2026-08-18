@@ -38,6 +38,14 @@ const (
 	// the machinery looked oversized, because a certificate chain is the case a
 	// flat {kind, name, value} envelope cannot carry.
 	FindingTLSHandshake FindingKind = "tls_handshake"
+
+	// FindingTrustStore - ONE trust store belonging to ONE instance of one
+	// runtime, and what it makes of the chain L4 saw. The unit is the STORE, not
+	// the runtime, because a machine holds many - measured 2026-08-18: six Java
+	// stores and two curl binaries on this one, ADR48. A kind per runtime would
+	// have made "does java trust this" a single answer, which is the claim this
+	// product exists to disprove.
+	FindingTrustStore FindingKind = "trust_store"
 )
 
 // findingKindMeanings is the registry. The registry test refuses a kind that is
@@ -47,6 +55,7 @@ var findingKindMeanings = map[FindingKind]string{
 	FindingNameResolution:      "one answer to what a name resolves to, through one named lens",
 	FindingTCPConnect:          "one attempt to open a TCP connection to one address",
 	FindingTLSHandshake:        "what one server presented when the connection to one address was upgraded to TLS",
+	FindingTrustStore:          "one trust store of one runtime instance, and what it makes of the presented chain",
 }
 
 // AllFindingKinds lists every kind exactly once, in declaration order.
@@ -70,6 +79,7 @@ var AllFindingKinds = []FindingKind{
 	FindingNameResolution,
 	FindingTCPConnect,
 	FindingTLSHandshake,
+	FindingTrustStore,
 }
 
 // ResolutionView says which of the two lenses an answer was seen through.
@@ -386,6 +396,8 @@ type Finding struct {
 	TCPConnect *TCPConnect
 	// TLSHandshake is set when Kind is FindingTLSHandshake.
 	TLSHandshake *TLSHandshake
+	// TrustStore is set when Kind is FindingTrustStore.
+	TrustStore *TrustStore
 }
 
 // ConnectOutcome is what happened when we tried to open one TCP connection.
@@ -784,11 +796,146 @@ func (t *TLSHandshake) breach() string {
 	return ""
 }
 
+// TrustStore is one trust store, belonging to one instance of one runtime, and
+// what that store makes of the chain L4 saw.
+//
+// THE UNIT IS THE STORE AND THAT IS THE WHOLE DESIGN - ADR48. Measured on the
+// owner's machine 2026-08-18: SIX Java stores (four JDKs plus a JRE 8 in both
+// bitnesses) and TWO curl binaries on PATH, one of them shipped beside git - and
+// git, from that same install, reads a different store than the curl next to it.
+// A shape of one row per runtime would have had to pick one of the six and call
+// it "java", which is the single-store claim this product exists to disprove.
+//
+// NOTHING HERE IS A PATH WE INVENTED. StorePath is read off this machine, because
+// the last column of the matrix is worth nothing if the path is a template -
+// docs/20 rule 6.
+type TrustStore struct {
+	// Runtime is the family - "java", "curl", "git". Several instances share it,
+	// so it is NOT an identity on its own.
+	Runtime string
+	// Instance is what tells two stores of one runtime apart, and it is the
+	// identity a person reads. Required for the same reason an address is
+	// required on a TCP row: a row nobody can attribute is a row nobody can act
+	// on.
+	Instance string
+	// Variant is the kind within the family - "jdk" or "jre" for java - and is
+	// empty for a runtime that has no variants. It exists because a fix aimed at
+	// the wrong variant edits the wrong file.
+	Variant string
+	// Architecture tells apart two installs that differ ONLY by "Program Files
+	// (x86)". Measured: jre1.8.0_501 exists in both bitnesses, with separate
+	// stores and therefore separate answers.
+	Architecture string
+
+	// StorePath is where this store lives on THIS machine, and is empty only
+	// when StoreForm says the store is not a file.
+	StorePath string
+	// StoreForm says whether the store is a file we can point at or the
+	// platform's own. It decides whether StorePath can be empty, so it is
+	// checked rather than trusted.
+	StoreForm StoreForm
+	// Backend is the TLS implementation the runtime chose, where it chooses one
+	// - "schannel" or "openssl" - and is empty where it does not. IT DECIDES
+	// WHICH STORE APPLIES, so it is load bearing rather than descriptive:
+	// measured, git says openssl and reads its own bundle while the curl in the
+	// same install is on schannel and asks Windows.
+	Backend string
+	// TrustAnchorCount is how many anchors this store holds. It is evidence, not
+	// a verdict, and it is not a secret - it is not redacted, for the same
+	// reason a fingerprint is not.
+	TrustAnchorCount int
+
+	// TrustsPresentedChain is L5's answer and is nil when the store could not be
+	// assessed at all. NIL IS A THIRD STATE, not a false: "this store does not
+	// trust the chain" and "this store could not be read" send a person to two
+	// different places. Same shape as MatchesFirstAddress above.
+	TrustsPresentedChain *bool
+	// NotAssessed is the short English phrase saying why there is no answer, and
+	// is set exactly when TrustsPresentedChain is nil. Silence about a failure is
+	// forbidden - inviolable rule 1 - so the two are checked against each other.
+	NotAssessed string
+
+	// SelectedBy names what points AT this instance - "JAVA_HOME", "PATH". It is
+	// never nil and an empty slice is an answer: this store belongs to an
+	// instance nothing on this machine selects by default, which is true of five
+	// of the six Java stores measured here.
+	//
+	// IT IS NOT A DETECTION MECHANISM AND MUST NOT BE READ AS ONE - ADR48 part
+	// 4. Measured: JAVA_HOME names one of six, PATH names one of two curls.
+	SelectedBy []string
+}
+
+// StoreForm says what sort of thing the store is.
+//
+// The list is closed and has a registry, like every other closed list here: a
+// value outside it is a defect in OUR translation, not news from a machine.
+type StoreForm string
+
+const (
+	// StoreFile - a file this program can name and a person can edit.
+	StoreFile StoreForm = "file"
+	// StoreSystem - the platform's own store, which has no path to hand out.
+	StoreSystem StoreForm = "system"
+)
+
+var storeFormMeanings = map[StoreForm]string{
+	StoreFile:   "a file on this machine that holds the anchors",
+	StoreSystem: "the platform's own store, which has no path to point at",
+}
+
+// Valid reports whether the form is one this program declared.
+func (f StoreForm) Valid() bool {
+	_, ok := storeFormMeanings[f]
+	return ok
+}
+
+// Meaning returns the declared meaning, for a surface that wants to explain it.
+func (f StoreForm) Meaning() string { return storeFormMeanings[f] }
+
+// String makes StoreForm printable without a conversion at every call site.
+func (f StoreForm) String() string { return string(f) }
+
+func (t *TrustStore) breach() string {
+	switch {
+	case t.Runtime == "":
+		return "carries no runtime, and a store belonging to nothing is a row nobody can act on"
+	case t.Instance == "":
+		return "carries no instance, and a runtime alone cannot tell two stores of it apart"
+	case !t.StoreForm.Valid():
+		return fmt.Sprintf("carries the store form %q, which is outside the registry", t.StoreForm)
+	case t.StoreForm == StoreFile && t.StorePath == "":
+		return "calls the store a file and gives no path, and a path is the one thing a person needs to act"
+	case t.TrustAnchorCount < 0:
+		return fmt.Sprintf("reports %d trust anchors, which is not a count", t.TrustAnchorCount)
+	// NEVER nil, and an empty slice is the answer. A nil here would be a
+	// statement about US - that nobody looked - dressed as one about the machine.
+	case t.SelectedBy == nil:
+		return "carries no selection list at all, and an empty one is the answer when nothing selects this instance"
+	}
+
+	// THE THIRD STATE IS CHECKED IN BOTH DIRECTIONS. An unassessed store with no
+	// reason is silence about a failure, and an assessed one carrying a reason
+	// says two things at once - either way a consumer cannot tell "does not
+	// trust" from "could not be read", which is the one distinction this row
+	// exists to make.
+	switch {
+	case t.TrustsPresentedChain == nil && t.NotAssessed == "":
+		return "gives no verdict on the presented chain and does not say why, and silence about a failure is forbidden"
+	case t.TrustsPresentedChain != nil && t.NotAssessed != "":
+		return "gives a verdict on the presented chain and also says why it could not"
+	case t.TrustsPresentedChain == nil && t.TrustAnchorCount != 0:
+		return "could not read the store and still counts anchors in it, which nothing could have counted"
+	}
+
+	return ""
+}
+
 var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingEnvironmentVariable: func(f Finding) bool { return f.EnvironmentVariable != nil },
 	FindingNameResolution:      func(f Finding) bool { return f.NameResolution != nil },
 	FindingTCPConnect:          func(f Finding) bool { return f.TCPConnect != nil },
 	FindingTLSHandshake:        func(f Finding) bool { return f.TLSHandshake != nil },
+	FindingTrustStore:          func(f Finding) bool { return f.TrustStore != nil },
 }
 
 // Breach names what is wrong with a finding, or returns the empty string for one
@@ -844,6 +991,8 @@ func (f Finding) bodyBreach() string {
 		return f.TCPConnect.breach()
 	case f.TLSHandshake != nil:
 		return f.TLSHandshake.breach()
+	case f.TrustStore != nil:
+		return f.TrustStore.breach()
 	}
 	return ""
 }

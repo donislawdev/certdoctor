@@ -52,6 +52,10 @@ func summarise(certificate *x509.Certificate) core.Certificate {
 		// answering with the field the client is forbidden to use.
 		DNSNames: append([]string(nil), certificate.DNSNames...),
 		IsCA:     certificate.IsCA,
+		// THE SAME BYTES THE FINGERPRINT WAS TAKEN OVER, copied rather than aliased
+		// so nothing downstream can write into a buffer the parser still owns. L5
+		// needs them to verify a path, which a summary cannot support.
+		Raw: append([]byte(nil), certificate.Raw...),
 		// FROM THE SIGNATURE, NOT FROM THE NAMES MATCHING. A certificate can name
 		// itself as its own issuer without having signed itself, and treating that
 		// as self-signed would call a broken chain complete - which is the exact

@@ -10,6 +10,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	"github.com/donislawdev/certdoctor/internal/core/status"
 	"github.com/donislawdev/certdoctor/internal/core/tcp"
+	"github.com/donislawdev/certdoctor/internal/core/trust"
 )
 
 // Wire returns the behaviour of all eight layers: the ones that are written
@@ -43,6 +44,10 @@ type Wiring struct {
 	// so a run under --redact would otherwise ask every server on earth for a
 	// certificate issued to [host-1].
 	Handshake handshake.Input
+	// Trust is everything L5 was given, EXCEPT the presented chain: that does not
+	// exist until L4 has run, and Wire supplies it below. The same seam a third
+	// time, which is the point - no layer learns the shape of the one above it.
+	Trust trust.Input
 	// Authorise is told the addresses L1 found, before L3 is asked to connect to
 	// any of them.
 	//
@@ -115,10 +120,23 @@ func Wire(w Wiring) Layers {
 		return answerFromReach(result)
 	}
 
+	var presented [][]byte
 	shake := w.Handshake
 	shake.Addresses = func() []string { return connected }
 	layers[layer.TLS] = func(ctx context.Context) Answer {
-		return answerFromHandshake(handshake.Ask(ctx, shake))
+		result := handshake.Ask(ctx, shake)
+		presented = result.Presented
+		return answerFromHandshake(result)
+	}
+
+	// THE THIRD SEAM. L4 says what the server presented, L5 says what each store
+	// on this machine makes of it - and it judges the SAME chain the report shows,
+	// never a different one. An empty slice means no handshake completed, which L5
+	// reports as nothing to judge rather than as a store failing.
+	trusted := w.Trust
+	trusted.PresentedChain = func() [][]byte { return presented }
+	layers[layer.TrustMatrix] = func(ctx context.Context) Answer {
+		return answerFromTrust(trust.Ask(ctx, trusted))
 	}
 	return layers
 }
@@ -168,6 +186,10 @@ func answerFromReach(result tcp.Result) Answer {
 // three EXISTING mutation entries ambiguous, so each reported SKIP and stopped
 // proving anything. The rule lives once, in answerOf.
 func answerFromHandshake(result handshake.Result) Answer {
+	return answerOf(result.Status, result.Reason, result.Detail, result.Findings)
+}
+
+func answerFromTrust(result trust.Result) Answer {
 	return answerOf(result.Status, result.Reason, result.Detail, result.Findings)
 }
 

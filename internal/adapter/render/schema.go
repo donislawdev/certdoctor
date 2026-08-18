@@ -179,6 +179,32 @@ var schema = object(map[string]node{
 					"is_ca":              boolean(),
 				}))),
 			})),
+			// THE UNIT IS THE STORE, NOT THE RUNTIME - ADR48. A consumer
+			// grouping these by "runtime" gets a list, and that is the contract:
+			// measured, six Java stores and two curl binaries on one machine.
+			"trust_store": nullable(object(map[string]node{
+				"runtime":  text(),
+				"instance": text(),
+				// Empty for a runtime with no variants, and for one with them it
+				// is what keeps a fix off the wrong installation.
+				"variant":      text(),
+				"architecture": text(),
+				// Empty exactly when store_form says the store is not a file.
+				"store_path": text(),
+				"store_form": text(),
+				// Empty where the runtime does not choose a TLS implementation.
+				// Where it does, this is what decides WHICH store applies.
+				"backend":            text(),
+				"trust_anchor_count": number(),
+				// Null is a THIRD STATE, not a false. "Does not trust the chain"
+				// and "could not read the store" send a person to two different
+				// places, and not_assessed is null exactly when this is not.
+				"trusts_presented_chain": nullable(boolean()),
+				"not_assessed":           nullable(text()),
+				// Never null. An empty array says nothing selects this instance
+				// by default, which is an answer rather than an absence.
+				"selected_by": array(text()),
+			})),
 		}))),
 	})),
 	"notes": array(object(map[string]node{

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/handshake"
 	"github.com/donislawdev/certdoctor/internal/adapter/output"
 	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
+	"github.com/donislawdev/certdoctor/internal/adapter/probe/git"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
@@ -34,6 +36,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	coretcp "github.com/donislawdev/certdoctor/internal/core/tcp"
+	"github.com/donislawdev/certdoctor/internal/core/trust"
 )
 
 func main() {
@@ -116,6 +119,16 @@ func liveEnvironment() environment {
 			source, resolvePath := file.Live()
 			return dns.Enumerate(file.Guarded(source, resolvePath, resolverConfigLimit, nil))
 		},
+		// The L5 probes. git reads plain INI and a PEM bundle through the same
+		// guarded port everything else uses, so the refusal rule - including "this
+		// path would leave the machine" - stays in one place and applies here too.
+		trustProbes: func() map[string]trust.Probe {
+			source, resolvePath := file.Live()
+			guarded := file.Guarded(source, resolvePath, caBundleLimit, nil)
+			return map[string]trust.Probe{
+				"git": git.Probe(guarded, globalGitConfigs()),
+			}
+		},
 		// The real dialler, behind the guard. dns.Socket is the only function in
 		// this program that opens a connection, and it is never reached without
 		// dial.Guarded having checked the address against what this run derived.
@@ -166,4 +179,29 @@ func queryID() uint16 {
 	var b [2]byte
 	_, _ = rand.Read(b[:])
 	return uint16(b[0])<<8 | uint16(b[1])
+}
+
+// caBundleLimit is the cap for the files L5 reads, and it is a DIFFERENT number
+// from the resolver one on purpose - ADR25 says these files do not share one
+// honest limit. Measured 2026-08-18: the bundle git ships on this machine is
+// 229042 bytes, so 8 MB is two orders of magnitude of headroom and still caps
+// memory against a file that is not what it claims to be.
+const caBundleLimit = 8 << 20
+
+// globalGitConfigs names the user-level git config files, in git's own
+// precedence order.
+//
+// THEY ARE COMPUTED HERE AND HANDED IN because the probe reads no environment -
+// the same rule redact follows, so an assessment stays reproducible from its
+// input. A home directory that cannot be determined yields no paths rather than
+// a guess, and the probe then reports what the system level alone decides.
+func globalGitConfigs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	return []string{
+		filepath.Join(home, ".gitconfig"),
+		filepath.Join(home, ".config", "git", "config"),
+	}
 }
