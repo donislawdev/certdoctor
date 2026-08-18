@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -468,5 +470,101 @@ func TestARefusalSaysWhichFileToGoAndLookAt(t *testing.T) {
 		if !strings.Contains(tooLarge, want) {
 			t.Errorf("an oversized file does not name %q: %q", want, tooLarge)
 		}
+	}
+}
+
+// THE LISTING PORT REFUSES WHAT THE READING PORT REFUSES, and the reason is the
+// same one docs/14 section 3a gives: a UNC path is a connection the network
+// guard cannot see. A directory is no safer than a file in that respect, so the
+// rule is checked in both directions rather than trusted to be symmetrical.
+func TestGuardedListRefusesAPathThatWouldLeaveThisMachine(t *testing.T) {
+	var asked []string
+	list := GuardedList(
+		func(string) ([]string, error) { return []string{"should not happen"}, nil },
+		func(path string) (string, error) { return path, nil },
+		func(path string, opened bool) { asked = append(asked, path) },
+	)
+
+	names, err := list("//fileserver/java")
+	if names != nil {
+		t.Errorf("a remote directory was listed anyway: %v", names)
+	}
+	var remote *RemotePath
+	if !errors.As(err, &remote) {
+		t.Fatalf("the refusal is not a RemotePath finding: %v", err)
+	}
+	if len(asked) != 1 {
+		t.Errorf("the refusal was not recorded: %v", asked)
+	}
+}
+
+// A LINK IS THE HALF A TEXT CHECK CANNOT SEE - the same measured case that made
+// Resolve a port in the first place.
+func TestGuardedListRefusesALinkLeadingOffThisMachine(t *testing.T) {
+	list := GuardedList(
+		func(string) ([]string, error) { return []string{"should not happen"}, nil },
+		func(string) (string, error) { return "//fileserver/java", nil },
+		nil,
+	)
+
+	if _, err := list("/usr/lib/jvm"); err == nil {
+		t.Fatal("a link leading to a file server was followed")
+	}
+}
+
+func TestGuardedListPassesALocalDirectoryThrough(t *testing.T) {
+	var opened bool
+	list := GuardedList(
+		func(path string) ([]string, error) { return []string{path + "/jdk-25"}, nil },
+		func(path string) (string, error) { return path, nil },
+		func(_ string, ok bool) { opened = ok },
+	)
+
+	names, err := list("/usr/lib/jvm")
+	if err != nil {
+		t.Fatalf("a local directory was refused: %v", err)
+	}
+	if len(names) != 1 || names[0] != "/usr/lib/jvm/jdk-25" {
+		t.Errorf("got %v", names)
+	}
+	if !opened {
+		t.Error("a successful listing was not recorded as opened")
+	}
+}
+
+// An unreadable directory is passed on rather than swallowed: "the place your
+// runtimes live is not there" is a fact about the machine being diagnosed.
+func TestGuardedListPassesOnAFailureToList(t *testing.T) {
+	list := GuardedList(
+		func(string) ([]string, error) { return nil, errors.New("no such directory") },
+		func(path string) (string, error) { return path, nil },
+		nil,
+	)
+	if _, err := list("/absent"); err == nil {
+		t.Error("a directory that could not be listed came back as success")
+	}
+}
+
+// The live plumbing is exercised against a real temporary directory, because it
+// is the one piece of this package that touches a disk and a fake would prove
+// nothing about it.
+func TestTheLiveListingReturnsDirectoriesOnly(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "jdk-25"), 0o755); err != nil {
+		t.Fatalf("no directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "readme.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("no file: %v", err)
+	}
+
+	names, err := LiveList()(root)
+	if err != nil {
+		t.Fatalf("listing failed: %v", err)
+	}
+	if len(names) != 1 || filepath.Base(names[0]) != "jdk-25" {
+		t.Errorf("got %v, want only the directory", names)
+	}
+	if _, err := LiveList()(filepath.Join(root, "absent")); err == nil {
+		t.Error("listing a directory that is not there came back as success")
 	}
 }

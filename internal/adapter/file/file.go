@@ -238,3 +238,72 @@ func (c *capped) Read(p []byte) (int, error) {
 }
 
 func (c *capped) Close() error { return c.inner.Close() }
+
+// List names the directories directly inside one directory.
+//
+// IT IS A PORT FOR THE SAME REASON Source IS: this package does not touch a
+// disk, and the number of places in this program that do has to stay countable.
+type List func(path string) ([]string, error)
+
+// GuardedList refuses to list a directory that would leave this machine.
+//
+// THE SAME RULE AS Guarded AND IN THE SAME ORDER: judge the path as written,
+// resolve links, judge what they led to. A UNC path is a connection the network
+// guard cannot see - docs/14 section 3a - and a directory is no safer than a
+// file in that respect. The refusal is a FINDING rather than an error to
+// swallow: "your Java lives on a file server" is a real answer.
+func GuardedList(inner List, resolve Resolve, record Record) List {
+	return func(path string) ([]string, error) {
+		// THE RULE IS CONSUMED, NEVER COPIED. Writing the remote check a second
+		// time here is the measured shape of OBS50 - and it happened: the first
+		// version of this function duplicated it, and the dry anchor run reported
+		// the existing mutation entry as hitting TWO places, which turns it into a
+		// SKIP that proves nothing. One rule, one place, one entry aimed at it.
+		if err := refuseRemote(path, resolve, record); err != nil {
+			return nil, err
+		}
+		if inner == nil {
+			return nil, fmt.Errorf("no directory source was supplied, so %s could not be listed", path)
+		}
+		names, err := inner(path)
+		if record != nil {
+			record(path, err == nil)
+		}
+		return names, err
+	}
+}
+
+// refuseRemote judges a path and whatever it links to, and is the ONE place that
+// decides whether something would leave this machine.
+//
+// It returns the finding rather than a bare error so both callers report the
+// same thing - docs/14 section 3a - and so a mutation entry aimed at this rule
+// aims at every port that consumes it.
+func refuseRemote(path string, resolve Resolve, record Record) error {
+	refuse := func(err error) error {
+		if record != nil {
+			record(path, false)
+		}
+		return err
+	}
+	if IsRemote(path) {
+		return refuse(&RemotePath{Path: path})
+	}
+	if resolve == nil {
+		return refuse(fmt.Errorf("no way to resolve symbolic links was supplied, so %s was not reached - a link "+
+			"can point off this machine and the check for that cannot be skipped", path))
+	}
+	resolved, err := resolve(path)
+	switch {
+	case err == nil:
+		if resolved != path && IsRemote(resolved) {
+			return refuse(&RemotePath{Path: path, Via: resolved})
+		}
+	case errors.Is(err, fs.ErrNotExist):
+		// Not there is not a link to anywhere, and the caller reports the absence.
+	default:
+		return refuse(fmt.Errorf("%s could not be resolved, so whether it leads off this machine is unknown "+
+			"and it was not reached: %w", path, err))
+	}
+	return nil
+}

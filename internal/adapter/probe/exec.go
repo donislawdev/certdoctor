@@ -54,6 +54,13 @@ type Output struct {
 // "the one PATH picks" is never the whole answer anyway.
 var ErrNotAbsolute = errors.New("an executable has to be an absolute path, not a name for somebody else's PATH to resolve")
 
+// Runner is how a probe asks for a program to be run.
+//
+// IT IS A PORT AND NOT A DIRECT CALL, so a probe can be tested without starting
+// anything - the same reason file.Source exists. Run below satisfies it, and is
+// the only implementation that actually starts a process.
+type Runner func(ctx context.Context, executable string, args ...string) (Output, error)
+
 // Run starts one program, waits for it, and returns what it said.
 //
 // FOUR NARROWING RULES LIVE HERE AND NOWHERE ELSE - ADR49. The executable is an

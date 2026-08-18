@@ -2,13 +2,12 @@ package git
 
 import (
 	"context"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
+	"github.com/donislawdev/certdoctor/internal/adapter/probe"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
@@ -61,7 +60,16 @@ func storeFor(source file.Source, install Install, settings Settings, chain [][]
 			store.NotAssessed = "git is set to use openssl and names no http.sslCAInfo, so the bundle it would read is its build-time default"
 			return store
 		}
-		assess(source, &store, chain)
+		bundle, err := readAll(source, store.StorePath)
+		if err != nil {
+			// A bundle that cannot be read is UNKNOWN with a reason, never a
+			// failure to trust - inviolable rule 15. It is also a real diagnosis:
+			// the file port refuses a path that would leave this machine, so "your
+			// bundle is on a file server" arrives here as this sentence.
+			store.NotAssessed = fmt.Sprintf("the bundle named by http.sslCAInfo could not be read: %v", err)
+			return store
+		}
+		probe.Verify(&store, bundle, chain)
 	case "schannel":
 		// THE ANSWER BELONGS TO ANOTHER PROBE AND SAYING SO IS THE HONEST ROW.
 		// Reporting "trusted" here would mean this probe silently answered a
@@ -83,69 +91,6 @@ func level(l string) string {
 		return "default"
 	}
 	return l
-}
-
-// assess reads the bundle and asks whether the presented chain builds a path in
-// it.
-//
-// THE NAME IS NOT CHECKED, DELIBERATELY. This asks "does this store contain an
-// anchor that closes this chain", which is L5's question. Whether the certificate
-// is valid FOR THE HOST is a different question with a different answer, and
-// folding them together would report a trust failure for a name mismatch.
-func assess(source file.Source, store *report.TrustStore, chain [][]byte) {
-	bundle, err := readAll(source, store.StorePath)
-	if err != nil {
-		// A bundle that cannot be read is UNKNOWN with a reason, never a failure
-		// to trust - inviolable rule 15. It is also a real diagnosis on its own:
-		// the file port refuses a path that would leave this machine, so "your
-		// bundle is on a file server" arrives here as this sentence.
-		store.NotAssessed = fmt.Sprintf("the bundle named by http.sslCAInfo could not be read: %v", err)
-		return
-	}
-
-	roots := x509.NewCertPool()
-	anchors := 0
-	rest := bundle
-	for {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
-		anchor, parseErr := x509.ParseCertificate(block.Bytes)
-		if parseErr != nil {
-			// One unreadable entry in somebody's bundle is not a reason to
-			// discard the rest of it.
-			continue
-		}
-		roots.AddCert(anchor)
-		anchors++
-	}
-	store.TrustAnchorCount = anchors
-
-	if anchors == 0 {
-		store.NotAssessed = "the file named by http.sslCAInfo holds no certificate this program could read"
-		return
-	}
-
-	leaf, err := x509.ParseCertificate(chain[0])
-	if err != nil {
-		store.NotAssessed = fmt.Sprintf("the presented leaf could not be parsed: %v", err)
-		return
-	}
-	intermediates := x509.NewCertPool()
-	for _, der := range chain[1:] {
-		if certificate, parseErr := x509.ParseCertificate(der); parseErr == nil {
-			intermediates.AddCert(certificate)
-		}
-	}
-
-	_, verifyErr := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates})
-	trusts := verifyErr == nil
-	store.TrustsPresentedChain = &trusts
 }
 
 // selectedBy names what points at THIS installation, and an empty slice is an

@@ -184,7 +184,14 @@ var intraLayerEdges = map[string][]string{
 	// The git probe reads config files and a CA bundle, and it does so through
 	// the file port so the refusal rule stays in ONE place - ADR25, ADR35. It is
 	// why this probe is not on fileReadAllowlist: it never opens anything itself.
-	"internal/adapter/probe/git": {"internal/adapter/file"},
+	// The git probe consumes the SHARED verifier in internal/adapter/probe rather
+	// than carrying its own - one rule, one place, OBS50. It reads through the
+	// file port for the same reason.
+	"internal/adapter/probe/git": {"internal/adapter/file", "internal/adapter/probe"},
+	// java and curl consume the same shared verifier and the same process port.
+	// Neither carries a copy of either rule - one place, OBS50.
+	"internal/adapter/probe/java": {"internal/adapter/file", "internal/adapter/probe"},
+	"internal/adapter/probe/curl": {"internal/adapter/file", "internal/adapter/probe"},
 	// L4's handshake needs the address spelled the ONE way the allowed set was
 	// given it, and that spelling lives in the connection adapter as tcp.Target.
 	// The arrow runs from the newer plumbing to the older, and cannot run back:

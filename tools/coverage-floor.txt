@@ -45,7 +45,7 @@ github.com/donislawdev/certdoctor/internal/adapter/dns 90
 github.com/donislawdev/certdoctor/internal/adapter/file 91
 github.com/donislawdev/certdoctor/internal/adapter/output 72
 github.com/donislawdev/certdoctor/internal/adapter/privilege 87
-github.com/donislawdev/certdoctor/internal/adapter/probe 94
+github.com/donislawdev/certdoctor/internal/adapter/probe 96
 github.com/donislawdev/certdoctor/internal/adapter/render 87
 github.com/donislawdev/certdoctor/internal/app/run 100
 github.com/donislawdev/certdoctor/internal/core/allowed 100
@@ -67,5 +67,6 @@ github.com/donislawdev/certdoctor/internal/adapter/handshake 95
 # L5 arrived 2026-08-18 with P7a. Floors are the measured value rounded DOWN to
 # a whole percent, the same rule every line above follows.
 github.com/donislawdev/certdoctor/internal/core/trust 98
-github.com/donislawdev/certdoctor/internal/adapter/probe 100
 github.com/donislawdev/certdoctor/internal/adapter/probe/git 92
+github.com/donislawdev/certdoctor/internal/adapter/probe/java 94
+github.com/donislawdev/certdoctor/internal/adapter/probe/curl 98

@@ -27,7 +27,10 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/handshake"
 	"github.com/donislawdev/certdoctor/internal/adapter/output"
 	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
+	"github.com/donislawdev/certdoctor/internal/adapter/probe"
+	"github.com/donislawdev/certdoctor/internal/adapter/probe/curl"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/git"
+	"github.com/donislawdev/certdoctor/internal/adapter/probe/java"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
@@ -125,8 +128,11 @@ func liveEnvironment() environment {
 		trustProbes: func() map[string]trust.Probe {
 			source, resolvePath := file.Live()
 			guarded := file.Guarded(source, resolvePath, caBundleLimit, nil)
+			paths := pathDirectories()
 			return map[string]trust.Probe{
-				"git": git.Probe(guarded, globalGitConfigs(), pathDirectories()),
+				"git":  git.Probe(guarded, globalGitConfigs(), paths),
+				"java": java.Probe(guarded, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths),
+				"curl": curl.Probe(guarded, probe.Run, paths, os.Getenv("CURL_CA_BUNDLE")),
 			}
 		},
 		// The real dialler, behind the guard. dns.Socket is the only function in
@@ -224,4 +230,46 @@ func pathDirectories() []string {
 		}
 	}
 	return dirs
+}
+
+// javaParents are the directories Java installations are grouped under.
+//
+// SEARCHED RATHER THAN DERIVED FROM JAVA_HOME - ADR48 part 4, measured: that
+// variable names one of the six installations on this machine. Listing happens
+// here because it needs the filesystem, which the probe is not allowed to touch.
+var javaParents = []string{
+	`C:\Program Files\Java`,
+	`C:\Program Files (x86)\Java`,
+	`C:\Program Files\OpenJDK`,
+	`C:\Program Files\Eclipse Adoptium`,
+	`C:\Program Files\Microsoft`,
+	`C:\Program Files\Amazon Corretto`,
+	`C:\Program Files\Zulu`,
+	"/usr/lib/jvm",
+	"/Library/Java/JavaVirtualMachines",
+}
+
+// javaCandidates lists every directory that might be a Java installation.
+//
+// IT DOES NOT DECIDE WHETHER ONE IS - the probe does that, by asking whether a
+// store and a keytool are actually there. Measured on this machine: two of these
+// candidates are directories named latest with no store inside, and treating a
+// candidate as an install would have invented two rows.
+//
+// The macOS bundle layout puts the runtime under Contents/Home, so both spellings
+// are offered and the probe keeps whichever answers.
+func javaCandidates() []string {
+	var candidates []string
+	_, resolvePath := file.Live()
+	list := file.GuardedList(file.LiveList(), resolvePath, nil)
+	for _, parent := range javaParents {
+		roots, err := list(parent)
+		if err != nil {
+			continue
+		}
+		for _, root := range roots {
+			candidates = append(candidates, root, filepath.Join(root, "Contents", "Home"))
+		}
+	}
+	return candidates
 }

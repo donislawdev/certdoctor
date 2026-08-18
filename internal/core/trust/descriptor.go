@@ -90,6 +90,27 @@ var descriptors = []Descriptor{
 			"Windows store fixes a browser and does not fix git clone. Read from the config files rather than by running " +
 			"git, which is why this probe needs no process at all.",
 	},
+	{
+		ID:          "java",
+		Runtime:     "java",
+		TrustSource: "lib/security/cacerts inside each installation, one store per install and never one per runtime",
+		Source:      Measured,
+		Evidence: "Measured on the owner machine 2026-08-18: SIX stores - four OpenJDK installs plus a JRE 8 in both " +
+			"bitnesses - and TWO directories named latest with no store inside at all, which is why an install is proved " +
+			"by a store that opens rather than by a directory that exists. JAVA_HOME named one of the six. The stores are " +
+			"PKCS12 in the JDKs and JKS in the JRE, so they are read through keytool -list -rfc, which returns PEM in one " +
+			"call - 113 blocks, 563 ms - rather than through two parsers.",
+	},
+	{
+		ID:          "curl",
+		Runtime:     "curl",
+		TrustSource: "decided by the TLS backend: Schannel and friends read the platform store, OpenSSL builds read a file",
+		Source:      Measured,
+		Evidence: "Measured on the owner machine 2026-08-18: TWO curl.exe on PATH, the system one and the one shipped " +
+			"inside the Git installation, and BOTH are Schannel - the second was expected to be OpenSSL and is not. " +
+			"Schannel IGNORES CURL_CA_BUNDLE, measured earlier by pointing it at a path that does not exist and still " +
+			"getting a 200, so a fix generated without reading the backend is a command that does nothing.",
+	},
 }
 
 // All returns every declared descriptor, in declaration order.
