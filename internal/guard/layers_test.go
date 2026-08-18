@@ -133,6 +133,18 @@ var intraLayerEdges = map[string][]string{
 	// are shaped, and moving either would move both. The addresses arrive instead
 	// as a function in this layer's own Input, which the entry point supplies, so
 	// the two layers share a list of strings and no types at all.
+	// L4 completes a handshake per address and grades what the server presented,
+	// so it needs the same two vocabularies as L3 and the same shared fan-out.
+	//
+	// IT DOES NOT IMPORT L1 OR L3, and that is the pipeline staying a pipeline.
+	// The addresses arrive as a function in this layer's own Input, supplied by
+	// the entry point, so L4 and L3 share a list of strings and no types at all -
+	// exactly the seam P5a drew, for the same reason.
+	"internal/core/handshake": {
+		"internal/core/report",
+		"internal/core/status",
+		"internal/core/fanout",
+	},
 	"internal/core/tcp": {
 		"internal/core/report",
 		"internal/core/status",
@@ -161,6 +173,24 @@ var intraLayerEdges = map[string][]string{
 	// link on WSL and on any systemd machine, and a link into a mount from
 	// another host is a remote path wearing a local name.
 	"internal/adapter/dns": {"internal/adapter/dial", "internal/adapter/file"},
+	// L4's handshake needs the address spelled the ONE way the allowed set was
+	// given it, and that spelling lives in the connection adapter as tcp.Target.
+	// The arrow runs from the newer plumbing to the older, and cannot run back:
+	// nothing under internal/adapter/tcp knows a handshake exists.
+	//
+	// THE ALTERNATIVE WAS A SECOND COPY OF Target, and it is the reason this edge
+	// is declared rather than avoided. The allowed set compares STRINGS. Two
+	// functions joining an address to a port would agree until the day one of them
+	// learned something about IPv6 brackets that the other did not, and the
+	// failure then is every connection refused on a machine where everything
+	// works - while the guard reports a clean sheet, because it checked the other
+	// spelling. It is also the shape OBS50 measured from the register's side: a
+	// duplicated rule turns the entries aimed at it into SKIP.
+	//
+	// It does NOT import internal/adapter/dial. The permission rule arrives as a
+	// function from the entry point, exactly as it does for L3, so the number of
+	// packages knowing about the allowed set does not grow with this one.
+	"internal/adapter/handshake": {"internal/adapter/tcp"},
 }
 
 // coreForbiddenStdlib keeps the core a pure function of evidence: no network, no

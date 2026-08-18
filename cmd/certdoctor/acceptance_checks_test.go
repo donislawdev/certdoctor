@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
+	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
@@ -714,13 +716,119 @@ func TestTheShippedBinaryWritesAReportOnlyItsOwnerCanRead(t *testing.T) {
 
 // ---------------------------------------------------------- needs a network
 
+// TestTheShippedBinaryShowsTheChainItWasPresented is rule 12 checked on the
+// SHIPPED BINARY rather than on a fixture, for the kind of finding where the
+// evidence is the product.
+//
+// EVERY TEST OF L4 IN THIS REPOSITORY EXCEPT THIS ONE RUNS AGAINST A CHAIN WE
+// MINTED. That is the right way to test the shapes, and it cannot answer the one
+// question this check asks: does a real server's chain, parsed by the real
+// adapter, survive all the way onto both surfaces a person actually reads.
+//
+// THE FINGERPRINT IS CHECKED WHOLE, ON THE TERMINAL PAGE. Truncating it would be
+// the quiet kind of shortening the evidence contract forbids, and half a
+// fingerprint cannot be compared against anything - which is the entire use a
+// person has for it.
+func TestTheShippedBinaryShowsTheChainItWasPresented(t *testing.T) {
+	needsTheInternet(t)
+
+	var document struct {
+		Layers []struct {
+			ID       string `json:"id"`
+			Findings []struct {
+				TLSHandshake *struct {
+					Address string `json:"address"`
+					Chain   []struct {
+						Subject     string `json:"subject"`
+						Issuer      string `json:"issuer"`
+						Fingerprint string `json:"fingerprint_sha256"`
+					} `json:"chain"`
+				} `json:"tls_handshake"`
+			} `json:"findings"`
+		} `json:"layers"`
+	}
+	if err := json.Unmarshal([]byte(runProgram(t, aTarget, "--json").stdout), &document); err != nil {
+		t.Fatalf("the document does not parse: %v", err)
+	}
+
+	carrying, rows := 0, 0
+	var leafPrint string
+	for _, row := range document.Layers {
+		if row.ID != string(layer.TLS) {
+			continue
+		}
+		for _, finding := range row.Findings {
+			if finding.TLSHandshake == nil {
+				continue
+			}
+			rows++
+			if finding.TLSHandshake.Chain == nil {
+				continue
+			}
+			carrying++
+			for i, certificate := range finding.TLSHandshake.Chain {
+				if len(certificate.Fingerprint) != 64 {
+					t.Errorf("certificate %d carries a fingerprint of %d characters, and SHA-256 is 64",
+						i, len(certificate.Fingerprint))
+				}
+				if certificate.Subject == "" || certificate.Issuer == "" {
+					t.Errorf("certificate %d says neither what it is nor who signed it", i)
+				}
+			}
+			leafPrint = finding.TLSHandshake.Chain[0].Fingerprint
+		}
+	}
+
+	if rows == 0 {
+		t.Fatal("a real server was reached and L4 produced no rows, so nothing here was established")
+	}
+	// ADR45 on the shipped binary: many rows, one chain.
+	if carrying != 1 {
+		t.Errorf("%d of %d rows carry a chain, and exactly one may", carrying, rows)
+	}
+	if !strings.Contains(runProgram(t, aTarget).stdout, leafPrint) {
+		t.Error("the leaf fingerprint reaches the machine readable document and not the terminal page, " +
+			"so the surfaces are not at parity for the one field somebody came here for")
+	}
+}
+
+// TestTheShippedBinaryNeverMasksAFingerprint is the promise that survives the
+// flag a person reaches for when they are about to paste a report somewhere.
+//
+// --redact is chosen precisely when the report is going to a ticket - which is
+// also the moment somebody needs the evidence for a claim about interception.
+// Masking the fingerprint there would leave an accusation with its proof removed,
+// and it would look like working software.
+func TestTheShippedBinaryNeverMasksAFingerprint(t *testing.T) {
+	needsTheInternet(t)
+
+	plain := runProgram(t, aTarget, "--json").stdout
+	print64 := regexp.MustCompile(`"fingerprint_sha256": "([0-9a-f]{64})"`).FindStringSubmatch(plain)
+	if print64 == nil {
+		t.Fatal("no fingerprint reached the plain document, so there is nothing to check masking against")
+	}
+
+	redacted := runProgram(t, aTarget, "--json", "--redact").stdout
+	if !strings.Contains(redacted, print64[1]) {
+		t.Errorf("the fingerprint %s does not survive --redact, and it is the evidence rule 21 requires "+
+			"to travel beside any claim about interception", print64[1])
+	}
+	// The other side, without which the check above is satisfied by a --redact
+	// that does nothing at all.
+	if !strings.Contains(redacted, redact.Placeholder) && !strings.Contains(redacted, "[host-") {
+		t.Error("nothing in the redacted document was masked, so this check proved nothing about masking")
+	}
+}
+
 // TestTheShippedBinaryProducesAValidDocumentForARealName runs the whole path
 // against a name that actually resolves.
 //
-// Today this establishes less than it will: no layer reaches the network yet, so
-// it proves the program survives a real target and still produces a document its
-// own schema accepts. It is here now so that the day L1 resolves for real, the
-// check already exists and the change shows up in it.
+// IT ESTABLISHED LESS WHEN IT WAS WRITTEN AND THE COMMENT SAYING SO WAS TRUE
+// UNTIL 2026-08-17. Four layers now reach the network on this path - L1 resolves,
+// L3 connects, L4 hand shakes - so this is no longer "the program survives a real
+// target"; it is the whole live path producing a document its own schema accepts.
+// It was written before any of that existed, which is why the change showed up in
+// it rather than needing a new check.
 func TestTheShippedBinaryProducesAValidDocumentForARealName(t *testing.T) {
 	needsTheInternet(t)
 

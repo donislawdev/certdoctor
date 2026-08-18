@@ -252,7 +252,102 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 			fmt.Fprintf(&line, "  %s", value)
 		}
 		writeTrimmed(b, line.String())
+		writeChain(b, finding)
 	}
+}
+
+// writeChain prints the certificates one server presented, underneath the row
+// that carries them.
+//
+// IT IS THE ONE PLACE THIS RENDERER GOES TWO LEVELS DEEP, and the reason is that
+// a chain is the product rather than a detail of it. Everything else a finding
+// carries fits in the value column beside its summary; four certificates with
+// their issuers and their fingerprints do not, and squeezing them in would mean
+// dropping the fingerprints - which is the evidence somebody came here for.
+//
+// ONE BLOCK PER RUN, NOT ONE PER ADDRESS - ADR45. The rows for the other
+// addresses say in their summary whether they presented the same certificate,
+// and that sentence is all they need: the chains were measured to be identical
+// on a healthy network, and a difference is visible from the fingerprint alone.
+//
+// THE FINGERPRINT IS PRINTED WHOLE. Shortening it would be the quiet kind of
+// truncation docs/19 section 4 forbids, and a half fingerprint cannot be
+// compared against anything.
+//
+// EVERY VALUE GOES THROUGH visible BECAUSE ALL OF IT IS SOMEBODY ELSE'S. A
+// subject arrives from the network and is exactly where an escape sequence would
+// be planted to make one distinguished name read as another.
+func writeChain(b *strings.Builder, finding report.Finding) {
+	if finding.TLSHandshake == nil || len(finding.TLSHandshake.Chain) == 0 {
+		return
+	}
+	chain := finding.TLSHandshake.Chain
+	indexWidth := widthOf(fmt.Sprintf("%d", len(chain)))
+	blank := pad("", indexWidth)
+
+	for i, certificate := range chain {
+		subject := subjectLine(certificate)
+		if certificate.IsCA {
+			// The basic constraint as presented, said in the row rather than in a
+			// column of its own: a chain is normally one leaf and some
+			// authorities, so the exception is what is worth marking.
+			subject += "  (CA)"
+		}
+		writeTrimmed(b, fmt.Sprintf("        %s  %s", pad(fmt.Sprintf("%d", i+1), indexWidth), subject))
+		if names := namesLine(certificate); names != "" {
+			writeTrimmed(b, fmt.Sprintf("        %s  names      %s", blank, names))
+		}
+		writeTrimmed(b, fmt.Sprintf("        %s  issued by  %s", blank, visible(certificate.Issuer)))
+		writeTrimmed(b, fmt.Sprintf("        %s  sha256     %s", blank, visible(certificate.FingerprintSHA256)))
+		// Reported, never judged - the dates are shown and nothing here decides
+		// what they mean, because that depends on a clock this program does not
+		// own.
+		writeTrimmed(b, fmt.Sprintf("        %s  valid      %s to %s", blank,
+			certificate.NotBefore.UTC().Format(time.RFC3339),
+			certificate.NotAfter.UTC().Format(time.RFC3339)))
+	}
+}
+
+// subjectLine is what to print where the subject goes, INCLUDING when there is
+// no subject.
+//
+// AN EMPTY SUBJECT IS LEGAL AND A BLANK LINE WOULD READ AS A DEFECT IN THIS TOOL
+// - ADR47. RFC 5280 requires an empty subject when the identity lives only in a
+// critical subjectAltName, so the page has to say which of the two situations it
+// is looking at rather than leaving a gap the reader has to interpret.
+func subjectLine(certificate report.Certificate) string {
+	switch {
+	case certificate.Subject != "":
+		return visible(certificate.Subject)
+	case len(certificate.DNSNames) > 0:
+		return "(no subject - identified by the names below, which RFC 5280 requires)"
+	}
+	return "(no subject and no names - this certificate does not say what it is for)"
+}
+
+// namesLine is what the certificate says it is FOR, or the empty string when
+// there is nothing worth a line.
+//
+// THIS IS THE FIELD A MODERN CLIENT MATCHES ON - RFC 6125 section 6.4.4 forbids
+// matching on the common name when these are present - so a page showing only
+// the subject was showing the deprecated half of the answer.
+//
+// AN AUTHORITY WITH NO NAMES GETS NO LINE, and a leaf with none gets one saying
+// so. A certification authority is not issued for a host name, so silence there
+// is the ordinary state; on a leaf it is the whole reason a client might refuse
+// the server, and a missing line would hide it.
+func namesLine(certificate report.Certificate) string {
+	if len(certificate.DNSNames) == 0 {
+		if certificate.IsCA {
+			return ""
+		}
+		return "none presented"
+	}
+	shown := make([]string, 0, len(certificate.DNSNames))
+	for _, name := range certificate.DNSNames {
+		shown = append(shown, visible(name))
+	}
+	return strings.Join(shown, ", ")
 }
 
 // findingValue is the part of a finding that only means anything once the kind
@@ -277,8 +372,37 @@ func findingValue(finding report.Finding) string {
 		return resolutionValue(*finding.NameResolution)
 	case finding.TCPConnect != nil:
 		return connectValue(*finding.TCPConnect)
+	case finding.TLSHandshake != nil:
+		return handshakeValue(*finding.TLSHandshake)
 	}
 	return ""
+}
+
+// handshakeValue is what was negotiated, for a row where anything was.
+//
+// THE REASON A HANDSHAKE FAILED IS DELIBERATELY NOT HERE, for the same reason
+// the outcome is missing from connectValue one function up: it belongs in the
+// summary, the line every surface renders without knowing the kind. A row that
+// showed why it failed only in a column this renderer happens to print would go
+// silent the day a markdown renderer exists.
+//
+// THE CIPHER IS SHOWN BY NAME AND THAT IS NOT A CONTRADICTION OF RULE 19. This
+// is the surface a person reads; the number is in the document a program reads,
+// beside the name, and the contract says which of the two to branch on.
+func handshakeValue(shake report.TLSHandshake) string {
+	if !shake.Completed {
+		return ""
+	}
+	// Assembled by skipping what is absent rather than by joining and trimming.
+	// A protocol nobody agreed on is a real state, and an empty entry in this
+	// list would render as a stray comma that reads like a missing value.
+	said := make([]string, 0, 3)
+	for _, part := range []string{shake.Version, shake.CipherSuiteName, shake.ALPN} {
+		if part != "" {
+			said = append(said, part)
+		}
+	}
+	return strings.Join(said, ", ")
 }
 
 // connectValue is the port and how long the attempt took.

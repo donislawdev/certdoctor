@@ -19,6 +19,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/app/run"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
@@ -97,6 +98,13 @@ type environment struct {
 	// A nil one is legal and means the run holds one lens. The layer says so in
 	// its own sentence rather than leaving a reader to count views.
 	system func(*allowed.Targets) resolve.SystemLookup
+	// shake builds the way L4 completes a handshake, given the same set. It is a
+	// seam for the same reason connect is: a test that really hand shook would
+	// pass or fail depending on whose network it ran on.
+	//
+	// A nil one is legal and means this build has no way to hand shake, which L4
+	// reports as unknown with a reason rather than as a server that refused.
+	shake func(*allowed.Targets) corehandshake.Shake
 	// queryID picks the identifier of one DNS query. Unpredictable in the real
 	// build, because that is the only thing making an off-path answer detectable.
 	queryID func() uint16
@@ -145,6 +153,7 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 			Environment: env.lookupEnv,
 			Resolution:  resolutionInput(o, env, parsed, found, foundErr, targets),
 			Reach:       reachInput(o, env, parsed, targets),
+			Handshake:   handshakeInput(o, env, parsed, targets),
 			Authorise:   authoriser(parsed, targets),
 		})
 	if walkFault != nil {
@@ -452,6 +461,27 @@ func reachInput(o *options, env environment, parsed *url.URL, targets *allowed.T
 	return coretcp.Input{
 		Port:       portOf(parsed),
 		Connect:    connect,
+		Now:        env.now,
+		PerAddress: budget(o.probeTimeout),
+	}
+}
+
+// handshakeInput is everything L4 was given, except the addresses - those are
+// the ones L3 reached, and the orchestrator supplies them.
+func handshakeInput(o *options, env environment, parsed *url.URL, targets *allowed.Targets) corehandshake.Input {
+	var shake corehandshake.Shake
+	if env.shake != nil {
+		shake = env.shake(targets)
+	}
+	return corehandshake.Input{
+		Port: portOf(parsed),
+		// THE RAW HOST, EXACTLY AS THE USER TYPED IT, and never the reduced one.
+		// This name goes out in SNI and decides which certificate the server
+		// chooses. Feeding it the masked target would ask every server for a
+		// certificate issued to [host-1] - the same trap resolutionInput records
+		// one layer up, arriving here through a different field. A test pins it.
+		ServerName: parsed.Hostname(),
+		Shake:      shake,
 		Now:        env.now,
 		PerAddress: budget(o.probeTimeout),
 	}

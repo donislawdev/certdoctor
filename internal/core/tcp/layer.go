@@ -101,6 +101,25 @@ type Result struct {
 	Reason   status.Reason
 	Detail   string
 	Findings []report.Finding
+	// Connected is every address that accepted a connection, in the order they
+	// were tried. IT IS THE SEAM TO L4 AND IT IS THE SAME SHAPE resolve.Result
+	// USES TO REACH THIS LAYER - a list of strings and nothing else.
+	//
+	// ADR45 asks L4 to hand shake with every address L3 REACHED, not with every
+	// address L1 resolved: an address that refused a connection has nothing to
+	// hand shake with, and a row saying so would report our own arithmetic as a
+	// fact about their TLS.
+	//
+	// WHY THIS RATHER THAN L4 READING THE FINDINGS. The orchestrator could walk
+	// Findings and pick out the connected ones, and that would put a second
+	// reader of this layer's row shape one floor up - so the meaning of
+	// OutcomeConnected would live in two places, which is the shape OBS50
+	// measured. This says it once, here, beside the count that already decides
+	// the verdict.
+	//
+	// It is nil when nothing connected, and the layer above reads that as
+	// nothing to do rather than as a failure of its own.
+	Connected []string
 }
 
 // unlimited is what limitFor answers when nothing caps one attempt at all.
@@ -148,17 +167,27 @@ func Ask(ctx context.Context, in Input) Result {
 	// fan-out lives in its own file so this one - where every decision this layer
 	// makes is written down - stays under the concurrency guard in full (ADR43).
 	findings := in.fanOut(ctx, addresses)
-	reached := 0
+	// The count and the list are built in one walk, from one condition. Two
+	// walks asking the same question two ways is how they start disagreeing -
+	// and a verdict saying "2 of 4 connected" beside a seam handing three
+	// addresses to L4 would be one layer contradicting itself inside one row.
+	var connected []string
 	for _, finding := range findings {
 		if finding.TCPConnect.Outcome == report.OutcomeConnected {
-			reached++
+			connected = append(connected, finding.TCPConnect.Address)
 		}
 	}
+	reached := len(connected)
 
 	if reached == 0 {
 		return Result{Status: status.Fail, Detail: detailFor(reached, addresses), Findings: findings}
 	}
-	return Result{Status: status.Pass, Detail: detailFor(reached, addresses), Findings: findings}
+	return Result{
+		Status:    status.Pass,
+		Detail:    detailFor(reached, addresses),
+		Findings:  findings,
+		Connected: connected,
+	}
 }
 
 // unusable names the port this layer was not given, or returns empty.

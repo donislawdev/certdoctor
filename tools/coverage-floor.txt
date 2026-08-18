@@ -45,7 +45,7 @@ github.com/donislawdev/certdoctor/internal/adapter/dns 90
 github.com/donislawdev/certdoctor/internal/adapter/file 91
 github.com/donislawdev/certdoctor/internal/adapter/output 72
 github.com/donislawdev/certdoctor/internal/adapter/privilege 87
-github.com/donislawdev/certdoctor/internal/adapter/render 79
+github.com/donislawdev/certdoctor/internal/adapter/render 87
 github.com/donislawdev/certdoctor/internal/app/run 100
 github.com/donislawdev/certdoctor/internal/core/allowed 100
 github.com/donislawdev/certdoctor/internal/core/dnsmsg 100
@@ -54,9 +54,11 @@ github.com/donislawdev/certdoctor/internal/core/layer 94
 github.com/donislawdev/certdoctor/internal/core/machine 100
 github.com/donislawdev/certdoctor/internal/core/redact 96
 github.com/donislawdev/certdoctor/internal/core/resolve 100
-github.com/donislawdev/certdoctor/internal/core/report 87
+github.com/donislawdev/certdoctor/internal/core/report 92
 github.com/donislawdev/certdoctor/internal/core/status 82
 github.com/donislawdev/certdoctor/internal/guard 84
 github.com/donislawdev/certdoctor/internal/core/tcp 98
 github.com/donislawdev/certdoctor/internal/adapter/tcp 84
 github.com/donislawdev/certdoctor/internal/core/fanout 100
+github.com/donislawdev/certdoctor/internal/core/handshake 95
+github.com/donislawdev/certdoctor/internal/adapter/handshake 95

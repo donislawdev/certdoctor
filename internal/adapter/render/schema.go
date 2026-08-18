@@ -118,6 +118,67 @@ var schema = object(map[string]node{
 				"outcome":     text(),
 				"duration_ms": number(),
 			})),
+			// The fourth body, and the first one carrying a structure rather than
+			// a flat record. Almost every field is nullable and the pattern is a
+			// single rule rather than a dozen judgements: null means nothing
+			// established it. Address, port and completed are settled even for an
+			// attempt that failed; everything else was negotiated, and a
+			// negotiated value beside a handshake that never happened would be a
+			// measurement of something that did not occur.
+			"tls_handshake": nullable(object(map[string]node{
+				"address":   text(),
+				"port":      number(),
+				"completed": boolean(),
+				// Null when the handshake completed. It is a field of its own so
+				// that a consumer branching on why does not have to read our
+				// English - the thing this program refuses to do to anybody
+				// else's output.
+				"not_completed": nullable(text()),
+				"version":       nullable(text()),
+				// The number is the fact and the name is our rendering of it -
+				// inviolable rule 19. Declared as a number and a string rather
+				// than as one field, because that is the difference.
+				"cipher_suite":                 nullable(number()),
+				"cipher_suite_name":            nullable(text()),
+				"server_name":                  nullable(text()),
+				"alpn":                         nullable(text()),
+				"client_certificate_requested": nullable(boolean()),
+				"leaf_fingerprint_sha256":      nullable(text()),
+				// Null on a row that carries no chain: a row with nothing to
+				// describe cannot report whether it was complete.
+				"chain_complete": nullable(boolean()),
+				// Null on the row that carries the chain and set on every other
+				// completed one - ADR45. The two are the same fact from opposite
+				// ends, and the core refuses a row carrying both.
+				"matches_first_address": nullable(boolean()),
+				// THE FIRST NESTED ARRAY IN THIS DOCUMENT, and the case docs/18
+				// named when it argued for a typed body instead of a flat pair of
+				// name and value. A chain squeezed into that shape would be one
+				// row per certificate field with the relationship glued into the
+				// key, and this declaration would stop saying anything.
+				//
+				// Null rather than empty on the rows that do not carry it: an
+				// empty array would claim the server presented nothing.
+				"chain": nullable(array(object(map[string]node{
+					// A string that MAY BE EMPTY - ADR47. RFC 5280 requires an
+					// empty subject when the identity is in a critical
+					// subjectAltName, so this declares the type while the
+					// contract in the core declares the meaning.
+					"subject": text(),
+					"issuer":  text(),
+					// Never null. The certificate was read either way, so an
+					// empty array is a statement about it rather than about us.
+					"dns_names": array(text()),
+					// Reported, never judged. Whether expired means anything
+					// depends on a clock this program does not own.
+					"not_before": text(),
+					"not_after":  text(),
+					// Never null and never masked: it is the evidence inviolable
+					// rule 21 requires beside any claim about interception.
+					"fingerprint_sha256": text(),
+					"is_ca":              boolean(),
+				}))),
+			})),
 		}))),
 	})),
 	"notes": array(object(map[string]node{

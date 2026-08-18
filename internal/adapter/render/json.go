@@ -48,7 +48,32 @@ import (
 // know is unaffected and one that branches gets a truer answer in a case where
 // the old one was measurably wrong. Nothing is released, which is the reason
 // this costs nothing today and will not be true at the first release.
-const SchemaVersion = "1.5"
+//
+// 1.6 IS THE ORDINARY KIND OF MOVE AND THE FIRST ONE TO ADD A WHOLE BODY. L4
+// arrives with tls_handshake: a fourth member of the union, a nested array of
+// certificates inside it, and nothing removed or renamed anywhere. That is a
+// minor by the rule at the top of this comment, read literally.
+//
+// WHAT A CONSUMER HAS TO KNOW, since a version number alone does not say it.
+// The chain is on ONE row per run - ADR45 - and null on the others, which carry
+// matches_first_address instead. A reader that expects a chain beside every
+// handshake will find nulls and must not read them as "no certificates". The
+// two fields are the same fact from opposite ends, and the reason for the shape
+// is measured rather than aesthetic: every address of example.com and of
+// cloudflare.com presented a byte-identical leaf, so four chains would be four
+// times the page for none of the information.
+//
+// 1.6 ALSO CARRIES dns_names, AND THAT WAS FOLDED IN RATHER THAN COUNTED AS A
+// SEVENTH - a decision with a condition, not a shortcut. ADR47 arrived while 1.6
+// was still uncommitted, so no document numbered 1.6 has ever existed outside one
+// working tree and no consumer could have been handed one without this field. A
+// 1.7 would therefore be a version describing a document nobody ever received.
+// The rule that says count up protects CONSUMERS, and here there are none.
+//
+// THE CONDITION EXPIRES THE MOMENT THIS IS COMMITTED: the argument is available
+// exactly once, before the version leaves the tree. Anything added afterwards
+// raises the minor, whatever anybody thinks about who is reading.
+const SchemaVersion = "1.6"
 
 // JSON renders the machine readable report.
 //
@@ -132,6 +157,7 @@ type jsonFinding struct {
 	EnvironmentVariable *jsonEnvironmentVariable `json:"environment_variable"`
 	NameResolution      *jsonNameResolution      `json:"name_resolution"`
 	TCPConnect          *jsonTCPConnect          `json:"tcp_connect"`
+	TLSHandshake        *jsonTLSHandshake        `json:"tls_handshake"`
 }
 
 type jsonNameResolution struct {
@@ -166,6 +192,91 @@ type jsonTCPConnect struct {
 	// defect here rather than news from a network.
 	Outcome    string `json:"outcome"`
 	DurationMS int64  `json:"duration_ms"`
+}
+
+// jsonTLSHandshake is the fourth body: one row per address, the chain on one of
+// them.
+//
+// ALMOST EVERYTHING HERE IS NULLABLE AND THE PATTERN IS ONE RULE, not a dozen
+// decisions. A field is null when nothing established it. Address, port and
+// completed are settled even for an attempt that failed, so they are always
+// present; everything else was NEGOTIATED, and a version beside a handshake that
+// never happened would be a measurement of something that did not occur.
+//
+// THE CHAIN IS NULL ON EVERY ROW BUT ONE - ADR45 - and that null does not mean
+// "this server sent no certificates". It means this row is not the one carrying
+// them, and matches_first_address is the field that says whether it presented
+// the same leaf. A false there is the only signal this program has for a
+// middlebox sitting on one path and not another, which is why it is a finding
+// rather than a footnote.
+type jsonTLSHandshake struct {
+	Address   string `json:"address"`
+	Port      int    `json:"port"`
+	Completed bool   `json:"completed"`
+	// Null when the handshake completed, and the short English reason when it
+	// did not. It is a field rather than only a sentence in the summary because a
+	// consumer branching on why would otherwise have to parse our prose - the
+	// thing this program refuses to do to anybody else's output.
+	NotCompleted *string `json:"not_completed"`
+	Version      *string `json:"version"`
+	// CipherSuite is the IANA number that came off the wire and CipherSuiteName
+	// is our rendering of it. BRANCH ON THE NUMBER - inviolable rule 19 in its
+	// clearest case. The name is produced by the standard library rather than by
+	// a table of ours, so it tracks somebody else's registry instead of claiming
+	// to.
+	CipherSuite     *uint16 `json:"cipher_suite"`
+	CipherSuiteName *string `json:"cipher_suite_name"`
+	// ServerName is what WE sent in SNI - ours, not theirs. It says which name
+	// the chain below was chosen for, and on a virtual host that is the whole
+	// difference between one certificate and another.
+	ServerName *string `json:"server_name"`
+	// ALPN is null when no protocol was agreed, which is a different fact from a
+	// handshake that did not happen - the two are told apart by completed.
+	ALPN                       *string `json:"alpn"`
+	ClientCertificateRequested *bool   `json:"client_certificate_requested"`
+	LeafFingerprintSHA256      *string `json:"leaf_fingerprint_sha256"`
+	// ChainComplete is null on a row that carries no chain, because a row with
+	// nothing to describe cannot report whether it was complete. It is a
+	// STRUCTURAL verdict read from the presented bytes alone and consults no
+	// trust store - ADR46, and the line on which the whole L4/L5 split stands.
+	ChainComplete       *bool `json:"chain_complete"`
+	MatchesFirstAddress *bool `json:"matches_first_address"`
+	// Null rather than an empty array on the rows that do not carry it. An empty
+	// array would say "this server presented nothing", which is a claim about
+	// somebody else's machine; null says this row is not where the chain lives.
+	Chain []jsonCertificate `json:"chain"`
+}
+
+// jsonCertificate is one certificate exactly as the server presented it.
+//
+// NOTHING HERE SAYS WHETHER IT IS TRUSTED, and the absence is the contract
+// rather than a gap - ADR46. Trust is one answer per runtime and belongs to L5.
+// A trusted field here would quietly claim this machine has a single trust
+// store, which is the claim the whole product exists to disprove.
+type jsonCertificate struct {
+	// Subject MAY BE THE EMPTY STRING and that is legal - ADR47. RFC 5280 section
+	// 4.1.2.6 requires it when the identity lives only in a critical
+	// subjectAltName, so a consumer must read dns_names rather than assume this
+	// is always filled in.
+	Subject string `json:"subject"`
+	Issuer  string `json:"issuer"`
+	// DNSNames is what a modern client actually matches on. RFC 6125 section
+	// 6.4.4: a client MUST NOT match on the common name when a DNS-ID is
+	// present. BRANCH ON THIS, not on the subject.
+	//
+	// Never null. An empty array says the certificate presents no DNS name,
+	// which is a fact read off it rather than a question nobody asked.
+	DNSNames []string `json:"dns_names"`
+	// RFC3339 rather than the Nano the run's own timestamp uses. Certificate
+	// validity is issued to the second and a string of trailing zeroes would
+	// suggest a precision nobody stated.
+	NotBefore string `json:"not_before"`
+	NotAfter  string `json:"not_after"`
+	// FingerprintSHA256 is the evidence inviolable rule 21 requires beside any
+	// claim about interception. IT IS NEVER MASKED, under any flag: it is the
+	// answer somebody came here for and it names no person, host or network.
+	FingerprintSHA256 string `json:"fingerprint_sha256"`
+	IsCA              bool   `json:"is_ca"`
 }
 
 type jsonEnvironmentVariable struct {
@@ -284,6 +395,7 @@ func findingsOf(row report.LayerResult) *[]jsonFinding {
 			EnvironmentVariable: environmentVariableOf(finding),
 			NameResolution:      nameResolutionOf(finding),
 			TCPConnect:          tcpConnectOf(finding),
+			TLSHandshake:        tlsHandshakeOf(finding),
 		})
 	}
 	return &found
@@ -306,6 +418,76 @@ func tcpConnectOf(finding report.Finding) *jsonTCPConnect {
 		Outcome:    attempt.Outcome.String(),
 		DurationMS: attempt.DurationMS,
 	}
+}
+
+// tlsHandshakeOf encodes the handshake body.
+//
+// THE SHAPE IS ONE RULE APPLIED THROUGHOUT: a field is null when nothing
+// established it. An attempt that never completed negotiated nothing, so every
+// negotiated field is null and only the address, the port, the flag saying so
+// and the reason survive. Filling any of them in would be a measurement of
+// something that did not happen - the same rule that keeps a duration off a
+// connection which never left this machine.
+//
+// The chain is carried across rather than aliased, so the document holds its own
+// copy of what a layer handed over. The pointers are taken through locals for
+// the reason the two bodies above give: a pointer into a loop variable is a
+// pointer every row shares.
+func tlsHandshakeOf(finding report.Finding) *jsonTLSHandshake {
+	if finding.TLSHandshake == nil {
+		return nil
+	}
+	shake := *finding.TLSHandshake
+	body := jsonTLSHandshake{
+		Address:      shake.Address,
+		Port:         shake.Port,
+		Completed:    shake.Completed,
+		NotCompleted: optional(shake.NotCompleted),
+	}
+	if shake.MatchesFirstAddress != nil {
+		matches := *shake.MatchesFirstAddress
+		body.MatchesFirstAddress = &matches
+	}
+	if !shake.Completed {
+		// NOTHING WAS NEGOTIATED, SO NOTHING IS FILLED IN. The core refuses a row
+		// that says otherwise, and this is the same refusal expressed as a
+		// document: the reader gets nulls rather than zero values that read as
+		// measurements.
+		return &body
+	}
+
+	body.Version = optional(shake.Version)
+	body.ServerName = optional(shake.ServerName)
+	body.ALPN = optional(shake.ALPN)
+	body.LeafFingerprintSHA256 = optional(shake.LeafFingerprintSHA256)
+	suite := shake.CipherSuite
+	body.CipherSuite = &suite
+	body.CipherSuiteName = optional(shake.CipherSuiteName)
+	requested := shake.ClientCertificateRequested
+	body.ClientCertificateRequested = &requested
+
+	if shake.Chain == nil {
+		// This row is not the one carrying the chain, so it has nothing to say
+		// about whether that chain was complete either - ADR45.
+		return &body
+	}
+	complete := shake.ChainComplete
+	body.ChainComplete = &complete
+	body.Chain = make([]jsonCertificate, 0, len(shake.Chain))
+	for _, certificate := range shake.Chain {
+		body.Chain = append(body.Chain, jsonCertificate{
+			Subject:           certificate.Subject,
+			Issuer:            certificate.Issuer,
+			NotBefore:         certificate.NotBefore.UTC().Format(time.RFC3339),
+			NotAfter:          certificate.NotAfter.UTC().Format(time.RFC3339),
+			FingerprintSHA256: certificate.FingerprintSHA256,
+			// Never nil, so a certificate presenting no name renders [] rather
+			// than null - the same distinction findings themselves carry.
+			DNSNames: append([]string{}, certificate.DNSNames...),
+			IsCA:     certificate.IsCA,
+		})
+	}
+	return &body
 }
 
 func nameResolutionOf(finding report.Finding) *jsonNameResolution {

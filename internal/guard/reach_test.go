@@ -58,6 +58,17 @@ var dialAllowlist = map[string]bool{
 	// whether the connection opens and closes it at once. It asks dial.Permission
 	// directly - the same function, consumed rather than copied.
 	"internal/adapter/tcp/network.go": true,
+
+	// The connection L4 opens to complete a handshake, added 2026-08-17 with the
+	// code it covers. IT IS A SECOND CONNECTION TO AN ADDRESS L3 ALREADY TRIED,
+	// and that is not waste: L3 answers whether the port accepts anything and
+	// closes at once, and a connection cannot be handed between layers without
+	// welding them together - the seam between them is a list of strings.
+	//
+	// It borrows BOTH halves rather than copying either: dial.Permission for the
+	// rule, tcp.Target for the spelling. A fourth entry here therefore adds a
+	// place that connects, not a fourth answer to "may we".
+	"internal/adapter/handshake/handshake.go": true,
 }
 
 // networkPackages are the standard library imports that can open a connection.

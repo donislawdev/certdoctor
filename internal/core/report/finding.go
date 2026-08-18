@@ -7,6 +7,11 @@ import (
 	// that list. It is here so a connection row can refuse a host name where an
 	// address belongs.
 	"net/netip"
+	// time carries certificate validity bounds. They are REPORTED and never
+	// judged here: whether "expired" means anything depends on a clock this
+	// package does not own, and the layers take their clock as a port for
+	// exactly that reason.
+	"time"
 )
 
 // FindingKind says what sort of fact a finding carries.
@@ -26,6 +31,13 @@ const (
 	FindingNameResolution FindingKind = "name_resolution"
 	// FindingTCPConnect - one attempt to open a TCP connection to one address.
 	FindingTCPConnect FindingKind = "tcp_connect"
+
+	// FindingTLSHandshake - what one server presented when the connection was
+	// upgraded to TLS. THE KIND THIS WHOLE DISCRIMINATED UNION WAS BUILT FOR:
+	// docs/18 named L4 by name back in P2, when there was exactly one kind and
+	// the machinery looked oversized, because a certificate chain is the case a
+	// flat {kind, name, value} envelope cannot carry.
+	FindingTLSHandshake FindingKind = "tls_handshake"
 )
 
 // findingKindMeanings is the registry. The registry test refuses a kind that is
@@ -34,6 +46,7 @@ var findingKindMeanings = map[FindingKind]string{
 	FindingEnvironmentVariable: "an environment variable that decides trust or proxying",
 	FindingNameResolution:      "one answer to what a name resolves to, through one named lens",
 	FindingTCPConnect:          "one attempt to open a TCP connection to one address",
+	FindingTLSHandshake:        "what one server presented when the connection to one address was upgraded to TLS",
 }
 
 // AllFindingKinds lists every kind exactly once, in declaration order.
@@ -56,6 +69,7 @@ var AllFindingKinds = []FindingKind{
 	FindingEnvironmentVariable,
 	FindingNameResolution,
 	FindingTCPConnect,
+	FindingTLSHandshake,
 }
 
 // ResolutionView says which of the two lenses an answer was seen through.
@@ -370,6 +384,8 @@ type Finding struct {
 	NameResolution *NameResolution
 	// TCPConnect is set when Kind is FindingTCPConnect.
 	TCPConnect *TCPConnect
+	// TLSHandshake is set when Kind is FindingTLSHandshake.
+	TLSHandshake *TLSHandshake
 }
 
 // ConnectOutcome is what happened when we tried to open one TCP connection.
@@ -598,10 +614,181 @@ type EnvironmentVariable struct {
 // arrives, because it would simply not mention it. This is walked against the
 // declared list of kinds, so a kind added without an entry here is a red
 // registry test rather than a body nothing checks.
+// Certificate is one certificate exactly as a server presented it.
+//
+// NOTHING HERE SAYS WHETHER IT IS TRUSTED, and the absence is the contract
+// rather than a gap - ADR46. Trust is one answer per runtime, not one per
+// certificate, and it belongs to L5. A "trusted" field here would quietly claim
+// this machine has a single trust store, which is the claim the whole product
+// exists to disprove.
+type Certificate struct {
+	// Subject and Issuer are rendered by ONE function, on the adapter side, and
+	// that is what makes comparing them sound. Two spellings of one distinguished
+	// name would make a complete chain look broken - the same failure tcp.Target
+	// exists to prevent one layer down.
+	//
+	// SUBJECT MAY BE EMPTY AND THAT IS LEGAL RATHER THAN BROKEN - ADR47. RFC 5280
+	// section 4.1.2.6 REQUIRES an empty subject when the identity lives only in a
+	// critical subjectAltName, so a contract refusing it would refuse a correctly
+	// issued certificate - and, because a refused finding degrades the layer,
+	// certdoctor would answer "I could not assess this" about a server that is
+	// perfectly fine. Measured on 2026-08-18: crypto/x509 mints exactly that shape
+	// and marks the extension critical by itself.
+	Subject string
+	// Issuer is required, and it is the asymmetry that makes the rule above safe:
+	// RFC 5280 section 4.1.2.4 says the issuer field MUST contain a non-empty
+	// distinguished name. An empty one is therefore either a malformed certificate
+	// or a defect on our side, and it is also the value chain completeness is
+	// compared against.
+	Issuer string
+	// DNSNames is what the certificate says it is FOR - the subjectAltName DNS
+	// entries, in the order presented.
+	//
+	// IT IS THE FIELD A MODERN CLIENT ACTUALLY MATCHES ON, and leaving it out was
+	// the real defect ADR47 found while looking at something else. RFC 6125
+	// section 6.4.4: a client MUST NOT match on the common name when the
+	// certificate presents a DNS-ID. A report showing only the subject was
+	// therefore showing the deprecated field and hiding the authoritative one -
+	// in a product whose whole question is why somebody's client will not accept
+	// this server.
+	//
+	// EMPTY IS A STATEMENT, NEVER "we did not look": this is read off the
+	// certificate every time, so an empty list means the certificate presents no
+	// DNS name at all.
+	DNSNames []string
+	// NotBefore and NotAfter are reported, never judged. Whether "expired" means
+	// anything depends on a clock this program does not own.
+	NotBefore time.Time
+	NotAfter  time.Time
+	// FingerprintSHA256 identifies this certificate exactly, and is the evidence
+	// inviolable rule 21 requires beside any claim about interception. IT IS
+	// NEVER MASKED: it is the answer somebody came here for, and it names no
+	// person, host or network.
+	FingerprintSHA256 string
+	// IsCA is the basic constraint as presented.
+	IsCA bool
+}
+
+// TLSHandshake is what one address presented when the connection was upgraded.
+//
+// ONE ROW PER ADDRESS, AND THE FULL CHAIN ON ONE OF THEM - ADR45. Measured on
+// 2026-08-17: every address of example.com and of cloudflare.com presented a
+// byte-identical leaf, so agreement is the norm and repeating four chains would
+// be four times the page for none of the information. MatchesFirstAddress
+// carries the comparison instead, and a false there is a finding rather than a
+// footnote: it is the only signal this program has for a middlebox sitting on
+// one path and not another.
+type TLSHandshake struct {
+	// Address and Port are present on every row, including one where nothing
+	// happened - a row that cannot be attributed is a row nobody can act on.
+	Address string
+	Port    int
+	// Completed says whether a handshake happened at all.
+	Completed bool
+	// NotCompleted is the short English phrase saying why not, and is set only
+	// when Completed is false. Silence about a failure is forbidden - inviolable
+	// rule 1 - so the two fields are checked against each other below.
+	NotCompleted string
+
+	// Version is the negotiated version as a name, and it is the ONE place in
+	// this program where a name rather than a number is the identity. The reason
+	// is that the set is closed and tiny - four values, standardised, unchanged
+	// for years - unlike the cipher suite registry, which is open and large. A
+	// consumer branching on the version string is branching on a closed list;
+	// one branching on a cipher name would be parsing our rendering of a number.
+	Version string
+	// CipherSuite is the IANA number that came off the wire. THE NUMBER IS THE
+	// FACT - inviolable rule 19. Branch on this.
+	CipherSuite uint16
+	// CipherSuiteName is our rendering of that number, for a person reading the
+	// report. Never branch on it.
+	CipherSuiteName string
+	// ALPN is the protocol agreed, or empty when none was.
+	ALPN string
+	// ServerName is what WE sent in SNI - ours, not theirs. It says which name
+	// the certificate below was chosen for.
+	ServerName string
+	// ClientCertificateRequested says the server asked us to authenticate. It is
+	// one of the commonest causes of "works in the browser, fails in the tool",
+	// and it is invisible from a browser that already holds a certificate.
+	ClientCertificateRequested bool
+	// LeafFingerprintSHA256 is present on every completed row, including the ones
+	// that carry no chain, because it is what the comparison below is made of.
+	LeafFingerprintSHA256 string
+	// ChainComplete is a STRUCTURAL verdict answered from the presented bytes
+	// alone: the issuer of the leaf is among the certificates that arrived, or
+	// the leaf signed itself. No trust store is consulted, which is exactly why
+	// this question belongs to L4 and trust does not.
+	ChainComplete bool
+	// MatchesFirstAddress is nil on the row carrying the chain and set on every
+	// other completed row.
+	MatchesFirstAddress *bool
+	// Chain is what the server sent, leaf first, on one row only.
+	Chain []Certificate
+}
+
+// breach is the half of this body that is PROHIBITIONS, and that is where its
+// value is - the same shape the resolution and connection bodies have.
+func (t *TLSHandshake) breach() string {
+	switch {
+	case t.Address == "":
+		return "carries no address, and a row nobody can attribute is a row nobody can act on"
+	case t.Port < 1 || t.Port > 65535:
+		return fmt.Sprintf("reports port %d, which is not a port", t.Port)
+	}
+
+	if !t.Completed {
+		// NOTHING WAS NEGOTIATED, SO NOTHING MAY BE FILLED IN. A version beside a
+		// handshake that did not happen is a measurement of something that did
+		// not occur - the same rule that keeps a duration off a connection which
+		// never left this machine.
+		switch {
+		case t.NotCompleted == "":
+			return "says no handshake completed and does not say why, and silence about a failure is forbidden"
+		case t.Version != "" || t.CipherSuite != 0 || t.ALPN != "":
+			return "says no handshake completed and still reports what was negotiated, which would be a measurement of something that did not happen"
+		case len(t.Chain) != 0 || t.LeafFingerprintSHA256 != "":
+			return "says no handshake completed and still carries a certificate, which nothing could have presented"
+		case t.ChainComplete:
+			return "says no handshake completed and calls the chain complete, and there was no chain"
+		}
+		return ""
+	}
+
+	switch {
+	case t.NotCompleted != "":
+		return "says the handshake completed and also says why it did not"
+	case t.LeafFingerprintSHA256 == "":
+		return "says the handshake completed and carries no leaf fingerprint, and the fingerprint is what identifies what was presented"
+	case len(t.Chain) > 0 && t.MatchesFirstAddress != nil:
+		return "carries the full chain and a comparison against the first address, and the row carrying the chain IS the first address"
+	case len(t.Chain) == 0 && t.MatchesFirstAddress == nil:
+		return "carries neither the chain nor a comparison against the one that does, so it says nothing about what this address presented"
+	case len(t.Chain) > 0 && t.Chain[0].FingerprintSHA256 != t.LeafFingerprintSHA256:
+		return "reports a leaf fingerprint that is not the fingerprint of the first certificate in its own chain"
+	}
+	for i, c := range t.Chain {
+		if c.Issuer == "" {
+			// THE SUBJECT IS DELIBERATELY NOT CHECKED HERE ANY MORE - ADR47. It
+			// used to be, and that rule refused a certificate RFC 5280 requires to
+			// look exactly that way. The issuer stays required because the same
+			// RFC forbids an empty one, so it can only mean a malformed
+			// certificate or a defect here.
+			return fmt.Sprintf("carries a certificate at position %d with no issuer at all, which RFC 5280 forbids - "+
+				"so nothing can say who signed it", i)
+		}
+		if c.FingerprintSHA256 == "" {
+			return fmt.Sprintf("carries a certificate at position %d with no fingerprint, and the fingerprint is the evidence a claim about interception has to travel with", i)
+		}
+	}
+	return ""
+}
+
 var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingEnvironmentVariable: func(f Finding) bool { return f.EnvironmentVariable != nil },
 	FindingNameResolution:      func(f Finding) bool { return f.NameResolution != nil },
 	FindingTCPConnect:          func(f Finding) bool { return f.TCPConnect != nil },
+	FindingTLSHandshake:        func(f Finding) bool { return f.TLSHandshake != nil },
 }
 
 // Breach names what is wrong with a finding, or returns the empty string for one
@@ -655,6 +842,8 @@ func (f Finding) bodyBreach() string {
 		return f.NameResolution.breach(f.Source)
 	case f.TCPConnect != nil:
 		return f.TCPConnect.breach()
+	case f.TLSHandshake != nil:
+		return f.TLSHandshake.breach()
 	}
 	return ""
 }

@@ -226,6 +226,65 @@ var maskedBodies = map[report.FindingKind]func(*redact.Redaction, *report.Findin
 	report.FindingEnvironmentVariable: maskEnvironmentVariable,
 	report.FindingNameResolution:      maskNameResolution,
 	report.FindingTCPConnect:          maskTCPConnect,
+	report.FindingTLSHandshake:        maskTLSHandshake,
+}
+
+// maskTLSHandshake is the first entry that has to say YES TO SOME FIELDS AND NO
+// TO OTHERS, and the split is the decision rather than the code.
+//
+// WHAT GOES THROUGH MASKING. A subject and an issuer are text out of somebody
+// else's certificate and they routinely carry host names - a distinguished name
+// is where a host name lives when it is not in a URL. The server name is the one
+// WE sent in SNI, which is the host the user typed. All three are the shape
+// --redact exists for.
+//
+// WHAT NEVER DOES, AND THIS HALF IS THE ONE WORTH DEFENDING. A fingerprint is
+// the evidence inviolable rule 21 requires to travel beside any claim about
+// interception - it is the answer somebody came here for, and it names no
+// person, no host and no network. Masking it would leave a report that accuses a
+// middlebox and withholds the one value proving it. The addresses are left alone
+// for the reason maskTCPConnect gives one layer down: an address a name resolved
+// to is the diagnosis, not infrastructure.
+//
+// The chain is rebuilt rather than written through, for the reason maskFinding
+// gives: copying a findings slice copies the pointers in it, so writing through
+// one would rewrite the layer's own evidence underneath it. A nil chain stays
+// nil - the row that carries no chain must not grow an empty one, because those
+// two are different statements (ADR45, ADR20).
+func maskTLSHandshake(r *redact.Redaction, finding *report.Finding) {
+	shake := *finding.TLSHandshake
+	shake.ServerName = r.Text(shake.ServerName)
+	if shake.Chain != nil {
+		chain := make([]report.Certificate, 0, len(shake.Chain))
+		for _, certificate := range shake.Chain {
+			certificate.Subject = r.Text(certificate.Subject)
+			certificate.Issuer = r.Text(certificate.Issuer)
+			// THE NAMES ARE HOST NAMES BY DEFINITION, so they go the same way as
+			// the two above - ADR47. They are also the field most likely to carry
+			// an internal name that appears nowhere else in the report, because a
+			// certificate for one host routinely lists several.
+			certificate.DNSNames = maskedNames(r, certificate.DNSNames)
+			chain = append(chain, certificate)
+		}
+		shake.Chain = chain
+	}
+	finding.TLSHandshake = &shake
+}
+
+// maskedNames puts every name through masking and keeps nil as nil.
+//
+// The nil is not tidiness: an empty list says the certificate presents no DNS
+// name, and rebuilding one for a certificate that had none would be masking
+// inventing a fact - the same distinction the chain itself carries.
+func maskedNames(r *redact.Redaction, names []string) []string {
+	if names == nil {
+		return nil
+	}
+	masked := make([]string, 0, len(names))
+	for _, name := range names {
+		masked = append(masked, r.Text(name))
+	}
+	return masked
 }
 
 // maskTCPConnect is the entry that had to be WRITTEN in order to say that this

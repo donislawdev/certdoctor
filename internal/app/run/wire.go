@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 
+	"github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
 	"github.com/donislawdev/certdoctor/internal/core/machine"
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -34,6 +35,14 @@ type Wiring struct {
 	// Reach is everything L3 was given, EXCEPT the addresses: those do not exist
 	// until L1 has run, and Wire supplies them below.
 	Reach tcp.Input
+	// Handshake is everything L4 was given, EXCEPT the addresses. The same seam
+	// again, one layer further along: L3 produces them and Wire supplies them.
+	//
+	// ITS ServerName MUST BE THE RAW HOST FROM THE TARGET, never the masked one.
+	// That name goes out in SNI and decides which certificate the server chooses,
+	// so a run under --redact would otherwise ask every server on earth for a
+	// certificate issued to [host-1].
+	Handshake handshake.Input
 	// Authorise is told the addresses L1 found, before L3 is asked to connect to
 	// any of them.
 	//
@@ -92,10 +101,24 @@ func Wire(w Wiring) Layers {
 		return answerFromResolution(result)
 	}
 
+	// THE SECOND SEAM, AND IT IS DELIBERATELY THE SAME SHAPE AS THE FIRST. L3
+	// answers which addresses accepted a connection; L4 hand shakes with those
+	// and no others - ADR45. An address that refused has nothing to hand shake
+	// with, and a row about it would report our own arithmetic as a fact about
+	// somebody's TLS.
+	var connected []string
 	reach := w.Reach
 	reach.Addresses = func() []string { return resolved }
 	layers[layer.TCP] = func(ctx context.Context) Answer {
-		return answerFromReach(tcp.Ask(ctx, reach))
+		result := tcp.Ask(ctx, reach)
+		connected = result.Connected
+		return answerFromReach(result)
+	}
+
+	shake := w.Handshake
+	shake.Addresses = func() []string { return connected }
+	layers[layer.TLS] = func(ctx context.Context) Answer {
+		return answerFromHandshake(handshake.Ask(ctx, shake))
 	}
 	return layers
 }
@@ -134,6 +157,17 @@ func answerFromResolution(result resolve.Result) Answer {
 
 // answerFromReach is the same boundary for L3.
 func answerFromReach(result tcp.Result) Answer {
+	return answerOf(result.Status, result.Reason, result.Detail, result.Findings)
+}
+
+// answerFromHandshake is the same boundary for L4.
+//
+// FOUR LAYERS NOW GO THROUGH ONE CROSSING, and that is the point rather than a
+// coincidence. The first two started as copies of each other, with a comment
+// arguing two small functions could not drift; what they actually did was make
+// three EXISTING mutation entries ambiguous, so each reported SKIP and stopped
+// proving anything. The rule lives once, in answerOf.
+func answerFromHandshake(result handshake.Result) Answer {
 	return answerOf(result.Status, result.Reason, result.Detail, result.Findings)
 }
 

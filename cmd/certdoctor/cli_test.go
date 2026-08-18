@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"regexp"
@@ -19,9 +20,11 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
+	coretcp "github.com/donislawdev/certdoctor/internal/core/tcp"
 )
 
 // harness is one invocation with the outside world replaced.
@@ -1201,6 +1204,85 @@ func TestOnlyDialableAddressesWidenTheAllowedSet(t *testing.T) {
 	for _, never := range []string{"not-an-address:443", "192.0.2.11:443", "192.0.2.10:80"} {
 		if _, permitted := targets.Permits(never); permitted {
 			t.Errorf("%s is permitted and nothing derived it", never)
+		}
+	}
+}
+
+// closedAtOnce stands in for a connection L3 opened. L3 closes what it is given
+// immediately, so nothing more is needed.
+type closedAtOnce struct{}
+
+func (closedAtOnce) Close() error { return nil }
+
+// TestTheRawHostReachesTheHandshakeLayerEvenUnderRedact is the L1 trap one layer
+// further along, and here it is WORSE.
+//
+// The name this wiring hands L4 goes out in SNI, where it decides which
+// certificate a virtual host chooses. Fed the masked target, a run under
+// --redact would ask every server on earth for a certificate issued to the
+// literal string [host-1], receive one issued to something else, and report a
+// correctly configured server as presenting the wrong certificate.
+//
+// NOTHING ELSE WOULD NOTICE. The document would validate, the chain would be
+// real, the fingerprints would be genuine, and the diagnosis would be
+// confidently wrong about somebody else's machine - which is the exact failure
+// this product exists to prevent, committed by the product.
+func TestTheRawHostReachesTheHandshakeLayerEvenUnderRedact(t *testing.T) {
+	for _, redacted := range []bool{false, true} {
+		var namesSent []string
+		h := &harness{written: map[string][]byte{}}
+		args := []string{"https://internal.corp.example", "--format", "json"}
+		if redacted {
+			args = append(args, "--redact")
+		}
+
+		guarded(context.Background(), args, environment{
+			stdout:     &h.stdout,
+			stderr:     &h.stderr,
+			capability: func(bool) render.Capability { return render.Capability{} },
+			now:        func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
+			platform:   report.Platform{OS: "testos", Arch: "testarch"},
+			privilege:  report.PrivilegeUnknown,
+			lookupEnv:  func(string) (string, bool) { return "", false },
+			writeFile:  func(string, []byte) error { return nil },
+
+			nameservers: func() (dns.Nameservers, error) {
+				return dns.Nameservers{ToAsk: []string{"192.0.2.53"}, Known: []string{"192.0.2.53"}, From: "a test"}, nil
+			},
+			queryID: func() uint16 { return 1 },
+			// One lens answering is enough to give L3 an address to reach.
+			system: func(*allowed.Targets) resolve.SystemLookup {
+				return func(context.Context, string) resolve.SystemAnswer {
+					return resolve.SystemAnswer{Addresses: []string{"192.0.2.10"}}
+				}
+			},
+			exchange: func(*allowed.Targets) resolve.Exchange {
+				return func(context.Context, string, []byte) ([]byte, error) { return nil, resolve.ErrTimeout }
+			},
+			// The connection has to SUCCEED, or L4 is handed nothing and this
+			// test passes by never asking the question.
+			connect: func(*allowed.Targets) coretcp.Connect {
+				return func(context.Context, string, int) (io.Closer, error) { return closedAtOnce{}, nil }
+			},
+			shake: func(*allowed.Targets) corehandshake.Shake {
+				return func(_ context.Context, _ string, _ int, name string) (corehandshake.Presented, error) {
+					namesSent = append(namesSent, name)
+					return corehandshake.Presented{}, corehandshake.ErrRejected
+				}
+			},
+		})
+
+		if len(namesSent) == 0 {
+			t.Fatalf("with --redact=%v no handshake was attempted, so this proves nothing", redacted)
+		}
+		for _, name := range namesSent {
+			if strings.Contains(name, "[") {
+				t.Errorf("with --redact=%v a pseudonym went out in SNI: %q", redacted, name)
+			}
+			if name != "internal.corp.example" {
+				t.Errorf("with --redact=%v the name sent was %q, and the user typed internal.corp.example",
+					redacted, name)
+			}
 		}
 	}
 }

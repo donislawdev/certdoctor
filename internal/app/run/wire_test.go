@@ -65,7 +65,12 @@ func TestWiringPutsTheContextLayerInPlaceOfTheStub(t *testing.T) {
 // rather than derived, so that a layer starting to answer for itself has to be
 // added here deliberately - the alternative is a wiring that quietly answers for
 // all eight while the tool claims to have checked things it has not.
-var written = map[layer.ID]bool{layer.Context: true, layer.Resolution: true, layer.TCP: true}
+var written = map[layer.ID]bool{
+	layer.Context:    true,
+	layer.Resolution: true,
+	layer.TCP:        true,
+	layer.TLS:        true,
+}
 
 // TestTheUnwrittenLayersStillSayTheyAreNotWritten is the other side of the
 // override.

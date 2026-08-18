@@ -23,12 +23,14 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/dial"
 	"github.com/donislawdev/certdoctor/internal/adapter/dns"
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
+	"github.com/donislawdev/certdoctor/internal/adapter/handshake"
 	"github.com/donislawdev/certdoctor/internal/adapter/output"
 	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	coretcp "github.com/donislawdev/certdoctor/internal/core/tcp"
@@ -133,6 +135,13 @@ func liveEnvironment() environment {
 		// has one answer in one place for every layer that asks it.
 		connect: func(targets *allowed.Targets) coretcp.Connect {
 			return tcp.Connect(dial.Permission(targets, nil))
+		},
+		// L4's handshake, and the fourth place in this program that can open a
+		// connection. It asks the SAME rule as all three lines above -
+		// dial.Permission, consumed rather than copied - so a fourth way to reach
+		// the network did not bring a fourth answer to "may we" with it.
+		shake: func(targets *allowed.Targets) corehandshake.Shake {
+			return handshake.Shake(dial.Permission(targets, nil))
 		},
 		queryID: queryID,
 	}

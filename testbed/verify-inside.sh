@@ -149,6 +149,107 @@ check_scenario() {
   fi
 }
 
+# check_handshake asks the chain bench and compares against what expected/ says
+# about L4.
+#
+# IT IS A SEPARATE FUNCTION BECAUSE THE SUBJECT IS DIFFERENT, not because the
+# code would not fit. In check_scenario the subject is a name and dig is the
+# independent witness; here the subject is a certificate chain and openssl is.
+# Folding them together would mean one function whose every line asked "which
+# kind am I".
+check_handshake() {
+  local name="$1"
+  local file="$expected/$name.txt"
+  local target want_l4 want_certs
+
+  target="$(value "$file" target)"
+  want_l4="$(value "$file" l4_status)"
+  want_certs="$(value "$file" chain_certs_presented)"
+
+  say() {
+    echo "    DIFFERS: $1"
+    failed=$((failed + 1))
+  }
+
+  echo "  scenario $name  ->  $target"
+
+  local host
+  host="$(echo "$target" | sed -e 's|^https\{0,1\}://||' -e 's|/.*$||')"
+
+  # THE INDEPENDENT WITNESS FIRST AND ITS ANSWER IS PRINTED WHATEVER HAPPENS.
+  # openssl shares no line of code with certdoctor, so if the two disagree about
+  # how many certificates are on the wire, THE BENCH is the first suspect - which
+  # is worth knowing before reading anything below.
+  local presented
+  if command -v openssl >/dev/null 2>&1; then
+    presented="$(echo | openssl s_client -connect "$host:443" -servername "$host" -showcerts 2>/dev/null |
+      grep -c 'BEGIN CERTIFICATE')"
+    echo "    openssl says: $presented certificate(s) on the wire"
+    if [ -n "$want_certs" ] && [ "$presented" != "$want_certs" ]; then
+      say "the bench itself presents $presented certificate(s), and expected/ says $want_certs"
+    fi
+  else
+    # NOT SILENCE. Half an oracle has to say which half is missing, or the run
+    # reads as though both witnesses agreed.
+    echo "    NOT CHECKED: this image has no openssl, so the bench's own answer was not established."
+    notes=$((notes + 1))
+  fi
+
+  local document code
+  document="$("$binary" "$target" --json 2>/dev/null)"
+  code=$?
+  if [ -z "$document" ]; then
+    say "certdoctor produced no document at all"
+    return
+  fi
+
+  local got_l4 got_certs got_complete sentence
+  got_l4="$(echo "$document" | jq -r '.layers[] | select(.id=="L4") | .status')"
+  got_certs="$(echo "$document" | jq -r '[.layers[] | select(.id=="L4") | .findings[]? | .tls_handshake.chain | select(. != null) | length] | first // 0')"
+  # tostring RATHER THAN THE // OPERATOR, AND THIS COST A RUN. jq treats false and
+  # null alike as "empty", so `first // "none"` turns a chain_complete of FALSE -
+  # the exact answer this scenario exists to produce - into "none", and the check
+  # below then reports a difference that is not there. The assertion got a correct
+  # answer to a different question, which is the shape OBS56 records.
+  got_complete="$(echo "$document" | jq -r '[.layers[] | select(.id=="L4") | .findings[]? | .tls_handshake | select(.chain != null) | .chain_complete] | first | tostring')"
+  sentence="$(echo "$document" | jq -r '.layers[] | select(.id=="L4") | .detail')"
+
+  echo "    certdoctor: L4 $got_l4 / $got_certs certificate(s) / chain_complete $got_complete | exit $code"
+  echo "    sentence:   $sentence"
+
+  if [ -n "$want_l4" ] && [ "$got_l4" != "$want_l4" ]; then
+    say "L4 says $got_l4, expected $want_l4"
+  fi
+  if [ -n "$want_certs" ] && [ "$got_certs" != "$want_certs" ]; then
+    say "certdoctor reports $got_certs certificate(s) and the bench puts $want_certs on the wire"
+  fi
+  # THE STRUCTURAL VERDICT IS THE WHOLE OF S-5 - ADR46. The issuer of the leaf is
+  # not among the certificates that arrived and the leaf did not sign itself, and
+  # NO TRUST STORE WAS CONSULTED to establish that. A bench serving one
+  # certificate that came back complete would mean the check reads something else.
+  if [ "$(value "$file" intermediate_presented)" = "no" ] && [ "$got_complete" != "false" ]; then
+    say "the chain is reported as complete ($got_complete), and the issuer of the leaf never arrived"
+  fi
+  # docs/21 S-5: the verdict names the SERVER. Every runtime on the machine fails
+  # and the correct answer is still "do nothing here".
+  if ! echo "$sentence" | grep -q 'server'; then
+    say "the sentence does not name the server, and this fault is the server's"
+  fi
+
+  # WHAT THIS DOES NOT CHECK, SAID RATHER THAN LEFT AS SILENCE. expected/ carries
+  # verdict_blames_forbidden=machine,runtime,store, and it CANNOT be checked by
+  # looking for those words: the correct sentence says "a fact about the server
+  # rather than about this machine", which contains one of them while denying it.
+  # A word search would fail on the right answer and pass on a sentence that said
+  # nothing at all. Judging it needs a reader.
+  echo "    NOT CHECKED: whether the sentence BLAMES the machine - the right answer contains that word."
+  notes=$((notes + 1))
+
+  if [ "$got_l4" = "$want_l4" ]; then
+    passed=$((passed + 1))
+  fi
+}
+
 # THE BENCH IS ASKED WHETHER IT IS SERVING THE CONFIGURATION IN THIS WORKING
 # TREE, BEFORE ANYTHING ELSE - and this check exists because the trap it catches
 # was walked into on 2026-08-17, while adding the partner zone.
@@ -201,6 +302,13 @@ check_scenario split
 
 echo
 
+# S-5, AND ITS EXPECTATION HAS BEEN WAITING SINCE P4b. It was written from the
+# bench's configuration BEFORE that configuration existed, which is the strongest
+# form of oracle available - and until L4 arrived nothing could ask it.
+check_handshake no-intermediate
+
+echo
+
 # WHAT THIS RUN DID NOT ASSESS, SAID OUT LOUD RATHER THAN LEFT AS SILENCE.
 #
 # P4b put two benches in place - a server that withholds its intermediate, and a
@@ -209,19 +317,26 @@ echo
 # down already, which is the whole point of building the bench first, but an
 # expectation nobody checks is not coverage.
 #
-# The list builds itself: any expectation file naming l4_status is by definition
-# beyond what this script can ask today. So it cannot go stale by somebody adding
-# a file and forgetting this block, and it empties itself when L4 arrives.
+# The list builds itself: any expectation file naming interception_detected is by
+# definition beyond what this script can ask today. So it cannot go stale by
+# somebody adding a file and forgetting this block, and it empties itself when
+# P6b arrives.
+#
+# THE KEY CHANGED FROM l4_status TO interception_detected ON 2026-08-17, WITH P6a,
+# and the reason is the point of the self-building list rather than a defect in
+# it. L4 now exists, so "names l4_status" stopped meaning "nothing can read this"
+# - no-intermediate is checked above. What is still unreadable is DETECTING
+# INTERCEPTION, which is P6b and touches load-bearing change 6.
 deferred=0
 for file in "$expected"/*.txt; do
   [ -e "$file" ] || continue
-  if [ -n "$(value "$file" l4_status)" ]; then
+  if [ -n "$(value "$file" interception_detected)" ]; then
     if [ "$deferred" -eq 0 ]; then
       echo "testbed: NOT ASSESSED HERE - benches whose reader does not exist yet:"
     fi
     deferred=$((deferred + 1))
     echo "    $(basename "$file" .txt)  ->  $(value "$file" target)"
-    echo "        expects L4 $(value "$file" l4_status), and there is no L4 yet. Waiting for P6."
+    echo "        expects interception $(value "$file" interception_detected), and nothing detects it yet. Waiting for P6b."
   fi
 done
 if [ "$deferred" -gt 0 ]; then
@@ -242,9 +357,13 @@ fi
 
 if [ "$notes" -gt 0 ]; then
   echo "testbed: certdoctor agrees with the verdicts written before it ever ran here,"
-  echo "testbed: EXCEPT for $notes point(s) marked UNSETTLED above, which are waiting on a"
-  echo "testbed: decision rather than on a fix. Read them - a green line underneath a"
-  echo "testbed: known gap is exactly the shape this project is built against."
+  echo "testbed: EXCEPT for $notes point(s) marked UNSETTLED or NOT CHECKED above."
+  echo "testbed: THE TWO ARE DIFFERENT and both are printed in full. UNSETTLED waits on a"
+  echo "testbed: DECISION; NOT CHECKED waits on a READER - an expectation this script"
+  echo "testbed: cannot judge without judging English, such as whether a sentence blames"
+  echo "testbed: the machine when the right answer contains that very word. Neither waits"
+  echo "testbed: on a fix, and neither can be read off this line. Read them - a green line"
+  echo "testbed: underneath a known gap is exactly the shape this project is built against."
   exit 0
 fi
 

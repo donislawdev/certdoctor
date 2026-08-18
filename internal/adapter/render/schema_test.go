@@ -473,7 +473,61 @@ var bodyFixtures = map[report.FindingKind]report.Finding{
 			Address: "192.0.2.10", Port: 443, Outcome: report.OutcomeConnected, DurationMS: 12,
 		},
 	},
+	// THE FIXTURE CARRIES A CHAIN RATHER THAN THE SMALLEST VALID ROW, and that
+	// is the whole of OBS43 applied here. The chain is the part of this body
+	// with its own nested shape, its own null, and its own block in the terminal
+	// renderer; a fixture without one would satisfy this guard while leaving
+	// every one of those paths unexecuted.
+	report.FindingTLSHandshake: {
+		Kind:    report.FindingTLSHandshake,
+		Summary: "192.0.2.10 on port 443 presented 2 certificate(s)",
+		Source:  report.SourceDetected,
+		TLSHandshake: &report.TLSHandshake{
+			Address:                    "192.0.2.10",
+			Port:                       443,
+			Completed:                  true,
+			Version:                    "TLS 1.3",
+			CipherSuite:                4865,
+			CipherSuiteName:            "TLS_AES_128_GCM_SHA256",
+			ALPN:                       "h2",
+			ServerName:                 "example.com",
+			ClientCertificateRequested: false,
+			LeafFingerprintSHA256:      leafFingerprint,
+			ChainComplete:              true,
+			Chain: []report.Certificate{
+				{
+					Subject: "CN=example.com",
+					Issuer:  "C=US, O=Example CA, CN=Example Issuing CA",
+					// The field a modern client actually matches on - ADR47. A
+					// fixture without it would leave every path that renders the
+					// names unexecuted while looking complete.
+					DNSNames:          []string{"example.com", "www.example.com"},
+					NotBefore:         time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+					NotAfter:          time.Date(2026, 9, 1, 23, 59, 59, 0, time.UTC),
+					FingerprintSHA256: leafFingerprint,
+				},
+				{
+					Subject:           "C=US, O=Example CA, CN=Example Issuing CA",
+					Issuer:            "C=US, O=Example CA, CN=Example Root CA",
+					NotBefore:         time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+					NotAfter:          time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC),
+					FingerprintSHA256: issuerFingerprint,
+					IsCA:              true,
+				},
+			},
+		},
+	},
 }
+
+// The two fingerprints the handshake fixture is built from. They are full length
+// because the contract says a fingerprint is never shortened, and they are
+// constants because the leaf's has to appear in two places at once - the body
+// and the first certificate of its own chain - which the core refuses to let
+// disagree.
+const (
+	leafFingerprint   = "6153a96f6c53d1a2b9a44b1bd8dbbeaa9e1cbd0b1a25c2d0e8f4a7b3c6d9e2f0"
+	issuerFingerprint = "0f2e9d6c3b7a4e8d1c0a5b7f2e9d6c3b7a4e8d1c0a5b7f2e9d6c3b7a4e8d1c0a"
+)
 
 // TestEveryKindOfFindingReachesBothSurfaces is the guard whose absence would let
 // a new kind of finding be invisible in the output while every test stayed green.
