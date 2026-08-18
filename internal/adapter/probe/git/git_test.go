@@ -293,7 +293,7 @@ func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 // A runtime that is not here sits OUTSIDE the matrix - docs/20 rule 1 - and that
 // is not an error.
 func TestNoInstallFoundIsNotAnError(t *testing.T) {
-	probe := Probe(sourceOf(nil), nil)
+	probe := Probe(sourceOf(nil), nil, nil)
 	stores, err := probe(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("git not being installed came back as an error: %v", err)
@@ -310,7 +310,7 @@ func TestTheProbeProducesOneRowPerInstall(t *testing.T) {
 		"/bundle.crt":    string(anchorPEM),
 	})
 
-	stores, err := Probe(source, nil)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, nil, nil)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -323,5 +323,36 @@ func TestTheProbeProducesOneRowPerInstall(t *testing.T) {
 	f := report.Finding{Kind: report.FindingTrustStore, Summary: "one row", Source: report.SourceDetected, TrustStore: &stores[0]}
 	if breach := f.Breach(); breach != "" {
 		t.Errorf("the probe produced a row the contract refuses: %s", breach)
+	}
+}
+
+// THE TRAP THIS FUNCTION EXISTS TO AVOID. "C:\Program Files\Git2\cmd" starts
+// with "C:\Program Files\Git" as TEXT, so a prefix comparison would credit one
+// installation with another one's presence on PATH - and the row would then tell
+// somebody that the git they type is the one this report describes.
+func TestPathSelectionMatchesOnASegmentAndNotOnText(t *testing.T) {
+	install := Install{Root: `C:\Program Files\Git`}
+
+	if got := selectedBy(install, []string{`C:\Program Files\Git2\cmd`}); len(got) != 0 {
+		t.Errorf("a neighbouring install claimed this one's place on PATH: %v", got)
+	}
+	if got := selectedBy(install, []string{`C:\Program Files\Git\cmd`}); len(got) != 1 || got[0] != "PATH" {
+		t.Errorf("the install on PATH was not recognised: %v", got)
+	}
+	// The root itself on PATH counts too.
+	if got := selectedBy(install, []string{`C:\Program Files\Git`}); len(got) != 1 {
+		t.Errorf("the root on PATH was not recognised: %v", got)
+	}
+}
+
+// AN EMPTY LIST IS AN ANSWER, NEVER A GAP - and it must not be nil, because the
+// contract says nil is a statement about us rather than about the machine.
+func TestAnInstallNothingSelectsGetsAnEmptyListRatherThanNil(t *testing.T) {
+	got := selectedBy(Install{Root: `C:\Program Files\Git`}, []string{`C:\Windows\system32`})
+	if got == nil {
+		t.Fatal("an install nothing selects produced nil, which reads as nobody looked")
+	}
+	if len(got) != 0 {
+		t.Errorf("got %v, want an empty list", got)
 	}
 }

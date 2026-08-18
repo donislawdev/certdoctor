@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -17,7 +18,7 @@ import (
 // are passed in rather than derived here because this package must not read the
 // environment: the same rule redact follows, and for the same reason - an
 // assessment has to be reproducible from its input.
-func Probe(source file.Source, globalConfigs []string) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+func Probe(source file.Source, globalConfigs []string, pathDirs []string) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(_ context.Context, chain [][]byte) ([]report.TrustStore, error) {
 		installs := find(source, systemConfigs)
 		if len(installs) == 0 {
@@ -30,7 +31,9 @@ func Probe(source file.Source, globalConfigs []string) func(context.Context, [][
 		stores := make([]report.TrustStore, 0, len(installs))
 		for _, install := range installs {
 			paths := append([]string{install.SystemConfig}, globalConfigs...)
-			stores = append(stores, storeFor(source, install, readSettings(source, paths), chain))
+			store := storeFor(source, install, readSettings(source, paths), chain)
+			store.SelectedBy = selectedBy(install, pathDirs)
+			stores = append(stores, store)
 		}
 		return stores, nil
 	}
@@ -143,4 +146,27 @@ func assess(source file.Source, store *report.TrustStore, chain [][]byte) {
 	_, verifyErr := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates})
 	trusts := verifyErr == nil
 	store.TrustsPresentedChain = &trusts
+}
+
+// selectedBy names what points at THIS installation, and an empty slice is an
+// answer rather than a gap.
+//
+// IT ANSWERS "WHICH ONE DOES A TYPED COMMAND USE" AND NOTHING ELSE - ADR48 part
+// 4. It is never a detection mechanism: measured on this machine, PATH names one
+// of two curl binaries and JAVA_HOME one of six Java installs, so an install
+// nothing selects is perfectly real and simply gets an empty list.
+//
+// THE MATCH IS ON A PATH SEGMENT, NOT A TEXT PREFIX, and that is the bug this
+// function is written to avoid: "C:\Program Files\Git2\cmd" starts with
+// "C:\Program Files\Git" as text, and reporting it as this install would credit
+// one installation with another one's presence on PATH.
+func selectedBy(install Install, pathDirs []string) []string {
+	root := filepath.Clean(install.Root)
+	for _, dir := range pathDirs {
+		cleaned := filepath.Clean(dir)
+		if cleaned == root || strings.HasPrefix(cleaned, root+string(filepath.Separator)) {
+			return []string{"PATH"}
+		}
+	}
+	return []string{}
 }

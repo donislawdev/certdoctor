@@ -126,7 +126,7 @@ func liveEnvironment() environment {
 			source, resolvePath := file.Live()
 			guarded := file.Guarded(source, resolvePath, caBundleLimit, nil)
 			return map[string]trust.Probe{
-				"git": git.Probe(guarded, globalGitConfigs()),
+				"git": git.Probe(guarded, globalGitConfigs(), pathDirectories()),
 			}
 		},
 		// The real dialler, behind the guard. dns.Socket is the only function in
@@ -204,4 +204,24 @@ func globalGitConfigs() []string {
 		filepath.Join(home, ".gitconfig"),
 		filepath.Join(home, ".config", "git", "config"),
 	}
+}
+
+// pathDirectories splits PATH into the directories a typed command searches.
+//
+// IT IS READ HERE AND HANDED IN, like the git config paths beside it, so the
+// probe reads no environment of its own and an assessment stays reproducible
+// from its input. An empty PATH yields no directories rather than a guess, and
+// every install then reports that nothing selects it - which is true.
+func pathDirectories() []string {
+	value, present := os.LookupEnv("PATH")
+	if !present || value == "" {
+		return nil
+	}
+	var dirs []string
+	for _, dir := range filepath.SplitList(value) {
+		if dir != "" {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
 }
