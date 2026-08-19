@@ -10,7 +10,7 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
-`certdoctor <url>` produces a whole report. Two of its eight diagnostic layers now say something about your machine; the other six report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE` - or with `4 DIAGNOSIS` on the first thing certdoctor can now actually diagnose: a name that does not resolve. What exists is the path a real answer will travel, built before any answer, so that there is no point at which this program claims to have checked something it has not.
+`certdoctor <url>` produces a whole report. Five of its eight diagnostic layers now say something about your machine - context, name resolution, TCP, TLS and the trust matrix - and the other three report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE`, or with `4 DIAGNOSIS` on something certdoctor can actually diagnose. What exists is the path a real answer travels, built before any answer, so that there is no point at which this program claims to have checked something it has not.
 
 ### Changed
 
@@ -21,6 +21,38 @@ Barely diagnosable yet, and there has been no release.
   **Eight at a time is a ceiling rather than a tuning knob.** How many addresses a name resolves to is decided by whoever answers the DNS query, and without a cap they would be deciding how many connections this machine opens at once - which is not a decision to hand to a stranger, least of all on a network where something is watching for that shape.
 
 ### Added
+
+- **A row of the trust matrix that does not trust the chain now carries the command that would repair it**, with the real path from your machine in it rather than a specimen path.
+
+  **A command appears only where your machine is actually the thing to change.** Three conditions have to hold together: the server sent a complete chain, the store refused because it holds nothing that signed it, and the store is a file certdoctor could open and name. A server that forgot to send its intermediate turns every row on your machine red, and there is nothing to fix in any of those stores - so no command is offered, and the sentence says the fault is the server's.
+
+  **Every command adds to the store that runtime already reads.** None of them points a runtime at a different bundle. Redirecting would grant the trust you asked for and quietly take away every other trust that runtime had, and you would find out days later on a different site.
+
+  **A command that needs administrator or root rights says so before you run it**, on the line above the command rather than below it. What certdoctor cannot know - the certificate to import, and the alias it should take in a Java keystore - is listed as something to replace rather than guessed at.
+
+  **Each row also says which way it refused.** An unknown authority, an expired certificate, one that is not valid yet, or a reason certdoctor does not classify. Only the first is repaired by importing anything - a certificate that has not started being valid is usually this machine's clock, and no import moves a clock.
+
+  **`--json` grows `trust_failure` and `fix` on each row, and `schema_version` goes to `1.8`.** Both are `null` where there is nothing to say, which is every row of a healthy matrix.
+
+- **`L5` reports what every runtime it can find on this machine makes of the certificate chain - one row per trust store, never one per runtime.** This is the part of certdoctor that no other tool does.
+
+  **One row per store is the whole point.** On the machine this was measured on there are six Java trust stores from four JDK installations and two JREs, two `curl` binaries in `PATH`, and a `git` that reads a different store than the `curl` shipped beside it in the same installation. A single row saying "java" would have had to pick one of the six.
+
+  **Each row carries the real path to the store, how many anchors it holds, and what selects that instance** - `JAVA_HOME`, `PATH`, or nothing at all, which is ordinary for a runtime an application launches by absolute path.
+
+  **A store certdoctor cannot read is `UNKNOWN` with a reason, never a failure to trust.** A `curl` built on Schannel reads the platform store, so this layer says which probe answers for it instead of quietly answering itself. A keystore that will not open with the default password is a fact about the keystore, not about trust.
+
+  **A runtime that is not installed is not a status.** It sits outside the matrix with a note, because "there is no Java here" is not a fact about trust.
+
+- **`L4` completes a TLS handshake with every address that accepted a connection, and shows the full chain the server presented.**
+
+  **The chain is shown once and the other addresses say whether they presented the same certificate.** A different certificate from one address of the same name is a finding rather than a footnote - it is the only signal this program has for a middlebox sitting on one route.
+
+  **Each certificate shows its subject, its issuer, the names it is valid for, its validity dates and its full SHA-256 fingerprint.** The names come from `subjectAltName`, which is the field a modern client actually matches on - a certificate valid for `example.com` and `*.example.com` says so, instead of leaving you to guess from the common name.
+
+  **The layer says whether the server sent enough to build a path**, which is the single commonest real misconfiguration there is and the one that is invisible from a browser that cached the missing certificate somewhere else. That verdict is reached from the presented bytes alone and consults no trust store, so it is a statement about the server rather than about your machine - and the sentence says so.
+
+  **Under `--redact` the subject, the issuer and the names become pseudonyms and the fingerprint does not.** The fingerprint is the evidence you came for and it identifies nobody.
 
 - **`L3` opens a connection to every address the name resolved to, and says what happened to each one.** This is the first thing certdoctor establishes about connecting rather than about naming. Refused, timed out, reset, no route - four different answers that a browser folds into "cannot connect", and they send you to four different places. Each row carries the address, the port and how long the attempt took.
 
