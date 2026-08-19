@@ -314,6 +314,26 @@ func maskTrustStore(r *redact.Redaction, finding *report.Finding) {
 	store.StorePath = r.Text(store.StorePath)
 	store.Instance = r.Text(store.Instance)
 	store.NotAssessed = r.Text(store.NotAssessed)
+	// THE COMMAND CARRIES THE PATH, so masking the path and not the command would
+	// leave the same directory in the document twice, once masked and once not -
+	// and the unmasked copy would be in the line most likely to be pasted into a
+	// ticket. It goes through the SAME Redaction, so the store path and the path
+	// inside the command come out as one pseudonym rather than two: they are
+	// keyed by the real name, not by the field they were found in.
+	//
+	// A COPY RATHER THAN AN EDIT IN PLACE. The finding is a copy already, but the
+	// pointer inside it is not, and masking through it would rewrite the row the
+	// core still holds - which would make the masked and unmasked reports the
+	// same object.
+	if store.Fix != nil {
+		fix := *store.Fix
+		fix.Command = r.Text(fix.Command)
+		store.Fix = &fix
+	}
+	// TrustFailure is not masked and neither is anything else in a Fix. The
+	// failure is a word from a closed list this program declares; the elevation
+	// sentence and the caveat name no path, no host and no account - they are
+	// about what a store IS, not about where it lives.
 	finding.TrustStore = &store
 }
 

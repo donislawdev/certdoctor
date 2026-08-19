@@ -355,6 +355,10 @@ func walkTo(t *testing.T, w Wiring) Answer {
 // reachableWiring is a run where one address resolves, connects and hand shakes.
 func reachableWiring(shown handshake.Presented, probes map[string]trust.Probe) Wiring {
 	clock := func() time.Time { return time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC) }
+	// Machine is wired here because L5 refuses an input missing it, the same way
+	// it refuses a missing chain port: without a platform it cannot write a
+	// command this machine could run.
+	trusted := trust.Input{Probes: probes, Machine: trust.Machine{OS: "linux", Home: "/home/jdoe"}}
 	return Wiring{
 		Environment: envOf(nil),
 		Resolution: resolve.Input{
@@ -382,7 +386,11 @@ func reachableWiring(shown handshake.Presented, probes map[string]trust.Probe) W
 				return shown, nil
 			},
 		},
-		Trust: trust.Input{Probes: probes},
+		// Machine is wired here because L5 refuses an input missing it, the same
+		// way it refuses a missing chain port: without a platform it cannot write
+		// a command this machine could run. ChainComplete is NOT set - Wire
+		// supplies it from L4, and that is the seam these tests exist to check.
+		Trust: trusted,
 	}
 }
 
@@ -438,5 +446,62 @@ func TestNoHandshakeMeansL5JudgesNothing(t *testing.T) {
 	}
 	if answer.Reason != status.ReasonNothingToCheck {
 		t.Errorf("reason %s, want nothing_to_check", answer.Reason)
+	}
+}
+
+// TestWhetherTheChainWasWholeCrossesTheSameSeamAsTheChain.
+//
+// THE FOURTH SEAM, AND IT DECIDES WHETHER ANYBODY IS GIVEN A COMMAND TO RUN.
+// Measured on the bench 2026-08-19: a server that withholds its intermediate
+// turns every trust store on the machine red, and the fault is the server's - so
+// L5 must be told the chain was incomplete, or it will offer somebody a command
+// to edit a store that is perfectly fine.
+//
+// IT ASSERTS THE OUTCOME RATHER THAN THE PLUMBING. What travels is a boolean
+// nobody can see from outside; what matters is that the same refusing store
+// produces a command in one case and none in the other, with the certificates
+// as the only difference.
+func TestWhetherTheChainWasWholeCrossesTheSameSeamAsTheChain(t *testing.T) {
+	leaf := handshake.Certificate{Subject: "CN=example.com", Issuer: "CN=issuer", FingerprintSHA256: "aa", Raw: []byte{0x30, 0x01}}
+	issuer := handshake.Certificate{Subject: "CN=issuer", Issuer: "CN=issuer", FingerprintSHA256: "bb", IsCA: true, SelfSigned: true, Raw: []byte{0x30, 0x02}}
+
+	refusing := func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		no := false
+		return []report.TrustStore{{
+			Runtime:              "curl",
+			Instance:             "/usr/bin/curl",
+			StorePath:            "/etc/ssl/certs/ca-certificates.crt",
+			StoreForm:            report.StoreFile,
+			TrustAnchorCount:     150,
+			TrustsPresentedChain: &no,
+			TrustFailure:         report.UnknownAuthority,
+			SelectedBy:           []string{},
+		}}, nil
+	}
+
+	cases := []struct {
+		name    string
+		chain   []handshake.Certificate
+		command bool
+	}{
+		{"the issuer of the leaf arrived", []handshake.Certificate{leaf, issuer}, true},
+		{"the server sent the leaf alone", []handshake.Certificate{leaf}, false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			answer := walkTo(t, reachableWiring(
+				handshake.Presented{Completed: true, Version: "TLS 1.3", Chain: c.chain},
+				map[string]trust.Probe{"git": refusing}))
+
+			if len(answer.Findings) != 1 {
+				t.Fatalf("L5 produced %d row(s), want 1", len(answer.Findings))
+			}
+			got := answer.Findings[0].TrustStore.Fix != nil
+			if got != c.command {
+				t.Errorf("a command was produced=%v, want %v - the store refused either way and only the "+
+					"SERVER's half of the answer differs", got, c.command)
+			}
+		})
 	}
 }

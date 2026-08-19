@@ -94,6 +94,17 @@ func liveEnvironment() environment {
 			return render.DetectCapability(os.Stdout, os.LookupEnv, noColorRequested)
 		},
 		now: time.Now,
+		// WHERE THIS ACCOUNT'S OWN FILES ARE, asked once and only ever compared
+		// against a store path. An error is not fatal and is not reported as one:
+		// an empty answer makes L5 assume a store is shared, which is the safe
+		// direction for a command somebody is about to run.
+		home: func() string {
+			dir, err := os.UserHomeDir()
+			if err != nil {
+				return ""
+			}
+			return dir
+		}(),
 		platform: report.Platform{
 			OS:   runtime.GOOS,
 			Arch: runtime.GOARCH,
@@ -130,9 +141,15 @@ func liveEnvironment() environment {
 			guarded := file.Guarded(source, resolvePath, caBundleLimit, nil)
 			paths := pathDirectories()
 			return map[string]trust.Probe{
-				"git":  git.Probe(guarded, globalGitConfigs(), paths),
-				"java": java.Probe(guarded, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths),
-				"curl": curl.Probe(guarded, probe.Run, paths, os.Getenv("CURL_CA_BUNDLE")),
+				// THE CLOCK GOES IN because "this certificate is out of date" and
+				// "nobody here signed it" are two different answers with two
+				// different remedies, and only the second is repaired by importing
+				// anything. Left to itself crypto/x509 would read the clock behind
+				// the probe's back, which is the one thing that stops an assessment
+				// being reproducible from its input.
+				"git":  git.Probe(guarded, globalGitConfigs(), paths, time.Now),
+				"java": java.Probe(guarded, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
+				"curl": curl.Probe(guarded, probe.Run, paths, os.Getenv("CURL_CA_BUNDLE"), time.Now),
 			}
 		},
 		// The real dialler, behind the guard. dns.Socket is the only function in

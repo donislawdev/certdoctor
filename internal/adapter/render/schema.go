@@ -204,6 +204,24 @@ var schema = object(map[string]node{
 				// Never null. An empty array says nothing selects this instance
 				// by default, which is an answer rather than an absence.
 				"selected_by": array(text()),
+				// Null unless a store refused. Branch on THIS rather than on the
+				// sentence beside it: only unknown_authority is a failure that
+				// adding a certificate repairs.
+				"trust_failure": nullable(text()),
+				// The one object in this document describing something a person
+				// EXECUTES. Null is the ordinary answer and means there is
+				// nothing honest to say, never that nobody looked.
+				"fix": nullable(object(map[string]node{
+					"command": text(),
+					// Never null. Empty says the command is ready to paste;
+					// anything in it names a part the person must replace.
+					"placeholders":       array(text()),
+					"requires_elevation": boolean(),
+					// Set exactly when requires_elevation is true - docs/20 rule
+					// 5 wants the reason known before the command runs.
+					"elevation": nullable(text()),
+					"caveat":    nullable(text()),
+				})),
 			})),
 		}))),
 	})),

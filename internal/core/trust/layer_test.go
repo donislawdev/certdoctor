@@ -20,7 +20,7 @@ func aStore(runtime, instance string, trusts *bool, why string) report.TrustStor
 	if trusts == nil {
 		anchors = 0
 	}
-	return report.TrustStore{
+	store := report.TrustStore{
 		Runtime:              runtime,
 		Instance:             instance,
 		StorePath:            `C:\bundle.crt`,
@@ -30,27 +30,68 @@ func aStore(runtime, instance string, trusts *bool, why string) report.TrustStor
 		NotAssessed:          why,
 		SelectedBy:           []string{},
 	}
+	// A refusal has to say which way, and the fixture obeys the contract rather
+	// than working around it - the same call the anchor count above got.
+	if trusts != nil && !*trusts {
+		store.TrustFailure = report.UnknownAuthority
+	}
+	return store
 }
 
 func chain() [][]byte { return [][]byte{{0x30, 0x01}} }
 
+func whole() bool { return true }
+
+// aMachine is the little a remediation needs to know, with a home directory the
+// bundle above is NOT inside - so a command comes out needing elevation, which
+// is the ordinary case for a shared store.
+func aMachine() Machine { return Machine{OS: "windows", Home: `C:\Users\jdoe`} }
+
 // probesOf builds an Input whose only probe is for the one declared descriptor.
 func probesOf(p Probe) Input {
-	return Input{PresentedChain: chain, Probes: map[string]Probe{descriptors[0].ID: p}}
+	in := full()
+	in.Probes = map[string]Probe{descriptors[0].ID: p}
+	return in
+}
+
+// full is an Input with every port wired, so a test that removes ONE of them is
+// testing that one rather than whichever happens to be checked first.
+func full() Input {
+	return Input{
+		PresentedChain: chain,
+		ChainComplete:  whole,
+		Machine:        aMachine(),
+		Probes:         map[string]Probe{"git": nil},
+	}
 }
 
 func TestAMissingPortIsOurDefectAndSaysSo(t *testing.T) {
 	cases := []struct {
-		name string
-		in   Input
-		says string
+		name   string
+		remove func(*Input)
+		says   string
 	}{
-		{"no chain port", Input{Probes: map[string]Probe{"git": nil}}, noChain},
-		{"no probes", Input{PresentedChain: chain}, noProbes},
+		{"no chain port", func(in *Input) { in.PresentedChain = nil }, noChain},
+		{"no completeness port", func(in *Input) { in.ChainComplete = nil }, noWhole},
+		{"no platform", func(in *Input) { in.Machine.OS = "" }, noOS},
+		{"no probes", func(in *Input) { in.Probes = nil }, noProbes},
 	}
+	// THE POSITIVE TWIN, AND IT IS HERE BECAUSE OF OBS56. Every case below asserts
+	// that a missing port is refused, and a breach check that refused every input
+	// would satisfy all of them. This asserts the complete Input is ACCEPTED, so
+	// the day one of these ports stops being optional-to-omit rather than
+	// required, something goes red.
+	t.Run("every port wired", func(t *testing.T) {
+		if broken := full().breach(); broken != "" {
+			t.Errorf("an input with every port wired was refused: %q", broken)
+		}
+	})
+
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := Ask(context.Background(), c.in)
+			in := full()
+			c.remove(&in)
+			got := Ask(context.Background(), in)
 			if got.Status != status.Unknown {
 				t.Errorf("a missing port graded %s, and our own omission is never a fact about a machine", got.Status)
 			}
@@ -67,10 +108,9 @@ func TestAMissingPortIsOurDefectAndSaysSo(t *testing.T) {
 // An empty chain means L4 established nothing. That is not a store failing, and
 // reporting it as one would accuse every runtime on the machine.
 func TestNoPresentedChainIsNothingToJudge(t *testing.T) {
-	got := Ask(context.Background(), Input{
-		PresentedChain: func() [][]byte { return nil },
-		Probes:         map[string]Probe{"git": nil},
-	})
+	in := full()
+	in.PresentedChain = func() [][]byte { return nil }
+	got := Ask(context.Background(), in)
 	if got.Status != status.Unknown || got.Reason != status.ReasonNothingToCheck {
 		t.Errorf("got %s / %s, want UNKNOWN / nothing_to_check", got.Status, got.Reason)
 	}

@@ -7,6 +7,11 @@ import (
 	// that list. It is here so a connection row can refuse a host name where an
 	// address belongs.
 	"net/netip"
+	// strings is here for one question only: whether a placeholder a fix
+	// declares can actually be FOUND in the command it belongs to. A list of
+	// things to replace that names something not present is a list nobody can
+	// act on.
+	"strings"
 	// time carries certificate validity bounds. They are REPORTED and never
 	// judged here: whether "expired" means anything depends on a clock this
 	// package does not own, and the layers take their clock as a port for
@@ -863,6 +868,123 @@ type TrustStore struct {
 	// IT IS NOT A DETECTION MECHANISM AND MUST NOT BE READ AS ONE - ADR48 part
 	// 4. Measured: JAVA_HOME names one of six, PATH names one of two curls.
 	SelectedBy []string
+
+	// TrustFailure says WHICH WAY this store refused the chain, and is set
+	// exactly when TrustsPresentedChain is a false.
+	//
+	// A REFUSAL WITH NO REASON IS THE SAME SILENCE NotAssessed EXISTS TO PREVENT,
+	// one field over. "The issuer is nobody I have heard of" and "I know this
+	// issuer and the certificate expired" send a person to two different places,
+	// and only the first is something a trust store can be made to fix.
+	TrustFailure TrustFailure
+	// Fix is the command that would make THIS store accept THIS chain, and is
+	// nil whenever there is nothing honest to say.
+	//
+	// NIL IS THE COMMON CASE AND THAT IS DELIBERATE. Measured on the bench
+	// 2026-08-19: a server that withheld its intermediate turned every trust row
+	// red, and not one of them had a fix - the fault was the server's, and a
+	// command here would have sent somebody to edit a store that was fine. The
+	// conditions that have to hold together before this is filled in live in one
+	// file, which is what the remediation guard defends.
+	Fix *Fix
+}
+
+// TrustFailure is the way a store refused a chain.
+//
+// The list is closed and has a registry, like every other closed list here. It
+// exists because the answer decides whether a fix is even possible: only an
+// unknown authority is something adding a certificate can repair.
+type TrustFailure string
+
+const (
+	// UnknownAuthority - the store holds nothing that signed what arrived. THE
+	// ONLY FAILURE A TRUST STORE FIX ADDRESSES.
+	UnknownAuthority TrustFailure = "unknown_authority"
+	// Expired - a certificate in the path is past its validity. Importing a
+	// certificate does not move a clock.
+	Expired TrustFailure = "expired"
+	// NotYetValid - a certificate in the path starts later than now, which is
+	// usually a wrong clock at one of the two ends.
+	NotYetValid TrustFailure = "not_yet_valid"
+	// OtherFailure - the path could not be built for a reason this program does
+	// not classify. It is an honest answer and it is NOT a licence to guess a
+	// fix.
+	OtherFailure TrustFailure = "other"
+)
+
+var trustFailureMeanings = map[TrustFailure]string{
+	UnknownAuthority: "the store holds no certificate that signed what the server sent",
+	Expired:          "a certificate in the path is past its validity",
+	NotYetValid:      "a certificate in the path is not valid yet",
+	OtherFailure:     "the path could not be built, for a reason this program does not classify",
+}
+
+// Valid reports whether the failure is one this program declared.
+func (f TrustFailure) Valid() bool {
+	_, ok := trustFailureMeanings[f]
+	return ok
+}
+
+// Meaning returns the declared meaning, for a surface that wants to explain it.
+func (f TrustFailure) Meaning() string { return trustFailureMeanings[f] }
+
+// String makes TrustFailure printable without a conversion at every call site.
+func (f TrustFailure) String() string { return string(f) }
+
+// Fix is a command this program produces and a PERSON RUNS.
+//
+// IT IS THE ONLY THING HERE THAT LEAVES THE REPORT AND ACTS. Everything else
+// this program emits is a description that is wrong at worst; a command is wrong
+// AND executed. That difference is why the fields below are shaped to make the
+// uncomfortable half impossible to omit: what has to be filled in by hand, and
+// what rights it needs, are fields rather than sentences somebody might trim.
+type Fix struct {
+	// Command is the literal command line, carrying REAL paths from this machine
+	// - docs/20 rule 6. A template with a specimen path in it is worth nothing,
+	// because the whole value of the last column is that it names the file that
+	// is actually there.
+	Command string
+	// Placeholders names every part of Command the person must replace, spelled
+	// exactly as it appears there. It is NEVER nil, and an empty slice says the
+	// command is ready to paste.
+	//
+	// IT IS A FIELD RATHER THAN PROSE because a consumer must be able to tell a
+	// ready command from a draft without reading English. At least one entry is
+	// normal: the certificate to import is not on the wire - a middlebox root
+	// never is - and inviolable rule 14 forbids this program writing it out.
+	Placeholders []string
+	// RequiresElevation says the command needs administrator or root rights, and
+	// Elevation says why in one sentence. docs/20 rule 5 wants that said BEFORE
+	// the command is run, because finding out from a permission error is finding
+	// out too late. Elevation is set exactly when RequiresElevation is true.
+	RequiresElevation bool
+	Elevation         string
+	// Caveat is a limit worth knowing that does not stop the command working,
+	// and is empty when there is none. It is where docs/08 section 4 lands: an
+	// option that behaves differently in somebody's arrangement has to say so.
+	Caveat string
+}
+
+func (f *Fix) breach() string {
+	switch {
+	case f.Command == "":
+		return "carries a remediation with no command in it"
+	case f.Placeholders == nil:
+		return "carries a remediation with no placeholder list, and an empty one is the answer for a command that is ready to paste"
+	case f.RequiresElevation && f.Elevation == "":
+		return "says its remediation needs elevated rights and does not say why"
+	case !f.RequiresElevation && f.Elevation != "":
+		return "says its remediation needs no elevated rights and explains why it does"
+	}
+	for _, placeholder := range f.Placeholders {
+		if placeholder == "" {
+			return "names an empty placeholder, which no reader could find in the command"
+		}
+		if !strings.Contains(f.Command, placeholder) {
+			return fmt.Sprintf("names the placeholder %q, which does not appear in the command it belongs to", placeholder)
+		}
+	}
+	return ""
 }
 
 // StoreForm says what sort of thing the store is.
@@ -927,6 +1049,58 @@ func (t *TrustStore) breach() string {
 		return "could not read the store and still counts anchors in it, which nothing could have counted"
 	}
 
+	// A REFUSAL SAYS WHICH WAY, AND ONLY A REFUSAL MAY. The pairing is checked in
+	// both directions for the same reason NotAssessed is: a store that refused a
+	// chain and will not say how is silence about a failure, and one that
+	// accepted it while naming a failure says two things at once.
+	refused := t.TrustsPresentedChain != nil && !*t.TrustsPresentedChain
+	switch {
+	case refused && t.TrustFailure == "":
+		return "refuses the presented chain and does not say in which way, and only one of those ways is fixable"
+	case !refused && t.TrustFailure != "":
+		return "names a way of refusing the presented chain that it did not refuse"
+	case t.TrustFailure != "" && !t.TrustFailure.Valid():
+		return fmt.Sprintf("carries the trust failure %q, which is outside the registry", t.TrustFailure)
+	}
+
+	return t.remediationBreach()
+}
+
+// remediationBreach is where the contract refuses a command that would waste
+// somebody's time or send them to the wrong place.
+//
+// THESE ARE NOT STYLE RULES. Each one is a measured way this program could hand
+// out a command that does nothing. A fix on a store with no path names no file.
+// A fix on a store that ACCEPTS the chain fixes nothing. A fix on a store that
+// refused for a reason other than an unknown authority - an expired certificate,
+// a clock that is wrong - asks somebody to import a certificate that will not
+// help, and they will wait for an effect that is never coming.
+//
+// THE CONDITION THIS CANNOT CHECK IS SAID HERE RATHER THAN LEFT OUT. Whether the
+// chain the server sent was structurally COMPLETE is a fact about L4, not about
+// a store, so it cannot live on this row - and it is the condition that
+// separates "your store is missing a CA" from "the server did not send its
+// intermediate". It is enforced where the fix is built, and it has its own test.
+func (t *TrustStore) remediationBreach() string {
+	if t.Fix == nil {
+		return ""
+	}
+	refused := t.TrustsPresentedChain != nil && !*t.TrustsPresentedChain
+	switch {
+	case !refused:
+		return "carries a remediation command for a store that did not refuse the presented chain"
+	case t.TrustFailure != UnknownAuthority:
+		return fmt.Sprintf(
+			"carries a remediation command for a store that refused the chain because %s, which importing a certificate does not repair",
+			t.TrustFailure.Meaning())
+	case t.StoreForm != StoreFile:
+		return "carries a remediation command for a store that is not a file, so the command could only name a file nobody chose"
+	case t.StorePath == "":
+		return "carries a remediation command for a store with no path, and docs/20 rule 6 is that the path is the real one"
+	}
+	if broken := t.Fix.breach(); broken != "" {
+		return broken
+	}
 	return ""
 }
 

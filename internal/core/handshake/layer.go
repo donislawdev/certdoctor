@@ -174,6 +174,19 @@ type Result struct {
 	// L5 reads. It is EMPTY when no handshake completed, and L5 treats that as
 	// nothing to judge rather than as a store failing.
 	Presented [][]byte
+	// ChainWhole says whether the issuer of the leaf actually arrived - the
+	// second half of the seam L5 reads, and the half that decides whether a store
+	// can be given advice at all.
+	//
+	// MEASURED ON THE BENCH 2026-08-19, WHICH IS WHY IT TRAVELS. A server that
+	// withholds its intermediate turns every trust store on the machine red, and
+	// a command offered there sends somebody to edit a store that is perfectly
+	// fine. L5 cannot work this out for itself without a second copy of the rule
+	// two lines up, so it is handed the answer instead.
+	//
+	// It is false when nothing completed, which is correct rather than merely
+	// convenient: no chain arrived, so no issuer did either.
+	ChainWhole bool
 }
 
 // unlimited is what limitFor answers when nothing caps one attempt at all.

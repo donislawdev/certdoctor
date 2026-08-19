@@ -80,7 +80,17 @@ import (
 // concerned. 1.7 adds trust_store: a fifth member of the union, one row per
 // STORE rather than per runtime - ADR48 - with no removals and no changed
 // meanings, which is a MINOR by rule 2 of the contract.
-const SchemaVersion = "1.7"
+//
+// 1.8 ADDS TWO FIELDS TO trust_store AND BOTH ARRIVE WITH THE CODE THAT FILLS
+// THEM IN - ADR30, which refuses a field declared ahead of its producer.
+// trust_failure says which way a store refused, because only one of the ways is
+// repaired by importing anything; fix is the command that would repair it. No
+// removals and no changed meanings, so a MINOR by rule 2.
+//
+// A CONSUMER MUST NOT READ A NULL fix AS "NOBODY BOTHERED". It means there is
+// nothing honest to say, which is every row of a green matrix and every row of a
+// red one whose redness is the server's doing - measured on the bench 2026-08-19.
+const SchemaVersion = "1.8"
 
 // JSON renders the machine readable report.
 //
@@ -529,6 +539,35 @@ type jsonTrustStore struct {
 	// selects this instance by default, which is true of five of the six Java
 	// stores measured here - and it is an answer, not an absence.
 	SelectedBy []string `json:"selected_by"`
+
+	// TrustFailure says WHICH WAY a store refused, and is null unless one did.
+	// Branch on it rather than on the sentence beside it: only unknown_authority
+	// is a failure adding a certificate repairs.
+	TrustFailure *string `json:"trust_failure"`
+	// Fix is the command that would make this store accept this chain, and null
+	// is the ordinary answer. A consumer must not read null as "we did not
+	// bother" - it means there is nothing honest to say, which on a green matrix
+	// is every row.
+	Fix *jsonFix `json:"fix"`
+}
+
+// jsonFix is the only object in this document that describes something a person
+// EXECUTES, and it is shaped so the uncomfortable half cannot be dropped.
+type jsonFix struct {
+	// Command carries real paths from this machine - docs/20 rule 6.
+	Command string `json:"command"`
+	// Placeholders is never null. An empty array means the command is ready to
+	// paste; anything in it names a part the person must replace, spelled as it
+	// appears in the command. It is a field rather than prose so that a consumer
+	// can tell a ready command from a draft without reading English.
+	Placeholders []string `json:"placeholders"`
+	// RequiresElevation is answered always, and Elevation says why when it is
+	// true - docs/20 rule 5 wants that known BEFORE the command runs.
+	RequiresElevation bool    `json:"requires_elevation"`
+	Elevation         *string `json:"elevation"`
+	// Caveat is a limit worth knowing that does not stop the command working,
+	// and is null when there is none.
+	Caveat *string `json:"caveat"`
 }
 
 func trustStoreOf(finding report.Finding) *jsonTrustStore {
@@ -557,6 +596,37 @@ func trustStoreOf(finding report.Finding) *jsonTrustStore {
 	// above.
 	if body.SelectedBy == nil {
 		body.SelectedBy = []string{}
+	}
+	if store.TrustFailure != "" {
+		failure := store.TrustFailure.String()
+		body.TrustFailure = &failure
+	}
+	body.Fix = fixOf(store.Fix)
+	return &body
+}
+
+// fixOf carries a remediation across, and null is the ordinary answer.
+func fixOf(fix *report.Fix) *jsonFix {
+	if fix == nil {
+		return nil
+	}
+	body := jsonFix{
+		Command:           fix.Command,
+		Placeholders:      fix.Placeholders,
+		RequiresElevation: fix.RequiresElevation,
+	}
+	// The same distinction selected_by carries: an empty list says there is
+	// nothing to fill in, and a null would say nobody worked it out.
+	if body.Placeholders == nil {
+		body.Placeholders = []string{}
+	}
+	if fix.Elevation != "" {
+		why := fix.Elevation
+		body.Elevation = &why
+	}
+	if fix.Caveat != "" {
+		caveat := fix.Caveat
+		body.Caveat = &caveat
 	}
 	return &body
 }

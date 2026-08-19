@@ -886,3 +886,40 @@ func TestTheFileCensusCanSeeAFileAppear(t *testing.T) {
 		t.Errorf("an unchanged directory was reported as having gained %v", quiet)
 	}
 }
+
+// TestTheShippedBinaryOffersNoCommandWhereNothingIsBroken is the measured trap
+// from the product side, and the shipped binary is the only witness for it.
+//
+// EVERY IN-PROCESS TEST OF THIS FEEDS THE LAYER A FIXTURE. Here the real probes
+// run against the real stores on this machine - six Java stores, two curl
+// binaries and git, measured 2026-08-19 - and the whole matrix comes back green
+// or unassessed, because a public certificate authority is trusted by all of
+// them. A command anywhere in that report would be advice invented for a machine
+// with nothing wrong with it, and the person who ran it would be editing a trust
+// store for no reason.
+//
+// IT IS THE SAME SHAPE AS THE BENCH CHECK AND A DIFFERENT WITNESS. The bench
+// proves a command IS produced where one belongs; this proves none is produced
+// where none does, on a machine nobody arranged.
+func TestTheShippedBinaryOffersNoCommandWhereNothingIsBroken(t *testing.T) {
+	needsTheInternet(t)
+
+	document := runProgram(t, aTarget, "--json").stdout
+
+	// The check is worth nothing unless the matrix was actually built, so the
+	// half that proves the layer ran comes first.
+	if !strings.Contains(document, `"trust_store"`) {
+		t.Fatal("no trust store row reached the document, so nothing here says anything about commands")
+	}
+	if !strings.Contains(document, `"trusts_presented_chain": true`) {
+		t.Fatal("no store on this machine trusted the chain, so this is not the case this check is about")
+	}
+
+	if !strings.Contains(document, `"fix": null`) {
+		t.Error("no row carries a null fix, so either the field is missing or every row was given a command")
+	}
+	if strings.Contains(document, `"command"`) {
+		t.Error("the report offers a command to run against a public site every store here trusts - " +
+			"advice invented for a machine with nothing wrong with it")
+	}
+}

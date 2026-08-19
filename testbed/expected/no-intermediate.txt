@@ -50,9 +50,27 @@ l4_status=FAIL
 verdict_blames=server
 verdict_blames_forbidden=machine,runtime,store
 
+# --- L5: EVERY ROW IS RED AND NOT ONE OF THEM MAY CARRY A FIX ---
+#
+# ADDED 2026-08-19 WITH P7b, AND IT IS THE HARDEST CHECK ON THIS BENCH. curl is
+# asked with CURL_CA_BUNDLE naming the image's own bundle, so this scenario now
+# produces a trust row that is genuinely red - the store cannot build a path,
+# because the certificate that would join the leaf to the root never arrived.
+#
+# A store fix here would be WRONG, and it would look exactly as reasonable as the
+# right one two files over. That is the entire reason private-root.txt exists as
+# its own scenario: the two differ by one nginx line, they produce the same red
+# L5 row, and only one of them may produce a command.
+l5_status=FAIL
+l5_rows_not_trusting=1
+
 # There is no command for the user to run. A generated fix here would be a fix
 # for somebody else's server, which we cannot reach - so the deliverable is
 # evidence to paste into a report instead.
+#
+# THIS LINE WAS WRITTEN AT P4b AND NOTHING COULD READ IT UNTIL NOW. It stopped
+# being a note to a future reader on 2026-08-19 and became an assertion.
 remediation_command=
+remediation_expected=no
 
 exit_code=4

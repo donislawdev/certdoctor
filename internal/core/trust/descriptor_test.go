@@ -37,7 +37,11 @@ func TestTheRegistryCannotBeEditedThroughWhatItHandsOut(t *testing.T) {
 }
 
 func TestTheDescriptorRefusesWhatItMustRefuse(t *testing.T) {
-	sound := Descriptor{ID: "git", Runtime: "git", TrustSource: "a bundle", Source: Measured, Evidence: "measured here"}
+	sound := Descriptor{
+		ID: "git", Runtime: "git", TrustSource: "a bundle",
+		Source: Measured, Evidence: "measured here",
+		FixSource: Documentation, FixEvidence: "the vendor says so, at a link",
+	}
 	if breach := sound.Breach(); breach != "" {
 		t.Fatalf("a well formed descriptor was refused: %s", breach)
 	}
@@ -52,6 +56,11 @@ func TestTheDescriptorRefusesWhatItMustRefuse(t *testing.T) {
 		{"no trust source", func(d *Descriptor) { d.TrustSource = "" }, "where this runtime keeps"},
 		{"a source outside the registry", func(d *Descriptor) { d.Source = Source("guess") }, "rule 18"},
 		{"a source with no evidence", func(d *Descriptor) { d.Evidence = "" }, "rule 18"},
+		// THE SECOND PAIR, AND IT IS THE ONE THAT MATTERS MOST. Where a runtime
+		// keeps its anchors is a claim somebody reads; what makes it accept a new
+		// one is a claim somebody RUNS.
+		{"a fix source outside the registry", func(d *Descriptor) { d.FixSource = Source("probably") }, "somebody RUNS"},
+		{"a fix source with no evidence", func(d *Descriptor) { d.FixEvidence = "" }, "person executes"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -253,6 +253,41 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 		}
 		writeTrimmed(b, line.String())
 		writeChain(b, finding)
+		writeFix(b, finding)
+	}
+}
+
+// writeFix prints the command that would repair one row, underneath it.
+//
+// IT IS THE SECOND PLACE THIS RENDERER GOES TWO LEVELS DEEP, and for the same
+// reason as the chain: this is the product rather than a detail of it. A command
+// squeezed into the value column would be wrapped by the terminal at whatever
+// width the window happens to be, and a wrapped command is one somebody pastes
+// in two pieces.
+//
+// THE ELEVATION LINE COMES BEFORE THE COMMAND, and that order is the whole of
+// docs/20 rule 5. A warning underneath is a warning read after the command has
+// been copied.
+//
+// EVERYTHING GOES THROUGH visible BECAUSE THE PATH IN IT IS SOMEBODY ELSE'S.
+// A store path is read off this machine, and a directory named with an escape
+// sequence in it would otherwise rewrite the line a person is about to run.
+func writeFix(b *strings.Builder, finding report.Finding) {
+	if finding.TrustStore == nil || finding.TrustStore.Fix == nil {
+		return
+	}
+	fix := finding.TrustStore.Fix
+	if fix.RequiresElevation {
+		writeTrimmed(b, fmt.Sprintf("        needs elevated rights: %s", visible(fix.Elevation)))
+	}
+	writeTrimmed(b, fmt.Sprintf("        run: %s", visible(fix.Command)))
+	if len(fix.Placeholders) > 0 {
+		// NAMED RATHER THAN COUNTED. "Two things to replace" makes somebody hunt;
+		// the words themselves can be searched for in the line above.
+		writeTrimmed(b, fmt.Sprintf("        replace first: %s", visible(strings.Join(fix.Placeholders, ", "))))
+	}
+	if fix.Caveat != "" {
+		writeTrimmed(b, fmt.Sprintf("        note: %s", visible(fix.Caveat)))
 	}
 }
 

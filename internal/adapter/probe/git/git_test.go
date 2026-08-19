@@ -136,8 +136,8 @@ func anchorAndLeaf(t *testing.T) (anchorPEM []byte, leafDER []byte) {
 	anchorTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: "certdoctor test anchor"},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(time.Hour),
+		NotBefore:             atNoon().Add(-time.Hour),
+		NotAfter:              atNoon().Add(time.Hour),
 		IsCA:                  true,
 		KeyUsage:              x509.KeyUsageCertSign,
 		BasicConstraintsValid: true,
@@ -159,8 +159,8 @@ func anchorAndLeaf(t *testing.T) (anchorPEM []byte, leafDER []byte) {
 		SerialNumber: big.NewInt(2),
 		Subject:      pkix.Name{CommonName: "partner.test"},
 		DNSNames:     []string{"partner.test"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
+		NotBefore:    atNoon().Add(-time.Hour),
+		NotAfter:     atNoon().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
@@ -184,7 +184,7 @@ func TestABundleHoldingTheAnchorTrustsTheChain(t *testing.T) {
 	anchorPEM, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": string(anchorPEM)})
 
-	store := storeFor(source, Install{Root: "/git", Architecture: "x64"}, settingsFor("/bundle.crt"), [][]byte{leafDER})
+	store := storeFor(source, Install{Root: "/git", Architecture: "x64"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("no verdict was reached: %s", store.NotAssessed)
@@ -207,7 +207,7 @@ func TestABundleWithoutTheAnchorDoesNotTrustTheChain(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": string(otherPEM)})
 
-	store := storeFor(source, Install{Root: "/git"}, settingsFor("/bundle.crt"), [][]byte{leafDER})
+	store := storeFor(source, Install{Root: "/git"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("an unrelated bundle produced no verdict: %s", store.NotAssessed)
@@ -226,7 +226,7 @@ func TestABundleWithoutTheAnchorDoesNotTrustTheChain(t *testing.T) {
 // here as exactly this row.
 func TestAnUnreadableBundleIsUnknownRatherThanDistrust(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
-	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settingsFor("/gone.crt"), [][]byte{leafDER})
+	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settingsFor("/gone.crt"), [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("a bundle that could not be read produced a verdict about trust")
@@ -239,7 +239,7 @@ func TestAnUnreadableBundleIsUnknownRatherThanDistrust(t *testing.T) {
 func TestABundleWithNoCertificatesSaysSo(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": "not a certificate at all\n"})
-	store := storeFor(source, Install{Root: "/git"}, settingsFor("/bundle.crt"), [][]byte{leafDER})
+	store := storeFor(source, Install{Root: "/git"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("an empty bundle produced a verdict")
@@ -254,7 +254,7 @@ func TestABundleWithNoCertificatesSaysSo(t *testing.T) {
 func TestSchannelDefersToTheSystemStoreProbe(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "schannel", BackendLevel: "system"}
-	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settings, [][]byte{leafDER})
+	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settings, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("the git probe answered a question about the platform store")
@@ -267,7 +267,7 @@ func TestSchannelDefersToTheSystemStoreProbe(t *testing.T) {
 func TestAnUnknownBackendIsNamedRatherThanGuessed(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "nss", BackendLevel: "global"}
-	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settings, [][]byte{leafDER})
+	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settings, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("an unknown backend produced a verdict")
@@ -277,10 +277,33 @@ func TestAnUnknownBackendIsNamedRatherThanGuessed(t *testing.T) {
 	}
 }
 
+// TestNoBackendNamedIsTheORDINARYCaseAndSaysSo.
+//
+// MEASURED 2026-08-19: git 2.54.0 in a Debian based image has NO gitconfig at
+// any level, so http.sslBackend is simply absent - and that is how most
+// installations outside Windows arrive. The row used to answer "a backend this
+// program does not know how to follow", which reported OUR ignorance as a fact
+// about somebody's machine: the shape OBS67 records. What is unreadable here is
+// the bundle libcurl was compiled with, and the row says that instead.
+func TestNoBackendNamedIsTheOrdinaryCaseAndSaysSo(t *testing.T) {
+	_, leafDER := anchorAndLeaf(t)
+	store := storeFor(sourceOf(nil), Install{Root: "/git"}, Settings{}, [][]byte{leafDER}, atNoon())
+
+	if store.TrustsPresentedChain != nil {
+		t.Fatal("a git naming no backend produced a verdict about trust")
+	}
+	if strings.Contains(store.NotAssessed, "does not know how to follow") {
+		t.Errorf("an absent backend is reported as an unrecognised one: %q", store.NotAssessed)
+	}
+	if !strings.Contains(store.NotAssessed, "libcurl") {
+		t.Errorf("the row does not say what decides the store instead: %q", store.NotAssessed)
+	}
+}
+
 func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "openssl", BackendLevel: "system"}
-	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settings, [][]byte{leafDER})
+	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settings, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("openssl with no bundle named produced a verdict")
@@ -293,7 +316,7 @@ func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 // A runtime that is not here sits OUTSIDE the matrix - docs/20 rule 1 - and that
 // is not an error.
 func TestNoInstallFoundIsNotAnError(t *testing.T) {
-	probe := Probe(sourceOf(nil), nil, nil)
+	probe := Probe(sourceOf(nil), nil, nil, atNoon)
 	stores, err := probe(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("git not being installed came back as an error: %v", err)
@@ -310,7 +333,7 @@ func TestTheProbeProducesOneRowPerInstall(t *testing.T) {
 		"/bundle.crt":    string(anchorPEM),
 	})
 
-	stores, err := Probe(source, nil, nil)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, nil, nil, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -356,3 +379,10 @@ func TestAnInstallNothingSelectsGetsAnEmptyListRatherThanNil(t *testing.T) {
 		t.Errorf("got %v, want an empty list", got)
 	}
 }
+
+// atNoon is the clock these tests hand to the verifier.
+//
+// A FIXED INSTANT RATHER THAN time.Now, because the question this clock decides
+// is whether a certificate is out of date - and a test whose answer depends on
+// the day it runs is a test that will one day fail for a reason nobody planted.
+func atNoon() time.Time { return time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC) }

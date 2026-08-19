@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe"
@@ -17,7 +18,7 @@ import (
 // are passed in rather than derived here because this package must not read the
 // environment: the same rule redact follows, and for the same reason - an
 // assessment has to be reproducible from its input.
-func Probe(source file.Source, globalConfigs []string, pathDirs []string) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+func Probe(source file.Source, globalConfigs []string, pathDirs []string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(_ context.Context, chain [][]byte) ([]report.TrustStore, error) {
 		installs := find(source, systemConfigs)
 		if len(installs) == 0 {
@@ -30,7 +31,7 @@ func Probe(source file.Source, globalConfigs []string, pathDirs []string) func(c
 		stores := make([]report.TrustStore, 0, len(installs))
 		for _, install := range installs {
 			paths := append([]string{install.SystemConfig}, globalConfigs...)
-			store := storeFor(source, install, readSettings(source, paths), chain)
+			store := storeFor(source, install, readSettings(source, paths), chain, now())
 			store.SelectedBy = selectedBy(install, pathDirs)
 			stores = append(stores, store)
 		}
@@ -39,7 +40,7 @@ func Probe(source file.Source, globalConfigs []string, pathDirs []string) func(c
 }
 
 // storeFor turns one installation into one row of the matrix.
-func storeFor(source file.Source, install Install, settings Settings, chain [][]byte) report.TrustStore {
+func storeFor(source file.Source, install Install, settings Settings, chain [][]byte, now time.Time) report.TrustStore {
 	store := report.TrustStore{
 		Runtime:      "git",
 		Instance:     install.Root,
@@ -69,7 +70,7 @@ func storeFor(source file.Source, install Install, settings Settings, chain [][]
 			store.NotAssessed = fmt.Sprintf("the bundle named by http.sslCAInfo could not be read: %v", err)
 			return store
 		}
-		probe.Verify(&store, bundle, chain)
+		probe.Verify(&store, bundle, chain, now)
 	case "schannel":
 		// THE ANSWER BELONGS TO ANOTHER PROBE AND SAYING SO IS THE HONEST ROW.
 		// Reporting "trusted" here would mean this probe silently answered a
@@ -77,6 +78,21 @@ func storeFor(source file.Source, install Install, settings Settings, chain [][]
 		// failure would be worse.
 		store.StoreForm = report.StoreSystem
 		store.NotAssessed = "this install is configured to use the platform store, which the system-store probe answers"
+	case "":
+		// NAMING NO BACKEND IS THE ORDINARY CASE, NOT AN ODD ONE, and saying
+		// otherwise was reporting our ignorance as news about somebody's machine
+		// - the shape OBS67 records, where a rule written to catch OUR mistake
+		// rejected data that was perfectly correct.
+		//
+		// git-config, Documentation/config/http.adoc, read 2026-08-19 at
+		// https://git-scm.com/docs/git-config: http.sslBackend is the "Name of
+		// the SSL backend to use", and it is simply absent on the many
+		// installations that were built with one backend and never asked. Git
+		// then uses whichever libcurl it was linked against, and which bundle
+		// that reads is compiled in - not something this program can read off
+		// disk without guessing.
+		store.StoreForm = report.StoreSystem
+		store.NotAssessed = "git names no http.sslBackend, so it uses the one libcurl was built with, and the store that build reads is compiled into it"
 	default:
 		store.StoreForm = report.StoreSystem
 		store.NotAssessed = fmt.Sprintf(

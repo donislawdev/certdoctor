@@ -1,0 +1,95 @@
+# A server presenting a COMPLETE chain under a root nobody trusts - the case a
+# trust store fix is actually for.
+#
+# WHY THIS SCENARIO HAD TO BE ADDED BEFORE P7b COULD BE BELIEVED. Every other
+# bench here produces a red trust row for a reason the user cannot fix in their
+# own store: no-intermediate.txt is red because the SERVER is broken, and
+# intercepted.txt is red because a middlebox re-signed the traffic. A remediation
+# command generated for either of those sends somebody to edit their own trust
+# store for a fault that is not there - which is the same harm as the measured
+# CURL_CA_BUNDLE trap, reached by a different road.
+#
+# This is the one scenario where "add this CA to that store" is TRUE.
+#
+# IT DIFFERS FROM no-intermediate.txt BY EXACTLY ONE VARIABLE, and that is the
+# whole design. Same name, same address, same leaf, same private root, same
+# container. The only difference is the PORT, and behind the port nginx is handed
+# bundle.crt instead of leaf.crt - so the intermediate arrives. Anything the two
+# scenarios answer differently is caused by that one file and by nothing else.
+#
+# WRITTEN BEFORE THE CODE AND BEFORE THE nginx BLOCK IT DESCRIBES. The numbers
+# below are derived from the generator (root -> intermediate -> leaf) and from
+# the product's contract, never from a run.
+
+target=https://partner.test:8443/
+
+# --- bench: verifiable today with an independent tool ---
+#
+# TWO certificates, not one. That single number is the difference from S-5, and
+# it is what moves the fault from the server to the trust store.
+chain_certs_presented=2
+leaf_subject_cn=partner.test
+leaf_issuer_cn=certdoctor testbed intermediate
+intermediate_presented=yes
+
+# What openssl says. The path can be BUILT and still not be TRUSTED, and those
+# are two different sentences - which is precisely the L4 / L5 line ADR46 drew.
+openssl_verify_error=self-signed certificate in certificate chain
+
+# --- L4: structural, and it PASSES ---
+#
+# The issuer of the leaf is the subject of a certificate that arrived, so nothing
+# is structurally missing. L4 consults no trust store and must not: whether this
+# machine has heard of the root is the next layer's question.
+l4_status=PASS
+chain_complete=true
+
+# --- L5: the store is the fault, and this is the only bench that says so ---
+#
+# The root was minted at startup and imported nowhere, so no store on the bench
+# holds it. curl is asked with CURL_CA_BUNDLE pointing at the image's own bundle,
+# which is what curl reads anyway on this build - the variable makes the store
+# NAMEABLE rather than changing which one is used.
+l5_status=FAIL
+l5_rows_not_trusting=1
+l5_trust_failure=unknown_authority
+
+# THE INDEPENDENT WITNESS IS THE RUNTIME ITSELF, and this is the first time in
+# this project that a claim about somebody else's runtime is checked against that
+# runtime's own behaviour rather than against a document. curl is on the bench,
+# so curl can be asked. Exit 60 is curl's code for "peer certificate cannot be
+# authenticated with known CA certificates".
+curl_exit_code=60
+
+# --- P7b: the remediation command ---
+#
+# THE THREE CONDITIONS ARE ALL MET HERE AND NOWHERE ELSE ON THIS BENCH: the store
+# is a file we opened, the chain the server sent is structurally complete, and
+# the reason this store refused it is an unknown authority.
+remediation_expected=yes
+
+# REAL PATH FROM THIS MACHINE, never a template - docs/20 rule 6. It is the store
+# the row already names, because adding to the store a runtime ALREADY reads is
+# the only fix that grants trust without silently withdrawing it from everything
+# else the runtime used to accept.
+remediation_contains=/etc/ssl/certs/ca-certificates.crt
+
+# docs/20 rule 5: a fix needing elevated rights says so BEFORE it is run. This
+# store is shared by every account on the machine, so editing it is not something
+# an ordinary user can do - and finding that out from a permission error is
+# finding it out too late.
+remediation_requires_elevation=yes
+
+# The certificate to import is the one thing this program cannot know. It is not
+# on the wire - a middlebox root never is - and inviolable rule 14 forbids us
+# writing it anywhere. So it is a NAMED placeholder rather than an invented path,
+# and the document says so in a field rather than in prose.
+remediation_has_placeholders=yes
+
+# FORBIDDEN, AND THIS IS THE MEASURED TRAP. Pointing a runtime at a DIFFERENT
+# bundle replaces its entire trust set rather than adding to it, so a fix shaped
+# that way trades one broken site for every other one. Whatever the command says,
+# it must not be that.
+remediation_forbidden=CURL_CA_BUNDLE=,--cacert
+
+exit_code=4

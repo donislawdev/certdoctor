@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/probe"
 )
@@ -84,7 +85,7 @@ func TestAKeytoolThatRefusesIsUnknownWithAReason(t *testing.T) {
 	run := func(context.Context, string, ...string) (probe.Output, error) {
 		return probe.Output{ExitCode: 1, Stderr: "keystore password was incorrect"}, nil
 	}
-	store := storeFor(context.Background(), run, install, [][]byte{{0x30}}, "", nil)
+	store := storeFor(context.Background(), run, install, [][]byte{{0x30}}, "", nil, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Error("a store that would not open produced a verdict about trust")
@@ -133,7 +134,7 @@ func TestTheProbeReturnsOneRowPerInstall(t *testing.T) {
 		return probe.Output{ExitCode: 1}, nil
 	}
 
-	stores, err := Probe(source, run, []string{`C:\jdk-25`, `C:\jre8`, `C:\nothing`}, `C:\jdk-25`, nil)(context.Background(), [][]byte{{0x30}})
+	stores, err := Probe(source, run, []string{`C:\jdk-25`, `C:\jre8`, `C:\nothing`}, `C:\jdk-25`, nil, atNoon)(context.Background(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -151,7 +152,7 @@ func TestTheProbeReturnsOneRowPerInstall(t *testing.T) {
 // NO JAVA IS NOT AN ERROR - docs/20 rule 1. A machine without it sits outside
 // the matrix, and "there is no Java here" is not a fact about trust.
 func TestAMachineWithNoJavaIsNotAnError(t *testing.T) {
-	stores, err := Probe(sourceOf(), nil, []string{`C:\nothing`}, "", nil)(context.Background(), nil)
+	stores, err := Probe(sourceOf(), nil, []string{`C:\nothing`}, "", nil, atNoon)(context.Background(), nil)
 	if err != nil {
 		t.Errorf("a machine without Java produced an error: %v", err)
 	}
@@ -167,8 +168,15 @@ func TestARunnerThatCannotStartIsUnknownWithAReason(t *testing.T) {
 	run := func(context.Context, string, ...string) (probe.Output, error) {
 		return probe.Output{}, errors.New("executable file not found")
 	}
-	store := storeFor(context.Background(), run, install, [][]byte{{0x30}}, "", nil)
+	store := storeFor(context.Background(), run, install, [][]byte{{0x30}}, "", nil, atNoon())
 	if store.NotAssessed == "" || store.TrustsPresentedChain != nil {
 		t.Errorf("a probe that could not run still produced a verdict: %+v", store)
 	}
 }
+
+// atNoon is the clock these tests hand to the verifier.
+//
+// A FIXED INSTANT RATHER THAN time.Now, because the question this clock decides
+// is whether a certificate is out of date - and a test whose answer depends on
+// the day it runs is a test that will one day fail for a reason nobody planted.
+func atNoon() time.Time { return time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC) }

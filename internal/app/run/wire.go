@@ -121,11 +121,12 @@ func Wire(w Wiring) Layers {
 	}
 
 	var presented [][]byte
+	var whole bool
 	shake := w.Handshake
 	shake.Addresses = func() []string { return connected }
 	layers[layer.TLS] = func(ctx context.Context) Answer {
 		result := handshake.Ask(ctx, shake)
-		presented = result.Presented
+		presented, whole = result.Presented, result.ChainWhole
 		return answerFromHandshake(result)
 	}
 
@@ -133,8 +134,14 @@ func Wire(w Wiring) Layers {
 	// on this machine makes of it - and it judges the SAME chain the report shows,
 	// never a different one. An empty slice means no handshake completed, which L5
 	// reports as nothing to judge rather than as a store failing.
+	//
+	// IT ALSO CARRIES WHETHER THAT CHAIN WAS WHOLE, and that half is what keeps a
+	// remediation command off a row that is red through no fault of this machine.
+	// Both are read at walk time from the same run of L4, so they cannot describe
+	// two different handshakes.
 	trusted := w.Trust
 	trusted.PresentedChain = func() [][]byte { return presented }
+	trusted.ChainComplete = func() bool { return whole }
 	layers[layer.TrustMatrix] = func(ctx context.Context) Answer {
 		return answerFromTrust(trust.Ask(ctx, trusted))
 	}

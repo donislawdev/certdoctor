@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe"
@@ -17,7 +18,7 @@ import (
 // than discovered here, because listing directories is not something the file
 // port offers and a probe must not reach for the filesystem behind it.
 // javaHome and pathDirs enrich the rows and NEVER select them - ADR48 part 4.
-func Probe(source file.Source, run probe.Runner, candidates []string, javaHome string, pathDirs []string) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+func Probe(source file.Source, run probe.Runner, candidates []string, javaHome string, pathDirs []string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
 		installs := find(source, candidates)
 		if len(installs) == 0 {
@@ -28,14 +29,14 @@ func Probe(source file.Source, run probe.Runner, candidates []string, javaHome s
 
 		stores := make([]report.TrustStore, 0, len(installs))
 		for _, install := range installs {
-			stores = append(stores, storeFor(ctx, run, install, chain, javaHome, pathDirs))
+			stores = append(stores, storeFor(ctx, run, install, chain, javaHome, pathDirs, now()))
 		}
 		return stores, nil
 	}
 }
 
 // storeFor turns one installation into one row of the matrix.
-func storeFor(ctx context.Context, run probe.Runner, install Install, chain [][]byte, javaHome string, pathDirs []string) report.TrustStore {
+func storeFor(ctx context.Context, run probe.Runner, install Install, chain [][]byte, javaHome string, pathDirs []string, now time.Time) report.TrustStore {
 	store := report.TrustStore{
 		Runtime:      "java",
 		Instance:     install.Root,
@@ -54,7 +55,7 @@ func storeFor(ctx context.Context, run probe.Runner, install Install, chain [][]
 		store.NotAssessed = fmt.Sprintf("the trust store could not be read: %v", err)
 		return store
 	}
-	probe.Verify(&store, anchors, chain)
+	probe.Verify(&store, anchors, chain, now)
 	return store
 }
 

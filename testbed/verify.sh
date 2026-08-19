@@ -10,9 +10,27 @@
 # honest way to aim it, and it happens to be the shape a user in a container has
 # anyway.
 #
-# WHY netshoot RATHER THAN alpine. It carries dig and jq, and dig is the second
-# half of the oracle: docs/21 asks for a REFERENCE TOOL independent of our code,
-# because two runs of our own code prove nothing beyond the first.
+# WHY netshoot RATHER THAN alpine. It carries dig, jq, openssl and curl, and the
+# first three are the oracle: docs/21 asks for a REFERENCE TOOL independent of
+# our code, because two runs of our own code prove nothing beyond the first. curl
+# is the fourth and is a different kind of witness - it is the RUNTIME this bench
+# makes claims about, so it can be asked whether it behaves as we said it would.
+#
+# PINNED TO A VERSION, NEVER TO :latest - inviolable rule 23, the same rule
+# compose.yml states at every image it pins and the one this line was breaking
+# until 2026-08-19. An unpinned tag means the bench a contributor runs and the
+# bench CI runs stop being the same bench, and the day one of them answers
+# differently there is nothing to compare against.
+#
+# v0.16 is the newest published tag - checked at
+# https://hub.docker.com/v2/repositories/nicolaka/netshoot/tags on 2026-08-19,
+# last updated 2026-07-01, the same day as latest. The GitHub repository
+# publishes no releases at all, so the registry is the only place a version can
+# be read. The image reports Alpine 3.24.1 and curl 8.21.0 on OpenSSL 3.5.7.
+#
+# WHAT A PINNED TAG STILL DOES NOT GIVE, said here as compose.yml says it: a tag
+# is a name and can be re-pushed. Only a digest is immutable. "Pinned" here means
+# one declared version, not byte-identical for ever.
 #
 # THIS SCRIPT DOES NOT SAY WHETHER certdoctor IS CORRECT ABOUT THE WORLD. It says
 # whether it agrees with a bench that knows the truth, because the bench made the
@@ -61,5 +79,5 @@ MSYS_NO_PATHCONV=1 docker run --rm \
   --network certdoctor-testbed_testbed \
   --dns 172.28.0.53 \
   -v "$mount:/w" \
-  nicolaka/netshoot \
+  nicolaka/netshoot:v0.16 \
   /w/verify-inside.sh

@@ -3,7 +3,9 @@ package probe
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
@@ -22,7 +24,14 @@ import (
 // question with a different answer, and folding them together would report a
 // trust failure for a name mismatch. The verdict is written into the store, so
 // the caller cannot forget to record why there is no verdict.
-func Verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte) {
+// THE CLOCK ARRIVES AS AN ARGUMENT, and that is not ceremony. Left to itself
+// crypto/x509 compares against time.Now, so the same store and the same chain
+// would answer differently depending on when the test ran - and the answer this
+// function has to distinguish is precisely "the certificate is out of date"
+// from "nobody here signed it". A wrong machine clock is one of the commonest
+// causes of the failure this product diagnoses, and it is one an imported
+// certificate does not repair.
+func Verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now time.Time) {
 	roots := x509.NewCertPool()
 	anchors := 0
 	rest := anchorsPEM
@@ -69,7 +78,42 @@ func Verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte) {
 		}
 	}
 
-	_, verifyErr := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates})
+	_, verifyErr := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, CurrentTime: now})
 	trusts := verifyErr == nil
 	store.TrustsPresentedChain = &trusts
+	if !trusts {
+		store.TrustFailure = classify(verifyErr, now)
+	}
+}
+
+// classify says WHICH WAY a store refused, because only one of the ways is
+// something a person can repair by adding a certificate.
+//
+// IT BRANCHES ON TYPES AND ON A DECLARED CONSTANT, NEVER ON A MESSAGE. That is
+// inviolable rule 19 applied to the standard library rather than to somebody
+// else's program: the text of these errors is not a contract and has changed
+// between Go releases, while the types and x509.Expired are the API.
+//
+// WHY THE LAST CASE IS NOT A GUESS. An unclassified failure answers "other",
+// which produces no command at all. Choosing the commonest reason instead would
+// hand somebody a certificate to import for a problem importing does not touch,
+// and they would wait for it to work.
+func classify(err error, now time.Time) report.TrustFailure {
+	var unknown x509.UnknownAuthorityError
+	if errors.As(err, &unknown) {
+		return report.UnknownAuthority
+	}
+	var invalid x509.CertificateInvalidError
+	if errors.As(err, &invalid) && invalid.Reason == x509.Expired {
+		// crypto/x509 folds "past its end" and "before its start" into one
+		// reason, and the two send a person to opposite places: one to whoever
+		// runs the server, the other to their own clock. Which it is comes from
+		// the certificate the error names, compared against the clock we were
+		// handed rather than one this function read.
+		if invalid.Cert != nil && now.Before(invalid.Cert.NotBefore) {
+			return report.NotYetValid
+		}
+		return report.Expired
+	}
+	return report.OtherFailure
 }

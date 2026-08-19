@@ -69,6 +69,17 @@ type Descriptor struct {
 	// Source and Evidence are the rule 18 pair, and neither may be empty.
 	Source   Source
 	Evidence string
+	// FixSource and FixEvidence are the SECOND rule 18 pair, and they are second
+	// rather than shared because they carry a different claim.
+	//
+	// TrustSource says where a runtime KEEPS its anchors, which is a fact about
+	// reading. This pair says what makes a runtime ACCEPT a new one, which is a
+	// fact about writing - and it is the one a person acts on. docs/15 has the
+	// registry carrying both under one source; measuring them showed they come
+	// from different documents, and one evidence sentence covering two claims is
+	// how the weaker of the two travels on the strength of the stronger.
+	FixSource   Source
+	FixEvidence string
 }
 
 // descriptors is the registry.
@@ -89,6 +100,12 @@ var descriptors = []Descriptor{
 			"http.sslcainfo pointing at its own 229042-byte bundle, both from the SYSTEM level - so adding a CA to the " +
 			"Windows store fixes a browser and does not fix git clone. Read from the config files rather than by running " +
 			"git, which is why this probe needs no process at all.",
+		FixSource: Documentation,
+		FixEvidence: "git-config, Documentation/config/http.adoc, read 2026-08-19 at " +
+			"https://git-scm.com/docs/git-config - http.sslCAInfo is \"File containing the certificates to verify the " +
+			"peer with when fetching or pushing over HTTPS\". So the file IS the anchor set, and a certificate appended " +
+			"to it is read by the same code that read the rest. Measured beside it: this program parsed that same file " +
+			"and verified a real chain against the 150 anchors in it.",
 	},
 	{
 		ID:          "java",
@@ -100,6 +117,13 @@ var descriptors = []Descriptor{
 			"by a store that opens rather than by a directory that exists. JAVA_HOME named one of the six. The stores are " +
 			"PKCS12 in the JDKs and JKS in the JRE, so they are read through keytool -list -rfc, which returns PEM in one " +
 			"call - 113 blocks, 563 ms - rather than through two parsers.",
+		FixSource: Documentation,
+		FixEvidence: "keytool, JDK tool specification, read 2026-08-19 at " +
+			"https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html - -importcert \"read the certificate " +
+			"or certificate chain (...) from -file file, and store it in the keystore entry identified by -alias\", and " +
+			"\"The initial password of the cacerts keystore file is changeit\". Measured beside it: changeit opened " +
+			"every one of the six stores on this machine, so the password in the command is the one that worked rather " +
+			"than the one the document names.",
 	},
 	{
 		ID:          "curl",
@@ -110,6 +134,13 @@ var descriptors = []Descriptor{
 			"inside the Git installation, and BOTH are Schannel - the second was expected to be OpenSSL and is not. " +
 			"Schannel IGNORES CURL_CA_BUNDLE, measured earlier by pointing it at a path that does not exist and still " +
 			"getting a 200, so a fix generated without reading the backend is a command that does nothing.",
+		FixSource: Documentation,
+		FixEvidence: "curl manual page, section Environment and the --cacert entry, read 2026-08-04 at " +
+			"https://curl.se/docs/manpage.html - CURL_CA_BUNDLE supplies the value of --cacert, which names the file " +
+			"of CA certificates, AND IS IGNORED ON SCHANNEL. Hence the shape of the fix here: a certificate is added " +
+			"to the bundle a file-reading build already uses, and a Schannel build gets no command at all because the " +
+			"one it would get is the measured trap. Measured 2026-08-19 on the bench: curl 8.21.0 on OpenSSL 3.5.7 " +
+			"reading a 179359-byte bundle refused a private root, which is the row this fix is written for.",
 	},
 }
 
@@ -134,6 +165,10 @@ func (d Descriptor) Breach() string {
 		return "carries a source outside the registry, and inviolable rule 18 turns on that word"
 	case d.Evidence == "":
 		return "carries a source and no evidence, which is the shape rule 18 exists to refuse"
+	case !d.FixSource.Valid():
+		return "carries a fix source outside the registry, and a command somebody RUNS is the last claim that may go unsourced"
+	case d.FixEvidence == "":
+		return "says nothing about where its remediation command comes from, and that command is the one thing here a person executes"
 	}
 	return ""
 }

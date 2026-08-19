@@ -33,8 +33,22 @@ type Input struct {
 	// SUMMARY built for people to read. This layer does not import L4 - the bytes
 	// arrive through this port, exactly as addresses do one layer up.
 	PresentedChain func() [][]byte
+	// ChainComplete says whether L4 found the chain structurally whole - asked at
+	// walk time, through the same seam and for the same reason as the chain
+	// itself.
+	//
+	// IT IS A REQUIRED PORT RATHER THAN AN OPTIONAL ONE, and that is deliberate.
+	// Without it this layer cannot tell "your store is missing a CA" from "the
+	// server never sent its intermediate", and those two produce the SAME red row
+	// and need opposite advice - measured on the bench 2026-08-19. A layer that
+	// could not tell them apart would rather say so than quietly stop offering
+	// commands, because a feature that silently never appears is not noticed.
+	ChainComplete func() bool
 	// Probes are the runtime families to ask, keyed by descriptor id.
 	Probes map[string]Probe
+	// Machine is what a remediation command needs to know about where it will be
+	// run - handed in, never read here.
+	Machine Machine
 }
 
 // Result is what this layer establishes.
@@ -48,6 +62,8 @@ type Result struct {
 // Sentences for the cases where the layer establishes nothing.
 const (
 	noChain  = "no way to learn what the server presented was supplied, so no store could be asked about anything"
+	noWhole  = "no way to learn whether the presented chain was complete was supplied, so a store failing could not be told from a server failing"
+	noOS     = "no platform was supplied, so a command this machine could run could not be written"
 	noProbes = "no probes were supplied, so nothing on this machine was asked"
 	nothing  = "the server presented no certificate, so there was nothing for any store to judge"
 	noneHere = "no runtime this program knows how to ask was found on this machine"
@@ -72,6 +88,10 @@ func Ask(ctx context.Context, in Input) Result {
 		// a failure of any store and must not be reported as one.
 		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: nothing}
 	}
+	// Asked ONCE rather than per store: it is a fact about what the server sent,
+	// so a value that could differ between two rows of one report would mean the
+	// port was answering something else.
+	whole := in.ChainComplete()
 
 	var findings []report.Finding
 	var asked, trusting, unassessed int
@@ -99,6 +119,12 @@ func Ask(ctx context.Context, in Input) Result {
 				unassessed++
 			case *store.TrustsPresentedChain:
 				trusting++
+			default:
+				// THE COMMAND IS ATTACHED HERE AND NOWHERE ELSE, so that a row
+				// carrying one has passed through the counter that says it was
+				// refused. A probe filling this in itself would be a probe
+				// producing a verdict, which ADR7 keeps out of the adapters.
+				store.Fix = fixFor(store, whole, in.Machine)
 			}
 			findings = append(findings, finding(store))
 		}
@@ -185,6 +211,10 @@ func (in Input) breach() string {
 	switch {
 	case in.PresentedChain == nil:
 		return noChain
+	case in.ChainComplete == nil:
+		return noWhole
+	case in.Machine.OS == "":
+		return noOS
 	case len(in.Probes) == 0:
 		return noProbes
 	}

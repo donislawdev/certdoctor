@@ -93,10 +93,75 @@ func TestAnUnreadableStoreCarriesAReasonAndNoVerdict(t *testing.T) {
 // A store that does NOT trust the chain is a verdict, not a failure, and it is
 // the answer the whole matrix exists to produce.
 func TestDistrustIsAVerdictAndNotAFailure(t *testing.T) {
-	store := aReadableStore()
-	store.TrustsPresentedChain = trusts(false)
+	store := aRefusingStore()
 	if got := store.breach(); got != "" {
 		t.Errorf("a store that distrusts the chain was refused: %q", got)
+	}
+}
+
+// aRefusingStore is the same measured store, refusing the chain because it holds
+// nothing that signed it - the one failure a remediation command addresses.
+func aRefusingStore() TrustStore {
+	store := aReadableStore()
+	store.TrustsPresentedChain = trusts(false)
+	store.TrustFailure = UnknownAuthority
+	return store
+}
+
+// aFix is a well formed remediation for the store above, with the real path in
+// it and the one thing this program cannot know left as a named placeholder.
+func aFix() *Fix {
+	return &Fix{
+		Command: `keytool -importcert -trustcacerts -keystore "C:\Program Files\OpenJDK\jdk-25\lib\security\cacerts" ` +
+			`-storepass changeit -alias <alias> -file <certificate.pem>`,
+		Placeholders:      []string{"<alias>", "<certificate.pem>"},
+		RequiresElevation: true,
+		Elevation:         "this store is shared by every account on the machine",
+	}
+}
+
+// THE POSITIVE TWIN, AND IT IS HERE BECAUSE OF OBS56. Every test below asserts
+// that some malformed remediation is REFUSED, and a validator that refused every
+// remediation would pass all of them. This one fails the moment the rule stops
+// letting a correct fix through, which is the failure the other direction cannot
+// see.
+func TestARefusalMayCarryARemediation(t *testing.T) {
+	store := aRefusingStore()
+	store.Fix = aFix()
+	if got := store.breach(); got != "" {
+		t.Errorf("a well formed remediation on a refusing store was rejected: %q", got)
+	}
+}
+
+// A command with nothing to fill in is legitimate and must not be mistaken for
+// an incomplete one - the empty slice is the answer, the nil is the defect.
+func TestARemediationWithNothingToFillInIsAccepted(t *testing.T) {
+	store := aRefusingStore()
+	store.Fix = &Fix{
+		Command:      `git config --global http.sslBackend schannel`,
+		Placeholders: []string{},
+	}
+	if got := store.breach(); got != "" {
+		t.Errorf("a remediation that is ready to paste was rejected: %q", got)
+	}
+}
+
+// The registry of trust failures, checked the same way every other closed list
+// in this package is.
+func TestEveryTrustFailureHasAMeaning(t *testing.T) {
+	for _, failure := range []TrustFailure{UnknownAuthority, Expired, NotYetValid, OtherFailure} {
+		if !failure.Valid() {
+			t.Errorf("%q is declared and does not report itself valid", failure)
+		}
+		if failure.Meaning() == "" {
+			t.Errorf("%q has no meaning, and a closed list nobody can explain is a list nobody can act on", failure)
+		}
+		if failure.String() != string(failure) {
+			t.Errorf("%q does not print as itself", failure)
+		}
+	}
+	if TrustFailure("unfixable").Valid() {
+		t.Error("a failure outside the registry reported itself valid")
 	}
 }
 
@@ -159,11 +224,123 @@ func TestTheTrustStoreRefusesWhatItMustRefuse(t *testing.T) {
 			},
 			says: "still counts anchors",
 		},
+		{
+			// A refusal with no reason is the same silence NotAssessed exists to
+			// prevent, one field over - and it is the one that decides whether a
+			// command can honestly be offered at all.
+			name:  "a refusal that does not say which way",
+			spoil: func(s *TrustStore) { s.TrustsPresentedChain = trusts(false) },
+			says:  "in which way",
+		},
+		{
+			name:  "a way of refusing named by a store that accepted",
+			spoil: func(s *TrustStore) { s.TrustFailure = UnknownAuthority },
+			says:  "did not refuse",
+		},
+		{
+			name: "a trust failure outside the registry",
+			spoil: func(s *TrustStore) {
+				s.TrustsPresentedChain = trusts(false)
+				s.TrustFailure = TrustFailure("gremlins")
+			},
+			says: "outside the registry",
+		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			store := aReadableStore()
+			c.spoil(&store)
+			got := store.breach()
+			if got == "" {
+				t.Fatalf("%s was accepted", c.name)
+			}
+			if !strings.Contains(got, c.says) {
+				t.Errorf("the refusal does not name what it defends: %q, wanted it to mention %q", got, c.says)
+			}
+		})
+	}
+}
+
+// TestTheContractRefusesARemediationThatWouldWasteSomebodysTime is the half of
+// this file that defends a person rather than a document.
+//
+// EVERY CASE HERE IS A COMMAND THAT LOOKS REASONABLE AND DOES NOTHING. That is
+// the failure mode docs/20 calls the most expensive in the whole registry, and
+// it was measured twice: CURL_CA_BUNDLE on a Schannel build, and - on the bench
+// 2026-08-19 - a store fix offered for a chain the server had broken. A person
+// who runs one of these waits for an effect that is never coming, and the tool
+// looks like it answered.
+func TestTheContractRefusesARemediationThatWouldWasteSomebodysTime(t *testing.T) {
+	cases := []struct {
+		name  string
+		spoil func(*TrustStore)
+		says  string
+	}{
+		{
+			name: "a command for a store that accepted the chain",
+			spoil: func(s *TrustStore) {
+				s.TrustsPresentedChain = trusts(true)
+				s.TrustFailure = ""
+			},
+			says: "did not refuse",
+		},
+		{
+			// Importing a certificate does not move a clock. This is the case the
+			// three-way failure registry exists for.
+			name:  "a command for a chain that expired",
+			spoil: func(s *TrustStore) { s.TrustFailure = Expired },
+			says:  "does not repair",
+		},
+		{
+			name: "a command for the platform store",
+			spoil: func(s *TrustStore) {
+				s.StoreForm = StoreSystem
+				s.StorePath = ""
+			},
+			says: "not a file",
+		},
+		{
+			name:  "a command with nothing in it",
+			spoil: func(s *TrustStore) { s.Fix.Command = "" },
+			says:  "no command",
+		},
+		{
+			name:  "a command whose placeholder list was never filled in",
+			spoil: func(s *TrustStore) { s.Fix.Placeholders = nil },
+			says:  "empty one is the answer",
+		},
+		{
+			name:  "elevation demanded without a reason",
+			spoil: func(s *TrustStore) { s.Fix.Elevation = "" },
+			says:  "does not say why",
+		},
+		{
+			name: "a reason for elevation nobody needs",
+			spoil: func(s *TrustStore) {
+				s.Fix.RequiresElevation = false
+			},
+			says: "needs no elevated rights",
+		},
+		{
+			// A list of things to replace that names something not in the command
+			// is a list nobody can act on, and it reads as though the command were
+			// less ready than it is.
+			name:  "a placeholder that is not in the command",
+			spoil: func(s *TrustStore) { s.Fix.Placeholders = []string{"<hostname>"} },
+			says:  "does not appear in the command",
+		},
+		{
+			name:  "an empty placeholder",
+			spoil: func(s *TrustStore) { s.Fix.Placeholders = []string{""} },
+			says:  "empty placeholder",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			store := aRefusingStore()
+			store.Fix = aFix()
 			c.spoil(&store)
 			got := store.breach()
 			if got == "" {

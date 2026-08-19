@@ -250,6 +250,141 @@ check_handshake() {
   fi
 }
 
+# check_trust asks what the stores on this machine make of the chain, and whether
+# a command was offered - which is the half of the answer somebody RUNS.
+#
+# IT IS A SEPARATE FUNCTION FOR THE SAME REASON check_handshake IS: the subject
+# is different and so is the independent witness. Here the witness is CURL
+# ITSELF. That is worth naming, because it is the first time in this project that
+# a claim about somebody else's runtime is checked against that runtime's own
+# behaviour rather than against a document - certdoctor says curl will refuse
+# this chain, so curl is asked whether it does.
+#
+# WHY CURL_CA_BUNDLE IS SET HERE. On this image curl is an OpenSSL build and
+# reads that bundle anyway; naming it makes the store one certdoctor can OPEN and
+# report on rather than one it can only say it cannot see. The variable changes
+# which store is NAMEABLE, never which store curl uses.
+check_trust() {
+  local name="$1"
+  local file="$expected/$name.txt"
+  local target want_l4 want_l5 want_rows want_failure want_fix
+
+  target="$(value "$file" target)"
+  want_l4="$(value "$file" l4_status)"
+  want_l5="$(value "$file" l5_status)"
+  want_rows="$(value "$file" l5_rows_not_trusting)"
+  want_failure="$(value "$file" l5_trust_failure)"
+  want_fix="$(value "$file" remediation_expected)"
+
+  say() {
+    echo "    DIFFERS: $1"
+    failed=$((failed + 1))
+  }
+
+  echo "  trust $name  ->  $target"
+
+  local bundle=/etc/ssl/certs/ca-certificates.crt
+
+  # THE RUNTIME ITSELF, FIRST, and its answer is printed whatever happens.
+  local want_curl got_curl
+  want_curl="$(value "$file" curl_exit_code)"
+  CURL_CA_BUNDLE="$bundle" curl -sS -o /dev/null --max-time 10 "$target" 2>/dev/null
+  got_curl=$?
+  echo "    curl itself says: exit $got_curl"
+  if [ -n "$want_curl" ] && [ "$got_curl" != "$want_curl" ]; then
+    say "curl itself exits $got_curl and expected/ says $want_curl"
+  fi
+
+  local document code
+  document="$(CURL_CA_BUNDLE="$bundle" "$binary" "$target" --json 2>/dev/null)"
+  code=$?
+  if [ -z "$document" ]; then
+    say "certdoctor produced no document at all"
+    return
+  fi
+
+  local got_l4 got_l5 got_rows got_failure got_fix
+  got_l4="$(echo "$document" | jq -r '.layers[] | select(.id=="L4") | .status')"
+  got_l5="$(echo "$document" | jq -r '.layers[] | select(.id=="L5") | .status')"
+  got_rows="$(echo "$document" |
+    jq -r '[.layers[] | select(.id=="L5") | .findings[]? | .trust_store | select(.trusts_presented_chain == false)] | length')"
+  # tostring RATHER THAN THE // OPERATOR, for the reason recorded at the same
+  # expression in check_handshake: jq treats false and null alike as empty, and
+  # half the fields on this row carry their meaning when they are false.
+  got_failure="$(echo "$document" |
+    jq -r '[.layers[] | select(.id=="L5") | .findings[]? | .trust_store.trust_failure | select(. != null)] | first | tostring')"
+  got_fix="$(echo "$document" |
+    jq -r '[.layers[] | select(.id=="L5") | .findings[]? | .trust_store.fix | select(. != null)] | first | tostring')"
+
+  echo "    certdoctor: L4 $got_l4 | L5 $got_l5 / $got_rows refusing / failure $got_failure | exit $code"
+
+  if [ -n "$want_l4" ] && [ "$got_l4" != "$want_l4" ]; then
+    say "L4 says $got_l4, expected $want_l4"
+  fi
+  if [ -n "$want_l5" ] && [ "$got_l5" != "$want_l5" ]; then
+    say "L5 says $got_l5, expected $want_l5"
+  fi
+  if [ -n "$want_rows" ] && [ "$got_rows" != "$want_rows" ]; then
+    say "$got_rows store(s) refused the chain, expected $want_rows"
+  fi
+  if [ -n "$want_failure" ] && [ "$got_failure" != "$want_failure" ]; then
+    say "the refusal was classified as $got_failure, expected $want_failure"
+  fi
+
+  # THE HARDEST ASSERTION ON THIS BENCH, AND THE REASON private-root EXISTS.
+  # no-intermediate produces a trust row just as red as this one, and a command
+  # there would send somebody to edit a store that is perfectly fine. The two
+  # scenarios differ by ONE line of nginx configuration.
+  if [ "$want_fix" = "no" ] && [ "$got_fix" != "null" ]; then
+    say "a remediation command was offered for a chain the SERVER broke: $got_fix"
+  fi
+  if [ "$want_fix" = "yes" ]; then
+    if [ "$got_fix" = "null" ]; then
+      say "no remediation command was offered, and this is the one case there is one for"
+    else
+      local command elevation placeholders wants_path
+      command="$(echo "$document" |
+        jq -r '[.layers[] | select(.id=="L5") | .findings[]? | .trust_store.fix | select(. != null) | .command] | first')"
+      elevation="$(echo "$document" |
+        jq -r '[.layers[] | select(.id=="L5") | .findings[]? | .trust_store.fix | select(. != null) | .requires_elevation] | first | tostring')"
+      placeholders="$(echo "$document" |
+        jq -r '[.layers[] | select(.id=="L5") | .findings[]? | .trust_store.fix | select(. != null) | .placeholders | length] | first')"
+      echo "    command:    $command"
+
+      # docs/20 rule 6: the path is the REAL one, read off this machine.
+      wants_path="$(value "$file" remediation_contains)"
+      if [ -n "$wants_path" ] && ! echo "$command" | grep -qF "$wants_path"; then
+        say "the command does not name the real store path $wants_path"
+      fi
+      # docs/20 rule 5: elevated rights are announced BEFORE the command is run.
+      if [ "$(value "$file" remediation_requires_elevation)" = "yes" ] && [ "$elevation" != "true" ]; then
+        say "the command edits a store shared by the machine and does not say it needs elevated rights"
+      fi
+      if [ "$(value "$file" remediation_has_placeholders)" = "yes" ] && [ "${placeholders:-0}" -lt 1 ]; then
+        say "the command declares nothing to fill in, and the certificate to import is not something this program can know"
+      fi
+      # THE MEASURED TRAP, FROM THE OTHER SIDE. Redirecting a runtime at another
+      # bundle trades one broken site for every working one.
+      local banned
+      for banned in $(value "$file" remediation_forbidden | tr ',' ' '); do
+        if echo "$command" | grep -qF -- "$banned"; then
+          say "the command contains $banned, which redirects the runtime instead of adding to the store it already reads"
+        fi
+      done
+    fi
+  fi
+
+  local want_code
+  want_code="$(value "$file" exit_code)"
+  if [ -n "$want_code" ] && [ "$code" != "$want_code" ]; then
+    say "the run ended with $code, expected $want_code"
+  fi
+
+  if [ "$got_l5" = "$want_l5" ]; then
+    passed=$((passed + 1))
+  fi
+}
+
 # THE BENCH IS ASKED WHETHER IT IS SERVING THE CONFIGURATION IN THIS WORKING
 # TREE, BEFORE ANYTHING ELSE - and this check exists because the trap it catches
 # was walked into on 2026-08-17, while adding the partner zone.
@@ -276,7 +411,25 @@ bench_serves_this_tree() {
   return 1
 }
 
-if ! bench_serves_this_tree; then
+# THE SAME TRAP, ONE SERVICE OVER, AND IT WAS WALKED INTO ON 2026-08-19 WHILE
+# ADDING THE BLOCK THIS CHECKS FOR. nginx reads its configuration once, at
+# startup, and the configuration is a bind mount - so "docker compose up -d"
+# reports everything healthy while the bench serves the previous file. The
+# private-root scenario would then look like a product defect: the port simply
+# would not answer.
+bench_serves_the_complete_chain() {
+  if nc -z 172.28.0.80 8443 2>/dev/null; then
+    return 0
+  fi
+  echo "testbed: THE PARTNER IS NOT SERVING THE CONFIGURATION IN THIS WORKING TREE."
+  echo "testbed: nothing is listening on 172.28.0.80:8443, and nginx.conf declares it."
+  echo "testbed: nginx reads its configuration once, at startup, and a bind mount does not"
+  echo "testbed: restart it - so an edited conf is invisible until the container is."
+  echo "testbed: fix:  docker compose -f testbed/compose.yml restart partner"
+  return 1
+}
+
+if ! bench_serves_this_tree || ! bench_serves_the_complete_chain; then
   exit 1
 fi
 
@@ -306,6 +459,17 @@ echo
 # bench's configuration BEFORE that configuration existed, which is the strongest
 # form of oracle available - and until L4 arrived nothing could ask it.
 check_handshake no-intermediate
+
+echo
+
+# THE PAIR, AND IT ONLY MEANS ANYTHING AS A PAIR. Both targets are the same
+# server, the same leaf and the same private root; one sends its intermediate and
+# the other does not. Both produce a trust row that is equally red. Only one of
+# them may produce a command, and which one is decided by a fact from L4 rather
+# than by anything a store could see.
+check_trust no-intermediate
+echo
+check_trust private-root
 
 echo
 

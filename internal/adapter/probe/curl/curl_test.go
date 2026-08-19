@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/probe"
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -58,7 +59,7 @@ func TestOneBinaryReachedByTwoSpellingsIsOneRow(t *testing.T) {
 // opened - and measured on this machine, BOTH curl builds are Schannel.
 func TestASchannelBuildIsUnassessedRatherThanTrusted(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 8.21.0 (Windows) libcurl/8.21.0 Schannel"),
-		sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, "")
+		sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, "", atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Error("a platform-store build produced a verdict this probe cannot reach")
@@ -76,7 +77,7 @@ func TestASchannelBuildIsUnassessedRatherThanTrusted(t *testing.T) {
 // nothing while waiting for it to work.
 func TestAnUnknownBackendIsUnassessedRatherThanAssumed(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 9.0.0 libcurl/9.0.0 SomeNewTLS"),
-		sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, "")
+		sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, "", atNoon())
 
 	if store.Backend != "" {
 		t.Errorf("an unrecognised backend was recorded as %q", store.Backend)
@@ -100,7 +101,7 @@ func TestAnUnknownBackendIsUnassessedRatherThanAssumed(t *testing.T) {
 // program cannot read off disk, and saying so is better than guessing at it.
 func TestAnOpenSSLBuildWithNoBundleSaysSo(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"),
-		sourceOf(), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, "")
+		sourceOf(), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, "", atNoon())
 
 	if store.Backend != "openssl" {
 		t.Errorf("backend %q, want openssl", store.Backend)
@@ -115,7 +116,7 @@ func TestAnOpenSSLBuildWithNoBundleSaysSo(t *testing.T) {
 // a reason, never a failure to trust.
 func TestAnOpenSSLBuildWithAnUnreadableBundleIsUnassessed(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"),
-		sourceOf(), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, "/absent/bundle.crt")
+		sourceOf(), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, "/absent/bundle.crt", atNoon())
 
 	if store.StoreForm != report.StoreFile || store.StorePath != "/absent/bundle.crt" {
 		t.Errorf("the row does not name the bundle it was pointed at: %+v", store)
@@ -130,7 +131,7 @@ func TestACurlThatRefusesToReportIsUnassessed(t *testing.T) {
 	run := func(context.Context, string, ...string) (probe.Output, error) {
 		return probe.Output{ExitCode: 2, Stderr: "nie mozna uruchomic"}, nil
 	}
-	store := storeFor(context.Background(), run, sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, "")
+	store := storeFor(context.Background(), run, sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, "", atNoon())
 
 	if store.NotAssessed == "" {
 		t.Error("a curl that would not answer gave no reason")
@@ -145,7 +146,7 @@ func TestACurlThatRefusesToReportIsUnassessed(t *testing.T) {
 func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
 	source := sourceOf(`C:\Windows\system32\curl.exe`, `C:\git\bin\curl.exe`)
 	stores, err := Probe(source, versionSaying("curl 8.21.0 libcurl/8.21.0 Schannel"),
-		[]string{`C:\Windows\system32`, `C:\WINDOWS\system32`, `C:\git\bin`, `C:\empty`}, "")(context.Background(), [][]byte{{0x30}})
+		[]string{`C:\Windows\system32`, `C:\WINDOWS\system32`, `C:\git\bin`, `C:\empty`}, "", atNoon)(context.Background(), [][]byte{{0x30}})
 
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
@@ -162,7 +163,7 @@ func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
 
 // NO curl IS NOT AN ERROR - docs/20 rule 1.
 func TestAMachineWithNoCurlIsNotAnError(t *testing.T) {
-	stores, err := Probe(sourceOf(), nil, []string{`C:\empty`}, "")(context.Background(), nil)
+	stores, err := Probe(sourceOf(), nil, []string{`C:\empty`}, "", atNoon)(context.Background(), nil)
 	if err != nil {
 		t.Errorf("a machine without curl produced an error: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestAMachineWithNoCurlIsNotAnError(t *testing.T) {
 // bundle does not close is DISTRUST - a verdict, not a failure.
 func TestAReadableBundleProducesAVerdict(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"),
-		sourceOf("/bundle.crt"), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, "/bundle.crt")
+		sourceOf("/bundle.crt"), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, "/bundle.crt", atNoon())
 
 	// The fixture bundle holds no PEM, so the verifier reports that rather than
 	// inventing a verdict - which is the honest answer for an empty store.
@@ -186,3 +187,10 @@ func TestAReadableBundleProducesAVerdict(t *testing.T) {
 		t.Error("a store with no readable anchor gave no reason")
 	}
 }
+
+// atNoon is the clock these tests hand to the verifier.
+//
+// A FIXED INSTANT RATHER THAN time.Now, because the question this clock decides
+// is whether a certificate is out of date - and a test whose answer depends on
+// the day it runs is a test that will one day fail for a reason nobody planted.
+func atNoon() time.Time { return time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC) }

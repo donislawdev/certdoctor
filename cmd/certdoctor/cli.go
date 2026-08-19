@@ -48,6 +48,13 @@ type environment struct {
 	now        func() time.Time
 	platform   report.Platform
 	privilege  report.PrivilegeLevel
+	// home is this account's own directory, used for ONE question: whether a
+	// remediation command needs elevated rights, because a store outside it
+	// belongs to every account on the machine. It is a seam for the same reason
+	// the clock is - a test reading the real one would answer differently on
+	// somebody else's machine. Empty is a legitimate value and L5 answers it in
+	// the safe direction, which is "assume elevation is needed".
+	home string
 	// lookupEnv is how L0 sees this machine's environment. It is a seam for the
 	// same reason the clock is: a test reading the real environment would pass
 	// or fail depending on whose machine it ran on, and the one variable that
@@ -670,7 +677,13 @@ func trustInput(env environment) trust.Input {
 	if env.trustProbes == nil {
 		return trust.Input{}
 	}
-	return trust.Input{Probes: env.trustProbes()}
+	return trust.Input{
+		Probes: env.trustProbes(),
+		// What a remediation command needs to know about where it will be run.
+		// Both values come from this environment rather than being read inside
+		// the layer, so an assessment stays reproducible from its input.
+		Machine: trust.Machine{OS: env.platform.OS, Home: env.home},
+	}
 }
 
 // trustCoverageNote says which runtimes this build is able to ask.

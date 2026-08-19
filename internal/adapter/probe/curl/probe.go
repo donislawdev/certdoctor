@@ -3,6 +3,7 @@ package curl
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe"
@@ -15,7 +16,7 @@ import (
 // handed in so this package touches no environment of its own. It is used ONLY
 // for backends that honour it - which is the whole point of reading the backend
 // first.
-func Probe(source file.Source, run probe.Runner, pathDirs []string, bundleFromEnv string) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+func Probe(source file.Source, run probe.Runner, pathDirs []string, bundleFromEnv string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
 		installs := find(source, pathDirs)
 		if len(installs) == 0 {
@@ -24,13 +25,13 @@ func Probe(source file.Source, run probe.Runner, pathDirs []string, bundleFromEn
 
 		stores := make([]report.TrustStore, 0, len(installs))
 		for _, install := range installs {
-			stores = append(stores, storeFor(ctx, run, source, install, chain, bundleFromEnv))
+			stores = append(stores, storeFor(ctx, run, source, install, chain, bundleFromEnv, now()))
 		}
 		return stores, nil
 	}
 }
 
-func storeFor(ctx context.Context, run probe.Runner, source file.Source, install Install, chain [][]byte, bundleFromEnv string) report.TrustStore {
+func storeFor(ctx context.Context, run probe.Runner, source file.Source, install Install, chain [][]byte, bundleFromEnv string, now time.Time) report.TrustStore {
 	store := report.TrustStore{
 		Runtime:  "curl",
 		Instance: install.Path,
@@ -79,6 +80,6 @@ func storeFor(ctx context.Context, run probe.Runner, source file.Source, install
 		store.NotAssessed = fmt.Sprintf("the bundle named by CURL_CA_BUNDLE could not be read: %v", err)
 		return store
 	}
-	probe.Verify(&store, bundle, chain)
+	probe.Verify(&store, bundle, chain, now)
 	return store
 }

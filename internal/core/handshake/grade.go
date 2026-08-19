@@ -48,18 +48,24 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 
 	complete := chainComplete(firstChain)
 	detail := detailFor(completed, len(addresses), firstChain, complete, disagreed)
+	// ChainWhole travels on EVERY outcome, including the failing ones, because
+	// L5 asks it in order to decide whether a store can be advised at all - and
+	// the case it most needs it for is the FAIL below.
+	graded := Result{Detail: detail, Findings: findings, ChainWhole: complete}
 
 	switch {
 	case completed == 0:
-		return Result{Status: status.Fail, Detail: detail, Findings: findings}
+		graded.Status = status.Fail
 	case !complete:
 		// A FACT ABOUT THE SERVER, AND THE SENTENCE SAYS SO. Every runtime on this
 		// machine will fail against this server and the answer is still "do
 		// nothing here" - the one scenario where a verdict computed from the trust
 		// matrix would point the reader at exactly the wrong machine.
-		return Result{Status: status.Fail, Detail: detail, Findings: findings}
+		graded.Status = status.Fail
+	default:
+		graded.Status = status.Pass
 	}
-	return Result{Status: status.Pass, Detail: detail, Findings: findings}
+	return graded
 }
 
 // leafOf is the fingerprint that identifies what a server presented, or empty.

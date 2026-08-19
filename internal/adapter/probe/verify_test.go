@@ -20,58 +20,90 @@ import (
 // network and without a fixture nobody can regenerate.
 func anchorAndLeaf(t *testing.T) (anchorPEM, leafDER []byte) {
 	t.Helper()
+	return chainValid(t, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+}
 
-	anchorKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+// chainValid mints the same chain inside a window the caller chooses, so that
+// "out of date" and "not yet in date" can be produced on purpose rather than
+// waited for. It is the SAME minting code as the default above rather than a
+// copy of it - the shape OBS50 records, applied to a fixture.
+func chainValid(t *testing.T, notBefore, notAfter time.Time) (anchorPEM, leafDER []byte) {
+	t.Helper()
+	anchorDER, anchorKey := mint(t, "certdoctor test anchor", 1, nil, nil, true, notBefore, notAfter)
+	leafDER, _ = mint(t, "partner.test", 2, anchorDER, anchorKey, false, notBefore, notAfter)
+	return bundleOf(t, anchorDER), leafDER
+}
+
+// mint makes one certificate, signed by a parent or by itself when there is
+// none.
+//
+// ONE MINTING FUNCTION RATHER THAN ONE PER FIXTURE. Three shapes are needed here
+// - a self-signed anchor, an intermediate under it, and a leaf under that - and
+// three copies of this code would be three places where a validity window or a
+// key usage could drift apart, which is the shape OBS50 records.
+//
+// tweak is how a test asks for a shape the three defaults do not cover - a name
+// constraint, say. It is variadic so that every existing call keeps reading as
+// the ordinary case.
+func mint(t *testing.T, commonName string, serial int64, parentDER []byte, parentKey *ecdsa.PrivateKey,
+	isCA bool, notBefore, notAfter time.Time, tweak ...func(*x509.Certificate)) ([]byte, *ecdsa.PrivateKey) {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("no key: %v", err)
+		t.Fatalf("no key for %s: %v", commonName, err)
 	}
 	template := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "certdoctor test anchor"},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(time.Hour),
-		IsCA:                  true,
-		KeyUsage:              x509.KeyUsageCertSign,
+		SerialNumber:          big.NewInt(serial),
+		Subject:               pkix.Name{CommonName: commonName},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		IsCA:                  isCA,
 		BasicConstraintsValid: true,
 	}
-	anchorDER, err := x509.CreateCertificate(rand.Reader, template, template, &anchorKey.PublicKey, anchorKey)
-	if err != nil {
-		t.Fatalf("no anchor: %v", err)
-	}
-	anchor, err := x509.ParseCertificate(anchorDER)
-	if err != nil {
-		t.Fatalf("anchor will not parse: %v", err)
-	}
-
-	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("no leaf key: %v", err)
-	}
-	leaf := &x509.Certificate{
-		SerialNumber: big.NewInt(2),
-		Subject:      pkix.Name{CommonName: "partner.test"},
-		DNSNames:     []string{"partner.test"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-	}
-	leafDER, err = x509.CreateCertificate(rand.Reader, leaf, anchor, &leafKey.PublicKey, anchorKey)
-	if err != nil {
-		t.Fatalf("no leaf: %v", err)
+	if isCA {
+		template.KeyUsage = x509.KeyUsageCertSign
+	} else {
+		template.DNSNames = []string{commonName}
+		template.KeyUsage = x509.KeyUsageDigitalSignature
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 	}
 
+	for _, apply := range tweak {
+		apply(template)
+	}
+
+	parent, signer := template, key
+	if parentDER != nil {
+		issuer, err := x509.ParseCertificate(parentDER)
+		if err != nil {
+			t.Fatalf("issuer for %s will not parse: %v", commonName, err)
+		}
+		parent, signer = issuer, parentKey
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, parent, &key.PublicKey, signer)
+	if err != nil {
+		t.Fatalf("no certificate for %s: %v", commonName, err)
+	}
+	return der, key
+}
+
+// bundleOf writes certificates out the way a trust store on disk holds them.
+func bundleOf(t *testing.T, ders ...[]byte) []byte {
+	t.Helper()
 	var bundle bytes.Buffer
-	if err := pem.Encode(&bundle, &pem.Block{Type: "CERTIFICATE", Bytes: anchorDER}); err != nil {
-		t.Fatalf("no bundle: %v", err)
+	for _, der := range ders {
+		if err := pem.Encode(&bundle, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+			t.Fatalf("no bundle: %v", err)
+		}
 	}
-	return bundle.Bytes(), leafDER
+	return bundle.Bytes()
 }
 
 func TestAStoreHoldingTheIssuingAnchorTrustsTheChain(t *testing.T) {
 	anchorPEM, leafDER := anchorAndLeaf(t)
 	var store report.TrustStore
-	Verify(&store, anchorPEM, [][]byte{leafDER})
+	Verify(&store, anchorPEM, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("no verdict: %s", store.NotAssessed)
@@ -91,7 +123,7 @@ func TestAStoreWithoutTheAnchorDistrustsRatherThanFails(t *testing.T) {
 	otherAnchor, _ := anchorAndLeaf(t)
 
 	var store report.TrustStore
-	Verify(&store, otherAnchor, [][]byte{leafDER})
+	Verify(&store, otherAnchor, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("distrust came back as unassessed: %s", store.NotAssessed)
@@ -108,7 +140,7 @@ func TestAStoreWithoutTheAnchorDistrustsRatherThanFails(t *testing.T) {
 // anchors here" is a fact about the store, not about the chain.
 func TestAStoreWithNoReadableAnchorIsUnassessed(t *testing.T) {
 	var store report.TrustStore
-	Verify(&store, []byte("not a certificate at all"), [][]byte{{0x30}})
+	Verify(&store, []byte("not a certificate at all"), [][]byte{{0x30}}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Error("an unreadable store produced a verdict about trust")
@@ -126,7 +158,7 @@ func TestAStoreSurvivesOneUnparsableEntry(t *testing.T) {
 	_ = pem.Encode(&junk, &pem.Block{Type: "PRIVATE KEY", Bytes: []byte{4, 5, 6}})
 
 	var store report.TrustStore
-	Verify(&store, append(junk.Bytes(), anchorPEM...), [][]byte{leafDER})
+	Verify(&store, append(junk.Bytes(), anchorPEM...), [][]byte{leafDER}, atNoon())
 
 	if store.TrustAnchorCount != 1 {
 		t.Errorf("counted %d anchors beside the junk, want 1", store.TrustAnchorCount)
@@ -141,7 +173,7 @@ func TestAStoreSurvivesOneUnparsableEntry(t *testing.T) {
 func TestNoChainMeansNothingToJudge(t *testing.T) {
 	anchorPEM, _ := anchorAndLeaf(t)
 	var store report.TrustStore
-	Verify(&store, anchorPEM, nil)
+	Verify(&store, anchorPEM, nil, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Error("a verdict was produced with no chain to judge")
@@ -154,9 +186,158 @@ func TestNoChainMeansNothingToJudge(t *testing.T) {
 func TestAnUnparsableLeafIsUnassessed(t *testing.T) {
 	anchorPEM, _ := anchorAndLeaf(t)
 	var store report.TrustStore
-	Verify(&store, anchorPEM, [][]byte{{0x00, 0x01}})
+	Verify(&store, anchorPEM, [][]byte{{0x00, 0x01}}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.NotAssessed == "" {
 		t.Errorf("an unparsable leaf did not come back unassessed: %+v", store)
+	}
+}
+
+// atNoon is the clock these tests hand to the verifier - a fixed instant, so
+// that "is this certificate out of date" cannot answer differently tomorrow.
+func atNoon() time.Time { return time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC) }
+
+// TestARefusalSaysWhichWay is what stops this program offering a certificate to
+// import for a problem importing does not touch.
+//
+// THE THREE CLASSES ARE NOT COSMETIC. Only an unknown authority is repaired by
+// adding a certificate to a store. An expired chain needs whoever runs the
+// server; a chain that has not started yet is usually THIS machine's clock, and
+// it is one of the commonest causes of the failure this product exists to
+// diagnose. A single "does not trust" would send all three to the same wrong
+// place.
+func TestARefusalSaysWhichWay(t *testing.T) {
+	anchorPEM, leafDER := anchorAndLeaf(t)
+
+	cases := []struct {
+		name    string
+		anchors []byte
+		chain   [][]byte
+		wants   report.TrustFailure
+	}{
+		{
+			name: "the store holds nobody who signed this",
+			// A different chain entirely: the anchor is real and signed nothing
+			// that arrived.
+			anchors: func() []byte { other, _ := anchorAndLeaf(t); return other }(),
+			chain:   [][]byte{leafDER},
+			wants:   report.UnknownAuthority,
+		},
+		{
+			name:    "the chain is past its end",
+			anchors: anchorPEM,
+			chain:   [][]byte{leafDER},
+			wants:   report.Expired,
+		},
+		{
+			name:    "the chain has not started yet",
+			anchors: anchorPEM,
+			chain:   [][]byte{leafDER},
+			wants:   report.NotYetValid,
+		},
+	}
+
+	// The two dated cases move the CLOCK rather than the certificate, which is
+	// the honest way round: the certificate is the same one in every case and
+	// only the moment of asking differs.
+	clocks := map[string]time.Time{
+		"the store holds nobody who signed this": atNoon(),
+		"the chain is past its end":              atNoon().Add(48 * time.Hour),
+		"the chain has not started yet":          atNoon().Add(-48 * time.Hour),
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var store report.TrustStore
+			Verify(&store, c.anchors, c.chain, clocks[c.name])
+
+			if store.TrustsPresentedChain == nil {
+				t.Fatalf("no verdict at all: %s", store.NotAssessed)
+			}
+			if *store.TrustsPresentedChain {
+				t.Fatal("the chain was trusted, and this case is a refusal")
+			}
+			if store.TrustFailure != c.wants {
+				t.Errorf("refused with %q, want %q", store.TrustFailure, c.wants)
+			}
+		})
+	}
+}
+
+// The positive twin - OBS56. Every case above asserts a particular refusal, and
+// a verifier that refused everything with the right word would pass all three.
+func TestAnAcceptedChainNamesNoFailure(t *testing.T) {
+	anchorPEM, leafDER := anchorAndLeaf(t)
+	var store report.TrustStore
+	Verify(&store, anchorPEM, [][]byte{leafDER}, atNoon())
+
+	if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain {
+		t.Fatalf("the chain was not trusted: %s", store.NotAssessed)
+	}
+	if store.TrustFailure != "" {
+		t.Errorf("a trusted chain carries the failure %q", store.TrustFailure)
+	}
+}
+
+// TestAnIntermediateFromTheChainCompletesThePath is the shape the bench serves
+// on port 8443, and the shape a remediation command is written for.
+//
+// THE INTERMEDIATE COMES FROM THE WIRE AND THE ROOT FROM THE STORE, which is how
+// nearly every real chain is built - and until 2026-08-19 no test here passed
+// more than one certificate, so the loop that reads the rest of the chain had
+// never been executed. The coverage gate is what said so.
+func TestAnIntermediateFromTheChainCompletesThePath(t *testing.T) {
+	rootDER, rootKey := mint(t, "certdoctor test root", 1, nil, nil, true, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	interDER, interKey := mint(t, "certdoctor test intermediate", 2, rootDER, rootKey, true, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	leafDER, _ := mint(t, "partner.test", 3, interDER, interKey, false, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+
+	var store report.TrustStore
+	// The store holds the ROOT ONLY. The intermediate has to be taken from what
+	// the server sent, which is the whole point.
+	Verify(&store, bundleOf(t, rootDER), [][]byte{leafDER, interDER}, atNoon())
+
+	if store.TrustsPresentedChain == nil {
+		t.Fatalf("no verdict: %s", store.NotAssessed)
+	}
+	if !*store.TrustsPresentedChain {
+		t.Errorf("a chain carrying its own intermediate was refused, failure %q", store.TrustFailure)
+	}
+
+	// THE NEGATIVE TWIN, ON THE SAME CERTIFICATES - OBS56. Without it this test
+	// would pass on a verifier that trusted everything. Withhold the
+	// intermediate and the same store must refuse, which is scenario S-5.
+	var withheld report.TrustStore
+	Verify(&withheld, bundleOf(t, rootDER), [][]byte{leafDER}, atNoon())
+	if withheld.TrustsPresentedChain == nil || *withheld.TrustsPresentedChain {
+		t.Error("the same store accepted the leaf with its intermediate withheld, so the intermediate was not what completed the path")
+	}
+}
+
+// TestAFailureThisProgramDoesNotClassifyGetsNoGuess.
+//
+// x509 refuses a path for reasons beyond the three named here - a signer that is
+// not a certificate authority is one - and the honest answer is "other". It
+// produces NO command, which is the point: choosing the commonest reason instead
+// would hand somebody a certificate to import for a problem importing does not
+// touch, and they would wait for it to work.
+func TestAFailureThisProgramDoesNotClassifyGetsNoGuess(t *testing.T) {
+	// A root that is only permitted to sign names under example.com, signing a
+	// leaf for partner.test. The signature is sound, the dates are fine and the
+	// authority IS in the store - what fails is the constraint, which is neither
+	// of the three reasons this program names.
+	rootDER, rootKey := mint(t, "certdoctor constrained root", 1, nil, nil, true,
+		atNoon().Add(-time.Hour), atNoon().Add(time.Hour),
+		func(c *x509.Certificate) { c.PermittedDNSDomains = []string{"example.com"} })
+	leafDER, _ := mint(t, "partner.test", 2, rootDER, rootKey, false, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+
+	var store report.TrustStore
+	Verify(&store, bundleOf(t, rootDER), [][]byte{leafDER}, atNoon())
+
+	if store.TrustsPresentedChain == nil || *store.TrustsPresentedChain {
+		t.Fatalf("a leaf outside its issuer's permitted names was trusted: %s", store.NotAssessed)
+	}
+	if store.TrustFailure != report.OtherFailure {
+		t.Errorf("classified as %q, and guessing a familiar reason here is how somebody runs a command that cannot help",
+			store.TrustFailure)
 	}
 }

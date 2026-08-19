@@ -113,3 +113,83 @@ func TestTheTrustBoundaryCarriesTheAnswerUnchanged(t *testing.T) {
 		t.Errorf("%d findings crossed, want 1", len(answer.Findings))
 	}
 }
+
+// TestMaskingTakesThePathOutOfTheCommandToo is the one field where leaving a
+// path behind would be worst.
+//
+// THE COMMAND IS THE LINE MOST LIKELY TO BE PASTED INTO A TICKET, so a store
+// path masked in one field and left whole in the command would mean the
+// directory travels anyway - in the half somebody copies. The two also have to
+// come out as ONE pseudonym: two names for one directory would say there are two
+// stores, which is the exact failure pseudonyms exist to prevent.
+func TestMaskingTakesThePathOutOfTheCommandToo(t *testing.T) {
+	redaction := redact.New(redact.Everything, redact.Host("jdoe"))
+	no := false
+	store := report.TrustStore{
+		Runtime:              "curl",
+		Instance:             `C:\Users\jdoe\tools\curl.exe`,
+		StorePath:            `C:\Users\jdoe\certs\bundle.crt`,
+		StoreForm:            report.StoreFile,
+		Backend:              "openssl",
+		TrustAnchorCount:     150,
+		TrustsPresentedChain: &no,
+		TrustFailure:         report.UnknownAuthority,
+		SelectedBy:           []string{"PATH"},
+		Fix: &report.Fix{
+			Command:      `cat <certificate.pem> >> "C:\Users\jdoe\certs\bundle.crt"`,
+			Placeholders: []string{"<certificate.pem>"},
+		},
+	}
+	original := *store.Fix
+	finding := report.Finding{
+		Kind:       report.FindingTrustStore,
+		Summary:    "curl does NOT trust the presented chain",
+		Source:     report.SourceDetected,
+		TrustStore: &store,
+	}
+
+	Options{Redaction: redaction}.maskFinding(&finding)
+	masked := finding.TrustStore
+
+	if strings.Contains(masked.Fix.Command, "jdoe") {
+		t.Errorf("the account name survived in the command somebody pastes: %q", masked.Fix.Command)
+	}
+	if !strings.Contains(masked.Fix.Command, masked.StorePath) {
+		t.Errorf("the store path and the same path inside the command came out as two different names: %q is not in %q",
+			masked.StorePath, masked.Fix.Command)
+	}
+	// The closed-list half, checked in the other direction as everywhere else.
+	if masked.TrustFailure != report.UnknownAuthority {
+		t.Errorf("a word from a closed list was masked: %q", masked.TrustFailure)
+	}
+	if len(masked.Fix.Placeholders) != 1 || masked.Fix.Placeholders[0] != "<certificate.pem>" {
+		t.Errorf("a placeholder was masked, and it names nobody: %v", masked.Fix.Placeholders)
+	}
+	// MASKING MUST NOT REACH BACK THROUGH THE POINTER. The finding is copied and
+	// the Fix behind it is not, so an edit in place would rewrite the row the
+	// core still holds - and the masked and unmasked reports would be one object.
+	if store.Fix != nil && original.Command != `cat <certificate.pem> >> "C:\Users\jdoe\certs\bundle.crt"` {
+		t.Error("masking edited the fix in place instead of copying it")
+	}
+}
+
+// A row with nothing to fix must survive masking rather than panicking on a nil,
+// and that is the common case: every green row in the matrix.
+func TestMaskingARowWithNoCommandIsFine(t *testing.T) {
+	redaction := redact.New(redact.Everything, redact.Host("jdoe"))
+	trusts := true
+	finding := report.Finding{
+		Kind:    report.FindingTrustStore,
+		Summary: "curl trusts the presented chain",
+		Source:  report.SourceDetected,
+		TrustStore: &report.TrustStore{
+			Runtime: "curl", Instance: "/usr/bin/curl",
+			StorePath: "/etc/ssl/certs/ca-certificates.crt", StoreForm: report.StoreFile,
+			TrustAnchorCount: 150, TrustsPresentedChain: &trusts, SelectedBy: []string{},
+		},
+	}
+	Options{Redaction: redaction}.maskFinding(&finding)
+	if finding.TrustStore.Fix != nil {
+		t.Error("masking invented a command")
+	}
+}
