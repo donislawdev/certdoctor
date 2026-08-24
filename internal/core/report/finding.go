@@ -51,6 +51,20 @@ const (
 	// have made "does java trust this" a single answer, which is the claim this
 	// product exists to disprove.
 	FindingTrustStore FindingKind = "trust_store"
+
+	// FindingSigningAuthority - WHO signed the leaf, and how widely the stores
+	// on this machine hold that signer. One per run rather than one per store,
+	// because the question is about the machine as a whole.
+	//
+	// IT IS NAMED FOR WHAT IT MEASURES RATHER THAN FOR WHAT IT MIGHT MEAN, and
+	// that is ADR53 rather than timidity. Measured 2026-08-19 on the bench: an
+	// intercepting middlebox and an honest internal server under a company's own
+	// certificate authority produce the SAME answer in every field this program
+	// has - same holding, same refusal, same repair, and once the middlebox is
+	// given an intermediate, the same complete chain. A kind called
+	// "interception" would therefore be an accusation printed on the ordinary
+	// case, which inviolable rule 21 calls harm rather than a defect.
+	FindingSigningAuthority FindingKind = "signing_authority"
 )
 
 // findingKindMeanings is the registry. The registry test refuses a kind that is
@@ -61,6 +75,7 @@ var findingKindMeanings = map[FindingKind]string{
 	FindingTCPConnect:          "one attempt to open a TCP connection to one address",
 	FindingTLSHandshake:        "what one server presented when the connection to one address was upgraded to TLS",
 	FindingTrustStore:          "one trust store of one runtime instance, and what it makes of the presented chain",
+	FindingSigningAuthority:    "who signed the leaf, and how widely the trust stores on this machine hold that signer",
 }
 
 // AllFindingKinds lists every kind exactly once, in declaration order.
@@ -85,6 +100,7 @@ var AllFindingKinds = []FindingKind{
 	FindingTCPConnect,
 	FindingTLSHandshake,
 	FindingTrustStore,
+	FindingSigningAuthority,
 }
 
 // ResolutionView says which of the two lenses an answer was seen through.
@@ -403,6 +419,8 @@ type Finding struct {
 	TLSHandshake *TLSHandshake
 	// TrustStore is set when Kind is FindingTrustStore.
 	TrustStore *TrustStore
+	// SigningAuthority is set when Kind is FindingSigningAuthority.
+	SigningAuthority *SigningAuthority
 }
 
 // ConnectOutcome is what happened when we tried to open one TCP connection.
@@ -1104,12 +1122,156 @@ func (t *TrustStore) remediationBreach() string {
 	return ""
 }
 
+// SigningAuthority says who signed the leaf and how widely this machine holds
+// that signer. ONE PER RUN, because the question is about the machine.
+//
+// WHAT IT IS FOR. The commonest failure this product exists to explain is one
+// tool accepting a name and another refusing it on the same machine at the same
+// moment. That happens when the signer is present in some stores here and not in
+// others, and this is the row that says so in one line, with the evidence
+// somebody would paste into a ticket.
+//
+// WHAT IT DELIBERATELY DOES NOT SAY. It never concludes that traffic is being
+// intercepted. Measured on the bench 2026-08-19: a middlebox re-signing traffic
+// and an honest internal server under a company's own certificate authority
+// produce identical values in every field here, and the structural difference
+// that remained - an incomplete chain - disappeared as soon as the middlebox was
+// given an intermediate to sign with. Accusing on these fields would accuse
+// scenario S-3, which is an ordinary corporate machine working as intended.
+type SigningAuthority struct {
+	// Issuer is the distinguished name of whoever signed the leaf. Required:
+	// RFC 5280 section 4.1.2.4 forbids an empty issuer, so an empty one here
+	// means a broken certificate or a defect of ours - the same asymmetry
+	// Certificate carries.
+	//
+	// IT IS EVIDENCE AND NOT A TEST. Nothing in this program branches on the
+	// text of it, and O11 is why: recognising interception by an issuer's name
+	// would mean every appliance nobody has heard of goes unnoticed.
+	Issuer string
+	// LeafFingerprint is the SHA-256 of the leaf, so the claim above can be
+	// checked by somebody else with their own tools. Required, and not redacted
+	// - it is the evidence the reader came for, like every other fingerprint
+	// here.
+	LeafFingerprint string
+	// HeldBy is the measurement: how many of the stores that could be assessed
+	// hold an anchor closing this chain.
+	HeldBy AnchorHolding
+	// TrustingStores and RefusingStores name the stores on each side, so that
+	// "some of them" is never left as an adjective. NEITHER IS EVER NIL and an
+	// empty slice is an answer - the same shape SelectedBy and DNSNames have.
+	//
+	// THEY CARRY INSTANCE NAMES, WHICH ARE OFTEN PATHS, so they go through
+	// redaction like every other borrowed string.
+	TrustingStores []string
+	RefusingStores []string
+	// Caveat is the one sentence saying what this measurement does NOT settle,
+	// and it is required on every holding rather than only on the awkward one.
+	//
+	// IT IS HOW INVIOLABLE RULE 21 TRAVELS. That rule asks for the heuristic to
+	// be named as a heuristic IN THE REPORT, and a hedge that lives only in the
+	// terminal renderer is a hedge the --json consumer never sees - the same
+	// parity rule 12 states for every other finding. It is our own prose, names
+	// nobody, and is therefore never redacted.
+	Caveat string
+}
+
+// AnchorHolding is how widely this machine holds the signer of a chain.
+//
+// THE LIST IS CLOSED AND EVERY VALUE IS A COUNT RATHER THAN A CONCLUSION. This
+// is the same discipline CipherSuite follows by carrying the IANA number with
+// the name beside it: what came off the machine is one thing, what it might mean
+// is another, and a consumer that branches on the first cannot be broken by us
+// changing our mind about the second.
+type AnchorHolding string
+
+const (
+	// HeldByAllStores - every store that could be assessed holds an anchor for
+	// this chain. The ordinary answer for a public certificate authority, and
+	// the ordinary answer on a healthy machine.
+	HeldByAllStores AnchorHolding = "all_stores"
+	// HeldBySomeStores - some hold it and some do not, which is why one tool
+	// works here and another does not.
+	//
+	// THIS IS THE INTERESTING VALUE AND IT IS STILL NOT AN ACCUSATION. It says
+	// the signer is present on this machine and did not arrive with every
+	// runtime, which is true of an inspection appliance and equally true of a
+	// company's own certificate authority.
+	HeldBySomeStores AnchorHolding = "some_stores"
+	// HeldByNoStores - nothing here holds it, so nothing here accepts the name.
+	// A browser on this machine would refuse it too, which is worth saying
+	// because it tells the reader this is not a per-runtime problem.
+	HeldByNoStores AnchorHolding = "no_stores"
+)
+
+var anchorHoldingMeanings = map[AnchorHolding]string{
+	HeldByAllStores:  "every trust store that could be assessed holds an anchor for this chain",
+	HeldBySomeStores: "some stores here hold an anchor for this chain and others do not",
+	HeldByNoStores:   "no trust store on this machine holds an anchor for this chain",
+}
+
+// Valid reports whether this is one of the declared holdings.
+func (h AnchorHolding) Valid() bool {
+	_, known := anchorHoldingMeanings[h]
+	return known
+}
+
+// Meaning is the one line the schema publishes for this value.
+func (h AnchorHolding) Meaning() string { return anchorHoldingMeanings[h] }
+
+// String is the wire spelling.
+func (h AnchorHolding) String() string { return string(h) }
+
+// AllAnchorHoldings lists every holding exactly once, in declaration order.
+var AllAnchorHoldings = []AnchorHolding{HeldByAllStores, HeldBySomeStores, HeldByNoStores}
+
+// breach refuses the states in which the counted answer and the named stores
+// would be telling two different stories.
+//
+// THE THREE CROSS-CHECKS ARE THE POINT OF THIS FUNCTION. A holding is a summary
+// of two lists, so a holding that disagrees with its own lists is either a
+// counting mistake of ours or an accusation assembled by hand somewhere it
+// should not have been. The guard on the file keeps the judgement in one place
+// and this keeps the shape honest wherever it arrives from.
+func (a *SigningAuthority) breach() string {
+	switch {
+	case a.Issuer == "":
+		return "names no issuer, and RFC 5280 section 4.1.2.4 forbids a certificate with an empty one"
+	case a.LeafFingerprint == "":
+		return "carries no fingerprint, so the claim it makes could not be checked against anybody else's tools"
+	case !a.HeldBy.Valid():
+		return fmt.Sprintf("says the signer is held by %q, which is outside the registry", a.HeldBy)
+	case a.TrustingStores == nil:
+		return "leaves the trusting stores unset, and an empty list is an answer while a missing one is not"
+	case a.RefusingStores == nil:
+		return "leaves the refusing stores unset, and an empty list is an answer while a missing one is not"
+	case a.Caveat == "":
+		return "carries no caveat, and a claim of this sort travels with what it does not settle or it does not travel"
+	}
+
+	switch a.HeldBy {
+	case HeldByAllStores:
+		if len(a.TrustingStores) == 0 || len(a.RefusingStores) > 0 {
+			return "says every store holds the signer while naming a store that refused it"
+		}
+	case HeldBySomeStores:
+		if len(a.TrustingStores) == 0 || len(a.RefusingStores) == 0 {
+			return "says some stores hold the signer and some do not, and does not name both sides"
+		}
+	case HeldByNoStores:
+		if len(a.TrustingStores) > 0 || len(a.RefusingStores) == 0 {
+			return "says no store holds the signer while naming a store that does"
+		}
+	}
+	return ""
+}
+
 var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingEnvironmentVariable: func(f Finding) bool { return f.EnvironmentVariable != nil },
 	FindingNameResolution:      func(f Finding) bool { return f.NameResolution != nil },
 	FindingTCPConnect:          func(f Finding) bool { return f.TCPConnect != nil },
 	FindingTLSHandshake:        func(f Finding) bool { return f.TLSHandshake != nil },
 	FindingTrustStore:          func(f Finding) bool { return f.TrustStore != nil },
+	FindingSigningAuthority:    func(f Finding) bool { return f.SigningAuthority != nil },
 }
 
 // Breach names what is wrong with a finding, or returns the empty string for one
@@ -1167,6 +1329,8 @@ func (f Finding) bodyBreach() string {
 		return f.TLSHandshake.breach()
 	case f.TrustStore != nil:
 		return f.TrustStore.breach()
+	case f.SigningAuthority != nil:
+		return f.SigningAuthority.breach()
 	}
 	return ""
 }

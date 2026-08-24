@@ -75,9 +75,23 @@ if command -v cygpath >/dev/null 2>&1; then
   mount="$(cygpath -m "$workspace")"
 fi
 
+# TWO VOLUMES ARRIVE READ ONLY, AND THEY ARE WHAT MAKES S-1 A MATRIX.
+#
+# A trust store question needs a certificate authority to ask ABOUT, and both of
+# the bench's authorities are minted at startup into volumes rather than into the
+# working tree - ADR5, because a private key is never committed. Importing one of
+# them into a store is the step docs/21 S-1 has always described and that nothing
+# could do until now: on a real machine it is a change "docker compose down" does
+# not undo, but this container is discarded when the run ends, so here it costs
+# nothing and undoes itself.
+#
+# NOTHING IS WRITTEN TO EITHER OF THEM. They are mounted :ro so that a bench run
+# cannot alter the authorities the next run will be compared against.
 MSYS_NO_PATHCONV=1 docker run --rm \
   --network certdoctor-testbed_testbed \
   --dns 172.28.0.53 \
   -v "$mount:/w" \
+  -v certdoctor-testbed_certs:/certs:ro \
+  -v certdoctor-testbed_mitmconf:/mitmconf:ro \
   nicolaka/netshoot:v0.16 \
   /w/verify-inside.sh

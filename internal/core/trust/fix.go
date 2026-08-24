@@ -13,10 +13,14 @@ import (
 // WHY ONE PLACE, AND THE REASON IS MEASURED RATHER THAN TIDY. A fix is safe to
 // offer only when THREE facts hold together, and each one alone looks sufficient:
 //
-//  1. the chain the server sent is structurally COMPLETE. Measured on the bench
-//     2026-08-19: a server withholding its intermediate turns every trust row on
-//     the machine red, and the fault is the server's. A command here sends
-//     somebody to edit a store that is perfectly fine.
+//  1. the chain the server sent is structurally COMPLETE, or some other store on
+//     this machine closed it anyway. Measured on the bench 2026-08-19: a server
+//     withholding its intermediate turns every trust row on the machine red, and
+//     the fault is the server's - a command there sends somebody to edit a store
+//     that is perfectly fine. The second arm arrived with ADR55 for the case
+//     that looks identical and is the opposite: a middlebox signing straight
+//     from its own root, where another store having closed the chain is proof
+//     that an anchor closing it exists.
 //  2. this store refused because it holds no signer - never because something
 //     expired. Importing a certificate does not move a clock.
 //  3. the store is a FILE this program opened and can name. Measured 2026-08-02:
@@ -69,11 +73,25 @@ const (
 // NIL IS THE ORDINARY ANSWER. On the owner's machine every row of the matrix is
 // green or unassessed, so a run against a public site produces nine rows and no
 // commands - which is the correct output and not an empty feature.
-func fixFor(store report.TrustStore, chainComplete bool, m Machine) *report.Fix {
-	if !chainComplete {
+func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Machine) *report.Fix {
+	if !chainComplete && !closedElsewhere {
 		// THE FAULT IS THE SERVER'S AND NO STORE CAN REPAIR IT. This is the gate
 		// the contract cannot check, because whether the chain was complete is a
 		// fact about L4 rather than about a store.
+		//
+		// THE SECOND ARM IS POSITIVE PROOF RATHER THAN A SECOND GUESS - ADR55.
+		// closedElsewhere says another store ON THIS MACHINE built a path
+		// through this very chain, so an anchor that closes it demonstrably
+		// exists and the store that refused can be given it. Measured on the
+		// bench 2026-08-19: a middlebox signing leaves straight from its own
+		// root presents an incomplete chain for the OPPOSITE reason to a
+		// misconfigured server, and adding the certificate is exactly the
+		// repair. With only the first arm, the one case a command is for got no
+		// command.
+		//
+		// IT CANNOT LET A COMMAND THROUGH ON no-intermediate.txt, and that is
+		// what makes it safe: there no store closes the chain, so this stays
+		// shut. The bench checks both directions.
 		return nil
 	}
 	if store.TrustFailure != report.UnknownAuthority {

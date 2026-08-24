@@ -267,14 +267,9 @@ check_handshake() {
 check_trust() {
   local name="$1"
   local file="$expected/$name.txt"
-  local target want_l4 want_l5 want_rows want_failure want_fix
+  local target
 
   target="$(value "$file" target)"
-  want_l4="$(value "$file" l4_status)"
-  want_l5="$(value "$file" l5_status)"
-  want_rows="$(value "$file" l5_rows_not_trusting)"
-  want_failure="$(value "$file" l5_trust_failure)"
-  want_fix="$(value "$file" remediation_expected)"
 
   say() {
     echo "    DIFFERS: $1"
@@ -302,6 +297,107 @@ check_trust() {
     say "certdoctor produced no document at all"
     return
   fi
+
+  assert_trust "$file" "$document" "$code"
+  assert_authority "$file" "$document"
+}
+
+# check_authority is the scenario where this machine has been GIVEN a certificate
+# authority, which is the state every question about interception is really about.
+#
+# WHY IT BUILDS TWO STORES RATHER THAN USING THE IMAGE'S ONE. A single store can
+# only ever answer "held" or "not held", and the answer this slice exists to
+# produce is the DISAGREEMENT between two runtimes on one machine - which is what
+# "the browser works and npm install does not" is. So one copy of the image
+# bundle gets the authority appended and curl is pointed at it, another copy does
+# not and git is pointed at that. Both are real files with real paths.
+#
+# NOTHING GLOBAL IS TOUCHED, and that is what keeps this check independent of the
+# order the checks run in. The image's own bundle is left exactly as it was, and
+# the git configuration is written for the length of one run and removed. An
+# earlier draft appended to /etc/ssl/certs/ca-certificates.crt directly and would
+# have silently changed the answer every later scenario got.
+#
+# THE CONTAINER IS THE REASON THIS IS ALLOWED AT ALL. docs/21 S-1 has asked for
+# this import since P4b and it never happened, because on a real machine it is a
+# change "docker compose down" does not undo. This container is discarded when
+# the run ends.
+check_authority() {
+  local name="$1"
+  local file="$expected/$name.txt"
+  local target root work
+
+  target="$(value "$file" target)"
+  root="$(value "$file" root_pem)"
+
+  say() {
+    echo "    DIFFERS: $1"
+    failed=$((failed + 1))
+  }
+
+  echo "  authority $name  ->  $target"
+
+  if [ ! -r "$root" ]; then
+    say "the authority this scenario is about is not readable at $root, so the bench could not deploy it"
+    return
+  fi
+
+  # THE FILE SAYS WHICH RUNTIME IS GIVEN THE AUTHORITY AND WHICH IS NOT, AND THIS
+  # FUNCTION HARD CODES THE ANSWER - so the two are checked against each other
+  # rather than left to drift. An expectation nobody reads is not coverage, and
+  # that includes the ones describing the setup.
+  if [ "$(value "$file" root_deployed_to)" != "curl" ] || [ "$(value "$file" root_withheld_from)" != "git" ]; then
+    say "expected/ describes a deployment this script does not perform - it gives the authority to curl and withholds it from git"
+  fi
+
+  work="$(mktemp -d)"
+  cp /etc/ssl/certs/ca-certificates.crt "$work/deployed.crt"
+  cat "$root" >> "$work/deployed.crt"
+  cp /etc/ssl/certs/ca-certificates.crt "$work/withheld.crt"
+  printf '[http]\n\tsslBackend = openssl\n\tsslCAInfo = %s\n' "$work/withheld.crt" > /etc/gitconfig
+
+  # THE RUNTIME THAT WAS GIVEN THE AUTHORITY IS ASKED FIRST. An exit of 0 here is
+  # the strongest evidence available that the deployment worked, because it is
+  # the runtime itself saying so rather than us saying it about the runtime.
+  local want_curl got_curl
+  want_curl="$(value "$file" curl_exit_code)"
+  CURL_CA_BUNDLE="$work/deployed.crt" curl -sS -o /dev/null --max-time 10 "$target" 2>/dev/null
+  got_curl=$?
+  echo "    curl with the authority deployed says: exit $got_curl"
+  if [ -n "$want_curl" ] && [ "$got_curl" != "$want_curl" ]; then
+    say "curl itself exits $got_curl and expected/ says $want_curl"
+  fi
+
+  local document code
+  document="$(CURL_CA_BUNDLE="$work/deployed.crt" "$binary" "$target" --json 2>/dev/null)"
+  code=$?
+  rm -f /etc/gitconfig
+  rm -rf "$work"
+
+  if [ -z "$document" ]; then
+    say "certdoctor produced no document at all"
+    return
+  fi
+
+  assert_trust "$file" "$document" "$code"
+  assert_authority "$file" "$document"
+}
+
+# assert_trust is every expectation about the matrix itself, asked of a document
+# somebody else produced.
+#
+# IT IS A FUNCTION RATHER THAN TWO COPIES because both scenarios above ask the
+# same questions of the same document, and a second copy of a rule is the shape
+# OBS50 has taken four times in this tree - each time while somebody was tidying.
+assert_trust() {
+  local file="$1" document="$2" code="$3"
+  local want_l4 want_l5 want_rows want_failure want_fix
+
+  want_l4="$(value "$file" l4_status)"
+  want_l5="$(value "$file" l5_status)"
+  want_rows="$(value "$file" l5_rows_not_trusting)"
+  want_failure="$(value "$file" l5_trust_failure)"
+  want_fix="$(value "$file" remediation_expected)"
 
   local got_l4 got_l5 got_rows got_failure got_fix
   got_l4="$(echo "$document" | jq -r '.layers[] | select(.id=="L4") | .status')"
@@ -385,6 +481,87 @@ check_trust() {
   fi
 }
 
+# assert_authority is P6b: who signed the leaf, how widely this machine holds
+# them, and - the assertion this whole slice exists for - whether the program
+# stayed on the right side of inviolable rule 21 while saying it.
+assert_authority() {
+  local file="$1" document="$2"
+  local want_held want_issuer want_fp want_accuse
+  local pick='[.layers[] | select(.id=="L5") | .findings[]? | select(.kind=="signing_authority")] | first'
+
+  want_held="$(value "$file" authority_held_by)"
+  [ -z "$want_held" ] && return
+
+  local got_held got_issuer got_fp got_caveat got_sentence
+  got_held="$(echo "$document" | jq -r "$pick | .signing_authority.held_by | tostring")"
+  got_issuer="$(echo "$document" | jq -r "$pick | .signing_authority.issuer | tostring")"
+  got_fp="$(echo "$document" | jq -r "$pick | .signing_authority.leaf_fingerprint_sha256 | tostring")"
+  got_caveat="$(echo "$document" | jq -r "$pick | .signing_authority.caveat | tostring")"
+  got_sentence="$(echo "$document" | jq -r "$pick | .summary | tostring")"
+
+  echo "    authority:  held_by $got_held | issuer $got_issuer"
+
+  if [ "$got_held" != "$want_held" ]; then
+    say "the signer is reported as held by $got_held, expected $want_held"
+  fi
+
+  want_issuer="$(value "$file" authority_issuer_contains)"
+  if [ -n "$want_issuer" ] && ! echo "$got_issuer" | grep -qF "$want_issuer"; then
+    say "the issuer is reported as '$got_issuer' and expected/ says it contains '$want_issuer'"
+  fi
+
+  # Inviolable rule 21: the evidence travels with the claim, or the claim cannot
+  # be checked by anybody who was not there.
+  want_fp="$(value "$file" authority_has_fingerprint)"
+  if [ "$want_fp" = "yes" ] && { [ -z "$got_fp" ] || [ "$got_fp" = "null" ]; }; then
+    say "the row names an authority and carries no fingerprint, so nobody can check it"
+  fi
+  if [ -z "$got_caveat" ] || [ "$got_caveat" = "null" ]; then
+    say "the row carries no caveat, and that is where the heuristic is named as a heuristic"
+  fi
+
+  # THE ASSERTION THE SLICE EXISTS FOR, AND IT IS A WORD SEARCH ON PURPOSE.
+  #
+  # intercepted.txt and internal-ca.txt reach this line with the SAME held_by
+  # value, from a middlebox and from an honest internal server - measured
+  # 2026-08-19, they are identical in every field certdoctor has. Until a name
+  # from the inspection-product list says otherwise, neither may be accused.
+  #
+  # THE ONE PERMITTED USE OF THE WORD IS THE HEDGE ITSELF, which names both
+  # readings and therefore accuses neither.
+  want_accuse="$(value "$file" authority_accuses_interception)"
+  if [ "$want_accuse" = "no" ]; then
+    local sentence issuer_lower
+    sentence="$(printf '%s %s' "$got_sentence" "$got_caveat" | tr 'A-Z' 'a-z')"
+
+    # THE ISSUER IS REMOVED BEFORE THE SEARCH, AND THIS BENCH TAUGHT US WHY ON
+    # ITS FIRST RUN. The middlebox here is called mitmproxy, so quoting its name
+    # as evidence - which is what inviolable rule 21 REQUIRES - put the string
+    # "mitm" into the sentence, and this check reported the program for accusing
+    # somebody. It was a right answer to a different question, which is the
+    # family OBS56 and OBS66 record: the first time this shape has appeared in a
+    # check that reads English rather than JSON.
+    issuer_lower="$(printf '%s' "$got_issuer" | tr 'A-Z' 'a-z')"
+    if [ -n "$issuer_lower" ] && [ "$issuer_lower" != "null" ]; then
+      sentence="${sentence//$issuer_lower/}"
+    fi
+
+    # The hedge names both readings, so the one word it contains is not an
+    # accusation - it is the sentence saying the two cannot be told apart.
+    if echo "$sentence" | grep -q "cannot tell those two apart"; then
+      sentence="$(echo "$sentence" | sed 's/tls inspection looks exactly like this//')"
+    fi
+    local word
+    for word in intercept mitm eavesdrop "man in the middle"; do
+      if echo "$sentence" | grep -qF "$word"; then
+        say "the report accuses with '$word' on a holding that is only a count of stores"
+      fi
+    done
+  fi
+
+  passed=$((passed + 1))
+}
+
 # THE BENCH IS ASKED WHETHER IT IS SERVING THE CONFIGURATION IN THIS WORKING
 # TREE, BEFORE ANYTHING ELSE - and this check exists because the trap it catches
 # was walked into on 2026-08-17, while adding the partner zone.
@@ -418,18 +595,72 @@ bench_serves_this_tree() {
 # private-root scenario would then look like a product defect: the port simply
 # would not answer.
 bench_serves_the_complete_chain() {
-  if nc -z 172.28.0.80 8443 2>/dev/null; then
+  if ! nc -z 172.28.0.80 8443 2>/dev/null; then
+    echo "testbed: THE PARTNER IS NOT SERVING THE CONFIGURATION IN THIS WORKING TREE."
+    echo "testbed: nothing is listening on 172.28.0.80:8443, and nginx.conf declares it."
+    echo "testbed: nginx reads its configuration once, at startup, and a bind mount does not"
+    echo "testbed: restart it - so an edited conf is invisible until the container is."
+    echo "testbed: fix:  docker compose -f testbed/compose.yml restart partner"
+    return 1
+  fi
+
+  # THE SAME TRAP ONE STEP FURTHER IN, AND IT WAS WALKED INTO ON 2026-08-19 WHILE
+  # ADDING THE SCENARIO THAT NEEDED IT.
+  #
+  # The chain generator is an init container. Anything that makes compose bring
+  # the stack up again can re-run it, and it MINTS A NEW ROOT when it does -
+  # while nginx, which read its certificates once at startup, keeps serving the
+  # old ones. Every container then reports healthy, the port answers, and the
+  # root in the volume no longer signs anything on the wire.
+  #
+  # WHAT THAT LOOKS LIKE IF NOBODY CHECKS: internal-ca deploys the root from the
+  # volume, no store accepts the server anyway, and the bench reports certdoctor
+  # as having got the answer wrong. It is inviolable rule 1 from the wrong side
+  # for the third time on this bench - after the Corefile and after nginx.conf.
+  if openssl s_client -connect 172.28.0.80:8443 -servername partner.test \
+    -CAfile /certs/root.crt </dev/null 2>/dev/null | grep -q "Verify return code: 0"; then
     return 0
   fi
-  echo "testbed: THE PARTNER IS NOT SERVING THE CONFIGURATION IN THIS WORKING TREE."
-  echo "testbed: nothing is listening on 172.28.0.80:8443, and nginx.conf declares it."
-  echo "testbed: nginx reads its configuration once, at startup, and a bind mount does not"
-  echo "testbed: restart it - so an edited conf is invisible until the container is."
+  echo "testbed: THE PARTNER IS SERVING A CHAIN THE ROOT IN THE VOLUME DID NOT SIGN."
+  echo "testbed: the generator mints a new chain whenever it runs again, and nginx reads"
+  echo "testbed: its certificates once, at startup - so the two drift apart in silence."
+  echo "testbed: every scenario about a trust store would then blame certdoctor."
   echo "testbed: fix:  docker compose -f testbed/compose.yml restart partner"
   return 1
 }
 
-if ! bench_serves_this_tree || ! bench_serves_the_complete_chain; then
+# THE SAME TRAP A THIRD TIME, AND THIS ONE HAS TWO HALVES BECAUSE THE SCENARIO
+# NEEDED A CHANGE TO TWO SERVICES.
+#
+# CoreDNS has to be serving the example.net zone from this working tree, and
+# mitmproxy has to be running the reverse listener rather than the forward proxy
+# alone. Neither is picked up by "docker compose up -d" on a container that is
+# already running: a zone file is a bind mount read once, and a changed command
+# needs the container recreated rather than restarted.
+#
+# WITHOUT THIS THE SCENARIO FAILS AS THOUGH THE PRODUCT WERE WRONG - the name
+# would not resolve, or the connection would be refused, and the report would say
+# so accurately about a bench that is not the one in this tree.
+bench_serves_the_interception_path() {
+  local got
+  got="$(dig +short "@172.28.0.53" registry.example.net A 2>/dev/null | head -1)"
+  if [ "$got" != "172.28.0.81" ]; then
+    echo "testbed: THE BENCH IS NOT SERVING THE example.net ZONE FROM THIS WORKING TREE."
+    echo "testbed: registry.example.net answered '${got:-nothing}', and the zone file says 172.28.0.81."
+    echo "testbed: fix:  docker compose -f testbed/compose.yml restart dns"
+    return 1
+  fi
+  if ! nc -z 172.28.0.81 443 2>/dev/null; then
+    echo "testbed: THE MIDDLEBOX IS NOT RUNNING THE REVERSE LISTENER THIS TREE DECLARES."
+    echo "testbed: nothing is listening on 172.28.0.81:443, and compose.yml declares it."
+    echo "testbed: a changed command needs the container RECREATED, not restarted."
+    echo "testbed: fix:  docker compose -f testbed/compose.yml up -d --force-recreate mitm"
+    return 1
+  fi
+  return 0
+}
+
+if ! bench_serves_this_tree || ! bench_serves_the_complete_chain || ! bench_serves_the_interception_path; then
   exit 1
 fi
 
@@ -470,6 +701,25 @@ echo
 check_trust no-intermediate
 echo
 check_trust private-root
+
+echo
+
+# THE SECOND PAIR, AND IT ONLY MEANS ANYTHING AS A PAIR TOO - this one is the
+# whole of P6b.
+#
+# Both scenarios below deploy a certificate authority into ONE of this machine's
+# two stores and withhold it from the other, which is what a group policy push
+# does. One of them is a middlebox re-signing somebody else's traffic. The other
+# is an honest internal server under a company's own authority, doing nothing
+# wrong whatsoever.
+#
+# MEASURED 2026-08-19: THEY PRODUCE THE SAME ANSWER IN EVERY FIELD certdoctor
+# HAS. That is why neither may be accused of interception here, and why the file
+# for the honest one exists at all - it is the false positive inviolable rule 21
+# calls harm, written down before the code that could commit it.
+check_authority intercepted
+echo
+check_authority internal-ca
 
 echo
 

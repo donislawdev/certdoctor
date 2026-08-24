@@ -44,6 +44,17 @@ type Input struct {
 	// could not tell them apart would rather say so than quietly stop offering
 	// commands, because a feature that silently never appears is not noticed.
 	ChainComplete func() bool
+	// PresentedLeaf is L4's summary of the leaf - asked at walk time, through
+	// the same seam as the two ports above and for the same reason.
+	//
+	// IT IS A SUMMARY RATHER THAN BYTES, and that is the opposite choice from
+	// PresentedChain one field up. Verifying a path needs the certificate, so
+	// that port carries DER. Naming the signer needs an issuer and a
+	// fingerprint, both of which the adapter has already rendered for the report
+	// - and rendering them a second time here would be a second place turning
+	// bytes into a distinguished name, which is exactly how a complete chain
+	// starts looking broken. It is nil when no handshake completed.
+	PresentedLeaf func() *report.Certificate
 	// Probes are the runtime families to ask, keyed by descriptor id.
 	Probes map[string]Probe
 	// Machine is what a remediation command needs to know about where it will be
@@ -63,6 +74,7 @@ type Result struct {
 const (
 	noChain  = "no way to learn what the server presented was supplied, so no store could be asked about anything"
 	noWhole  = "no way to learn whether the presented chain was complete was supplied, so a store failing could not be told from a server failing"
+	noLeaf   = "no way to learn what the server's leaf was supplied, so who signed it could not be named"
 	noOS     = "no platform was supplied, so a command this machine could run could not be written"
 	noProbes = "no probes were supplied, so nothing on this machine was asked"
 	nothing  = "the server presented no certificate, so there was nothing for any store to judge"
@@ -93,7 +105,7 @@ func Ask(ctx context.Context, in Input) Result {
 	// port was answering something else.
 	whole := in.ChainComplete()
 
-	var findings []report.Finding
+	var rows []row
 	var asked, trusting, unassessed int
 
 	for _, descriptor := range descriptors {
@@ -107,7 +119,7 @@ func Ask(ctx context.Context, in Input) Result {
 			// so, because "we could not ask git" is a different fact from "git
 			// does not trust this" and inviolable rule 15 wants the difference
 			// visible rather than averaged away.
-			findings = append(findings, unaskable(descriptor, err))
+			rows = append(rows, unaskable(descriptor, err))
 			asked++
 			unassessed++
 			continue
@@ -119,28 +131,76 @@ func Ask(ctx context.Context, in Input) Result {
 				unassessed++
 			case *store.TrustsPresentedChain:
 				trusting++
-			default:
-				// THE COMMAND IS ATTACHED HERE AND NOWHERE ELSE, so that a row
-				// carrying one has passed through the counter that says it was
-				// refused. A probe filling this in itself would be a probe
-				// producing a verdict, which ADR7 keeps out of the adapters.
-				store.Fix = fixFor(store, whole, in.Machine)
 			}
-			findings = append(findings, finding(store))
+			rows = append(rows, row{store: store})
 		}
+	}
+
+	// THE MATRIX IS WALKED BEFORE ANY COMMAND IS WRITTEN, AND THAT ORDER IS THE
+	// WHOLE OF ADR55. Whether a refusing store can be repaired depends on a fact
+	// no single row knows: whether ANY store on this machine closed this very
+	// chain. If one did, an anchor that closes it exists, so the store that
+	// refused can be given it - even when the server sent an incomplete chain.
+	// Measured on the bench 2026-08-19: a middlebox signing straight from its
+	// own root produces exactly that state, and the old single-pass gate refused
+	// a command for the one case where adding the certificate is the repair.
+	//
+	// It cannot be done in the loop above, because the answer is not known until
+	// the last probe has been asked.
+	closed := trusting > 0
+
+	findings := make([]report.Finding, 0, len(rows)+1)
+	// THE SUMMARY LINE COMES FIRST because it is what a reader needs before the
+	// rows mean anything: who signed this, and how much of this machine has
+	// heard of them.
+	if named := authorityOf(in.PresentedLeaf(), storesOf(rows)); named != nil {
+		findings = append(findings, *named)
+	}
+	for _, r := range rows {
+		if r.store.TrustsPresentedChain != nil && !*r.store.TrustsPresentedChain {
+			// THE COMMAND IS ATTACHED HERE AND NOWHERE ELSE, so that a row
+			// carrying one has passed through the branch that says it was
+			// refused. A probe filling this in itself would be a probe producing
+			// a verdict, which ADR7 keeps out of the adapters.
+			r.store.Fix = fixFor(r.store, whole, closed, in.Machine)
+		}
+		findings = append(findings, r.finding())
 	}
 
 	return verdict(findings, asked, trusting, unassessed)
 }
 
-// finding wraps one store in the envelope every surface can render.
-func finding(store report.TrustStore) report.Finding {
+// row is one line of the matrix as first collected, before anything that needs
+// the whole matrix has been worked out.
+type row struct {
+	store report.TrustStore
+	// summary replaces the ordinary wording for a probe that could not run at
+	// all, whose row describes the asking rather than the store.
+	summary string
+}
+
+// finding wraps one row in the envelope every surface can render.
+func (r row) finding() report.Finding {
+	summary := r.summary
+	if summary == "" {
+		summary = summaryOf(r.store)
+	}
+	store := r.store
 	return report.Finding{
 		Kind:       report.FindingTrustStore,
-		Summary:    summaryOf(store),
+		Summary:    summary,
 		Source:     report.SourceDetected,
 		TrustStore: &store,
 	}
+}
+
+// storesOf hands the collected stores to the one place allowed to judge them.
+func storesOf(rows []row) []report.TrustStore {
+	stores := make([]report.TrustStore, 0, len(rows))
+	for _, r := range rows {
+		stores = append(stores, r.store)
+	}
+	return stores
 }
 
 // summaryOf is the one line a surface prints without knowing the kind.
@@ -156,19 +216,16 @@ func summaryOf(store report.TrustStore) string {
 }
 
 // unaskable is the row for a probe that could not run at all.
-func unaskable(descriptor Descriptor, err error) report.Finding {
-	store := report.TrustStore{
-		Runtime:     descriptor.Runtime,
-		Instance:    descriptor.ID,
-		StoreForm:   report.StoreSystem,
-		NotAssessed: fmt.Sprintf("the probe could not run: %v", err),
-		SelectedBy:  []string{},
-	}
-	return report.Finding{
-		Kind:       report.FindingTrustStore,
-		Summary:    fmt.Sprintf("%s could not be asked: %v", descriptor.Runtime, err),
-		Source:     report.SourceDetected,
-		TrustStore: &store,
+func unaskable(descriptor Descriptor, err error) row {
+	return row{
+		store: report.TrustStore{
+			Runtime:     descriptor.Runtime,
+			Instance:    descriptor.ID,
+			StoreForm:   report.StoreSystem,
+			NotAssessed: fmt.Sprintf("the probe could not run: %v", err),
+			SelectedBy:  []string{},
+		},
+		summary: fmt.Sprintf("%s could not be asked: %v", descriptor.Runtime, err),
 	}
 }
 
@@ -213,6 +270,8 @@ func (in Input) breach() string {
 		return noChain
 	case in.ChainComplete == nil:
 		return noWhole
+	case in.PresentedLeaf == nil:
+		return noLeaf
 	case in.Machine.OS == "":
 		return noOS
 	case len(in.Probes) == 0:

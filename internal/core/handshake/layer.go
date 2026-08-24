@@ -187,6 +187,16 @@ type Result struct {
 	// It is false when nothing completed, which is correct rather than merely
 	// convenient: no chain arrived, so no issuer did either.
 	ChainWhole bool
+	// Leaf is the summary of the certificate the chain starts with, and is nil
+	// when no handshake completed - the third half of the seam L5 reads.
+	//
+	// IT IS THE RENDERED SUMMARY RATHER THAN THE BYTES, and the bytes are right
+	// beside it in Presented. Naming who signed a chain needs an issuer and a
+	// fingerprint, and both were rendered once already, on the adapter side, for
+	// the report. Handing L5 the DER instead would put a second distinguished
+	// name renderer in the tree - the measured shape of OBS50, and the exact way
+	// a complete chain starts looking broken.
+	Leaf *report.Certificate
 }
 
 // unlimited is what limitFor answers when nothing caps one attempt at all.
@@ -229,6 +239,7 @@ func Ask(ctx context.Context, in Input) Result {
 	shown := in.fanOut(ctx, addresses)
 	result := in.grade(addresses, shown)
 	result.Presented = presentedOf(shown)
+	result.Leaf = presentedLeafOf(shown)
 	return result
 }
 
@@ -344,13 +355,52 @@ func detailFor(completed, total int, chain []Certificate, complete bool, disagre
 // handshake, ADR45 - so what L5 judges and what a reader sees are the same
 // certificates. Picking any other would produce a matrix about a chain nobody
 // was shown.
-func presentedOf(outcomes []outcome) [][]byte {
+// leafOf is the summary of the certificate the reported chain starts with.
+//
+// IT WALKS THE SAME OUTCOMES IN THE SAME ORDER AS presentedOf, so the leaf named
+// here is the leaf of the chain shown there. Two different rules for "which
+// address does the report describe" would let the fingerprint of one address
+// travel with the chain of another - a mismatch nobody could see and everybody
+// would believe.
+// IT REUSES certificatesFor RATHER THAN COPYING THE FIELDS, so the leaf L5 is
+// handed is summarised by the same rule as the leaf the report prints. A second
+// copy of that mapping is the measured shape of OBS50.
+func presentedLeafOf(outcomes []outcome) *report.Certificate {
+	shown := firstShown(outcomes)
+	if shown == nil {
+		return nil
+	}
+	// NO LENGTH CHECK ON THE RESULT, and that is deliberate rather than
+	// careless. certificatesFor returns one record per certificate handed to
+	// it, and exactly one is handed to it here - so a guard would be a branch
+	// nothing can execute, which is the shape the mutation register caught
+	// twice in P3a: code that reads as caution and decides nothing.
+	summarised := certificatesFor(shown.Chain[:1])
+	return &summarised[0]
+}
+
+// firstShown is the rule for WHICH ADDRESS THE REPORT DESCRIBES, and it lives
+// once because both things crossing the seam to L5 have to agree about it.
+//
+// A second copy would let the fingerprint of one address travel beside the chain
+// of another - a mismatch nobody could see on the page and everybody would
+// believe - and it is also the measured shape of OBS50, where a duplicated
+// boundary rule disarmed three mutation entries while looking like tidying up.
+func firstShown(outcomes []outcome) *Presented {
 	for _, o := range outcomes {
 		if o.err != nil || !o.shown.Completed || len(o.shown.Chain) == 0 {
 			continue
 		}
-		raw := make([][]byte, 0, len(o.shown.Chain))
-		for _, certificate := range o.shown.Chain {
+		shown := o.shown
+		return &shown
+	}
+	return nil
+}
+
+func presentedOf(outcomes []outcome) [][]byte {
+	if shown := firstShown(outcomes); shown != nil {
+		raw := make([][]byte, 0, len(shown.Chain))
+		for _, certificate := range shown.Chain {
 			if len(certificate.Raw) > 0 {
 				raw = append(raw, certificate.Raw)
 			}

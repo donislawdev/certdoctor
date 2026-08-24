@@ -494,10 +494,20 @@ func TestWhetherTheChainWasWholeCrossesTheSameSeamAsTheChain(t *testing.T) {
 				handshake.Presented{Completed: true, Version: "TLS 1.3", Chain: c.chain},
 				map[string]trust.Probe{"git": refusing}))
 
-			if len(answer.Findings) != 1 {
-				t.Fatalf("L5 produced %d row(s), want 1", len(answer.Findings))
+			// PICKED BY KIND RATHER THAN BY POSITION. L5 also emits a signing
+			// authority summary now, and a test reading Findings[0] would be
+			// asserting about whichever row happened to be first - which is how
+			// a seam test quietly starts testing the wrong seam.
+			var store *report.TrustStore
+			for _, finding := range answer.Findings {
+				if finding.Kind == report.FindingTrustStore {
+					store = finding.TrustStore
+				}
 			}
-			got := answer.Findings[0].TrustStore.Fix != nil
+			if store == nil {
+				t.Fatalf("L5 produced no trust store row at all, out of %d finding(s)", len(answer.Findings))
+			}
+			got := store.Fix != nil
 			if got != c.command {
 				t.Errorf("a command was produced=%v, want %v - the store refused either way and only the "+
 					"SERVER's half of the answer differs", got, c.command)

@@ -375,3 +375,49 @@ func TestAnEmptyChainIsNotComplete(t *testing.T) {
 		t.Error("a server that presented nothing was reported as having sent a complete chain")
 	}
 }
+
+// TestTheLeafHandedOnIsTheLeafOfTheChainShown is the fourth seam to L5, and the
+// property worth pinning is that it describes the SAME address as the chain.
+//
+// Two different rules for "which address does the report describe" would let the
+// fingerprint of one address travel beside the chain of another - a mismatch
+// nobody could see on the page and everybody would believe. So the leaf is taken
+// from the same walk, in the same order, as the bytes.
+func TestTheLeafHandedOnIsTheLeafOfTheChainShown(t *testing.T) {
+	result := Ask(context.Background(), workingInput(shakeReturning(completeChain("aa"))))
+
+	if result.Leaf == nil {
+		t.Fatal("a completed handshake handed on no leaf, so L5 could not name who signed anything")
+	}
+	if result.Leaf.FingerprintSHA256 != "aa" {
+		t.Errorf("the leaf handed on is %q and the chain shown starts with \"aa\"", result.Leaf.FingerprintSHA256)
+	}
+	if result.Leaf.Issuer != "CN=testbed intermediate" {
+		t.Errorf("the issuer did not travel: %q", result.Leaf.Issuer)
+	}
+	// The rows the report prints are built from the same walk, so the leaf here
+	// and the first certificate there are one certificate rather than two.
+	rows := rowsOf(result)
+	if len(rows) == 0 || len(rows[0].Chain) == 0 {
+		t.Fatal("no chain reached the report at all")
+	}
+	if rows[0].Chain[0].FingerprintSHA256 != result.Leaf.FingerprintSHA256 {
+		t.Errorf("the leaf handed to L5 (%q) is not the leaf the report shows (%q)",
+			result.Leaf.FingerprintSHA256, rows[0].Chain[0].FingerprintSHA256)
+	}
+}
+
+// TestNoHandshakeHandsOnNoLeaf is the other half, and it is what stops L5
+// naming a signer for a connection that never happened.
+func TestNoHandshakeHandsOnNoLeaf(t *testing.T) {
+	in := workingInput(func(context.Context, string, int, string) (Presented, error) {
+		return Presented{}, ErrRejected
+	})
+	result := Ask(context.Background(), in)
+	if result.Leaf != nil {
+		t.Errorf("a run where no handshake completed handed on a leaf: %+v", *result.Leaf)
+	}
+	if len(result.Presented) != 0 {
+		t.Error("no handshake completed and a chain was handed on anyway")
+	}
+}

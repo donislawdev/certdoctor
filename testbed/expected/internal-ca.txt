@@ -1,0 +1,101 @@
+# An HONEST server under a company's own certificate authority, whose root has
+# been deployed to some of this machine's stores and not others - scenario S-3.
+#
+# THIS FILE EXISTS TO BE THE CASE THAT MUST NOT BE ACCUSED. It is the false
+# positive inviolable rule 21 calls harm, written down before the code that could
+# commit it, because the whole difficulty of P6b is that it is INDISTINGUISHABLE
+# from intercepted.txt by anything certdoctor can see.
+#
+# READ THE TWO FILES SIDE BY SIDE. Same store layout, same refusal, same reason,
+# same repair. One of them is a middlebox re-signing somebody else's traffic and
+# the other is an internal service doing nothing wrong at all, and no field below
+# separates them:
+#
+#                    intercepted.txt        internal-ca.txt
+#   who signed        mitmproxy's root       the company's root
+#   held by           some stores            some stores
+#   refusal           unknown_authority      unknown_authority
+#   L4                FAIL (see below)       PASS
+#
+# EVEN THE L4 COLUMN IS AN ACCIDENT AND MUST NOT BE LEANT ON. It differs only
+# because mitmproxy signs leaves directly from its root. Measured 2026-08-19: fed
+# an intermediate instead, the same middlebox presented a COMPLETE chain, at
+# which point that last column matches too and the two scenarios are identical in
+# every field this program has.
+#
+# SO THE RULE THIS FILE PINS IS: the finding states who signed and how widely the
+# machine holds them, and stops there. An accusation waits for a name from the
+# inspection-product list - P6b-K2 - and this scenario must never earn one, not
+# in K1 and not after K2 either.
+#
+# WHY THIS IS NOT A CONTRIVED CASE. It is scenario S-3 from docs/21, one of the
+# six this product was built for: four JDKs on one machine, curl working and the
+# Java service failing, because the company's CA reached the platform store and
+# not the runtimes carrying their own bundles. A program that answered "you are
+# being intercepted" there would be wrong on one of its own headline scenarios.
+#
+# HOW THE BENCH PRODUCES IT. The same target as private-root.txt - nginx serving
+# bundle.crt on port 8443, a complete chain under a root minted at startup. The
+# ONE difference from that scenario is that the root is deployed into one of the
+# two stores here, which is what a group policy push does on a real machine.
+# Nothing about the server changes.
+
+target=https://partner.test:8443/
+
+# --- bench: verifiable today with an independent tool ---
+chain_certs_presented=2
+leaf_subject_cn=partner.test
+leaf_issuer_cn_contains=certdoctor testbed intermediate
+intermediate_presented=yes
+
+# --- what the container's two stores are made to look like ---
+#
+# Identical to intercepted.txt, deliberately, and with a different certificate in
+# it. That is the whole experiment.
+root_deployed_to=curl
+root_withheld_from=git
+
+# The company's authority, mounted read only from the volume the bench mints its
+# chain into. It is the SAME root private-root.txt is about, and the only
+# difference between the two scenarios is that here it has been deployed.
+root_pem=/certs/root.crt
+
+# The runtime that was given the authority accepts the server outright, which is
+# what makes this the honest case: nothing is wrong with this server, and the
+# only reason another runtime fails is that nobody gave it the same certificate.
+curl_exit_code=0
+
+# --- L4: nothing structurally missing ---
+l4_status=PASS
+chain_complete=true
+
+# --- L5: one store accepts this server and one does not ---
+l5_status=FAIL
+l5_rows_not_trusting=1
+l5_trust_failure=unknown_authority
+
+# --- P6b: the same measured answer as the middlebox, and no accusation ---
+#
+# some_stores is a MEASUREMENT: the signer is present on this machine and is not
+# part of what every runtime shipped with. It is true here and true of a
+# middlebox, and that is exactly why it cannot be an accusation.
+authority_held_by=some_stores
+authority_issuer_contains=certdoctor testbed
+authority_has_fingerprint=yes
+
+# THE ASSERTION THIS FILE WAS WRITTEN FOR. A "yes" here at any point in the
+# future is not a failing test - it is the program having accused an honest
+# server, which is the harm rule 21 names.
+authority_accuses_interception=no
+
+# --- the command ---
+#
+# All three of ADR51's original conditions hold, so this needs no help from the
+# second arm added in ADR55. The store that refused is a file, the refusal was an
+# unknown authority, and the chain the server sent is complete.
+remediation_expected=yes
+remediation_requires_elevation=yes
+remediation_has_placeholders=yes
+remediation_forbidden=CURL_CA_BUNDLE=,--cacert,sslCAInfo
+
+exit_code=4

@@ -540,6 +540,23 @@ var bodyFixtures = map[report.FindingKind]report.Finding{
 			SelectedBy:           []string{"JAVA_HOME"},
 		},
 	},
+	// The sixth body, in the state that matters: a signer some stores here hold
+	// and others do not. That is the shape a middlebox produces AND the shape a
+	// company's own certificate authority produces, which is why the caveat is
+	// part of the fixture rather than decoration on it.
+	report.FindingSigningAuthority: {
+		Kind:    report.FindingSigningAuthority,
+		Summary: "C=US, O=Example CA, CN=Example Root CA signed this certificate and is an authority local to this machine",
+		Source:  report.SourceDetected,
+		SigningAuthority: &report.SigningAuthority{
+			Issuer:          "C=US, O=Example CA, CN=Example Root CA",
+			LeafFingerprint: leafFingerprint,
+			HeldBy:          report.HeldBySomeStores,
+			TrustingStores:  []string{"curl /usr/bin/curl"},
+			RefusingStores:  []string{"java jdk-25"},
+			Caveat:          "TLS inspection looks exactly like this and so does an organisation's own certificate authority",
+		},
+	},
 }
 
 // The two fingerprints the handshake fixture is built from. They are full length

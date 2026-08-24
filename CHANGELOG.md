@@ -22,6 +22,16 @@ Barely diagnosable yet, and there has been no release.
 
 ### Added
 
+- **The trust matrix now opens with one line saying who signed the certificate and how much of your machine has heard of them.** This is the line that explains why your browser is fine and `npm install` is not, and it is the reason certdoctor exists.
+
+  **It answers with a count of trust stores, never with a conclusion about your network.** `all_stores` means every store certdoctor could assess holds an anchor for this chain. `some_stores` means some do and some do not, which is exactly why one tool on your machine accepts this name and another refuses it. `no_stores` means nothing here accepts it, a browser included.
+
+  **`some_stores` is not an accusation and certdoctor will not turn it into one.** A TLS-inspecting proxy produces that answer. So does your own organisation's certificate authority, on an internal service that is working exactly as intended - and from a single connection these two are not merely hard to tell apart, they are identical in every field this program has. Both cases were built on a test bench and measured, including one where the proxy was given an intermediate to sign with, at which point even the certificate chain matched. So the line states what was measured, the sentence beside it says plainly that both readings fit, and the issuer and the SHA-256 fingerprint travel with it so somebody who can tell them apart has what they need.
+
+  **The commands underneath it are unchanged in shape and now appear in one more case.** If another store on your machine accepted the very same chain, then an anchor that completes it demonstrably exists, so the store that refused can be repaired by being given it - even when the server sent an incomplete chain. Where nothing on your machine accepted the chain, there is still no command, because then the server is the thing to fix.
+
+  **`--json` grows a `signing_authority` finding and `schema_version` goes to `1.9`.** It carries `held_by`, the issuer, the fingerprint, the two lists of stores, and a `caveat` saying what the measurement does not settle. Branch on `held_by`, and read it as the count it is.
+
 - **A row of the trust matrix that does not trust the chain now carries the command that would repair it**, with the real path from your machine in it rather than a specimen path.
 
   **A command appears only where your machine is actually the thing to change.** Three conditions have to hold together: the server sent a complete chain, the store refused because it holds nothing that signed it, and the store is a file certdoctor could open and name. A server that forgot to send its intermediate turns every row on your machine red, and there is nothing to fix in any of those stores - so no command is offered, and the sentence says the fault is the server's.

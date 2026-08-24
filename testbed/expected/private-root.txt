@@ -92,4 +92,18 @@ remediation_has_placeholders=yes
 # it must not be that.
 remediation_forbidden=CURL_CA_BUNDLE=,--cacert
 
+# --- P6b: who signed it, and how widely this machine holds them ---
+#
+# NOTHING here holds the root, because it was minted at startup and deployed
+# nowhere - so the answer is no_stores and there is no disagreement between
+# runtimes to report. A browser on this machine would fail too.
+#
+# internal-ca.txt IS THIS SAME SERVER WITH THE ROOT DEPLOYED TO ONE STORE, and
+# it answers some_stores. The two files differ by that deployment and by nothing
+# else, which is what makes each of them mean something.
+authority_held_by=no_stores
+authority_issuer_contains=certdoctor testbed
+authority_has_fingerprint=yes
+authority_accuses_interception=no
+
 exit_code=4

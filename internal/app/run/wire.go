@@ -122,11 +122,12 @@ func Wire(w Wiring) Layers {
 
 	var presented [][]byte
 	var whole bool
+	var leaf *report.Certificate
 	shake := w.Handshake
 	shake.Addresses = func() []string { return connected }
 	layers[layer.TLS] = func(ctx context.Context) Answer {
 		result := handshake.Ask(ctx, shake)
-		presented, whole = result.Presented, result.ChainWhole
+		presented, whole, leaf = result.Presented, result.ChainWhole, result.Leaf
 		return answerFromHandshake(result)
 	}
 
@@ -139,9 +140,13 @@ func Wire(w Wiring) Layers {
 	// remediation command off a row that is red through no fault of this machine.
 	// Both are read at walk time from the same run of L4, so they cannot describe
 	// two different handshakes.
+	// IT ALSO CARRIES THE LEAF ITSELF, rendered once by L4 rather than twice.
+	// Who signed a chain is a question about that one certificate, and the
+	// issuer and fingerprint the report already shows are the answer.
 	trusted := w.Trust
 	trusted.PresentedChain = func() [][]byte { return presented }
 	trusted.ChainComplete = func() bool { return whole }
+	trusted.PresentedLeaf = func() *report.Certificate { return leaf }
 	layers[layer.TrustMatrix] = func(ctx context.Context) Answer {
 		return answerFromTrust(trust.Ask(ctx, trusted))
 	}

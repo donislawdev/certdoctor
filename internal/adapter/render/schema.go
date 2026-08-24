@@ -223,6 +223,38 @@ var schema = object(map[string]node{
 					"caveat":    nullable(text()),
 				})),
 			})),
+			// The sixth body, and at most one row per run carries it: who
+			// signed the leaf, and how widely the stores on this machine hold
+			// that signer.
+			"signing_authority": nullable(object(map[string]node{
+				// A borrowed name, so it goes through redaction. It is evidence
+				// and never a test - nothing in this program branches on the
+				// text of it, because recognising interception by an issuer's
+				// name would miss every appliance nobody has heard of.
+				"issuer": text(),
+				// Never redacted, for the same reason the chain's fingerprints
+				// are not: it is what lets somebody check this claim with their
+				// own tools.
+				"leaf_fingerprint_sha256": text(),
+				// One of all_stores, some_stores, no_stores. IT IS A COUNT AND
+				// NOT A CONCLUSION - some_stores says the signer is here and did
+				// not arrive with every runtime, which is what TLS inspection
+				// looks like and equally what a company's own certificate
+				// authority looks like. Measured, both produce this exact body.
+				"held_by": text(),
+				// Neither is ever null and an empty array is an answer. Only a
+				// refusal for an unknown authority appears in the second: a
+				// store refusing on dates holds the signer perfectly well.
+				"trusting_stores": array(text()),
+				"refusing_stores": array(text()),
+				// What held_by does NOT settle, present on every row rather
+				// than only on the awkward one. This is the heuristic named as
+				// a heuristic that inviolable rule 21 requires, and it is here
+				// rather than only in the terminal because a consumer of this
+				// document is the reader most likely to raise an alarm from a
+				// single value.
+				"caveat": text(),
+			})),
 		}))),
 	})),
 	"notes": array(object(map[string]node{

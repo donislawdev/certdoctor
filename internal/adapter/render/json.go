@@ -90,7 +90,20 @@ import (
 // A CONSUMER MUST NOT READ A NULL fix AS "NOBODY BOTHERED". It means there is
 // nothing honest to say, which is every row of a green matrix and every row of a
 // red one whose redness is the server's doing - measured on the bench 2026-08-19.
-const SchemaVersion = "1.8"
+//
+// 1.9 ADDS signing_authority: a sixth member of the union, at most one per run,
+// saying who signed the leaf and how widely the stores here hold that signer -
+// ADR53. No removals and no changed meanings, so a MINOR by rule 2.
+//
+// THE FIELD A CONSUMER WILL WANT TO MISREAD IS held_by, SO IT IS SPELLED OUT
+// HERE. It is a COUNT of stores, never a conclusion about anybody's network.
+// some_stores says the signer is present on this machine and did not arrive with
+// every runtime - which is what TLS inspection looks like and equally what an
+// organisation's own certificate authority looks like. Measured on the bench
+// 2026-08-19: a middlebox and an honest internal server produced identical
+// values in every field of this body. A consumer turning some_stores into an
+// alert titled "interception" is making a claim this document does not make.
+const SchemaVersion = "1.9"
 
 // JSON renders the machine readable report.
 //
@@ -176,6 +189,7 @@ type jsonFinding struct {
 	TCPConnect          *jsonTCPConnect          `json:"tcp_connect"`
 	TLSHandshake        *jsonTLSHandshake        `json:"tls_handshake"`
 	TrustStore          *jsonTrustStore          `json:"trust_store"`
+	SigningAuthority    *jsonSigningAuthority    `json:"signing_authority"`
 }
 
 type jsonNameResolution struct {
@@ -415,6 +429,7 @@ func findingsOf(row report.LayerResult) *[]jsonFinding {
 			TCPConnect:          tcpConnectOf(finding),
 			TLSHandshake:        tlsHandshakeOf(finding),
 			TrustStore:          trustStoreOf(finding),
+			SigningAuthority:    signingAuthorityOf(finding),
 		})
 	}
 	return &found
@@ -602,6 +617,62 @@ func trustStoreOf(finding report.Finding) *jsonTrustStore {
 		body.TrustFailure = &failure
 	}
 	body.Fix = fixOf(store.Fix)
+	return &body
+}
+
+// jsonSigningAuthority is the sixth body: who signed the leaf, and how widely
+// the stores on this machine hold that signer. AT MOST ONE PER RUN.
+//
+// IT IS THE ONE BODY WHOSE VALUE IS A MEASUREMENT PEOPLE WILL WANT TO READ AS AN
+// ACCUSATION, so the naming works against that on purpose. Nothing here says
+// "intercepted". held_by counts stores, the issuer and the fingerprint are facts
+// off the wire, and the summary beside them names both readings.
+type jsonSigningAuthority struct {
+	// Issuer is the distinguished name of whoever signed the leaf, and it goes
+	// through redaction like every other borrowed name.
+	Issuer string `json:"issuer"`
+	// LeafFingerprintSHA256 is never redacted - it is the evidence inviolable
+	// rule 21 requires beside any claim of this sort, and it names nobody.
+	LeafFingerprintSHA256 string `json:"leaf_fingerprint_sha256"`
+	// HeldBy is one of all_stores, some_stores, no_stores. BRANCH ON THIS rather
+	// than on the summary, and read it as the count it is.
+	HeldBy string `json:"held_by"`
+	// TrustingStores and RefusingStores are never null, and an empty array is an
+	// answer - the same shape selected_by and dns_names carry. Only a refusal
+	// for an unknown authority appears in the second list: a store that refused
+	// because something had expired holds the signer perfectly well and is
+	// saying something about a clock instead.
+	TrustingStores []string `json:"trusting_stores"`
+	RefusingStores []string `json:"refusing_stores"`
+	// Caveat is what held_by does NOT settle, and it is present on every row
+	// rather than only on the awkward one. IT IS THE HEURISTIC NAMED AS A
+	// HEURISTIC that inviolable rule 21 asks for, carried here so that a
+	// consumer who never reads the terminal still receives it.
+	Caveat string `json:"caveat"`
+}
+
+func signingAuthorityOf(finding report.Finding) *jsonSigningAuthority {
+	if finding.SigningAuthority == nil {
+		return nil
+	}
+	authority := *finding.SigningAuthority
+	body := jsonSigningAuthority{
+		Issuer:                authority.Issuer,
+		LeafFingerprintSHA256: authority.LeafFingerprint,
+		HeldBy:                authority.HeldBy.String(),
+		TrustingStores:        authority.TrustingStores,
+		RefusingStores:        authority.RefusingStores,
+		Caveat:                authority.Caveat,
+	}
+	// The core's contract already refuses a nil list here, so these two lines
+	// are belt to that brace: a null in this document would say "nobody looked"
+	// where the truth is "nobody is on this side".
+	if body.TrustingStores == nil {
+		body.TrustingStores = []string{}
+	}
+	if body.RefusingStores == nil {
+		body.RefusingStores = []string{}
+	}
 	return &body
 }
 

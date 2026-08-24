@@ -94,17 +94,38 @@ services:
 
   # Traffic re-signed by a CA local to this machine - scenario S-1.
   #
-  # ITS ROOT IS GENERATED AT STARTUP AND IMPORTED NOWHERE. Putting it into a real
-  # trust store is a change to a real machine that "docker compose down" does not
-  # undo, and today there is no layer that could show whether it did anything.
-  # That step lands with P6, where L4 can measure it.
+  # ITS ROOT IS GENERATED AT STARTUP AND IMPORTED INTO NO REAL MACHINE. Putting
+  # it into a trust store on the host would be a change "docker compose down"
+  # does not undo. The verification container is a different matter entirely: it
+  # is thrown away at the end of the run, so the import that makes S-1 a matrix
+  # rather than a single row happens there - verify-inside.sh, which reads the
+  # root out of the volume below.
+  #
+  # AN EARLIER VERSION OF THIS COMMENT SAID THE IMPORT LANDS "with P6, where L4
+  # can measure it" AND THAT WAS FALSE. ADR46 forbids L4 touching any trust
+  # store, so the question belongs to L5 - measured and corrected in D14.
   mitm:
     # mitmproxy 12.2.3, the current release - checked at
     # https://github.com/mitmproxy/mitmproxy/releases on 2026-08-17, and
     # confirmed by running the image: Mitmproxy 12.2.3.
     image: mitmproxy/mitmproxy:12.2.3
+    # TWO LISTENERS IN ONE PROCESS, AND THE SECOND ONE IS WHAT LETS P6b HAPPEN
+    # BEFORE P8 - measured 2026-08-19, both modes served by one mitmdump.
+    #
+    # regular@8080 is the forward proxy. Nothing in certdoctor can be pointed
+    # through it yet, because dialling through a proxy is L2 and that is slice
+    # P8. It stays because openssl reaches it today with -proxy and because P8
+    # will need it unchanged.
+    #
+    # reverse@443 is the same middlebox reached WITHOUT any proxy support: it
+    # terminates TLS, mints a certificate for whatever name the client asked
+    # for, and forwards to the origin. To a client it is indistinguishable from
+    # the server it stands in front of, which is the whole point - measured, a
+    # client asking for registry.example.net gets CN=registry.example.net signed
+    # by CN=mitmproxy.
     command: >
-      mitmdump --listen-host 0.0.0.0 --listen-port 8080
+      mitmdump --mode regular@8080
+      --mode reverse:https://partner.test:443@443
       --set confdir=/home/mitmproxy/.mitmproxy
       --set termlog_verbosity=warn --flow-detail 0
     depends_on:
@@ -117,12 +138,23 @@ services:
     networks:
       testbed:
         ipv4_address: 172.28.0.81
+    volumes:
+      # THE ROOT HAS TO BE READABLE FROM OUTSIDE THIS CONTAINER, or S-1 stops at
+      # a single red row. mitmproxy mints this CA at startup and it exists
+      # nowhere else, so the verification container mounts this volume read only
+      # and imports the root into ONE of its two stores - which is what makes
+      # the matrix show some runtimes accepting the traffic and others not.
+      - mitmconf:/home/mitmproxy/.mitmproxy
 
 volumes:
   # The chain lives here and never in the working tree. ADR5 says a private key
   # is never committed; a volume makes that true by construction rather than by a
   # .gitignore pattern that somebody could widen later.
   certs:
+
+  # The middlebox's own CA, minted at its startup. Same rule as certs above and
+  # for the same reason: a private key belongs in a volume, never in the tree.
+  mitmconf:
 
 networks:
   testbed:

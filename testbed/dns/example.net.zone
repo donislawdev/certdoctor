@@ -1,0 +1,34 @@
+; The name the interception scenario is asked about - S-1.
+;
+; WHY A PUBLIC-NAMESPACE NAME RATHER THAN ANOTHER .test ONE. The whole of S-1 is
+; "the browser works and npm install does not", and that story is about a name
+; somebody fetches packages from. A .test name reads as an internal service, and
+; an internal service under a private certificate authority is ORDINARY - which
+; is the one reading this scenario must not invite.
+;
+; example.net IS RESERVED FOR EXACTLY THIS BY RFC 2606, so the bench answers for
+; a name that belongs to nobody, and docs/14 requires that: a testbed certificate
+; is never minted for a real company's name, not even in a scenario pretending to
+; be a particular vendor's interception. registry.example.net evokes the package
+; registry the scenario is about without naming somebody else's service, which is
+; the substitution docs/21 already made for S-1.
+;
+; THE ADDRESS IS THE MIDDLEBOX, NOT THE ORIGIN, and that is the scenario. The
+; origin it re-signs for lives at 172.28.0.80 and answers to partner.test. Both
+; addresses are inside the bench's own subnet and unreachable from anywhere else.
+$ORIGIN example.net.
+$TTL 60
+
+@   IN SOA ns.example.net. admin.example.net. (
+        1          ; serial
+        7200       ; refresh
+        3600       ; retry
+        1209600    ; expire
+        3600 )     ; minimum
+
+@   IN NS  ns.example.net.
+ns  IN A   172.28.0.53
+
+; The middlebox. It terminates TLS, mints a certificate for whatever name was
+; asked for, and forwards to the origin - S-1.
+registry  IN A   172.28.0.81

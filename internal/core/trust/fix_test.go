@@ -51,7 +51,7 @@ func TestEveryDeclaredRuntimeCanBeFixed(t *testing.T) {
 	for _, descriptor := range All() {
 		t.Run(descriptor.ID, func(t *testing.T) {
 			store := aRefusedStore(descriptor.Runtime, `C:\somewhere\install`, `C:\somewhere\install\store.crt`)
-			fix := fixFor(store, true, aMachine())
+			fix := fixFor(store, true, false, aMachine())
 			if fix == nil {
 				t.Fatalf("runtime %q is asked by a probe and has no remediation template, so its rows can be "+
 					"diagnosed and never acted on", descriptor.Runtime)
@@ -73,15 +73,19 @@ func TestEveryDeclaredRuntimeCanBeFixed(t *testing.T) {
 func TestTheThreeGatesEachStopACommandOnTheirOwn(t *testing.T) {
 	// The positive twin first. Without it every case below passes on a function
 	// that never returns anything.
-	if fixFor(aJavaStore(), true, aMachine()) == nil {
+	if fixFor(aJavaStore(), true, false, aMachine()) == nil {
 		t.Fatal("a store that refused a complete chain for want of a signer got no command, and that is the one case there is a command for")
 	}
 
 	cases := []struct {
-		name     string
-		store    func() report.TrustStore
-		complete bool
-		why      string
+		name string
+		// closedElsewhere says another store on this machine built a path
+		// through this chain. It defaults to false, which is the state every
+		// case below except the named one is testing.
+		closedElsewhere bool
+		store           func() report.TrustStore
+		complete        bool
+		why             string
 	}{
 		{
 			// MEASURED ON THE BENCH 2026-08-19. A server withholding its
@@ -149,10 +153,43 @@ func TestTheThreeGatesEachStopACommandOnTheirOwn(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if fix := fixFor(c.store(), c.complete, aMachine()); fix != nil {
+			if fix := fixFor(c.store(), c.complete, c.closedElsewhere, aMachine()); fix != nil {
 				t.Errorf("a command was produced where %s: %q", c.why, fix.Command)
 			}
 		})
+	}
+}
+
+// TestAnIncompleteChainAnotherStoreClosedStillEarnsACommand is ADR55, and it is
+// the arm that was missing when the bench measured the case a command is for.
+//
+// THE PAIR IS THE TEST, not either half. An incomplete chain that NOBODY here
+// closed is the server's fault and gets nothing - that half lives in the gate
+// walk above. An incomplete chain that ANOTHER STORE ON THIS MACHINE closed is
+// proof that an anchor closing it exists, so the store that refused can be given
+// it. Measured on the bench 2026-08-19: a middlebox signing straight from its
+// own root presents an incomplete chain, one store here held its root and one
+// did not, and the old single-armed gate answered "no command" for the one row
+// that had a repair.
+//
+// WITHOUT THE NEGATIVE HALF THIS WOULD PASS ON A GATE THAT HAD BEEN DELETED,
+// which is the shape OBS56 records.
+func TestAnIncompleteChainAnotherStoreClosedStillEarnsACommand(t *testing.T) {
+	if fix := fixFor(aJavaStore(), false, true, aMachine()); fix == nil {
+		t.Error("no command for a store that refused a chain another store on this machine closed, " +
+			"which is the middlebox case and the one a command repairs")
+	}
+	if fix := fixFor(aJavaStore(), false, false, aMachine()); fix != nil {
+		t.Errorf("a command was produced for an incomplete chain nothing here closed, which sends "+
+			"somebody to edit a store that is not at fault: %q", fix.Command)
+	}
+	// The second arm must not reach past the OTHER two gates. A store that
+	// refused on dates is not repaired by importing anything, whoever else
+	// closed the chain.
+	expired := aJavaStore()
+	expired.TrustFailure = report.Expired
+	if fix := fixFor(expired, false, true, aMachine()); fix != nil {
+		t.Errorf("the second arm let a command through for an expired certificate: %q", fix.Command)
 	}
 }
 
@@ -163,7 +200,7 @@ func TestTheThreeGatesEachStopACommandOnTheirOwn(t *testing.T) {
 // installs measured on this machine. The command would look right and, on five
 // rows out of six, run a different installation's tool.
 func TestTheJavaCommandNamesTheKeytoolBesideTheStore(t *testing.T) {
-	fix := fixFor(aJavaStore(), true, aMachine())
+	fix := fixFor(aJavaStore(), true, false, aMachine())
 	if fix == nil {
 		t.Fatal("no command for a Java store that refused the chain")
 	}
@@ -184,7 +221,7 @@ func TestTheJavaCommandNamesTheKeytoolBesideTheStore(t *testing.T) {
 // about a machine it is not running on.
 func TestTheSeparatorComesFromThePathRatherThanTheBuild(t *testing.T) {
 	store := aRefusedStore("java", "/usr/lib/jvm/jdk-21", "/usr/lib/jvm/jdk-21/lib/security/cacerts")
-	fix := fixFor(store, true, posix())
+	fix := fixFor(store, true, false, posix())
 	if fix == nil {
 		t.Fatal("no command for a posix Java store")
 	}
@@ -209,7 +246,7 @@ func TestABundleIsAppendedRatherThanReplaced(t *testing.T) {
 		for _, runtime := range []string{"curl", "git"} {
 			store := aBundleStore()
 			store.Runtime = runtime
-			fix := fixFor(store, true, machine)
+			fix := fixFor(store, true, false, machine)
 			if fix == nil {
 				t.Fatalf("no command for a %s bundle on %s", runtime, machine.OS)
 			}
@@ -234,7 +271,7 @@ func TestABundleIsAppendedRatherThanReplaced(t *testing.T) {
 // whichever shell the person happens to be in, and Windows PowerShell 5.1 writes
 // UTF-16 - which turns a certificate bundle into a file no TLS library reads.
 func TestTheAppendCommandFitsThePlatform(t *testing.T) {
-	windows := fixFor(aBundleStore(), true, aMachine())
+	windows := fixFor(aBundleStore(), true, false, aMachine())
 	if windows == nil || !strings.Contains(windows.Command, "copy /b") {
 		t.Errorf("the Windows command is not the measured one: %#v", windows)
 	}
@@ -242,7 +279,7 @@ func TestTheAppendCommandFitsThePlatform(t *testing.T) {
 		t.Errorf("the Windows command redirects, and the shell that does it may write UTF-16: %q", windows.Command)
 	}
 
-	elsewhere := fixFor(aBundleStore(), true, posix())
+	elsewhere := fixFor(aBundleStore(), true, false, posix())
 	if elsewhere == nil || !strings.Contains(elsewhere.Command, "cat ") || !strings.Contains(elsewhere.Command, ">>") {
 		t.Errorf("the posix command is not an append: %#v", elsewhere)
 	}
@@ -300,7 +337,7 @@ func TestElevationIsAnsweredAndSaysWhy(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			fix := fixFor(c.store, true, c.machine)
+			fix := fixFor(c.store, true, false, c.machine)
 			if fix == nil {
 				t.Fatal("no command at all")
 			}
@@ -322,7 +359,7 @@ func TestElevationIsAnsweredAndSaysWhy(t *testing.T) {
 // concludes the tool was wrong the first time.
 func TestEveryCommandSaysWhatOutlivesIt(t *testing.T) {
 	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore()} {
-		fix := fixFor(store, true, aMachine())
+		fix := fixFor(store, true, false, aMachine())
 		if fix == nil {
 			t.Fatalf("no command for %s", store.Runtime)
 		}
@@ -336,7 +373,7 @@ func TestEveryCommandSaysWhatOutlivesIt(t *testing.T) {
 // and the validator, which are in two packages and could drift apart.
 func TestAProducedCommandSatisfiesTheContract(t *testing.T) {
 	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore()} {
-		store.Fix = fixFor(store, true, aMachine())
+		store.Fix = fixFor(store, true, false, aMachine())
 		finding := report.Finding{
 			Kind:       report.FindingTrustStore,
 			Summary:    "a store that refused the chain",

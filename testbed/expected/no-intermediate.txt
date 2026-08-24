@@ -73,4 +73,16 @@ l5_rows_not_trusting=1
 remediation_command=
 remediation_expected=no
 
+# --- P6b: who signed it, and how widely this machine holds them ---
+#
+# no_stores, and this scenario is the reason the second arm added to the
+# remediation gate in ADR55 is safe. That arm offers a command when ANOTHER
+# store on the machine closed this very chain, which is positive proof that an
+# anchor closing it exists. Here nothing closes it, so the arm never opens and
+# this file's remediation_expected=no still holds.
+authority_held_by=no_stores
+authority_issuer_contains=certdoctor testbed
+authority_has_fingerprint=yes
+authority_accuses_interception=no
+
 exit_code=4

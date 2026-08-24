@@ -228,6 +228,48 @@ var maskedBodies = map[report.FindingKind]func(*redact.Redaction, *report.Findin
 	report.FindingTCPConnect:          maskTCPConnect,
 	report.FindingTLSHandshake:        maskTLSHandshake,
 	report.FindingTrustStore:          maskTrustStore,
+	report.FindingSigningAuthority:    maskSigningAuthority,
+}
+
+// maskSigningAuthority masks the borrowed names and leaves the evidence alone.
+//
+// WHAT GOES THROUGH MASKING. The issuer is a distinguished name out of somebody
+// else's certificate, which is where a host name lives when it is not in a URL -
+// the same reason maskTLSHandshake masks the subject and issuer of every row of
+// the chain. The two store lists carry INSTANCE NAMES, and an instance is
+// routinely a path: measured on the bench, "/usr/bin/curl", and on Windows a
+// Java instance is a directory under an account's own profile.
+//
+// WHAT NEVER DOES. The fingerprint, for the reason maskTLSHandshake gives: it is
+// the evidence inviolable rule 21 requires to travel beside any claim about
+// interception, and a masked report that names an authority and withholds the
+// one value proving which one is a report that accuses without evidence. The
+// holding is a word from a closed list this program declares.
+//
+// THE SAME Redaction DOES BOTH LISTS AND THE SUMMARY, so a store named in a list
+// and the same store named in its own row come out as ONE pseudonym - they are
+// keyed by the real name rather than by the field they were found in.
+func maskSigningAuthority(r *redact.Redaction, finding *report.Finding) {
+	authority := *finding.SigningAuthority
+	authority.Issuer = r.Text(authority.Issuer)
+	authority.TrustingStores = maskEach(r, authority.TrustingStores)
+	authority.RefusingStores = maskEach(r, authority.RefusingStores)
+	finding.SigningAuthority = &authority
+}
+
+// maskEach rebuilds a list of borrowed names rather than editing it in place.
+//
+// THE REBUILD IS THE POINT, not the loop. The finding is a copy, but the slice
+// header inside it still refers to the core's own array, so writing through it
+// would rewrite the layer's evidence underneath it - the same trap maskFinding
+// records for bodies, one level further in. An empty list stays an empty list
+// rather than becoming nil, because the contract refuses nil there.
+func maskEach(r *redact.Redaction, names []string) []string {
+	masked := make([]string, 0, len(names))
+	for _, name := range names {
+		masked = append(masked, r.Text(name))
+	}
+	return masked
 }
 
 // maskTLSHandshake is the first entry that has to say YES TO SOME FIELDS AND NO

@@ -42,6 +42,20 @@ func chain() [][]byte { return [][]byte{{0x30, 0x01}} }
 
 func whole() bool { return true }
 
+// aLeaf is what L4 renders for the certificate the chain starts with. The issuer
+// and the fingerprint are the two fields the signing authority row is built out
+// of, and the contract refuses a row missing either.
+func aLeaf() *report.Certificate {
+	return &report.Certificate{
+		Subject:           "CN=partner.test",
+		Issuer:            "CN=an authority",
+		FingerprintSHA256: "aa:bb:cc",
+		DNSNames:          []string{"partner.test"},
+	}
+}
+
+func leaf() *report.Certificate { return aLeaf() }
+
 // aMachine is the little a remediation needs to know, with a home directory the
 // bundle above is NOT inside - so a command comes out needing elevation, which
 // is the ordinary case for a shared store.
@@ -60,6 +74,7 @@ func full() Input {
 	return Input{
 		PresentedChain: chain,
 		ChainComplete:  whole,
+		PresentedLeaf:  leaf,
 		Machine:        aMachine(),
 		Probes:         map[string]Probe{"git": nil},
 	}
@@ -73,6 +88,7 @@ func TestAMissingPortIsOurDefectAndSaysSo(t *testing.T) {
 	}{
 		{"no chain port", func(in *Input) { in.PresentedChain = nil }, noChain},
 		{"no completeness port", func(in *Input) { in.ChainComplete = nil }, noWhole},
+		{"no leaf port", func(in *Input) { in.PresentedLeaf = nil }, noLeaf},
 		{"no platform", func(in *Input) { in.Machine.OS = "" }, noOS},
 		{"no probes", func(in *Input) { in.Probes = nil }, noProbes},
 	}
@@ -213,8 +229,18 @@ func TestTheVerdictCountsStoresRatherThanRuntimes(t *testing.T) {
 			if !strings.Contains(got.Detail, c.says) {
 				t.Errorf("detail %q does not mention %q", got.Detail, c.says)
 			}
-			if len(got.Findings) != len(c.stores) {
-				t.Errorf("%d stores went in and %d rows came out", len(c.stores), len(got.Findings))
+			// COUNTED BY KIND RATHER THAN BY LENGTH, because this layer now
+			// emits one row that is not a store: the signing authority summary.
+			// Counting the slice would make this assertion quietly become "one
+			// store more than there are", which is an assertion about nothing.
+			rows := 0
+			for _, f := range got.Findings {
+				if f.Kind == report.FindingTrustStore {
+					rows++
+				}
+			}
+			if rows != len(c.stores) {
+				t.Errorf("%d stores went in and %d rows came out", len(c.stores), rows)
 			}
 			for _, f := range got.Findings {
 				if breach := f.Breach(); breach != "" {
@@ -240,6 +266,94 @@ func TestTheSummarySaysWhichOfTheThreeStatesThisIs(t *testing.T) {
 		got := summaryOf(c.store)
 		if !strings.Contains(got, c.says) {
 			t.Errorf("summary %q does not contain %q", got, c.says)
+		}
+	}
+}
+
+// TestTheMatrixIsSummarisedByOneRowSayingWhoSigned is the seam between the walk
+// and the one place allowed to judge what the walk found.
+//
+// IT ASSERTS THE POSITION AS WELL AS THE PRESENCE. The summary is what makes the
+// rows underneath it mean anything - who signed this, and how much of this
+// machine has heard of them - so a reader meets it first or meets nine rows with
+// nothing to hang them on.
+func TestTheMatrixIsSummarisedByOneRowSayingWhoSigned(t *testing.T) {
+	no, yesTrusts := false, true
+	stores := []report.TrustStore{
+		aStore("git", "/usr/bin/git", &yesTrusts, ""),
+		aStore("curl", "/usr/bin/curl", &no, ""),
+	}
+	// Two rows over one path would be one opinion, so the fixture gives them
+	// different files - which is what two runtimes with their own bundles are.
+	stores[1].StorePath = `C:\other.crt`
+
+	got := Ask(context.Background(), probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		return stores, nil
+	}))
+
+	if len(got.Findings) == 0 {
+		t.Fatal("no findings at all")
+	}
+	first := got.Findings[0]
+	if first.Kind != report.FindingSigningAuthority {
+		t.Fatalf("the first row is %q, and the summary of the matrix has to come before the matrix", first.Kind)
+	}
+	if first.SigningAuthority.HeldBy != report.HeldBySomeStores {
+		t.Errorf("one store holds the signer and one does not, and the row says %q", first.SigningAuthority.HeldBy)
+	}
+	summaries := 0
+	for _, finding := range got.Findings {
+		if finding.Kind == report.FindingSigningAuthority {
+			summaries++
+		}
+	}
+	if summaries != 1 {
+		t.Errorf("%d summary rows, and the question is about the machine so there is one", summaries)
+	}
+}
+
+// TestTheCommandArrivesAfterTheWholeMatrixHasBeenWalked is ADR55 through the
+// layer rather than through the generator, because the fact it needs - whether
+// ANY store closed this chain - is not known until the last probe has answered.
+//
+// THE ORDER IS THE TEST. The refusing store is asked FIRST, so a layer attaching
+// commands as it walks cannot know yet that the store after it will close the
+// chain - and would answer "no command" for the row that has one.
+func TestTheCommandArrivesAfterTheWholeMatrixHasBeenWalked(t *testing.T) {
+	no, yesTrusts := false, true
+	refused := aStore("curl", "/usr/bin/curl", &no, "")
+	closed := aStore("git", "/usr/bin/git", &yesTrusts, "")
+	closed.StorePath = `C:\other.crt`
+
+	in := probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		return []report.TrustStore{refused, closed}, nil
+	})
+	// The server did NOT send the issuer of its leaf, which is the state the
+	// first arm of the gate refuses on its own.
+	in.ChainComplete = func() bool { return false }
+
+	got := Ask(context.Background(), in)
+	var command *report.Fix
+	for _, finding := range got.Findings {
+		if finding.Kind == report.FindingTrustStore && finding.TrustStore.Runtime == "curl" {
+			command = finding.TrustStore.Fix
+		}
+	}
+	if command == nil {
+		t.Error("no command for a store that refused a chain another store on this machine closed - " +
+			"the measured middlebox case, where adding the certificate IS the repair")
+	}
+
+	// THE POSITIVE TWIN IS THE NEGATIVE ONE HERE: with nothing closing the
+	// chain, the same incomplete chain must still produce no command at all.
+	in = probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		return []report.TrustStore{refused}, nil
+	})
+	in.ChainComplete = func() bool { return false }
+	for _, finding := range Ask(context.Background(), in).Findings {
+		if finding.Kind == report.FindingTrustStore && finding.TrustStore.Fix != nil {
+			t.Errorf("a command was offered where nothing on this machine closed the chain: %q",
+				finding.TrustStore.Fix.Command)
 		}
 	}
 }

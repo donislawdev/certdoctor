@@ -22,6 +22,14 @@ partner.test:53 {
     errors
 }
 
+# The second name that answers, and it points at the MIDDLEBOX rather than at a
+# server - S-1. Reserved by RFC 2606, so it belongs to nobody and the bench can
+# answer for it without pretending to be somebody else's registry.
+example.net:53 {
+    file /etc/coredns/example.net.zone
+    errors
+}
+
 # A name whose resolver is broken rather than absent. Measured on this image:
 # forwarding to an unroutable address produces SILENCE, not SERVFAIL, so the
 # response code has to be stated outright - docs/17 section 6d.

@@ -254,7 +254,42 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 		writeTrimmed(b, line.String())
 		writeChain(b, finding)
 		writeFix(b, finding)
+		writeAuthority(b, finding)
 	}
+}
+
+// writeAuthority prints who signed the chain, which stores hold that signer and
+// what the answer does not settle, underneath the row that carries it.
+//
+// IT IS THE THIRD PLACE THIS RENDERER GOES TWO LEVELS DEEP, and it earns it the
+// same way the chain and the command do: this is the product rather than a
+// detail of it. The row above states the measurement in one line, and the reason
+// the rest is not up there with it is arithmetic - every summary in a layer is
+// padded to the longest, so a paragraph in this one would push the source column
+// of every trust row on the machine off the side of the window.
+//
+// THE CAVEAT IS PRINTED LAST AND ALWAYS. Inviolable rule 21 asks for the
+// heuristic to be named as a heuristic, and a hedge shown only when the answer
+// is uncomfortable teaches a reader that prose here means bad news - which is
+// the accusation reintroduced by layout.
+//
+// EVERYTHING BORROWED GOES THROUGH visible. An issuer is text out of somebody
+// else's certificate and an instance is a path off this machine, and either can
+// carry an escape sequence into the terminal of the person deciding whether they
+// are being watched.
+func writeAuthority(b *strings.Builder, finding report.Finding) {
+	if finding.SigningAuthority == nil {
+		return
+	}
+	authority := finding.SigningAuthority
+	writeTrimmed(b, fmt.Sprintf("        evidence: leaf fingerprint %s", visible(authority.LeafFingerprint)))
+	if len(authority.TrustingStores) > 0 {
+		writeTrimmed(b, fmt.Sprintf("        held by: %s", visible(strings.Join(authority.TrustingStores, ", "))))
+	}
+	if len(authority.RefusingStores) > 0 {
+		writeTrimmed(b, fmt.Sprintf("        not held by: %s", visible(strings.Join(authority.RefusingStores, ", "))))
+	}
+	writeTrimmed(b, fmt.Sprintf("        note: %s", visible(authority.Caveat)))
 }
 
 // writeFix prints the command that would repair one row, underneath it.

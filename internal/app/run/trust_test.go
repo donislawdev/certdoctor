@@ -193,3 +193,72 @@ func TestMaskingARowWithNoCommandIsFine(t *testing.T) {
 		t.Error("masking invented a command")
 	}
 }
+
+// TestMaskingTakesTheNamesAndLeavesTheFingerprint is the same rule one body
+// over, and both halves are checked for the reason the test above states.
+//
+// THE FINGERPRINT IS THE HALF WORTH DEFENDING. A masked report that names an
+// authority as local to this machine and withholds the one value identifying it
+// is a report that makes a claim nobody can check - which is inviolable rule 21
+// broken by the feature meant to protect privacy.
+// THE FINGERPRINT ITSELF IS REGISTERED AS SENSITIVE, AND THAT IS THE WHOLE
+// REASON THIS TEST CAN FAIL AT ALL.
+//
+// Written without it, the fingerprint contained nothing redaction had ever heard
+// of, so putting the field through masking changed NOTHING and the assertion
+// below passed either way. The mutation register caught precisely that and
+// reported PRZEZYLA - the shape OBS56 records: a correct assertion whose fixture
+// cannot tell the two states apart.
+//
+// The first repair was wrong too, and measured wrong rather than reasoned wrong:
+// registering a substring of the fingerprint did nothing, because a sensitive
+// name is compiled to a WHOLE WORD pattern - which is the same segment rule that
+// stops "bob" masking half of "bobby". So the whole value is registered.
+//
+// A hexadecimal string is not a host name and that is not the point. What is
+// registered is something redaction will rewrite wherever it meets it, so "this
+// field was not put through it" becomes observable instead of accidental.
+// Removing it would look like tidying and would silently disarm the entry again.
+func TestMaskingTakesTheNamesAndLeavesTheFingerprint(t *testing.T) {
+	const fingerprint = "6153a96f6c53d1a2"
+	redaction := redact.New(redact.Everything, redact.Host("jdoe"), redact.Host(fingerprint))
+	finding := report.Finding{
+		Kind:    report.FindingSigningAuthority,
+		Summary: `CN=jdoe corp CA signed this certificate`,
+		Source:  report.SourceDetected,
+		SigningAuthority: &report.SigningAuthority{
+			Issuer:          "CN=jdoe corp CA",
+			LeafFingerprint: fingerprint,
+			HeldBy:          report.HeldBySomeStores,
+			TrustingStores:  []string{`curl C:\Users\jdoe\tools\curl.exe`},
+			RefusingStores:  []string{`java C:\Users\jdoe\jdk-25`},
+			Caveat:          "TLS inspection looks exactly like this and so does an organisation's own authority",
+		},
+	}
+
+	Options{Redaction: redaction}.maskFinding(&finding)
+	body := finding.SigningAuthority
+
+	if strings.Contains(body.Issuer, "jdoe") {
+		t.Errorf("the name survived in the issuer, and a distinguished name is where a host name hides: %q", body.Issuer)
+	}
+	for _, named := range append(append([]string{}, body.TrustingStores...), body.RefusingStores...) {
+		if strings.Contains(named, "jdoe") {
+			t.Errorf("the name survived in a store list, and an instance is routinely a path: %q", named)
+		}
+	}
+	if body.LeafFingerprint != fingerprint {
+		t.Errorf("the fingerprint was masked to %q, and it is the evidence the claim travels with - "+
+			"a report naming an authority and withholding the value identifying it accuses without proof",
+			body.LeafFingerprint)
+	}
+	if body.HeldBy != report.HeldBySomeStores {
+		t.Errorf("a value from a closed list was masked: %q", body.HeldBy)
+	}
+	if !strings.Contains(body.Caveat, "cannot") && !strings.Contains(body.Caveat, "looks exactly like this") {
+		t.Errorf("the caveat did not survive, and it is how the heuristic is named as one: %q", body.Caveat)
+	}
+	if strings.Contains(finding.Summary, "jdoe") {
+		t.Errorf("the name survived in the summary: %q", finding.Summary)
+	}
+}
