@@ -14,6 +14,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	"github.com/donislawdev/certdoctor/internal/core/status"
 	"github.com/donislawdev/certdoctor/internal/core/tcp"
+	coretrust "github.com/donislawdev/certdoctor/internal/core/trust"
 )
 
 // The fingerprints the handshake fixture is built from, full length because the
@@ -217,6 +218,193 @@ func (openedThenClosed) Close() error { return nil }
 //
 // THE ORDER IS LOAD-BEARING, exactly as it is one layer up: the orchestrator
 // walks layers in registry order, so L3 has finished before L4 is called.
+// seamWiring is the fixture both seam tests below start from: one name, one
+// system view handing back two addresses, one of which accepts a connection.
+func seamWiring(name string, port int, authorised func([]string), shook *[]string) Wiring {
+	at := func() time.Time { return time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC) }
+	return Wiring{
+		Environment: envOf(nil),
+		Resolution: resolve.Input{
+			Name:      name,
+			Resolvers: []string{"192.0.2.53"},
+			Now:       at,
+			QueryID:   func() uint16 { return 7 },
+			System: func(context.Context, string) resolve.SystemAnswer {
+				return resolve.SystemAnswer{Addresses: []string{"192.0.2.10", "192.0.2.11"}}
+			},
+			Exchange: func(context.Context, string, []byte) ([]byte, error) {
+				return nil, resolve.ErrTimeout
+			},
+			PerQuery: 2 * time.Second,
+		},
+		Reach: tcp.Input{
+			Port: port, PerAddress: 2 * time.Second, Now: at,
+			Connect: func(_ context.Context, address string, _ int) (io.Closer, error) {
+				if address == "192.0.2.10" {
+					return openedThenClosed{}, nil
+				}
+				return nil, tcp.ErrRefused
+			},
+		},
+		Handshake: handshake.Input{
+			Port: 443, ServerName: "example.com", PerAddress: 2 * time.Second, Now: at,
+			Shake: func(_ context.Context, address string, _ int, _ string) (handshake.Presented, error) {
+				*shook = append(*shook, address)
+				return handshake.Presented{}, handshake.ErrRejected
+			},
+		},
+		Authorise: authorised,
+	}
+}
+
+// TestABrokenLayerDoesNotWidenWhereThisRunMayConnect is inviolable rule 16 at the
+// one place it was being decided by data the run had already refused.
+//
+// The orchestrator judges a layer's answer AFTER the layer function returns, and
+// an answer that breaks its own contract has every finding thrown away with the
+// layer reported as "nothing it reported was used". The addresses inside that
+// same answer were still being handed to Authorise, which is the function that
+// widens the set of places this program may open a connection to. Whatever else
+// that set is, it cannot be built out of an answer this program discarded.
+func TestABrokenLayerDoesNotWidenWhereThisRunMayConnect(t *testing.T) {
+	var shook []string
+	// A row for no name at all breaks the resolution contract - "a row with
+	// nothing in front of it" - so L1's whole answer is refused.
+	widened := 0
+	layers := Wire(seamWiring("", 443, func([]string) { widened++ }, &shook))
+	answer := layers[layer.Resolution](context.Background())
+
+	if contractBreach(answer) == "" {
+		t.Fatal("the fixture no longer produces a broken answer, so this test proves nothing")
+	}
+	if widened != 0 {
+		t.Errorf("a layer the run refused widened the allowed set %d time(s)", widened)
+	}
+
+	// The twin: an answer that survives its contract still authorises, or this
+	// test would be satisfied by a program that never authorises anything.
+	shook = nil
+	widened = 0
+	layers = Wire(seamWiring("example.com", 443, func([]string) { widened++ }, &shook))
+	if answer := layers[layer.Resolution](context.Background()); contractBreach(answer) != "" {
+		t.Fatalf("the good fixture produced a broken answer: %s", contractBreach(answer))
+	}
+	if widened != 1 {
+		t.Errorf("a sound answer widened the allowed set %d time(s), want 1", widened)
+	}
+}
+
+// TestABrokenLayerDoesNotFillTheSeamBelowIt is the same gate one floor down, and
+// it is the one with the measured false sentence.
+//
+// MEASURED ON THE BINARY: a URL carrying a port outside the legal range made
+// every L3 row breach, so L3 was thrown away - and L4 then announced that the
+// name had resolved to no address, about a name that had resolved to four. The
+// seam had been filled by the discarded answer, and an empty list from a layer
+// that was refused reads exactly like a layer that looked and found nothing.
+func TestABrokenLayerDoesNotFillTheSeamBelowIt(t *testing.T) {
+	var shook []string
+	layers := Wire(seamWiring("example.com", 99999, func([]string) {}, &shook))
+	layers[layer.Resolution](context.Background())
+
+	reach := layers[layer.TCP](context.Background())
+	if contractBreach(reach) == "" {
+		t.Fatal("port 99999 no longer breaks the connection contract, so this test proves nothing")
+	}
+
+	answer := layers[layer.TLS](context.Background())
+	if len(shook) != 0 {
+		t.Errorf("L4 hand shook with %v, handed to it by a layer the run had refused", shook)
+	}
+	if !strings.Contains(answer.Detail, "nothing was established") {
+		t.Errorf("L4 says %q, and what actually happened is that the layer above it was discarded", answer.Detail)
+	}
+
+	// The twin: a sound L3 fills the seam and L4 speaks to what it reached.
+	shook = nil
+	layers = Wire(seamWiring("example.com", 443, func([]string) {}, &shook))
+	layers[layer.Resolution](context.Background())
+	layers[layer.TCP](context.Background())
+	layers[layer.TLS](context.Background())
+	if len(shook) != 1 || shook[0] != "192.0.2.10" {
+		t.Errorf("L4 hand shook with %v, want only the address that accepted a connection", shook)
+	}
+}
+
+// TestALayerThatConnectedToNothingSaysSoRatherThanEstablishingNothing is the
+// other side of the same seam, and it is the half a deliberate breakage found
+// missing: the test above passes whether L3 hands on nil or an empty list,
+// because the gate above it blocks that path anyway.
+//
+// Here L3 RUNS, correctly, and nothing accepts a connection. That is a
+// measurement, and it has to reach L4 as one - otherwise L4 says nothing was
+// established about addresses it knows perfectly well were all refused.
+func TestALayerThatConnectedToNothingSaysSoRatherThanEstablishingNothing(t *testing.T) {
+	var shook []string
+	w := seamWiring("example.com", 443, func([]string) {}, &shook)
+	w.Reach.Connect = func(context.Context, string, int) (io.Closer, error) { return nil, tcp.ErrRefused }
+
+	layers := Wire(w)
+	layers[layer.Resolution](context.Background())
+	reach := layers[layer.TCP](context.Background())
+	if contractBreach(reach) != "" {
+		t.Fatalf("the fixture produced a broken L3 answer, so this tests the wrong path: %s", contractBreach(reach))
+	}
+
+	answer := layers[layer.TLS](context.Background())
+	if !strings.Contains(answer.Detail, "no address accepted a connection") {
+		t.Errorf("L4 says %q, and what happened is that every address refused", answer.Detail)
+	}
+}
+
+// TestABrokenHandshakeAnswerReachesNoTrustStore is the third seam behind the
+// same gate, and the one where the consequence is loudest.
+//
+// A handshake that COMPLETES and presents no certificate breaks the report
+// contract - it says the handshake finished and carries no leaf fingerprint - so
+// L4's whole answer is discarded. The chain inside that answer used to cross to
+// L5 anyway, and every trust store on the machine would then have been asked
+// about a certificate the report itself refused to show. OBS78 is the state that
+// produces it, and this is what the run does with it meanwhile.
+func TestABrokenHandshakeAnswerReachesNoTrustStore(t *testing.T) {
+	var shook []string
+	w := seamWiring("example.com", 443, func([]string) {}, &shook)
+	w.Handshake.Shake = func(context.Context, string, int, string) (handshake.Presented, error) {
+		// Completed, and nothing presented. Session resumption in TLS 1.3 and the
+		// anonymous suites both do this.
+		return handshake.Presented{Completed: true, Version: "TLS 1.3"}, nil
+	}
+
+	// L5 wired only as far as it needs to be to look at the chain at all: it
+	// refuses on its own missing plumbing before it ever reads one.
+	var askedAbout [][]byte
+	w.Trust = coretrust.Input{
+		Machine: coretrust.Machine{OS: "testos"},
+		Probes: map[string]coretrust.Probe{
+			"git": func(_ context.Context, chain [][]byte) ([]report.TrustStore, error) {
+				askedAbout = chain
+				return nil, nil
+			},
+		},
+	}
+
+	layers := Wire(w)
+	layers[layer.Resolution](context.Background())
+	layers[layer.TCP](context.Background())
+	answer := layers[layer.TLS](context.Background())
+	if contractBreach(answer) == "" {
+		t.Fatal("a completed handshake with no certificate no longer breaks the contract, so this proves nothing")
+	}
+
+	trust := layers[layer.TrustMatrix](context.Background())
+	if len(askedAbout) != 0 {
+		t.Errorf("a trust store was asked about %d certificate(s) from an answer this run refused", len(askedAbout))
+	}
+	if !strings.Contains(trust.Detail, "no certificate") {
+		t.Errorf("L5 says %q, and it was offered nothing because L4's answer was discarded", trust.Detail)
+	}
+}
+
 func TestLayerFourHandShakesOnlyWithTheAddressesLayerThreeReached(t *testing.T) {
 	var seenByL4 []string
 	at := func() time.Time { return time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC) }

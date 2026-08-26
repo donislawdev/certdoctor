@@ -143,6 +143,16 @@ const (
 	noClock     = "no clock was supplied, so the time each attempt took could not be established"
 	noAddresses = "no way to learn the addresses was supplied, so this layer could not know what to connect to"
 	nothingToDo = "the name resolved to no address, so there was nothing to connect to"
+	// nothingEstablished is the OTHER way this layer can be handed no addresses,
+	// and telling the two apart is ADR20 applied to a seam.
+	//
+	// An empty list means the layer before this one looked and found none. A nil
+	// list means it established nothing at all - it never ran, or its answer
+	// broke its own contract and was thrown away. Saying "the name resolved to no
+	// address" in the second case is a claim about somebody's DNS built out of
+	// our own discarded work, which is exactly the shape this layer refuses to
+	// make about anything else.
+	nothingEstablished = "the layer before this one established no addresses, so there was nothing to connect to"
 )
 
 // Ask tries every address once and reports what happened to each.
@@ -160,7 +170,11 @@ func Ask(ctx context.Context, in Input) Result {
 		// NOT A FAILURE OF THIS LAYER. The name resolving nowhere is L1's finding
 		// and L1 has already reported it - saying FAIL again here would count one
 		// fault twice in the verdict.
-		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: nothingToDo}
+		detail := nothingToDo
+		if addresses == nil {
+			detail = nothingEstablished
+		}
+		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: detail}
 	}
 
 	// THE ATTEMPTS RUN SIDE BY SIDE AND THE ROWS COME BACK IN ADDRESS ORDER. The
@@ -176,7 +190,11 @@ func Ask(ctx context.Context, in Input) Result {
 	// "how many did we actually try" is a second place where that question is
 	// answered, and the two would start disagreeing the first time one of them
 	// gained a case.
-	var connected []string
+	// EMPTY RATHER THAN NIL, AND THAT IS THE SEAM SPEAKING - ADR20. By the time
+	// this walk runs, this layer HAS looked, so an empty list is a measurement:
+	// nobody accepted a connection. Left nil, it would reach L4 as "nothing was
+	// established", which is what a layer that never ran says.
+	connected := []string{}
 	skipped, refused := 0, 0
 	for _, finding := range findings {
 		switch finding.TCPConnect.Outcome {
@@ -206,7 +224,14 @@ func Ask(ctx context.Context, in Input) Result {
 	}
 
 	if reached == 0 {
-		return Result{Status: status.Fail, Detail: detailFor(reached, addresses), Findings: findings}
+		// CONNECTED TRAVELS EVEN HERE, AND ESPECIALLY HERE. This layer dialled
+		// every address and not one accepted, which is a MEASUREMENT - so L4 has
+		// to receive an empty list rather than nil. Left off, L4 reads it as a
+		// layer that established nothing and says so about addresses it knows
+		// perfectly well were all refused. The branch above it stays nil on
+		// purpose: a walk that did not finish trying has not established that
+		// none of them would accept.
+		return Result{Status: status.Fail, Detail: detailFor(reached, addresses), Findings: findings, Connected: connected}
 	}
 	return Result{
 		Status:    status.Pass,

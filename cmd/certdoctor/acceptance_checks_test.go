@@ -427,6 +427,73 @@ func TestTheShippedBinaryShowsBothViewsOfAName(t *testing.T) {
 	}
 }
 
+// TestTheShippedBinaryRefusesAPortThatIsNotAPort keeps a mistyped URL from being
+// reported as a defect in this program.
+//
+// MEASURED BEFORE THE FIX: ":99999" reached a finding, the report contract
+// refused it, L3 was discarded with "the layer broke its own contract" - a
+// sentence about certdoctor - and L4 then said the name had resolved to no
+// address about a name that had resolved to four.
+func TestTheShippedBinaryRefusesAPortThatIsNotAPort(t *testing.T) {
+	r := runProgram(t, "https://example.com:99999", "--json")
+	if r.code != exitcode.Usage.Int() {
+		t.Errorf("a port outside its range ended %d, want %d", r.code, exitcode.Usage.Int())
+	}
+	if r.stdout != "" {
+		t.Errorf("a refused run put %d bytes on standard output", len(r.stdout))
+	}
+	if !strings.Contains(r.stderr, "1 to 65535") {
+		t.Errorf("the refusal does not say what a port may be: %q", r.stderr)
+	}
+}
+
+// TestTheShippedBinaryDoesNotAskDNSAboutAnAddress is the whole of that case on
+// the binary, including the half that would break the run if it were left out.
+//
+// THE TARGET IS IN TEST-NET-1, RESERVED BY RFC 5737, so this suite sends nothing
+// at anybody's service - the same courtesy the rest of it pays with a
+// documentation name. Nothing there answers, which is fine: what is being
+// checked is that L1 asked no question at all and still handed the address on.
+func TestTheShippedBinaryDoesNotAskDNSAboutAnAddress(t *testing.T) {
+	r := runProgram(t, "https://192.0.2.1", "--json", "--probe-timeout", "1")
+	if r.stdout == "" {
+		t.Fatalf("the run produced no document at all: %s", r.stderr)
+	}
+	if err := render.ValidateDocument([]byte(r.stdout)); err != nil {
+		t.Fatalf("a real run produced a document its own schema refuses:\n%v", err)
+	}
+
+	var document struct {
+		Layers []layerRow `json:"layers"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &document); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+
+	for _, row := range document.Layers {
+		switch row.ID {
+		case string(layer.Resolution):
+			if row.Status != "UNKNOWN" || row.Reason != "nothing_to_check" {
+				t.Errorf("L1 answered %s/%s about a literal address, and there was nothing to resolve",
+					row.Status, row.Reason)
+			}
+			if len(row.Findings) != 0 {
+				t.Errorf("L1 produced %d row(s) about a literal address, so a query went out about it",
+					len(row.Findings))
+			}
+		case string(layer.TCP):
+			// THE HALF THAT WOULD BREAK THE RUN. L3 dials what L1 hands on, and
+			// the allowed set is widened from the same list - so an L1 that
+			// answered "nothing to resolve" and passed nothing on would have this
+			// run refuse the address the user typed, by its own guard.
+			if len(row.Findings) != 1 {
+				t.Errorf("L3 produced %d row(s), want one for the address that was typed - the seam is empty",
+					len(row.Findings))
+			}
+		}
+	}
+}
+
 // TestTheShippedBinaryDoesNotBlameTheMachineForItsOwnBudget is ADR58 observed on
 // the shipped binary, and it is the check the defect it fixes would have failed.
 //

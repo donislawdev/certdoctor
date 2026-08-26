@@ -872,6 +872,40 @@ func TestABudgetTooShortToHonourIsRefusedRatherThanBecomingNoLimit(t *testing.T)
 	}
 }
 
+// TestAPortOutsideItsRangeIsRefusedWhereItIsStillATypingMistake keeps a mistyped
+// URL from being reported as a defect in this program.
+//
+// MEASURED ON THE BINARY: url.Parse accepts any run of digits after the colon,
+// so ":99999" reached a finding, the report contract refused it - correctly, as
+// a port that is not a port - and L3 was thrown away whole with the sentence
+// "the layer broke its own contract". That says certdoctor is broken about an
+// input a person mistyped. L4 then announced that the name had resolved to no
+// address, about a name that had resolved to four.
+func TestAPortOutsideItsRangeIsRefusedWhereItIsStillATypingMistake(t *testing.T) {
+	for _, target := range []string{
+		"https://example.com:99999",
+		"https://example.com:0",
+		"https://example.com:99999999999999999999",
+	} {
+		h := invoke(target)
+		if h.code != exitcode.Usage {
+			t.Errorf("%s ended %d, want %d - a port outside its range is a typing mistake", target, h.code, exitcode.Usage)
+		}
+		if !strings.Contains(h.stderr.String(), "1 to 65535") {
+			t.Errorf("%s was refused without saying what a port may be: %q", target, h.stderr.String())
+		}
+		if h.stdout.Len() != 0 {
+			t.Errorf("%s put %d bytes on standard output on the way out", target, h.stdout.Len())
+		}
+	}
+
+	// The twin: a port that IS in range still runs, or this would be satisfied by
+	// a program that refuses every port.
+	if h := invoke("https://example.com:8443"); h.code == exitcode.Usage {
+		t.Errorf("an ordinary port was refused: %q", h.stderr.String())
+	}
+}
+
 // TestNoLimitIsTheLongestLimitRatherThanTheAbsenceOfOne pins the line that
 // decides whether the rest of this program ever gets a deadline.
 //

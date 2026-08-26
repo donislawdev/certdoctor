@@ -673,6 +673,63 @@ func TestAVerdictAgainstTheNameNeedsAWalkThatFinishedLooking(t *testing.T) {
 	}
 }
 
+// TestATargetGivenAsAnAddressIsNotAskedAboutInDNS is the whole of that case, and
+// the second half is the one that would have been left out.
+//
+// MEASURED ON THE BINARY: "certdoctor https://1.1.1.1" sent four queries about
+// the literal, collected four NXDOMAIN rows and classified the two views as
+// disagreeing - because the platform hands a literal straight back while a
+// resolver correctly says no such name. All of that is this program asking the
+// wrong question and reporting the answer as news about somebody's machine.
+//
+// THE ADDRESS STILL HAS TO CROSS THE SEAM. L3 dials what this layer hands on and
+// the allowed set is widened from the same list, so a layer that answered
+// "nothing to resolve" and passed nothing on would make this run refuse to
+// connect to the address the user typed, by its own guard - which is worse than
+// the noise it removed. That half is measured here rather than assumed.
+func TestATargetGivenAsAnAddressIsNotAskedAboutInDNS(t *testing.T) {
+	asked := 0
+	in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		asked++
+		return nil, ErrTimeout
+	})
+	in.Name = "1.1.1.1"
+	in.System = systemAnswering(SystemAnswer{Addresses: []string{"1.1.1.1"}})
+
+	got := Ask(context.Background(), in)
+	if asked != 0 {
+		t.Errorf("%d quer(ies) went out about a literal address", asked)
+	}
+	if got.Status != status.Unknown || got.Reason != status.ReasonNothingToCheck {
+		t.Errorf("a literal target answered %s/%s, want %s/%s",
+			got.Status, got.Reason, status.Unknown, status.ReasonNothingToCheck)
+	}
+	if got.Findings != nil {
+		t.Errorf("a layer that looked at nothing produced %d row(s) - ADR20 keeps nil and empty apart", len(got.Findings))
+	}
+	if len(got.Addresses) != 1 || got.Addresses[0] != "1.1.1.1" {
+		t.Errorf("the seam carries %v, and L3 has nothing to dial without the address the user typed", got.Addresses)
+	}
+
+	// AND IT IS NORMALISED, because the allowed set compares strings and the
+	// dialler builds its own from this one - the lesson ADR34 paid for.
+	in.Name = "2001:0DB8::1"
+	if got := Ask(context.Background(), in); len(got.Addresses) != 1 || got.Addresses[0] != "2001:db8::1" {
+		t.Errorf("the seam carries %v, want the address in the one spelling both sides use", got.Addresses)
+	}
+
+	// The twin: a NAME is still asked about, or this could be satisfied by a
+	// layer that never queries anything.
+	in = workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		asked++
+		return nil, ErrTimeout
+	})
+	asked = 0
+	if got := Ask(context.Background(), in); asked == 0 {
+		t.Errorf("no query went out for an ordinary name, and the layer answered %s", got.Status)
+	}
+}
+
 // TestTheSentenceForAnUnfinishedWalkNamesEveryCount is inviolable rule 1 on the
 // one line anybody reads.
 //

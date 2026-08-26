@@ -188,6 +188,33 @@ func TestEveryWayAnAttemptCanFailKeepsItsOwnWord(t *testing.T) {
 	}
 }
 
+// TestNothingEstablishedIsToldApartFromNothingFound is ADR20 applied to a seam,
+// and both halves are here because either sentence alone reads as reasonable.
+//
+// An empty list is a MEASUREMENT: the layer above looked and found no address.
+// A nil list means it established nothing at all - it never ran, or its answer
+// broke its own contract and was thrown away. Saying "the name resolved to no
+// address" in the second case is a claim about somebody's DNS assembled from our
+// own discarded work.
+func TestNothingEstablishedIsToldApartFromNothingFound(t *testing.T) {
+	in := workingInput(connectFailing(ErrRefused))
+
+	in.Addresses = func() []string { return nil }
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown || got.Reason != status.ReasonNothingToCheck {
+		t.Errorf("a layer handed nothing answered %s/%s", got.Status, got.Reason)
+	}
+	if !strings.Contains(got.Detail, "established no addresses") {
+		t.Errorf("a nil list is described as %q, and nothing was established rather than found", got.Detail)
+	}
+
+	in.Addresses = func() []string { return []string{} }
+	got = Ask(context.Background(), in)
+	if !strings.Contains(got.Detail, "the name resolved to no address") {
+		t.Errorf("an empty list is described as %q, and that IS a measurement about the name", got.Detail)
+	}
+}
+
 // TestAVerdictAgainstTheseAddressesNeedsAWalkThatFinishedTrying is ADR58 and its
 // twin, because either half alone can be satisfied by the wrong program.
 //

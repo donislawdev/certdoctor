@@ -307,6 +307,26 @@ func readTarget(o *options) (wire *url.URL, typed *url.URL, f *fault) {
 		return nil, nil, usageFault("%q names no host. Give one like https://example.com", raw)
 	}
 
+	// A PORT OUTSIDE 1-65535 IS REFUSED HERE, WHERE IT IS STILL A TYPING MISTAKE.
+	//
+	// url.Parse accepts any run of digits after the colon, so ":99999" arrived
+	// intact and was carried all the way into a finding - where the report
+	// contract refuses it, correctly, as a port that is not a port. Measured on
+	// this binary: L3 was thrown away whole and reported as "the layer broke its
+	// own contract", which says THIS PROGRAM is defective about an input a person
+	// mistyped, and L4 then said the name had resolved to no address about a name
+	// that had resolved to four.
+	//
+	// The upper bound is not ours to choose: a TCP port is sixteen bits, and zero
+	// is reserved rather than dialable.
+	if port := parsed.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return nil, nil, usageFault(
+				"%q asks for port %s, and a port is a number from 1 to 65535", raw, port)
+		}
+	}
+
 	// The host is lower cased and nothing else is. Names in DNS are case
 	// insensitive, so EXAMPLE.COM and example.com are one machine - and left
 	// alone they became two: two different targets in two reports of the same
@@ -599,6 +619,9 @@ func authoriser(parsed *url.URL, targets *allowed.Targets) func([]string) {
 // Guessing wrong here would mean connecting somewhere the user did not ask
 // about, so the two schemes this program accepts are the two named below and
 // there is no third default.
+// THE RANGE IS GUARANTEED BY readTarget AND IS NOT RE-CHECKED HERE. A second
+// check would be a second place where the same rule lives, and the one that
+// matters is the one standing between a person's typing and a finding.
 func portOf(parsed *url.URL) int {
 	if explicit := parsed.Port(); explicit != "" {
 		if port, err := strconv.Atoi(explicit); err == nil {

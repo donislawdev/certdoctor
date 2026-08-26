@@ -95,6 +95,20 @@ func Wire(w Wiring) Layers {
 	// about them.
 	layers[layer.Resolution] = func(ctx context.Context) Answer {
 		result := resolve.Ask(ctx, w.Resolution)
+		answer := answerFromResolution(result)
+		// NOTHING CROSSES A SEAM UNTIL THE ANSWER HAS SURVIVED ITS OWN CONTRACT,
+		// AND HERE THAT IS NOT TIDINESS - IT IS INVIOLABLE RULE 16.
+		//
+		// The orchestrator judges this answer AFTER this function returns, and an
+		// answer that breaks the contract has every finding thrown away and the
+		// layer reported as "nothing it reported was used". This used to widen the
+		// set of places this program may connect to from that same answer: a layer
+		// the run had just called unusable was still deciding where the run may
+		// dial. Whatever else that set is, it cannot be built out of data the
+		// program itself refused.
+		if contractBreach(answer) != "" {
+			return answer
+		}
 		resolved = result.Addresses
 		// AUTHORISED HERE, BEFORE L3 EXISTS AS A POSSIBILITY, and never inside
 		// L3 itself. A layer that adds its own targets to the allowed set is a
@@ -103,7 +117,7 @@ func Wire(w Wiring) Layers {
 		if w.Authorise != nil {
 			w.Authorise(resolved)
 		}
-		return answerFromResolution(result)
+		return answer
 	}
 
 	// THE SECOND SEAM, AND IT IS DELIBERATELY THE SAME SHAPE AS THE FIRST. L3
@@ -116,8 +130,15 @@ func Wire(w Wiring) Layers {
 	reach.Addresses = func() []string { return resolved }
 	layers[layer.TCP] = func(ctx context.Context) Answer {
 		result := tcp.Ask(ctx, reach)
+		answer := answerFromReach(result)
+		// The same gate, for the same reason, and here it also keeps L4 from
+		// being handed an empty list by a layer that was thrown away - which
+		// reads to L4 exactly like "nobody accepted a connection".
+		if contractBreach(answer) != "" {
+			return answer
+		}
 		connected = result.Connected
-		return answerFromReach(result)
+		return answer
 	}
 
 	var presented [][]byte
@@ -127,8 +148,15 @@ func Wire(w Wiring) Layers {
 	shake.Addresses = func() []string { return connected }
 	layers[layer.TLS] = func(ctx context.Context) Answer {
 		result := handshake.Ask(ctx, shake)
+		answer := answerFromHandshake(result)
+		// The same gate again. A chain that came back inside an answer this run
+		// refused is a chain no store should be asked about, and L5 would have
+		// judged it without ever learning where it came from.
+		if contractBreach(answer) != "" {
+			return answer
+		}
 		presented, whole, leaf = result.Presented, result.ChainWhole, result.Leaf
-		return answerFromHandshake(result)
+		return answer
 	}
 
 	// THE THIRD SEAM. L4 says what the server presented, L5 says what each store

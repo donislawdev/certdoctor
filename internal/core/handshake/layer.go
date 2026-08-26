@@ -212,7 +212,20 @@ const (
 	noShake     = "no way to complete a handshake was supplied, so nothing about TLS was established"
 	noClock     = "no clock was supplied, so the time each handshake took could not be established"
 	noAddresses = "no way to learn the addresses was supplied, so this layer could not know what to connect to"
-	nothingToDo = "the name resolved to no address, so there was nothing to hand shake with"
+	// nothingToDo is what this layer says when the layer before it LOOKED and no
+	// address accepted a connection.
+	//
+	// IT USED TO SAY THE NAME HAD RESOLVED TO NO ADDRESS, AND THAT WAS OFTEN
+	// UNTRUE. Measured on this binary: a URL with a port outside the legal range
+	// had L1 report four addresses, L3 thrown away for breaking its own contract,
+	// and this layer announcing that the name resolved to nowhere. The sentence
+	// described a layer two floors down, guessed at its result, and guessed wrong.
+	nothingToDo = "no address accepted a connection, so there was nothing to hand shake with"
+	// nothingEstablished is the other way this layer can be handed nothing, and
+	// telling the two apart is ADR20 applied to a seam: an empty list is a
+	// measurement, a nil one means the layer before this established nothing at
+	// all - it never ran, or its answer was refused by its own contract.
+	nothingEstablished = "nothing was established about which addresses accepted a connection, so there was nothing to hand shake with"
 )
 
 // Ask completes one handshake per address and reports what each server
@@ -233,7 +246,11 @@ func Ask(ctx context.Context, in Input) Result {
 		// NOT A FAILURE OF THIS LAYER. The name resolving nowhere is L1's finding
 		// and L3 already declines to repeat it; a third FAIL here would count one
 		// fault three times in the verdict.
-		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: nothingToDo}
+		detail := nothingToDo
+		if addresses == nil {
+			detail = nothingEstablished
+		}
+		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: detail}
 	}
 
 	shown := in.fanOut(ctx, addresses)

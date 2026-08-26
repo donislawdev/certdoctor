@@ -353,6 +353,31 @@ func TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields(t *testing.T) {
 	}
 }
 
+// TestNothingEstablishedIsToldApartFromNothingConnected is ADR20 applied to the
+// second seam - the same rule, and the same pair, as the connecting layer's.
+//
+// The sentence this replaced said the NAME had resolved to no address, which
+// this layer cannot know and which was measurably untrue: a run where L3 was
+// discarded had a name that resolved to four.
+func TestNothingEstablishedIsToldApartFromNothingConnected(t *testing.T) {
+	in := workingInput(shakeReturning(completeChain("aa")))
+
+	in.Addresses = func() []string { return nil }
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown || got.Reason != status.ReasonNothingToCheck {
+		t.Errorf("a layer handed nothing answered %s/%s", got.Status, got.Reason)
+	}
+	if !strings.Contains(got.Detail, "nothing was established") {
+		t.Errorf("a nil list is described as %q, and nothing was established rather than measured", got.Detail)
+	}
+
+	in.Addresses = func() []string { return []string{} }
+	got = Ask(context.Background(), in)
+	if !strings.Contains(got.Detail, "no address accepted a connection") {
+		t.Errorf("an empty list is described as %q, and that IS a measurement about the addresses", got.Detail)
+	}
+}
+
 // TestAVerdictAgainstTheseServersNeedsAWalkThatFinishedTrying is ADR58 and its
 // twin, in the layer where the false accusation would be loudest.
 //

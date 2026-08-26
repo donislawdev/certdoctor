@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/dnsmsg"
@@ -212,6 +213,9 @@ const (
 	noClock         = "no clock was supplied, so the time each answer took could not be established"
 	noResolvers     = "this machine lists no DNS resolver we could find, so there was nobody to ask"
 	nothingAnswered = "no resolver answered, and with only our own view there is no way to tell a name that does not resolve from one this view cannot see"
+	// targetIsAnAddress is not a failure and not a gap: this layer ran, looked at
+	// what it was asked about, and there was nothing in it to resolve.
+	targetIsAnAddress = "the target was given as an address rather than a name, so there was nothing to resolve - the address itself is passed on to the layers below"
 )
 
 // Ask walks every resolver and every record type once, and reports what came
@@ -224,7 +228,17 @@ const (
 // with nothing to connect to. One place cannot forget.
 func Ask(ctx context.Context, in Input) Result {
 	result := in.walk(ctx)
-	result.Addresses = addressesOf(result.Findings)
+	// THE ADDRESSES ARE THE UNION OF WHAT THE ROWS CARRY, UNLESS THE WALK
+	// ESTABLISHED THEM WITHOUT ANY ROWS AT ALL.
+	//
+	// There is exactly one such case and it is the reason for this condition: a
+	// target given as an address has nothing to resolve, so there is no row to
+	// fold, and the address still has to reach the layers below. Recomputing
+	// unconditionally threw it away - measured, and the run then refused to
+	// connect to the address the user had typed.
+	if result.Addresses == nil {
+		result.Addresses = addressesOf(result.Findings)
+	}
 	return result
 }
 
@@ -238,6 +252,34 @@ func Ask(ctx context.Context, in Input) Result {
 func (in Input) walk(ctx context.Context) Result {
 	if broken := in.unusable(); broken != "" {
 		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: broken}
+	}
+
+	// A TARGET GIVEN AS AN ADDRESS HAS NOTHING TO RESOLVE, AND ASKING ANYWAY
+	// PRODUCED A REPORT ABOUT A MACHINE THAT WAS FINE.
+	//
+	// Measured on this binary: "certdoctor https://1.1.1.1" sent four queries
+	// about the literal 1.1.1.1, collected four NXDOMAIN rows, and classified the
+	// two views as disagreeing - because the platform hands a literal straight
+	// back while a resolver quite correctly says no such name. Everything in that
+	// paragraph is this program asking the wrong question and reporting the
+	// answer as news.
+	//
+	// THE ADDRESS STILL CROSSES THE SEAM, and that is the half that is easy to
+	// leave out. L3 dials what this layer hands on, and the allowed set is
+	// widened from the same list - so a layer that answered "nothing to resolve"
+	// and passed nothing on would have this run refuse to connect to the very
+	// address the user typed, by its own guard, and call it a diagnosis.
+	//
+	// IT IS NORMALISED BY netip RATHER THAN PASSED THROUGH. The set compares
+	// strings and the dialler builds its own from this one, so both sides have to
+	// start from the same spelling - the lesson ADR34 paid for with resolvers.
+	if address, err := netip.ParseAddr(in.Name); err == nil {
+		return Result{
+			Status:    status.Unknown,
+			Reason:    status.ReasonNothingToCheck,
+			Detail:    targetIsAnAddress,
+			Addresses: []string{address.String()},
+		}
 	}
 	// A MACHINE THAT LISTS NO RESOLVER CAN STILL RESOLVE NAMES, and that is not a
 	// theory - S11 measured it. With an empty resolv.conf the platform asks

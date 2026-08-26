@@ -24,6 +24,12 @@ Barely diagnosable yet, and there has been no release.
 
 ### Fixed
 
+- **A URL whose port is not a port is refused with a sentence saying so, instead of being reported as a defect in certdoctor.** `https://example.com:99999` used to produce "the layer broke its own contract" against the connection layer - a statement about this program - and then a claim that the name had resolved to no address, about a name that had resolved to four. It now ends immediately with a usage error naming the range.
+
+- **A target given as an address is no longer looked up in DNS.** Asked about `https://1.1.1.1`, certdoctor used to send four queries about the literal, collect four `NXDOMAIN` rows, and report that your two views of DNS disagreed - about a machine with nothing wrong with it. Name resolution now says there was nothing to resolve, and everything below it carries on with the address you gave.
+
+- **Two layers stopped claiming to know things they had not been told.** When the connection or the handshake layer is handed nothing, it now says whether the layer above it *looked and found none* or *established nothing at all* - two different situations that used to share one sentence, and that sentence asserted the name had resolved to no address, which neither layer can know. In particular, a run where every address refused a connection now says exactly that, instead of reporting it as an absence of information.
+
 - **A name with a non-ASCII character in it is now converted before it goes on the wire, so international domain names work.** Asked about `https://bücher.de`, certdoctor used to put the raw characters into the DNS query and into the TLS server name, get `NXDOMAIN` from every resolver, and report a failure about a server that was working - while the same site asked about as `https://xn--bcher-kva.de` came back clean. One machine, one server, two spellings of one name, opposite answers.
 
   **The report shows the name you typed and the rows show the name that was asked about.** Both are true and they are deliberately not the same field: the target line is what you pointed certdoctor at, and each row of name resolution carries the `xn--` form, because that is the name that actually went out. `--redact` hides both.
