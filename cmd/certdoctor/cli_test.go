@@ -154,6 +154,114 @@ func TestTheRawHostReachesTheResolvingLayerEvenUnderRedact(t *testing.T) {
 	}
 }
 
+// TestTheConvertedNameGoesOnTheWireAndTheTypedOneIntoTheReport is the seam the
+// whole international-name change lives on, and it is a seam no layer test can
+// stand on.
+//
+// MEASURED ON THE BINARY BEFORE THE FIX, 2026-08-26: one site, asked about twice
+// under two spellings of one name, gave opposite diagnoses. The typed form put
+// raw UTF-8 on the wire, every resolver answered NXDOMAIN, crypto/tls dropped
+// the same bytes out of SNI, and L4 reported FAIL with exit 4 about a server
+// that works. The xn-- form of the same name was green throughout. Every layer
+// and every adapter was correct; nothing converted the name between them.
+//
+// THE MASKING HALF IS THE ONE THAT WOULD ROT QUIETLY. Under --redact the two
+// spellings are one host under two names, and telling the redaction about only
+// the typed one leaves the A-label naming that host in every row of L1 - in the
+// document whose whole purpose is to be safe to paste into somebody's ticket.
+func TestTheConvertedNameGoesOnTheWireAndTheTypedOneIntoTheReport(t *testing.T) {
+	const typed = "b\u00fccher.de"
+	const wire = "xn--bcher-kva.de"
+
+	for _, redacted := range []bool{false, true} {
+		var asked []string
+		h := &harness{written: map[string][]byte{}}
+		args := []string{"https://" + typed, "--format", "json"}
+		if redacted {
+			args = append(args, "--redact")
+		}
+
+		guarded(context.Background(), args, environment{
+			stdout:     &h.stdout,
+			stderr:     &h.stderr,
+			capability: func(bool) render.Capability { return render.Capability{} },
+			now:        func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
+			platform:   report.Platform{OS: "testos", Arch: "testarch"},
+			privilege:  report.PrivilegeUnknown,
+			lookupEnv:  func(string) (string, bool) { return "", false },
+			writeFile:  func(string, []byte) error { return nil },
+
+			nameservers: func() (dns.Nameservers, error) {
+				return dns.Nameservers{ToAsk: []string{"192.0.2.53"}, Known: []string{"192.0.2.53"}, From: "a test"}, nil
+			},
+			queryID: func() uint16 { return 1 },
+			exchange: func(*allowed.Targets) resolve.Exchange {
+				return func(_ context.Context, _ string, query []byte) ([]byte, error) {
+					// Read back out of the wire format, because that is the only
+					// place the name can be checked without trusting the layer to
+					// report what it actually sent.
+					asked = append(asked, nameIn(query))
+					return nil, resolve.ErrTimeout
+				}
+			},
+		})
+
+		if len(asked) == 0 {
+			t.Fatalf("with --redact=%v no query was sent, so this proves nothing", redacted)
+		}
+		if asked[0] != wire {
+			t.Errorf("with --redact=%v the resolver was asked to resolve %q, want the A-label %q", redacted, asked[0], wire)
+		}
+
+		var document struct {
+			Run struct {
+				Target string `json:"target"`
+			} `json:"run"`
+			Layers []struct {
+				Findings []struct {
+					NameResolution *struct {
+						Name string `json:"name"`
+					} `json:"name_resolution"`
+				} `json:"findings"`
+			} `json:"layers"`
+		}
+		if err := json.Unmarshal(h.stdout.Bytes(), &document); err != nil {
+			t.Fatalf("with --redact=%v the document does not parse: %v", redacted, err)
+		}
+
+		// Every name the document states, wherever it states it.
+		stated := []string{document.Run.Target}
+		for _, l := range document.Layers {
+			for _, f := range l.Findings {
+				if f.NameResolution != nil {
+					stated = append(stated, f.NameResolution.Name)
+				}
+			}
+		}
+		if len(stated) < 2 {
+			t.Fatalf("with --redact=%v the document carries no resolution row, so the masking half proves nothing", redacted)
+		}
+
+		if redacted {
+			for _, value := range stated {
+				for _, spelling := range []string{typed, wire} {
+					if strings.Contains(value, spelling) {
+						t.Errorf("%q survived --redact in %q - one host under two names is still that host", spelling, value)
+					}
+				}
+			}
+			continue
+		}
+
+		if !strings.Contains(document.Run.Target, typed) {
+			t.Errorf("the report shows %q as the target, and the person typed %q", document.Run.Target, typed)
+		}
+		if !strings.Contains(stated[1], wire) {
+			t.Errorf("the resolution row says %q, and %q is what went on the wire", stated[1], wire)
+		}
+	}
+}
+
 // TestTheAllowedSetCarriesWhatWillActuallyBeDialled is inviolable rule 16 at the
 // seam where it is easiest to break without noticing.
 //
@@ -163,7 +271,7 @@ func TestTheRawHostReachesTheResolvingLayerEvenUnderRedact(t *testing.T) {
 // one would let a connection through unchecked. Both failures look like the
 // guard doing its job.
 func TestTheAllowedSetCarriesWhatWillActuallyBeDialled(t *testing.T) {
-	parsed, fault := readTarget(&options{target: "https://example.com/x"})
+	parsed, _, fault := readTarget(&options{target: "https://example.com/x"})
 	if fault != nil {
 		t.Fatalf("an ordinary URL was refused: %v", fault.message)
 	}
@@ -204,7 +312,7 @@ func TestTheAllowedSetCarriesWhatWillActuallyBeDialled(t *testing.T) {
 // and that is exactly why this belongs here now: the system view arrives next
 // and this is the seam it lands on.
 func TestTheSetAlsoCarriesTheSpellingThePlatformWillUse(t *testing.T) {
-	parsed, fault := readTarget(&options{target: "https://example.com/x"})
+	parsed, _, fault := readTarget(&options{target: "https://example.com/x"})
 	if fault != nil {
 		t.Fatalf("an ordinary URL was refused: %v", fault.message)
 	}
@@ -231,7 +339,7 @@ func TestTheSetAlsoCarriesTheSpellingThePlatformWillUse(t *testing.T) {
 // that keeps the set narrow: a machine WITH a resolver never sends the platform
 // to loopback, so loopback has no business being permitted there.
 func TestAMachineListingNoResolverStillHasOne(t *testing.T) {
-	parsed, fault := readTarget(&options{target: "https://example.com/x"})
+	parsed, _, fault := readTarget(&options{target: "https://example.com/x"})
 	if fault != nil {
 		t.Fatalf("an ordinary URL was refused: %v", fault.message)
 	}
@@ -271,7 +379,7 @@ func TestAResolverThatCannotBeReadIsNotAMachineWithoutDNS(t *testing.T) {
 // told about - and the telling is one loop in one function, which is exactly the
 // kind of line that gets deleted in a tidy-up with every other test still green.
 func TestEveryResolverIsHandedToTheMasking(t *testing.T) {
-	parsed, fault := readTarget(&options{target: "https://example.com"})
+	parsed, _, fault := readTarget(&options{target: "https://example.com"})
 	if fault != nil {
 		t.Fatalf("an ordinary URL was refused: %v", fault.message)
 	}
@@ -764,6 +872,33 @@ func TestABudgetTooShortToHonourIsRefusedRatherThanBecomingNoLimit(t *testing.T)
 	}
 }
 
+// TestNoLimitIsTheLongestLimitRatherThanTheAbsenceOfOne pins the line that
+// decides whether the rest of this program ever gets a deadline.
+//
+// MEASURED 2026-08-26 ON THE BINARY, and the report was confident and wrong:
+// "--timeout 0 --probe-timeout 0" produced four direct rows saying the query
+// could not be sent, under a layer still reporting PASS, on a machine whose
+// resolvers answer in milliseconds. No budget means no deadline on the run,
+// which means none on the layer, which means limitFor has nothing to divide,
+// which means the query context carries none - and the DNS port refuses a
+// socket it cannot bound, because one that blocks for ever outlives every
+// budget a run has. Answering zero with the largest limit this program accepts
+// removes the absence at the top instead of removing the defence at the bottom.
+//
+// THE VALUE IS NOT INVENTED HERE. maxBudgetSeconds is the bound the same flag
+// already refuses to exceed, so "no limit" and "the largest limit" became one
+// case rather than two.
+func TestNoLimitIsTheLongestLimitRatherThanTheAbsenceOfOne(t *testing.T) {
+	if got, want := budget(0), maxBudgetSeconds*time.Second; got != want {
+		t.Errorf("budget(0) = %v, want %v - a run asking for no limit must still carry a deadline", got, want)
+	}
+	// The ordinary case is untouched, which is the half that stops this from
+	// being satisfied by a function returning one constant.
+	if got, want := budget(5), 5*time.Second; got != want {
+		t.Errorf("budget(5) = %v, want %v", got, want)
+	}
+}
+
 // TestTheHostIsReportedWithoutRegardToCase keeps one machine from appearing as
 // two.
 //
@@ -975,7 +1110,7 @@ func TestTheEntryPointHandsTheTargetHostToTheMasking(t *testing.T) {
 		masked bool
 	}{{flag: true, masked: true}, {flag: false, masked: false}} {
 		o := &options{target: "https://internal.corp.example/a", redact: c.flag}
-		parsed, fault := readTarget(o)
+		parsed, _, fault := readTarget(o)
 		if fault != nil {
 			t.Fatalf("an ordinary URL was refused: %v", fault.message)
 		}

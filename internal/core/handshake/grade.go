@@ -20,22 +20,29 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	findings := make([]report.Finding, 0, len(addresses))
 
 	completed := 0
-	first := -1
+	// ONE ROW CARRIES THE CHAIN AND THE OTHERS DO NOT - ADR45. Four chains of
+	// four certificates is a page nobody reads, and the difference between them
+	// is visible from the fingerprint alone.
+	//
+	// WHICH ROW THAT IS COMES FROM carrierIndex RATHER THAN FROM A SECOND COPY
+	// OF THE RULE HERE, AND THE COPY IS WHAT WAS WRONG - 2026-08-26. This asked
+	// only whether the handshake completed; the seam to L5 asks that AND whether
+	// anything was presented. A handshake that completed without a certificate
+	// therefore became the row the report called the carrier, while the chain
+	// handed to L5 came from the address after it - the mismatch firstShown's
+	// own comment promises cannot happen, and the measured shape of OBS50.
+	carrier := carrierIndex(outcomes)
 	var firstChain []Certificate
+	if carrier >= 0 {
+		firstChain = outcomes[carrier].shown.Chain
+	}
 	disagreed := false
 
 	for i, o := range outcomes {
 		matches := (*bool)(nil)
 		if o.err == nil && o.shown.Completed {
 			completed++
-			if first < 0 {
-				// THE FIRST COMPLETED HANDSHAKE CARRIES THE CHAIN AND THE OTHERS DO
-				// NOT - ADR45. Four chains of four certificates is a page nobody
-				// reads, and the difference between them is visible from the
-				// fingerprint alone.
-				first = i
-				firstChain = o.shown.Chain
-			} else {
+			if i != carrier {
 				same := leafOf(o.shown.Chain) == leafOf(firstChain)
 				matches = &same
 				if !same {
@@ -43,7 +50,7 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 				}
 			}
 		}
-		findings = append(findings, in.row(o, i == first, matches))
+		findings = append(findings, in.row(o, i == carrier, matches))
 	}
 
 	complete := chainComplete(firstChain)

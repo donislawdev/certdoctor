@@ -570,6 +570,35 @@ func (o *options) checkOut() *fault {
 }
 
 // budget turns a validated number of seconds into a duration.
+//
+// ZERO IS THE DOCUMENTED WAY OF ASKING FOR NO LIMIT, AND IT IS ANSWERED WITH THE
+// LONGEST LIMIT THIS PROGRAM ACCEPTS RATHER THAN WITH THE ABSENCE OF ONE. The
+// number is not invented for this line: it is maxBudgetSeconds, the upper bound
+// the same flag already refuses to go past, so a run asking for no limit and a
+// run asking for the largest limit are one case instead of two.
+//
+// WHY, AND IT IS MEASURED RATHER THAN REASONED - 2026-08-26, this binary. Asked
+// for "--timeout 0 --probe-timeout 0" the direct view of L1 died completely:
+// four rows saying "sending the query or reading the reply failed" under a
+// layer still reporting PASS, and L3 then saw two addresses where an ordinary
+// run sees four. The chain was: no budget means no deadline on the run, which
+// means no deadline on the layer, which means limitFor has nothing to divide
+// and answers "unlimited", which means the query context carries no deadline -
+// and dns.Socket REFUSES a socket it cannot bound, because a resolver that
+// accepts a packet and never answers would otherwise outlive every budget this
+// run has. Five correct decisions ending in a report that accuses a working
+// resolver. It is the family of OBS62, reached through the one port that had
+// not been part of it.
+//
+// THE ALTERNATIVE WAS TO LET THAT PORT OPEN AN UNBOUNDED SOCKET, AND IT WAS
+// REJECTED. The refusal there has its own test and its own mutation entry, and
+// the hazard it names is real - so the fix belongs where the absence of a
+// deadline is manufactured, not where it is caught. Bounding the run here also
+// makes the sentence at the top of dns.Socket true rather than aspirational:
+// every caller in this program now does arrive with a deadline.
 func budget(seconds float64) time.Duration {
+	if seconds == 0 {
+		return maxBudgetSeconds * time.Second
+	}
 	return time.Duration(seconds * float64(time.Second))
 }

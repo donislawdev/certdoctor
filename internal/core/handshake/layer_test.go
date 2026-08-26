@@ -263,6 +263,51 @@ func TestAnAddressPresentingADifferentCertificateSaysSo(t *testing.T) {
 	}
 }
 
+// TestTheRowShownAndTheChainJudgedComeFromOneAddress is the invariant
+// firstShown's comment has always promised and the grader used to break.
+//
+// A HANDSHAKE CAN COMPLETE AND PRESENT NOTHING. Session resumption in TLS 1.3
+// and the anonymous suites do exactly that, and until 2026-08-26 such an
+// outcome was picked as the row the report describes - it completed, which was
+// the grader's whole test - while presentedOf and presentedLeafOf walked past
+// it to the next address, because THEIR rule also asks whether anything was
+// presented. The page would then have shown one address's row beside another
+// address's certificate, which is a mismatch nobody could see and everybody
+// would believe. Both now consume carrierIndex.
+//
+// THE FIXTURE KEYS ON THE ADDRESS RATHER THAN ON A COUNTER, deliberately: the
+// attempts run side by side, so a counter would decide which address presented
+// what by whichever goroutine got there first.
+func TestTheRowShownAndTheChainJudgedComeFromOneAddress(t *testing.T) {
+	const silent, presenting = "192.0.2.10", "192.0.2.11"
+	in := workingInput(func(_ context.Context, address string, _ int, _ string) (Presented, error) {
+		if address == silent {
+			return Presented{Completed: true, Version: "TLS 1.3"}, nil
+		}
+		return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("bb")}, nil
+	})
+	in.Addresses = func() []string { return []string{silent, presenting} }
+
+	got := Ask(context.Background(), in)
+	rows := rowsOf(got)
+	if len(rows) != 2 {
+		t.Fatalf("two addresses produced %d rows", len(rows))
+	}
+	if len(rows[0].Chain) != 0 {
+		t.Errorf("the address that presented nothing was made to carry the chain")
+	}
+	if len(rows[1].Chain) == 0 {
+		t.Fatalf("the address that presented a chain does not carry it in the report")
+	}
+	if got.Leaf == nil {
+		t.Fatal("nothing crossed the seam to L5, so no store could judge anything")
+	}
+	if got.Leaf.FingerprintSHA256 != rows[1].Chain[0].FingerprintSHA256 {
+		t.Errorf("L5 is judging %q while the report shows %q - two addresses, one page",
+			got.Leaf.FingerprintSHA256, rows[1].Chain[0].FingerprintSHA256)
+	}
+}
+
 // TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields is the half of the
 // contract easiest to break while making the other half work.
 func TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields(t *testing.T) {

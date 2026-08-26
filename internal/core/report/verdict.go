@@ -71,7 +71,22 @@ func worstOf(results []LayerResult) status.Status {
 	}
 	all := make([]status.Status, 0, len(results))
 	for _, r := range results {
-		all = append(all, r.Status)
+		s := r.Status
+		if !s.Valid() {
+			// A STATUS OUTSIDE THE VOCABULARY IS FOLDED AS UNKNOWN INSTEAD OF
+			// ENDING THE RUN, AND THE PANIC IT REPLACES WAS IN THE ONE PLACE THAT
+			// MUST NOT HAVE ONE. Severity panics on a value outside the four,
+			// deliberately - it can only mean a caller invented one - and that
+			// promise is untouched here. But Validate calls Assess, and Validate
+			// exists to collect EVERY violation in a report it did not build:
+			// validateLayerResult records the bad status and carries on, and this
+			// fold then ended the process before the rest of the list could be
+			// reported. The last line of defence must not be the thing that
+			// destroys the evidence, and the bad status is already recorded by
+			// the time this runs.
+			s = status.Unknown
+		}
+		all = append(all, s)
 	}
 	return status.Worst(all...)
 }

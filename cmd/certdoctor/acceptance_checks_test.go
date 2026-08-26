@@ -427,6 +427,108 @@ func TestTheShippedBinaryShowsBothViewsOfAName(t *testing.T) {
 	}
 }
 
+// TestTheShippedBinaryPutsTheConvertedNameOnTheWire is the international-name
+// fix observed on the shipped binary rather than at a seam inside it.
+//
+// THE TARGET IS UNDER .invalid SO THIS NEEDS NO PARTICULAR SITE TO EXIST. What
+// is being checked is the NAME THAT WAS ASKED ABOUT, which the document states
+// in every direct row, and that is true whether the answer is an address or
+// NXDOMAIN. Pointing it at a real international site would make this check
+// depend on somebody else's DNS and somebody else's uptime.
+//
+// BOTH HALVES OF THE DECISION ARE PINNED HERE, because they point in opposite
+// directions and each looks like a mistake on its own: the rows carry the
+// A-label because that is what went on the wire, and the target line carries
+// what the person typed because that is what they asked about.
+func TestTheShippedBinaryPutsTheConvertedNameOnTheWire(t *testing.T) {
+	const typed = "b\u00fccher.invalid"
+	const wire = "xn--bcher-kva.invalid"
+
+	r := runProgram(t, "https://"+typed, "--json")
+	if r.stdout == "" {
+		t.Fatalf("the run produced no document at all: %s", r.stderr)
+	}
+	if err := render.ValidateDocument([]byte(r.stdout)); err != nil {
+		t.Fatalf("a real run produced a document its own schema refuses:\n%v", err)
+	}
+
+	var document struct {
+		Run struct {
+			Target string `json:"target"`
+		} `json:"run"`
+		Layers []layerRow `json:"layers"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &document); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+
+	if !strings.Contains(document.Run.Target, typed) {
+		t.Errorf("the report shows the target as %q, and the person typed %q", document.Run.Target, typed)
+	}
+
+	direct := 0
+	for _, row := range document.Layers {
+		if row.ID != string(layer.Resolution) {
+			continue
+		}
+		if row.Status == "UNKNOWN" {
+			t.Skipf("NOT CHECKED: this machine's name resolution could not be exercised (%s: %s), so nothing was "+
+				"established about which spelling goes on the wire. This is a skip, not a pass.", row.Reason, row.Detail)
+		}
+		for _, finding := range row.Findings {
+			body := finding.NameResolution
+			if body == nil || body.View != "direct" {
+				continue
+			}
+			direct++
+			if body.Name != wire {
+				t.Errorf("a direct row asked about %q, and the A-label of that name is %q", body.Name, wire)
+			}
+		}
+	}
+	if direct == 0 {
+		t.Skip("NOT CHECKED: the document carries no direct row, so the spelling on the wire was not established. " +
+			"This is a skip, not a pass.")
+	}
+}
+
+// TestTheShippedBinaryStillAsksWhenBothBudgetsAreSwitchedOff is the flag
+// combination the documentation calls "no limit" and the program answered by
+// asking nobody.
+//
+// WHY IT BELONGS HERE AND NOWHERE ELSE. Every part of this was individually
+// correct: the entry point turned "no budget" into "no deadline", the layer
+// divided a deadline it did not have, and the DNS port refused a socket it
+// could not bound. The defect existed only in the whole, across the seam
+// between the command line and a layer - which is the one place the unit tests
+// cannot stand, and the CR that found it reached it the same way, by running
+// the binary.
+//
+// THE ASSERTION IS THAT AN ANSWER CAME BACK, not which one. A response code -
+// NXDOMAIN, for a name under .invalid - is a fact off the wire, and it is
+// exactly what was missing: the broken run produced rows saying the query could
+// not be sent at all, under a layer that still called itself PASS.
+func TestTheShippedBinaryStillAsksWhenBothBudgetsAreSwitchedOff(t *testing.T) {
+	row, _ := resolutionLayer(t, "--timeout", "0", "--probe-timeout", "0")
+
+	answered, silent := 0, 0
+	for _, finding := range row.Findings {
+		body := finding.NameResolution
+		if body == nil || body.View != "direct" {
+			continue
+		}
+		if body.ResponseCode != nil && *body.ResponseCode != "" {
+			answered++
+			continue
+		}
+		silent++
+	}
+	if answered == 0 {
+		t.Errorf("with both budgets switched off the direct view got an answer out of %d row(s) exactly none of the "+
+			"time - asking for no limit must not mean asking nobody", silent)
+	}
+}
+
 // TestTheShippedBinaryClassifiesTheTwoViewsAgainstEachOther is the other half of
 // P3: the comparison exists, sits where ADR37 put it, and carries a class from
 // the closed list.

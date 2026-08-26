@@ -386,15 +386,42 @@ func presentedLeafOf(outcomes []outcome) *report.Certificate {
 // of another - a mismatch nobody could see on the page and everybody would
 // believe - and it is also the measured shape of OBS50, where a duplicated
 // boundary rule disarmed three mutation entries while looking like tidying up.
+// THE COMMENT ABOVE WAS TRUE OF THIS FILE AND FALSE OF THE PACKAGE UNTIL
+// 2026-08-26. The grader picked the carrier a second time, one condition short
+// of this one - it asked only whether the handshake completed - so a completed
+// handshake that presented no certificate at all became the row the report
+// called the carrier while the chain crossing the seam to L5 came from the next
+// address. Exactly the mismatch this comment promises cannot happen, sitting
+// forty lines away from it, and the measured shape of OBS50 for the fifth time.
+// Both now consume carrierIndex.
 func firstShown(outcomes []outcome) *Presented {
-	for _, o := range outcomes {
+	i := carrierIndex(outcomes)
+	if i < 0 {
+		return nil
+	}
+	shown := outcomes[i].shown
+	return &shown
+}
+
+// carrierIndex is the same rule expressed as a POSITION, because the two
+// callers ask two halves of one question: the grader needs to know which row
+// carries the chain, and this file needs to know what that row carries.
+//
+// A HANDSHAKE THAT COMPLETED AND PRESENTED NOTHING IS NOT A CARRIER. There is
+// no leaf to identify it by, so a report naming it as the row that describes
+// this server would print an empty chain beside a fingerprint that is not
+// there. Such a row breaks the report contract on its own - it says the
+// handshake completed and carries no leaf fingerprint - so this is not the
+// place that reports it, only the place that stops it from deciding what
+// everybody else sees.
+func carrierIndex(outcomes []outcome) int {
+	for i, o := range outcomes {
 		if o.err != nil || !o.shown.Completed || len(o.shown.Chain) == 0 {
 			continue
 		}
-		shown := o.shown
-		return &shown
+		return i
 	}
-	return nil
+	return -1
 }
 
 func presentedOf(outcomes []outcome) [][]byte {

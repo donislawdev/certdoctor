@@ -12,6 +12,16 @@ Barely diagnosable yet, and there has been no release.
 
 `certdoctor <url>` produces a whole report. Five of its eight diagnostic layers now say something about your machine - context, name resolution, TCP, TLS and the trust matrix - and the other three report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE`, or with `4 DIAGNOSIS` on something certdoctor can actually diagnose. What exists is the path a real answer travels, built before any answer, so that there is no point at which this program claims to have checked something it has not.
 
+### Fixed
+
+- **A name with a non-ASCII character in it is now converted before it goes on the wire, so international domain names work.** Asked about `https://bücher.de`, certdoctor used to put the raw characters into the DNS query and into the TLS server name, get `NXDOMAIN` from every resolver, and report a failure about a server that was working - while the same site asked about as `https://xn--bcher-kva.de` came back clean. One machine, one server, two spellings of one name, opposite answers.
+
+  **The report shows the name you typed and the rows show the name that was asked about.** Both are true and they are deliberately not the same field: the target line is what you pointed certdoctor at, and each row of name resolution carries the `xn--` form, because that is the name that actually went out. `--redact` hides both.
+
+  **A name written with combining marks is refused rather than converted.** Composing those needs Unicode tables certdoctor does not carry, and converting them uncomposed produces a valid-looking name for a *different* domain - which resolves nowhere and would put you back where this started, with a confident wrong answer. The refusal says so and asks for the `xn--` form, which is what your browser sends anyway.
+
+- **`--timeout 0` and `--probe-timeout 0` together no longer switch off half of name resolution.** Both are documented as "no limit" and, given together, they left the run with no deadline at all - and the part of certdoctor that queries your resolvers directly refuses to open a socket it cannot bound, because one that blocks forever would outlive any budget. The result was four rows saying the query could not be sent, underneath a layer still reporting `PASS`, on a machine whose resolvers answer in milliseconds. No limit now means the longest limit this program accepts, which is a day.
+
 ### Changed
 
 - **`L3` now tries the addresses side by side instead of one after another**, up to eight at a time. On a name behind several addresses this means one address sitting behind a silently dropping firewall no longer eats the time the working ones needed - the others are already being tried beside it. Two things follow that you may notice: attempts are quicker on names with several addresses, and each attempt may now use the whole of what is left of the run's budget rather than a share of it divided between them.

@@ -17,7 +17,6 @@
 package probe
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -68,7 +67,9 @@ type Runner func(ctx context.Context, executable string, args ...string) (Output
 // exec.CommandContext takes an argument vector rather than a command line, so
 // there is nothing for a metacharacter to mean. NOTHING IS WRITTEN TO THE
 // CHILD'S INPUT: Stdin is left nil, so a program that decides to prompt gets
-// end-of-file and exits instead of hanging this run forever. Output is capped.
+// end-of-file and exits instead of hanging this run forever. Output is capped
+// AS IT ARRIVES, per stream, by cappedWriter - not trimmed once the child has
+// finished, which is what this sentence used to describe.
 //
 // THE ENVIRONMENT IS INHERITED, DELIBERATELY. A probe exists to report what
 // happens ON THIS MACHINE, and a cleaned environment would answer a question
@@ -86,7 +87,7 @@ func Run(ctx context.Context, executable string, args ...string) (Output, error)
 	}
 
 	command := exec.CommandContext(ctx, executable, args...)
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr cappedWriter
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	command.Stdin = nil
@@ -94,10 +95,10 @@ func Run(ctx context.Context, executable string, args ...string) (Output, error)
 	err := command.Run()
 
 	out := Output{
-		Stdout: capped(&stdout),
-		Stderr: capped(&stderr),
+		Stdout: string(stdout.kept),
+		Stderr: string(stderr.kept),
 	}
-	out.Truncated = stdout.Len() > OutputLimit || stderr.Len() > OutputLimit
+	out.Truncated = stdout.over || stderr.over
 
 	var exitErr *exec.ExitError
 	switch {
@@ -113,10 +114,40 @@ func Run(ctx context.Context, executable string, args ...string) (Output, error)
 	}
 }
 
-// capped returns at most OutputLimit bytes of a buffer.
-func capped(b *bytes.Buffer) string {
-	if b.Len() <= OutputLimit {
-		return b.String()
+// cappedWriter keeps at most OutputLimit bytes and remembers that more arrived.
+//
+// IT REPLACED A bytes.Buffer READ AFTER THE FACT, AND THE DIFFERENCE IS THE
+// ONLY ONE THAT MATTERS HERE: the buffer held everything the child produced and
+// was trimmed once the child had finished, so the cap described the report and
+// not the memory. This is the single place in this program where the AMOUNT of
+// data is decided by somebody else - keytool -list -rfc over a store that has
+// been damaged or swapped answers with as much as it likes - and the sentence
+// at the top of Run promised a cap that did not exist until the run was over.
+//
+// A FULL COUNT IS RETURNED EVEN WHEN NOTHING IS KEPT, DELIBERATELY. os/exec
+// copies the pipe into this writer and treats a short count as io.ErrShortWrite,
+// which would turn a talkative probe into a failed one - "the question could not
+// be put" - when the truth is that it answered at length. Dropping the excess is
+// the intended behaviour, so it is reported as written.
+type cappedWriter struct {
+	kept []byte
+	// over says the child produced more than was kept, which is what Truncated
+	// reports. It is set at the moment the excess arrives rather than deduced
+	// from a length afterwards, because after the change there is no length to
+	// deduce it from.
+	over bool
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	room := OutputLimit - len(w.kept)
+	switch {
+	case room <= 0:
+		w.over = true
+	case len(p) > room:
+		w.kept = append(w.kept, p[:room]...)
+		w.over = true
+	default:
+		w.kept = append(w.kept, p...)
 	}
-	return string(b.Bytes()[:OutputLimit])
+	return len(p), nil
 }

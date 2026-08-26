@@ -20,6 +20,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
+	"github.com/donislawdev/certdoctor/internal/core/idna"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
@@ -143,7 +144,9 @@ func execute(ctx context.Context, args []string, env environment) exitcode.Code 
 // diagnose is the path that produces a report: work out what to look at, walk
 // the layers, check the result against its own rules, render it, deliver it.
 func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
-	parsed, targetFault := readTarget(o)
+	// parsed is the spelling that goes on the wire and typed is the one the
+	// person wrote. They are the same for every ASCII name.
+	parsed, typed, targetFault := readTarget(o)
 	if targetFault != nil {
 		return complain(env, targetFault)
 	}
@@ -155,8 +158,13 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 	// anything can be dialled. Swapping any pair produces a run that looks
 	// correct and either leaks an address or refuses every query.
 	found, foundErr := enumerate(env)
+	// THE REPORT SHOWS WHAT THE PERSON TYPED, and the masking is told about both
+	// spellings. Showing the converted form would put a URL nobody wrote at the
+	// top of the document; masking only the typed one would let the xn-- form
+	// walk out through L1's rows under --redact, which is the same host by
+	// another name and the whole point of that switch.
 	redaction := redactionFor(o, parsed, found)
-	shown, removed := redaction.Target(parsed.String())
+	shown, removed := redaction.Target(typed.String())
 	targets := allowedTargets(parsed, found)
 
 	finished, walkFault := walk(ctx, o, env, targetReduction{target: shown, removed: removed}, redaction,
@@ -274,11 +282,14 @@ type targetReduction struct {
 // "localhost:8080", which the URL parser reads as the scheme "localhost" and
 // the opaque part "8080", and a tool that quietly diagnoses a different address
 // than the one asked about is worse than one that asks for a clearer question.
-func readTarget(o *options) (*url.URL, *fault) {
+// It returns TWO urls: the one the run uses and the one the report shows. They
+// are the same object for every ASCII name, which is every name this program
+// could diagnose before 2026-08-26.
+func readTarget(o *options) (wire *url.URL, typed *url.URL, f *fault) {
 	raw := o.target
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return nil, usageFault(
+		return nil, nil, usageFault(
 			"%q is not a URL certdoctor can read: %v. Give one like https://example.com", raw, err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
@@ -288,12 +299,12 @@ func readTarget(o *options) (*url.URL, *fault) {
 		// ticket came straight back out, unescaped, into somebody's console and
 		// their log. The parser refuses ASCII control characters, which is why
 		// this looked safe - it does not refuse the ones above them.
-		return nil, usageFault(
+		return nil, nil, usageFault(
 			"%q has no http:// or https:// scheme. Without one a host name cannot be told from a port number, so write it out, for example %q",
 			raw, "https://"+raw)
 	}
 	if parsed.Host == "" {
-		return nil, usageFault("%q names no host. Give one like https://example.com", raw)
+		return nil, nil, usageFault("%q names no host. Give one like https://example.com", raw)
 	}
 
 	// The host is lower cased and nothing else is. Names in DNS are case
@@ -306,7 +317,51 @@ func readTarget(o *options) (*url.URL, *fault) {
 	// It is done HERE rather than inside the masking rule, so that the rule for
 	// the target stays the rule the owner approved and nothing else.
 	parsed.Host = strings.ToLower(parsed.Host)
-	return parsed, nil
+
+	// TWO SPELLINGS FROM HERE ON, AND WHICH ONE A CALLER GETS IS DECIDED BY THE
+	// ORDER THEY COME BACK IN. The first is what every query, connection and SNI
+	// extension uses; the second is what the person typed and what the report
+	// shows. Everything downstream takes the first, so a call site added later
+	// gets the wire spelling without having to know this paragraph exists - and
+	// the two that need the typed one ask for it by name.
+	//
+	// It is the shape ADR34 already uses for a resolver address, for the same
+	// reason: one machine, two ways of writing it, and a guard comparing strings
+	// in between.
+	// Assigned rather than declared: wire is one of the named results, and err
+	// came back from url.Parse at the top.
+	wire, err = wireForm(parsed)
+	if err != nil {
+		return nil, nil, usageFault("%q cannot be asked about: %v", raw, err)
+	}
+	return wire, parsed, nil
+}
+
+// wireForm is the target with its host in the spelling that goes on the wire.
+//
+// AN ASCII NAME COMES BACK AS THE SAME URL, and that is what keeps this change
+// off the path every name this program has ever diagnosed. Only a host carrying
+// a code point above 0x7F is converted at all.
+func wireForm(typed *url.URL) (*url.URL, error) {
+	host := typed.Hostname()
+	ascii, err := idna.ToASCII(host)
+	if err != nil {
+		return nil, err
+	}
+	wire := *typed
+	if ascii == host {
+		return &wire, nil
+	}
+	// THE PORT IS REJOINED BY HAND RATHER THAN WITH net.JoinHostPort, and the
+	// reason is that the brackets that function adds are for a host containing a
+	// colon. An A-label cannot: it is the ACE prefix followed by letters, digits
+	// and hyphens. Doing it here also keeps package net out of this file, which
+	// is the one place the dial allowlist is not the thing stopping it.
+	wire.Host = ascii
+	if port := typed.Port(); port != "" {
+		wire.Host = ascii + ":" + port
+	}
+	return &wire, nil
 }
 
 // enumerate asks this machine which resolvers it uses, tolerating a build that
@@ -344,6 +399,20 @@ func enumerate(env environment) (dns.Nameservers, error) {
 // Both go over in both modes. Names are only masked under Everything, so this
 // costs nothing in the weaker one, and a conditional here would be a second place
 // where the mode decides something.
+// THE HOST HANDED OVER IS THE ONE THAT GOES ON THE WIRE, AND THE TYPED SPELLING
+// NEEDS NOTHING - which is the opposite of what it looks like and was MEASURED
+// rather than reasoned, 2026-08-26. An international name reaches the report
+// twice: the typed spelling inside the target URL at the top, and the A-label
+// bare in every row of L1. Only the second needs naming here, because a bare
+// name is precisely what no pattern can find - ADR26 - while the one inside a
+// URL is found by the pattern rule whether or not anybody registered it.
+//
+// The obvious-looking second registration was written, and then a deliberate
+// break of it changed nothing: with it removed, --redact still left neither
+// spelling anywhere in the document. It was caution that decided nothing, which
+// is the shape the mutation register keeps finding in this tree, so it is not
+// here. If a surface ever prints the TYPED name bare - a note about the
+// conversion would be one - this becomes wrong and that surface must add it.
 func redactionFor(o *options, parsed *url.URL, found dns.Nameservers) *redact.Redaction {
 	mode := redact.Credentials
 	if o.redact {

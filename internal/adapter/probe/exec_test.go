@@ -1,7 +1,6 @@
 package probe
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -127,17 +126,49 @@ func TestACancelledContextStopsTheRun(t *testing.T) {
 }
 
 func TestOutputIsCapped(t *testing.T) {
-	// capped is exercised directly: making a helper produce a megabyte would slow
-	// this suite down for no extra proof.
-	var buffer bytes.Buffer
-	buffer.Write(make([]byte, OutputLimit+10))
-	if got := len(capped(&buffer)); got != OutputLimit {
-		t.Errorf("capped returned %d bytes, want %d", got, OutputLimit)
+	// cappedWriter is exercised directly: making a helper produce a megabyte
+	// would slow this suite down for no extra proof.
+	var one cappedWriter
+	one.Write(make([]byte, OutputLimit+10))
+	if got := len(one.kept); got != OutputLimit {
+		t.Errorf("a single oversized write kept %d bytes, want %d", got, OutputLimit)
+	}
+	if !one.over {
+		t.Error("a single oversized write did not record that output was dropped")
 	}
 
-	var small bytes.Buffer
-	small.WriteString("short")
-	if got := capped(&small); got != "short" {
-		t.Errorf("capped altered output that was already short: %q", got)
+	var small cappedWriter
+	small.Write([]byte("short"))
+	if got := string(small.kept); got != "short" {
+		t.Errorf("output that was already short came back as %q", got)
+	}
+	if small.over {
+		t.Error("output that fitted was reported as truncated")
+	}
+}
+
+// TestOutputIsCappedAsItArrives is the half the old shape could not have.
+//
+// A bytes.Buffer trimmed after the child exits gives the same STRING as this
+// and holds everything the child sent while it is running - which is the whole
+// defect, because the size of that is decided by somebody else's program. Many
+// small writes are what a real pipe delivers, so the cap has to hold across
+// them rather than at the end.
+func TestOutputIsCappedAsItArrives(t *testing.T) {
+	var w cappedWriter
+	chunk := make([]byte, 4096)
+	for written := 0; written < OutputLimit+len(chunk)*4; written += len(chunk) {
+		n, err := w.Write(chunk)
+		// A SHORT COUNT WOULD BE READ BY os/exec AS io.ErrShortWrite, turning a
+		// probe that answered at length into one that could not be asked at all.
+		if n != len(chunk) || err != nil {
+			t.Fatalf("Write reported %d, %v, want %d, nil", n, err, len(chunk))
+		}
+	}
+	if got := len(w.kept); got != OutputLimit {
+		t.Errorf("kept %d bytes across many writes, want %d", got, OutputLimit)
+	}
+	if !w.over {
+		t.Error("output dropped across many writes was not recorded as truncated")
 	}
 }

@@ -54,6 +54,25 @@ func requireRejected(t *testing.T, r Report, want string) {
 	}
 }
 
+// TestValidateSurvivesAStatusOutsideTheVocabulary is the last line of defence
+// checked for the failure it used to commit itself.
+//
+// Validate exists to collect EVERY violation in a report it did not build, and
+// validateLayerResult does the right thing with an invented status: it records
+// it and carries on. Then validateVerdict recomputed Assess, the fold asked
+// that status for its severity, and severity PANICS on a value outside the four
+// - so the one function whose job is to report what is wrong destroyed the list
+// of what was wrong. The exit code still came out right, which is why nothing
+// noticed: the panic was caught at the top and mapped to 1, and the reader got
+// no idea what the report had done.
+func TestValidateSurvivesAStatusOutsideTheVocabulary(t *testing.T) {
+	r := wellFormedReport()
+	r.Layers[0].Status = "SPLENDID"
+	// requireRejected calls Validate, so a panic here fails this test rather
+	// than being reported as an error - which is exactly the assertion.
+	requireRejected(t, r, "outside the vocabulary")
+}
+
 func TestValidateAcceptsAWellFormedReport(t *testing.T) {
 	if err := Validate(wellFormedReport()); err != nil {
 		t.Fatalf("a well formed report was refused: %v", err)
