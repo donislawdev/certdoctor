@@ -532,7 +532,19 @@ func resolutionInput(o *options, env environment, parsed *url.URL, found dns.Nam
 	sources, sourcesErr := nameSources(env)
 	var system resolve.SystemLookup
 	if env.system != nil {
-		system = env.system(targets)
+		// THE ONE LENS THAT GETS A FROZEN COPY, AND THE ONE READ FROM GOROUTINES
+		// THIS PROGRAM DID NOT START. net.Resolver calls the dialler behind this
+		// lens from goroutines of its own, and they outlive the lookup - so the
+		// read can land while L1's closure is widening the live set with the
+		// addresses it has just found, which in Go is a fatal error recover does
+		// not catch.
+		//
+		// IT LOSES NOTHING: this lens only ever dials this machine's resolvers,
+		// and they are in the set before the walk starts. The other three lenses
+		// keep the live set on purpose - L3 and L4 must see the addresses L1
+		// authorised, and a copy would have this run refuse the very target the
+		// user typed, by its own guard.
+		system = env.system(targets.Freeze())
 	}
 	return resolve.Input{
 		// THE RAW HOST, NOT run.Options.Target. That field carries the target

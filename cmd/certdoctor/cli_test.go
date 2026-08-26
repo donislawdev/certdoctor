@@ -1455,3 +1455,92 @@ func TestTheRawHostReachesTheHandshakeLayerEvenUnderRedact(t *testing.T) {
 		}
 	}
 }
+
+// A LENS THAT IS READ FROM SOMEBODY ELSE'S GOROUTINE GETS A SET THAT CANNOT
+// CHANGE UNDER IT, AND THE OTHER THREE GET THE LIVE ONE.
+//
+// THIS IS A TABLE OF CONSUMERS RATHER THAN A TEST OF ONE, and that shape is the
+// point. Four places in this program ask "may this run reach that address", and
+// only one of them is called back from goroutines net.Resolver started - so only
+// one can still be reading the set while L1's closure widens it. A fifth
+// consumer cannot be added without answering the same question here.
+//
+// WHAT IT WOULD CATCH: the system view handed the live set. Measured under
+// -race: the read in allowed.Permits and the write in allowed.Allow land on the
+// same map, which in Go is a fatal error recover cannot catch - the process dies
+// with no report and no exit code from the table. Unreachable on Windows, where
+// probe S10 measured that the platform never calls our dialler, and live on
+// every Linux build: measured 2026-08-26 with the release configuration, where
+// the system row comes back as derived.
+//
+// THE FIRST ASSERTION IS THE TWIN OF THE SECOND. A Freeze that returned an empty
+// set would satisfy "does not grow" perfectly and refuse every resolver this
+// machine has, so both directions are asked of every lens.
+func TestOnlyTheLensReadFromAnotherGoroutineIsHandedASetThatCannotGrow(t *testing.T) {
+	sets := map[string]*allowed.Targets{}
+	h := &harness{written: map[string][]byte{}}
+
+	guarded(context.Background(), []string{"https://internal.corp.example", "--format", "json"}, environment{
+		stdout:     &h.stdout,
+		stderr:     &h.stderr,
+		capability: func(bool) render.Capability { return render.Capability{} },
+		now:        func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
+		platform:   report.Platform{OS: "testos", Arch: "testarch"},
+		privilege:  report.PrivilegeUnknown,
+		lookupEnv:  func(string) (string, bool) { return "", false },
+		writeFile:  func(string, []byte) error { return nil },
+		nameservers: func() (dns.Nameservers, error) {
+			return dns.Nameservers{ToAsk: []string{"192.0.2.53"}, Known: []string{"192.0.2.53"}, From: "a test"}, nil
+		},
+		queryID: func() uint16 { return 1 },
+		system: func(targets *allowed.Targets) resolve.SystemLookup {
+			sets["system"] = targets
+			return func(context.Context, string) resolve.SystemAnswer {
+				return resolve.SystemAnswer{Addresses: []string{"192.0.2.10"}}
+			}
+		},
+		exchange: func(targets *allowed.Targets) resolve.Exchange {
+			sets["exchange"] = targets
+			return func(context.Context, string, []byte) ([]byte, error) { return nil, resolve.ErrTimeout }
+		},
+		connect: func(targets *allowed.Targets) coretcp.Connect {
+			sets["connect"] = targets
+			return func(context.Context, string, int) (io.Closer, error) { return closedAtOnce{}, nil }
+		},
+		shake: func(targets *allowed.Targets) corehandshake.Shake {
+			sets["shake"] = targets
+			return func(context.Context, string, int, string) (corehandshake.Presented, error) {
+				return corehandshake.Presented{}, corehandshake.ErrRejected
+			}
+		},
+	})
+
+	// In the set before the walk starts, so every lens must hold it.
+	const resolver = "192.0.2.53:53"
+	// Authorised by L1's closure while the walk is running - ADR62's seam.
+	const foundDuringTheWalk = "192.0.2.10:443"
+
+	for _, c := range []struct {
+		lens               string
+		growsDuringTheWalk bool
+	}{
+		{"system", false},
+		{"exchange", true},
+		{"connect", true},
+		{"shake", true},
+	} {
+		set := sets[c.lens]
+		if set == nil {
+			t.Fatalf("the %s lens was never built, so this test proves nothing", c.lens)
+		}
+		if _, ok := set.Permits(resolver); !ok {
+			t.Errorf("the %s lens holds a set that does not permit %s, which this machine lists as its resolver",
+				c.lens, resolver)
+		}
+		_, grew := set.Permits(foundDuringTheWalk)
+		if grew != c.growsDuringTheWalk {
+			t.Errorf("the %s lens holds a set where permitting an address authorised during the walk is %v, want %v",
+				c.lens, grew, c.growsDuringTheWalk)
+		}
+	}
+}

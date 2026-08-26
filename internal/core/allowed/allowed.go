@@ -19,6 +19,11 @@
 // rather than something a caller does by appending to a field. It never
 // shrinks: an answer to "was this target allowed" that depended on when it was
 // asked would be worth nothing.
+//
+// AND THE GROWTH IS WHY ONE READER GETS A FROZEN COPY. Every consumer in this
+// program reads this set from the goroutine that walks the layers, except one:
+// the system view is called back from goroutines the standard library started,
+// and they can still be reading while the growth happens. See Freeze.
 package allowed
 
 import (
@@ -82,6 +87,12 @@ type Targets struct {
 	// that resolves to an address which is also a resolver - and asking twice
 	// has to give the same answer.
 	entries map[string]Reason
+	// frozen marks a copy that nothing may widen - see Freeze. It is a field on
+	// the same type rather than a type of its own so that the four callers
+	// asking "may this run reach that address" go on asking one function: a
+	// second type would want a second answer to that question, which is the
+	// shape OBS50 has measured four times in this tree.
+	frozen bool
 }
 
 // New returns an empty set.
@@ -100,6 +111,11 @@ func New() *Targets { return &Targets{entries: map[string]Reason{}} }
 // first reason is kept: the set answers "may I connect", never "how many ways
 // did we arrive at this".
 func (t *Targets) Allow(target string, reason Reason) error {
+	if t.frozen {
+		return fmt.Errorf("this is a frozen copy of the allowed set, so %q may not be added to it: "+
+			"the copy exists so that a reader on another goroutine gets an answer that cannot change under it",
+			normalise(target))
+	}
 	if t.entries == nil {
 		t.entries = map[string]Reason{}
 	}
@@ -131,6 +147,48 @@ func (t *Targets) Allow(target string, reason Reason) error {
 func (t *Targets) Permits(target string) (Reason, bool) {
 	reason, ok := t.entries[normalise(target)]
 	return reason, ok
+}
+
+// Freeze returns a copy of this set that nothing widens: a reader holding it
+// gets an answer that cannot change under it, and Allow on the copy comes back
+// as an error rather than quietly growing something nobody consults.
+//
+// IT EXISTS FOR ONE READER, AND THE REASON IS A RACE THAT KILLS THE PROCESS.
+// net.Resolver calls the dialler it was handed from goroutines of its own -
+// measured in alpine, three runs of three, where the A and the AAAA query
+// overlapped in time - and those goroutines can outlive the lookup that started
+// them. That dialler asks this set whether it may reach an address, so the read
+// can land on somebody else's goroutine while L1's closure is writing this same
+// map with the addresses it has just found. A concurrent map read and write in
+// Go is a fatal error that recover does not catch: the process dies with no
+// report at all and with an exit code from outside the table, which is the one
+// way this program can break the promise that every ending has one.
+//
+// WHERE IT IS REACHABLE, MEASURED RATHER THAN REASONED. Not on Windows, where
+// probe S10 measured that the platform never hands the work to Go's resolver.
+// On every Linux build: measured 2026-08-26 with the release configuration,
+// where the system row comes back as derived - which is this program saying its
+// own dialler ran.
+//
+// WHY A COPY AND NOT A MUTEX. A mutex here would put this file on the
+// concurrency allowlist, and an entry there switches that guard off for this
+// file for ever. That is the trade ADR18 refused for redact.Redaction, and it
+// is refused again here for the same reason.
+//
+// THE COPY LOSES NOTHING FOR THE READER IT IS FOR. The system view only ever
+// dials this machine's resolvers, and every one of them is in the set before L1
+// starts. What it does take away is a stray goroutine reaching an address
+// authorised after the fact - a narrowing of rule 16 rather than a widening.
+//
+// THE FLAG IS WHAT MAKES THE PROMISE CHECKABLE. Without it, Allow on a frozen
+// copy would succeed, widen something no reader ever consults, and look in a
+// diff exactly like a line that works.
+func (t *Targets) Freeze() *Targets {
+	copied := make(map[string]Reason, len(t.entries))
+	for target, reason := range t.entries {
+		copied[target] = reason
+	}
+	return &Targets{entries: copied, frozen: true}
 }
 
 // Len is how many distinct targets are in the set.

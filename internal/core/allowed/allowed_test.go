@@ -1,6 +1,7 @@
 package allowed
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -222,4 +223,129 @@ func TestTheListIsSortedRatherThanInMapOrder(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestAFrozenCopyHoldsWhatTheSetHeldWhenItWasTaken is the twin that stops the
+// two tests below from being satisfied by a Freeze that returns an empty set.
+//
+// OBS56 IS WHY IT IS WRITTEN FIRST. "The copy does not grow" is true of a copy
+// holding nothing at all, and a copy holding nothing refuses every resolver this
+// machine has - so the system view would report a machine with no DNS on a
+// machine whose DNS works. Both directions, or neither is worth anything.
+func TestAFrozenCopyHoldsWhatTheSetHeldWhenItWasTaken(t *testing.T) {
+	live := New()
+	for target, reason := range map[string]Reason{
+		"example.com:443": ReasonTarget,
+		"192.0.2.53:53":   ReasonResolver,
+	} {
+		if err := live.Allow(target, reason); err != nil {
+			t.Fatalf("setting up %s: %v", target, err)
+		}
+	}
+
+	frozen := live.Freeze()
+
+	if frozen.Len() != live.Len() {
+		t.Errorf("the copy holds %d targets and the set it came from holds %d", frozen.Len(), live.Len())
+	}
+	for _, entry := range live.List() {
+		reason, ok := frozen.Permits(entry.Target)
+		if !ok {
+			t.Errorf("the copy refuses %s, which the set it came from permits", entry.Target)
+			continue
+		}
+		if reason != entry.Reason {
+			// The reason travels with the answer, because a refusal has to be
+			// able to say what the set DID contain.
+			t.Errorf("the copy permits %s as %s, the set it came from as %s", entry.Target, reason, entry.Reason)
+		}
+	}
+}
+
+// TestAFrozenCopyDoesNotGrowWithTheSetItCameFrom is the property the system view
+// depends on and the one a race detector cannot state on its own.
+//
+// WHAT IT STANDS IN FOR. The read that matters happens on a goroutine
+// net.Resolver started, while L1's closure is writing this same map - a fatal
+// error in Go that recover does not catch, so the process dies with no report
+// and no exit code from the table. That failure is a race and cannot be asserted
+// on directly; this is the same fact stated in a way that is true or false on
+// every run.
+func TestAFrozenCopyDoesNotGrowWithTheSetItCameFrom(t *testing.T) {
+	live := New()
+	if err := live.Allow("192.0.2.53:53", ReasonResolver); err != nil {
+		t.Fatalf("setting up: %v", err)
+	}
+
+	frozen := live.Freeze()
+
+	// L1 finding an address and authorising it, exactly as the walk does.
+	if err := live.Allow("192.0.2.10:443", ReasonResolvedAddress); err != nil {
+		t.Fatalf("growing the live set: %v", err)
+	}
+
+	if _, ok := live.Permits("192.0.2.10:443"); !ok {
+		t.Fatal("the live set did not keep the address it was given, so this test proves nothing")
+	}
+	if _, ok := frozen.Permits("192.0.2.10:443"); ok {
+		t.Error("the copy grew along with the set it came from, so its reader is reading a map somebody is writing")
+	}
+	if _, ok := frozen.Permits("192.0.2.53:53"); !ok {
+		t.Error("the copy lost the resolver it was taken with")
+	}
+}
+
+// TestAFrozenCopyRefusesToBeWidened is what makes the promise checkable rather
+// than merely true today.
+//
+// Without it, Allow on a copy would succeed, widen something no reader ever
+// consults, and read in a diff exactly like a line that works.
+func TestAFrozenCopyRefusesToBeWidened(t *testing.T) {
+	frozen := New().Freeze()
+
+	err := frozen.Allow("192.0.2.10:443", ReasonResolvedAddress)
+	if err == nil {
+		t.Fatal("a frozen copy accepted a new target")
+	}
+	if !strings.Contains(err.Error(), "frozen") {
+		t.Errorf("the refusal does not name what refused: %v", err)
+	}
+	if _, ok := frozen.Permits("192.0.2.10:443"); ok {
+		t.Error("a frozen copy refused in words and grew anyway")
+	}
+	// AND THE REFUSAL MUST NOT BE THE ANSWER TO EVERYTHING. A Targets that
+	// refused every Allow would pass the three lines above and break every run.
+	if err := New().Allow("192.0.2.10:443", ReasonResolvedAddress); err != nil {
+		t.Errorf("an ordinary set refused to grow: %v", err)
+	}
+}
+
+// TestAReaderOfAFrozenCopyIsSafeBesideAWriterOfTheSet is the only test here that
+// says anything under -race, and it is the one that reproduces the defect.
+//
+// IT PROVES NOTHING WITHOUT -race AND THAT IS SAID OUT LOUD. Run plainly it is
+// two loops that pass; run as the gate runs it, the detector fails it the moment
+// the copy is not a copy. It was measured red against the live set before this
+// existed: WARNING: DATA RACE, mapassign_faststr in Allow against
+// mapaccess2_faststr in Permits.
+func TestAReaderOfAFrozenCopyIsSafeBesideAWriterOfTheSet(t *testing.T) {
+	live := New()
+	if err := live.Allow("192.0.2.53:53", ReasonResolver); err != nil {
+		t.Fatalf("setting up: %v", err)
+	}
+	frozen := live.Freeze()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 2000; i++ {
+			frozen.Permits("198.51.100.7:53")
+		}
+	}()
+	for i := 0; i < 2000; i++ {
+		if err := live.Allow(fmt.Sprintf("203.0.113.1:%d", i), ReasonResolvedAddress); err != nil {
+			t.Fatalf("growing the live set: %v", err)
+		}
+	}
+	<-done
 }
