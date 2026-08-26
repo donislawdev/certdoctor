@@ -22,7 +22,27 @@ Barely diagnosable yet, and there has been no release.
 
 - **A layer that gave up partway through now says so in the notes**, not only in its own row. `budget_exceeded` is unchanged and still means what it says - that the whole run ran out of its overall time - because a layer spending its own budget is a different fact.
 
+- **On a machine that lists no resolver of its own, name resolution stops reporting a difference between two views while holding one.** An empty `resolv.conf` is ordinary - the platform still resolves names - and certdoctor used to run its comparison against a view that had never asked anybody, print "comparing what **0** resolver(s) told us against what this system resolves the name to", and label it as both views having agreed. There is no comparison in that report any more, and the sentence names the one view there was.
+
+  **The verdict on the name itself no longer depends on how many views there were.** If anything answered and no view found an address, that is a `FAIL` with one view exactly as it is with two - a name that resolves nowhere is a name you cannot connect to either way. If nothing answered at all, one view still leaves it `UNKNOWN`, because a single view cannot tell a name that does not exist from one it cannot see.
+
+- **A truncated DNS answer is no longer compared against your other view.** The `TC` bit means the resolver had more to say than fitted in the reply, so the addresses in that row are part of the answer rather than all of it - and comparing part of one view against all of the other could report split-horizon DNS, which is a real fault people act on, from a packet that simply did not fit. The rows keep their addresses and keep saying the list may be short, and the layer's sentence says the comparison was skipped.
+
+- **The trust matrix now says `timeout` when it ran out of time, instead of `access_denied`.** Reading a store means running the runtime's own tool, and when the layer's budget was spent every store came back unassessed under a reason that means "certdoctor was not allowed to read this" - an accusation about permissions nobody had refused. Each probe also gets a share of the time the layer has left rather than the first one taking all of it.
+
 ### Fixed
+
+- **A remediation command is quoted for the shell it will be pasted into, and one that cannot be written safely is not written at all.** The path in that line comes from your own configuration - `http.sslCAInfo` in a gitconfig, `CURL_CA_BUNDLE` in the environment - and it used to be wrapped in double quotes, inside which a POSIX shell still runs what is in `$(...)`. Commands for Linux and macOS now use apostrophes, and on Windows a path carrying `%`, `"`, `$` or a backquote gets **no command**, with the row saying why: neither `cmd` nor PowerShell makes those literal, and a line certdoctor cannot write correctly is worse than no line. Both placeholders are quoted too, because the angle brackets around them are a redirection in every shell this command can land in.
+
+- **`--out` pointing at a directory now gets an answer instead of the operating system's words.** It used to say "moving the finished report to .: rename .\.certdoctor-report-1719771881 .: Access is denied." - true, and about a temporary file you never mentioned, while suggesting a permissions problem when the actual problem is that a directory has no file name to write under. Naming a directory is an ordinary slip, especially with tab completion.
+
+- **A server that completes a TLS handshake without presenting a certificate is no longer reported as certdoctor breaking its own contract.** Session resumption in TLS 1.3 and the anonymous cipher suites both do exactly that, and the row was refused for carrying no fingerprint - which discarded **every** row of the TLS layer along with it. The report said the layer had broken its own rules about a server that had behaved perfectly legally.
+
+- **A failure inside certdoctor while it connects or hand shakes no longer kills the run without a report.** Those attempts run side by side and reach code certdoctor does not own, and a crash in one of them used to take the whole process down - no report at all, and an exit code from outside its own table. The layer now ends `UNKNOWN` with `probe_error`, which means what it says: the probe fell over, not your machine.
+
+- **On Linux, a run could die the same way while name resolution was still finishing.** Nothing about your machine caused it and nothing in the report would have shown it, because there was no report. It cannot happen now.
+
+- **An answer that arrives from somewhere else is told apart from one certdoctor cannot read.** A reply is now checked against the question that was asked - the name and the record type, letter case ignored - and not only against the query's identifier, which is sixteen bits and therefore guessable. A reply about a different question says so in its row rather than reading as a broken resolver.
 
 - **A URL whose port is not a port is refused with a sentence saying so, instead of being reported as a defect in certdoctor.** `https://example.com:99999` used to produce "the layer broke its own contract" against the connection layer - a statement about this program - and then a claim that the name had resolved to no address, about a name that had resolved to four. It now ends immediately with a usage error naming the range.
 
