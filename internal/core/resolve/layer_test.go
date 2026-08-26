@@ -230,8 +230,16 @@ func TestNODATAIsReportedAsAnAnswerAndNotAsSilence(t *testing.T) {
 			t.Errorf("an answer that arrived carries the reason %q for not arriving", answer.NoAnswer)
 		}
 	}
-	if got.Status != status.Pass {
-		t.Errorf("a resolver that answered NODATA left the layer at %s", got.Status)
+	// THE VERDICT MOVED WITH P2-8 AND THE POINT OF THIS TEST DID NOT. NODATA is
+	// still an answer rather than silence, which is what the two assertions above
+	// are for. What changed is what the layer does with an answer carrying no
+	// address: a name that resolves nowhere is a failure whether one lens or two
+	// established it - ADR40 generalised, ADR65.
+	if got.Status != status.Fail {
+		t.Errorf("a resolver answered NODATA, no address came back, and the layer said %s", got.Status)
+	}
+	if got.Reason != "" {
+		t.Errorf("the verdict is about the name and carries the reason %q, which belongs to not knowing", got.Reason)
 	}
 }
 
@@ -1683,5 +1691,135 @@ func TestSwitchingEveryBudgetOffMeansNoLimitRatherThanNoAsking(t *testing.T) {
 		if finding.NameResolution.NoAnswer == report.NoAnswerNotAsked {
 			t.Errorf("a resolver was reported as never asked while the caller had asked for no limit at all")
 		}
+	}
+}
+
+// P2-8: A LAYER HOLDING ONE LENS DOES NOT ANNOUNCE A DIFFERENCE BETWEEN TWO.
+//
+// A machine with an empty resolv.conf still resolves names, through the platform
+// - S11 measured it - so this layer runs with a single lens on an ordinary
+// machine. It used to classify anyway, and the row said "comparing what 0
+// resolver(s) told us against what this system resolves the name to" while
+// carrying agree_none, whose meaning is "BOTH views answered".
+
+func TestOneLensDoesNotAnnounceADifferenceBetweenTwo(t *testing.T) {
+	in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		t.Error("a query went out although this machine lists no resolver of its own")
+		return nil, ErrTimeout
+	})
+	in.Resolvers = nil
+	in.System = systemAnswering(SystemAnswer{})
+
+	got := Ask(context.Background(), in)
+	if strings.Contains(got.Detail, "comparing") {
+		t.Errorf("one lens, and the sentence compares two views: %q", got.Detail)
+	}
+	if row := systemRowOf(t, got); row.NameResolution.Divergence != "" {
+		t.Errorf("the row carries the class %q, and there was one view to classify", row.NameResolution.Divergence)
+	}
+
+	// THE TWIN, AND WITHOUT IT THIS IS SATISFIED BY REMOVING D13 ALTOGETHER.
+	// With two lenses the class is exactly what the row must carry.
+	both := workingInput(answeringNoSuchName())
+	both.System = systemAnswering(SystemAnswer{})
+
+	got = Ask(context.Background(), both)
+	if row := systemRowOf(t, got); row.NameResolution.Divergence == "" {
+		t.Error("two lenses answered and the row carries no class at all")
+	}
+	if !strings.Contains(got.Detail, "comparing") {
+		t.Errorf("two lenses, and the sentence does not say they were compared: %q", got.Detail)
+	}
+}
+
+// TestANameThatResolvesNowhereFailsWithTheOnlyLensToo is the half of P2-8 that
+// is easy to lose while fixing the other half.
+//
+// Removing the classification alone would send this run out through the end of
+// the walk as a PASS, on the strength of somebody having answered - and
+// "answered" there means a resolver saying there is no such name. That is the
+// inversion ADR40 measured with two lenses, arriving with one.
+func TestANameThatResolvesNowhereFailsWithTheOnlyLensToo(t *testing.T) {
+	in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		return nil, ErrTimeout
+	})
+	in.Resolvers = nil
+	in.System = systemAnswering(SystemAnswer{})
+
+	got := Ask(context.Background(), in)
+	if got.Status != status.Fail {
+		t.Errorf("the only lens answered and found no address, and the layer said %s: %q", got.Status, got.Detail)
+	}
+	if !strings.Contains(got.Detail, "no address at all") {
+		t.Errorf("the sentence does not say what was found: %q", got.Detail)
+	}
+	if !strings.Contains(got.Detail, "lists no resolver") {
+		t.Errorf("the sentence does not say which lens was the only one: %q", got.Detail)
+	}
+
+	// THE TWIN. The same single lens with an address is an ordinary pass, and a
+	// layer that failed on both would be a layer that never says anything else.
+	in.System = systemAnswering(SystemAnswer{Addresses: []string{"192.0.2.10"}})
+	if got = Ask(context.Background(), in); got.Status != status.Pass {
+		t.Errorf("the only lens resolved the name and the layer said %s: %q", got.Status, got.Detail)
+	}
+}
+
+// TestTheOnlyLensSayingNothingIsStillUnknown is the line P2-8 must not cross.
+//
+// With one lens, "nobody answered" cannot tell a name that does not resolve from
+// one this lens cannot see. That stays unknown, and it is a different fact from
+// the lens answering and finding nothing.
+func TestTheOnlyLensSayingNothingIsStillUnknown(t *testing.T) {
+	in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		return nil, ErrTimeout
+	})
+	in.Resolvers = nil
+	in.System = systemAnswering(SystemAnswer{NoAnswer: report.NoAnswerTimeout})
+
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown {
+		t.Errorf("the only lens said nothing at all and the layer said %s: %q", got.Status, got.Detail)
+	}
+}
+
+// TestTheSingleLensVerdictAlsoNeedsAWalkThatFinishedLooking carries ADR58
+// through the door P2-8 opened.
+//
+// Without it a run holding one lens could skip or refuse half its queries and
+// still come out as FAIL against the name - the exact inversion ADR58 removed
+// for the two-lens case, arriving by another route.
+func TestTheSingleLensVerdictAlsoNeedsAWalkThatFinishedLooking(t *testing.T) {
+	in := workingInput(func(_ context.Context, resolver string, query []byte) ([]byte, error) {
+		if resolver == "198.51.100.53" {
+			return nil, ErrRefused
+		}
+		id := uint16(query[0])<<8 | uint16(query[1])
+		asked := dnsmsg.Type(uint16(query[len(query)-4])<<8 | uint16(query[len(query)-3]))
+		return replyWith(id, asked, 3), nil
+	})
+	in.System = nil
+
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown {
+		t.Errorf("half the queries never went out and the layer still said %s: %q", got.Status, got.Detail)
+	}
+	if !strings.Contains(got.Detail, "did not finish looking") {
+		t.Errorf("the sentence does not say the layer stopped early: %q", got.Detail)
+	}
+
+	// THE TWIN. The same single lens, nothing refused, and the verdict is the
+	// failure it was always meant to be.
+	whole := workingInput(answeringNoSuchName())
+	whole.System = nil
+	got = Ask(context.Background(), whole)
+	if got.Status != status.Fail {
+		t.Errorf("one lens asked everything and found no address, and the layer said %s: %q", got.Status, got.Detail)
+	}
+	// AND THE SENTENCE NAMES WHICH LENS WAS THE ONLY ONE. "The platform's" and
+	// "our own queries" send a reader to two different places, and a run without
+	// the platform lens is this program having been built or wired without it.
+	if !strings.Contains(got.Detail, "own queries to 2 resolver(s)") {
+		t.Errorf("the sentence does not name the only lens this run had: %q", got.Detail)
 	}
 }

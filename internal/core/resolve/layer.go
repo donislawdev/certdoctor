@@ -324,9 +324,22 @@ func (in Input) walk(ctx context.Context) Result {
 		// There is one comparison per run and many direct rows, and this is the
 		// row that completes it: it arrives after the union of the direct answers
 		// exists, which is what ADR31 asks to compare against.
-		counted.divergence = classify(unionOf(findings), finding.NameResolution.Addresses,
-			counted.direct > 0, counted.systemAnswered)
-		finding.NameResolution.Divergence = counted.divergence
+		// A CLASS IS A STATEMENT ABOUT TWO VIEWS, AND THERE ARE NOT ALWAYS TWO.
+		//
+		// A machine with an empty resolv.conf still resolves names, through the
+		// platform - S11 measured it - so this layer runs with one lens and used
+		// to classify anyway, against a direct view that had never asked anybody.
+		// The row then said "comparing what 0 resolver(s) told us against what
+		// this system resolves the name to", and agree_none - "both views
+		// answered and neither found an address" - went into the document about a
+		// run that held one view. The verdict below is reached without a class
+		// instead, which is what the single-lens path already does when the
+		// missing lens is the other one.
+		if len(in.Resolvers) > 0 {
+			counted.divergence = classify(unionOf(findings), finding.NameResolution.Addresses,
+				counted.direct > 0, counted.systemAnswered)
+			finding.NameResolution.Divergence = counted.divergence
+		}
 		findings = append(findings, finding)
 	}
 
@@ -337,6 +350,13 @@ func (in Input) walk(ctx context.Context) Result {
 	counted.notAsked = seen[report.NoAnswerNotAsked]
 
 	refused := seen[report.NoAnswerRefusedByRule]
+
+	// WHAT THE WHOLE WALK FOUND, AND HOW MANY LENSES SAID ANYTHING AT ALL. Both
+	// are needed twice below - once by the gate that refuses a verdict from an
+	// unfinished walk, and once by the verdict itself - and computing them twice
+	// would be two places for one question.
+	found := unionOf(findings)
+	answered := counted.direct + boolToInt(counted.systemAnswered)
 
 	// A VERDICT AGAINST THIS NAME REQUIRES THAT THIS LAYER FINISHED LOOKING -
 	// ADR58. Both classes below say something about the name itself rather than
@@ -355,7 +375,7 @@ func (in Input) walk(ctx context.Context) Result {
 	// that asked every query and got NXDOMAIN from both lenses drops nothing, so
 	// it is still agree_none and still FAIL - the .invalid case measured on
 	// 2026-08-11, ADR40.
-	if againstTheName(counted.divergence) && counted.notAsked+refused > 0 {
+	if aVerdictAboutTheName(counted.divergence, found, answered) && counted.notAsked+refused > 0 {
 		return Result{
 			Status:   status.Unknown,
 			Reason:   status.ReasonForNothingAttempted(counted.notAsked),
@@ -384,7 +404,19 @@ func (in Input) walk(ctx context.Context) Result {
 		return Result{Status: status.Warn, Detail: in.divergenceDetail(counted), Findings: findings}
 	}
 
-	if counted.direct+boolToInt(counted.systemAnswered) == 0 {
+	// A NAME THAT RESOLVES NOWHERE IS A FAILURE WITH ONE LENS TOO - P2-8.
+	//
+	// With two lenses this is agree_none and is decided in the switch above,
+	// measured against a name under .invalid on 2026-08-11 (ADR40). With one it
+	// used to reach the end of this function and come out as PASS, on the
+	// strength of somebody having answered - and "answered" there means a
+	// resolver saying there is no such name. The lens count is not what makes a
+	// name resolve.
+	if counted.divergence == "" && len(found) == 0 && answered > 0 {
+		return Result{Status: status.Fail, Detail: in.oneLensDetail(), Findings: findings}
+	}
+
+	if answered == 0 {
 		// STILL UNKNOWN RATHER THAN FAIL, AND THAT IS NOT AN OVERSIGHT. This line
 		// is reached only with ONE lens: a run holding both, where neither
 		// answered, is classified above and left as a verdict before it gets here.
@@ -683,6 +715,35 @@ func systemSummaryOf(name string, a SystemAnswer, source report.Source, sources 
 // two places - the shape OBS50 keeps measuring.
 func againstTheName(d report.Divergence) bool {
 	return d == report.DivergenceAgreeNone || d == report.DivergenceNeitherAnswered
+}
+
+// aVerdictAboutTheName reports whether the verdict this walk is heading for is
+// one about the NAME rather than about the difference between two views.
+//
+// IT EXISTS BECAUSE ADR58 HAS TO COVER THE SINGLE-LENS VERDICT TOO. Without the
+// second clause a run holding one lens could skip half its queries and still
+// come out as FAIL against the name - which is the exact inversion ADR58 was
+// written to remove, arriving through the door P2-8 opened.
+func aVerdictAboutTheName(d report.Divergence, found []string, answered int) bool {
+	if againstTheName(d) {
+		return true
+	}
+	return d == "" && len(found) == 0 && answered > 0
+}
+
+// oneLensDetail is the sentence for a walk that had one view and found nothing.
+//
+// IT NAMES WHICH LENS RATHER THAN COUNTING THEM, because the reader's next step
+// differs: a machine with no resolver of its own is ordinary and the answer came
+// from the platform, while a run without the platform lens is this program
+// having been built or wired without it.
+func (in Input) oneLensDetail() string {
+	lens := "the only view available is the platform's own, because this machine lists no resolver for this program to ask"
+	if len(in.Resolvers) > 0 {
+		lens = fmt.Sprintf("the only view available is this program's own queries to %d resolver(s), "+
+			"because the platform's resolver was not there to ask", len(in.Resolvers))
+	}
+	return lens + ", and it resolved this name to no address at all"
 }
 
 // notFinishedDetail is the sentence for a walk that would have ended in a
