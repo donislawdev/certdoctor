@@ -136,9 +136,33 @@ func TestTheTLSBodyRefusesWhatItMustNotCarry(t *testing.T) {
 			"also says why it did not",
 		},
 		{
-			"a completed handshake with no leaf fingerprint",
+			// OBS78, ADR66: presenting NOTHING is legal, half-filling the row is
+			// not. TLS 1.3 resumption and the anonymous suites produce a completed
+			// handshake with no certificate at all, and this rule used to refuse
+			// it - discarding every other row of the layer with it.
+			"a row saying nothing was presented and carrying a chain anyway",
 			func() TLSHandshake { b := aCompletedRow(); b.LeafFingerprintSHA256 = ""; return b },
-			"identifies what was presented",
+			"still carries a chain",
+		},
+		{
+			"a row saying nothing was presented and calling the chain complete",
+			func() TLSHandshake {
+				b := aCompletedRow()
+				b.LeafFingerprintSHA256, b.Chain = "", nil
+				return b
+			},
+			"calls the chain complete",
+		},
+		{
+			"a row saying nothing was presented and comparing it with the first address",
+			func() TLSHandshake {
+				b := aCompletedRow()
+				same := true
+				b.LeafFingerprintSHA256, b.Chain, b.ChainComplete = "", nil, false
+				b.MatchesFirstAddress = &same
+				return b
+			},
+			"still compares what it presented",
 		},
 		{
 			// The row carrying the chain IS the first address, so comparing it
@@ -185,12 +209,16 @@ func TestTheTLSBodyRefusesWhatItMustNotCarry(t *testing.T) {
 			// to support.
 			"a certificate with no fingerprint",
 			func() TLSHandshake {
+				// THE SECOND CERTIFICATE, so that the leaf keeps its fingerprint
+				// and this case still asks about the loop rather than about the
+				// row saying nothing was presented - OBS81, applied to a fixture.
 				b := aCompletedRow()
-				b.Chain[0].FingerprintSHA256 = ""
-				b.LeafFingerprintSHA256 = ""
+				issuer := aCertificate()
+				issuer.FingerprintSHA256 = ""
+				b.Chain = append(b.Chain, issuer)
 				return b
 			},
-			"identifies what was presented",
+			"with no fingerprint",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -222,6 +250,17 @@ func TestTheTLSBodyAcceptsTheRowsItMustAccept(t *testing.T) {
 		{"the first address, carrying the chain", aCompletedRow()},
 		{"a later address, carrying the comparison", aComparingRow()},
 		{"an address where no handshake happened", anUnfinishedRow()},
+		// OBS78, ADR66, AND THIS IS THE ROW THE OLD CONTRACT REFUSED. A handshake
+		// completes and presents no certificate at all under TLS 1.3 session
+		// resumption and under the anonymous suites. The old rule threw the row
+		// away for carrying no leaf fingerprint - and a refused finding discards
+		// the WHOLE layer, so the report announced "the layer broke its own
+		// contract" about a server that had behaved legally. The family of ADR47.
+		{"a handshake that completed and presented nothing", func() TLSHandshake {
+			b := aCompletedRow()
+			b.LeafFingerprintSHA256, b.Chain, b.ChainComplete = "", nil, false
+			return b
+		}()},
 		// ADR47, AND THIS IS THE ROW THE OLD CONTRACT REFUSED. A leaf whose
 		// identity lives only in a critical subjectAltName has an EMPTY subject,
 		// and RFC 5280 section 4.1.2.6 does not merely permit that - it requires

@@ -9,8 +9,6 @@
 package render
 
 import (
-	"fmt"
-
 	"github.com/donislawdev/certdoctor/internal/core/status"
 )
 
@@ -103,15 +101,34 @@ const (
 	GlyphUnicode
 )
 
+// unknownAppearance is what a status outside the vocabulary renders as - P3-6.
+//
+// IT CANNOT HAPPEN AND IT USED TO PANIC ANYWAY, and those two facts together are
+// the whole argument. A status outside the four is a defect in our own code, and
+// the registry test in this package fails the moment one appears - at build
+// time, where a defect belongs. Panicking about it at RUN time instead killed a
+// report that had already been gathered: every layer walked, every store read,
+// every certificate fetched, and then no output at all and an exit code from
+// outside the table.
+//
+// IT IS DELIBERATELY UGLY. A row that reads "??" beside an unrecognised word is
+// a report somebody can still act on and cannot mistake for a normal one, which
+// is the opposite trade from a plausible-looking substitute.
+//
+// ITS COLOUR IS DELIBERATELY NOT ONE OF THE FOUR. Paint looks the colour up and
+// finds nothing, so the text comes back unpainted - which is the same answer
+// this branch would want and is reached without a second rule saying so.
+var unknownAppearance = Appearance{Glyph: "??", ASCII: "??", Color: Color("")}
+
 // Of returns the appearance of a status.
 //
-// It panics on a status outside the vocabulary, because that can only happen if
-// a caller invented a value instead of using a constant - a defect in our own
-// code, never bad input from the machine being diagnosed.
+// A STATUS OUTSIDE THE VOCABULARY RENDERS AS unknownAppearance RATHER THAN
+// KILLING THE RUN - P3-6, and see the comment there for why the case cannot
+// arise and is handled anyway.
 func Of(s status.Status) Appearance {
 	a, ok := dictionary[s]
 	if !ok {
-		panic(fmt.Sprintf("render: no appearance declared for status %q", string(s)))
+		return unknownAppearance
 	}
 	return a
 }
@@ -140,7 +157,10 @@ func Paint(s status.Status, m ColorMode, text string) string {
 	}
 	sequence, ok := ansi[Of(s).Color]
 	if !ok {
-		panic(fmt.Sprintf("render: no escape sequence declared for colour %q", string(Of(s).Color)))
+		// UNPAINTED RATHER THAN DEAD - P3-6. Colour never carries meaning on its
+		// own in this program, so text with no escape sequence around it says
+		// exactly what it said before: the marker and the label are the verdict.
+		return text
 	}
 	return sequence + text + reset
 }

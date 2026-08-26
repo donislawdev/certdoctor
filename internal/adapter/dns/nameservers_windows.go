@@ -134,6 +134,21 @@ func openKey(path string) (syscall.Handle, error) {
 	return handle, err
 }
 
+// stringKind reports whether a registry value of this type can be read back as
+// a string - P3-4.
+//
+// IT IS ITS OWN FUNCTION SO THAT THE DECISION CAN BE ASSERTED. The read around
+// it needs a real registry handle, and a test that had to plant a value of the
+// wrong type would be a test that writes to the machine it runs on.
+//
+// Types from winreg.h, the same source as errNoMoreItems: REG_SZ is 1 and
+// REG_EXPAND_SZ is 2. REG_MULTI_SZ is deliberately NOT here: UTF16ToString stops
+// at the first NUL, so it would return the first string of several and look like
+// a whole answer.
+func stringKind(kind uint32) bool {
+	return kind == syscall.REG_SZ || kind == syscall.REG_EXPAND_SZ
+}
+
 func readString(key syscall.Handle, name string) (string, error) {
 	valueName, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
@@ -142,6 +157,19 @@ func readString(key syscall.Handle, name string) (string, error) {
 	var kind, size uint32
 	if err := syscall.RegQueryValueEx(key, valueName, nil, &kind, nil, &size); err != nil {
 		return "", err
+	}
+	// THE KIND IS READ AND, SINCE P3-4, ALSO CHECKED. It was asked for and
+	// thrown away, so a value stored as REG_BINARY or REG_DWORD came back
+	// through UTF16ToString as whatever those bytes happen to spell - and this
+	// function's answers become resolver addresses and go into the set of places
+	// this program may connect to. REG_MULTI_SZ is refused for a subtler reason:
+	// UTF16ToString stops at the first NUL, so it would return the first string
+	// of several and look like a complete answer.
+	//
+	// Kinds from winreg.h, the same source as errNoMoreItems below: REG_SZ is 1
+	// and REG_EXPAND_SZ is 2.
+	if !stringKind(kind) {
+		return "", fmt.Errorf("%s is stored as registry type %d rather than as a string, so reading it as one would invent an answer", name, kind)
 	}
 	buffer := make([]uint16, size/2+1)
 	if err := syscall.RegQueryValueEx(key, valueName, nil, &kind, (*byte)(unsafe.Pointer(&buffer[0])), &size); err != nil {
@@ -205,6 +233,40 @@ type fixedInfo struct {
 	EnableDNS     uint32
 }
 
+// systemLibrary loads one DLL from the system directory and from nowhere else -
+// P3-3.
+//
+// WHY THIS ONE NEEDS IT AND THE ONE IN THE RENDERER DOES NOT, MEASURED RATHER
+// THAN ASSUMED. A bare name goes through the loader's search order, and the
+// first directory on that path is the one holding the executable - so a copy
+// planted beside certdoctor.exe would be loaded instead. The exception is a
+// KnownDLL, which the loader takes from the section the system mapped at boot
+// and never searches for. Read from this machine's registry 2026-08-27,
+// HKLM SYSTEM CurrentControlSet Control Session Manager KnownDLLs: 37
+// entries, kernel32.dll among them and iphlpapi.dll NOT. So the call in the
+// renderer is safe as written and this one was not.
+//
+// THE SYSTEM DIRECTORY IS ASKED FOR RATHER THAN GUESSED. %SystemRoot% is an
+// environment variable, and this program is built around not trusting the
+// environment to tell the truth about the machine. GetSystemDirectoryW lives in
+// kernel32, which the paragraph above establishes is safe to load by name.
+//
+// WHY NOT golang.org/x/sys/windows, WHICH HAS NewLazySystemDLL. It is a
+// dependency, and inviolable rule 5 makes that a decision rather than a
+// convenience - for a function this file can write in fifteen lines.
+func systemLibrary(name string) (*syscall.LazyDLL, error) {
+	get := syscall.NewLazyDLL("kernel32.dll").NewProc("GetSystemDirectoryW")
+	if err := get.Find(); err != nil {
+		return nil, fmt.Errorf("GetSystemDirectoryW is not available, so %s could not be loaded from a known place: %w", name, err)
+	}
+	buffer := make([]uint16, syscall.MAX_PATH)
+	written, _, _ := get.Call(uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer)))
+	if written == 0 || written >= uintptr(len(buffer)) {
+		return nil, fmt.Errorf("the system directory could not be established, so %s was not loaded", name)
+	}
+	return syscall.NewLazyDLL(syscall.UTF16ToString(buffer[:written]) + `\` + name), nil
+}
+
 // networkParamsResolvers asks the stack which resolvers it will use.
 //
 // KNOWN LIMIT, READ FROM THE DOCUMENTATION AND NOT MEASURED HERE: this API
@@ -213,7 +275,11 @@ type fixedInfo struct {
 // difference has to be visible rather than smoothed over. The registry side does
 // see the IPv6 branch, so the allowed set is not narrowed by this.
 func networkParamsResolvers() ([]string, error) {
-	proc := syscall.NewLazyDLL("iphlpapi.dll").NewProc("GetNetworkParams")
+	library, err := systemLibrary("iphlpapi.dll")
+	if err != nil {
+		return nil, err
+	}
+	proc := library.NewProc("GetNetworkParams")
 
 	var size uint32
 	// The first call is SUPPOSED to fail and hand back the buffer size. Code 111

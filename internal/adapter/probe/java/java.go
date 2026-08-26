@@ -29,6 +29,15 @@ import (
 // TO TRUST - docs/20 says so at this descriptor, and inviolable rule 15 says it
 // generally: "we could not read this" is not a fact about trust, and reporting
 // it as one would send somebody to fix a store that is fine.
+// IT TRAVELS IN THE CHILD'S ARGUMENT LIST AND THAT IS A DECISION - P3-5 from the
+// external review, left as it is rather than fixed. An argument list is readable
+// by anyone who can list processes on this machine, which is a real property and
+// the reason the review raised it. What it would reveal here is the string
+// "changeit": the value Oracle documents as the initial password of every cacerts
+// file, quoted in this program's own descriptor and in its own README. Hiding a
+// published default costs something real - the only alternatives are a temporary
+// file, which inviolable rule 14 forbids outright, or keytool's interactive
+// prompt, which a diagnostic tool cannot answer.
 const storePassword = "changeit"
 
 // Install is one Java installation with a store we can name.

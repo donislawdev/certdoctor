@@ -47,6 +47,24 @@ func WriteFile(path string, data []byte) error {
 	if err := refuseDevice(path); err != nil {
 		return err
 	}
+	return writeAndRename(path, data)
+}
+
+// writeAndRename is the write itself, with the pre-flight refusal already done.
+//
+// IT IS ITS OWN FUNCTION SO THAT THE CLEANUP CAN BE TESTED - and that is not a
+// convenience, it is the answer to OBS26. The branches that remove a temporary
+// file after a failure had no test that executed them, because there was no
+// portable way to make the write fail from inside this process: the one trick
+// that worked - a destination that is already a directory - is now caught by
+// refuseDevice before anything is created.
+//
+// AND THE BRANCHES STILL HAVE TO WORK. The pre-flight check is a courtesy, not a
+// guarantee: a destination can become a directory between the check and the
+// rename, and a run interrupted mid-write must not leave a file in somebody
+// else's directory either way. A test that reaches past the courtesy is testing
+// the guarantee.
+func writeAndRename(path string, data []byte) error {
 	directory := filepath.Dir(path)
 
 	temporary, err := os.CreateTemp(directory, ".certdoctor-report-*")
@@ -86,7 +104,30 @@ func WriteFile(path string, data []byte) error {
 // there.
 func refuseDevice(path string) error {
 	existing, err := os.Stat(path)
-	if err != nil || existing.Mode()&os.ModeDevice == 0 {
+	if err != nil {
+		// A PATH THAT DOES NOT EXIST YET IS THE ORDINARY CASE. This check is only
+		// about what is already there.
+		return nil
+	}
+	// A DIRECTORY GETS THE SAME ANSWER AND FOR THE SAME REASON - P3-7. Measured
+	// on this machine 2026-08-27, "--out ." said:
+	//
+	//	moving the finished report to .: rename .\.certdoctor-report-1719771881 .:
+	//	Access is denied.
+	//
+	// Every word of that is true and none of it is the answer. It names a
+	// temporary file the person never mentioned, and it says access when the
+	// problem is that a directory is not a file - so a reader goes looking at
+	// permissions. Naming a directory is an ordinary slip, especially with tab
+	// completion, and it deserves a sentence rather than a diagnosis of the
+	// wrong thing.
+	if existing.IsDir() {
+		return fmt.Errorf(
+			"%s is a directory rather than a file, so there is no name to write the report under. "+
+				"Give a path including a file name, or use - to send the report to standard output",
+			path)
+	}
+	if existing.Mode()&os.ModeDevice == 0 {
 		return nil
 	}
 	return fmt.Errorf(

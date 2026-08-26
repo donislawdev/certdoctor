@@ -90,7 +90,7 @@ func TestTheFourAnswersAreToldApart(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := Parse(c.msg.bytes(), 7, c.msg.question)
+			got, err := Parse(c.msg.bytes(), 7, "example.com", c.msg.question)
 			if err != nil {
 				t.Fatalf("a well formed answer was refused: %v", err)
 			}
@@ -112,7 +112,7 @@ func TestNoDataIsDecidedByRecordsOfTheRequestedType(t *testing.T) {
 	cname := record{kind: 5, class: 1, data: []byte{0xc0, headerLen}}
 	msg := answer{id: 9, question: TypeAAAA, records: []record{cname}}.bytes()
 
-	got, err := Parse(msg, 9, TypeAAAA)
+	got, err := Parse(msg, 9, "example.com", TypeAAAA)
 	if err != nil {
 		t.Fatalf("an answer carrying a CNAME was refused: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestAddressesComeBackInTheOrderTheyArrived(t *testing.T) {
 	four := answer{id: 1, question: TypeA, records: []record{
 		recordA(203, 0, 113, 9), recordA(192, 0, 2, 1),
 	}}
-	got, err := Parse(four.bytes(), 1, TypeA)
+	got, err := Parse(four.bytes(), 1, "example.com", TypeA)
 	if err != nil {
 		t.Fatalf("a well formed answer was refused: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestAddressesComeBackInTheOrderTheyArrived(t *testing.T) {
 	}
 
 	six := answer{id: 2, question: TypeAAAA, records: []record{recordAAAA(1)}}
-	got, err = Parse(six.bytes(), 2, TypeAAAA)
+	got, err = Parse(six.bytes(), 2, "example.com", TypeAAAA)
 	if err != nil {
 		t.Fatalf("a well formed answer was refused: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestAddressesComeBackInTheOrderTheyArrived(t *testing.T) {
 // counting it would turn "no address of that type" into "an address arrived".
 func TestARecordOfAnotherClassIsNotCounted(t *testing.T) {
 	chaos := record{kind: TypeA, class: 3, data: []byte{192, 0, 2, 1}}
-	got, err := Parse(answer{id: 3, question: TypeA, records: []record{chaos}}.bytes(), 3, TypeA)
+	got, err := Parse(answer{id: 3, question: TypeA, records: []record{chaos}}.bytes(), 3, "example.com", TypeA)
 	if err != nil {
 		t.Fatalf("an answer carrying another class was refused: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestARecordOfAnotherClassIsNotCounted(t *testing.T) {
 // that looks whole.
 func TestTruncationIsReportedRatherThanHidden(t *testing.T) {
 	msg := answer{id: 4, truncated: true, question: TypeA, records: []record{recordA(192, 0, 2, 1)}}
-	got, err := Parse(msg.bytes(), 4, TypeA)
+	got, err := Parse(msg.bytes(), 4, "example.com", TypeA)
 	if err != nil {
 		t.Fatalf("a truncated answer was refused rather than reported: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestTruncationIsReportedRatherThanHidden(t *testing.T) {
 	}
 
 	whole := answer{id: 4, question: TypeA, records: []record{recordA(192, 0, 2, 1)}}
-	got, err = Parse(whole.bytes(), 4, TypeA)
+	got, err = Parse(whole.bytes(), 4, "example.com", TypeA)
 	if err != nil {
 		t.Fatalf("a well formed answer was refused: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestTruncationIsReportedRatherThanHidden(t *testing.T) {
 func TestAnAnswerToSomebodyElsesQuestionIsRefusedByName(t *testing.T) {
 	msg := answer{id: 1000, question: TypeA, records: []record{recordA(192, 0, 2, 1)}}.bytes()
 
-	_, err := Parse(msg, 1001, TypeA)
+	_, err := Parse(msg, 1001, "example.com", TypeA)
 	if err == nil {
 		t.Fatal("an answer carrying a different identifier was accepted")
 	}
@@ -215,7 +215,7 @@ func TestAQuestionIsNotAnAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a query for an ordinary name could not be built: %v", err)
 	}
-	if _, err := Parse(query, 11, TypeA); err == nil {
+	if _, err := Parse(query, 11, "example.com", TypeA); err == nil {
 		t.Error("a query was read as an answer to itself")
 	}
 }
@@ -252,7 +252,7 @@ func TestTheHostileShapesAreRefusedWithoutPanicking(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, err := Parse(c.msg, 5, TypeA); err == nil {
+			if _, err := Parse(c.msg, 5, "example.com", TypeA); err == nil {
 				t.Error("a malformed packet was read as an answer")
 			}
 		})
@@ -274,13 +274,13 @@ func TestASectionCutShortIsRefusedRatherThanWalkedPast(t *testing.T) {
 		t.Fatalf("an ordinary name could not be encoded: %v", err)
 	}
 	question := append([]byte{0, 5, 0x80, 0, 0, 1, 0, 0, 0, 0, 0, 0}, name...)
-	if _, err := Parse(question, 5, TypeA); err == nil {
+	if _, err := Parse(question, 5, "example.com", TypeA); err == nil {
 		t.Error("a question with no type or class was walked past")
 	}
 
 	// An answer whose name is complete and whose ten byte header is not.
 	answer := append(append([]byte{0, 5, 0x80, 0, 0, 0, 0, 1, 0, 0, 0, 0}, name...), 0, 1, 0, 1)
-	if _, err := Parse(answer, 5, TypeA); err == nil {
+	if _, err := Parse(answer, 5, "example.com", TypeA); err == nil {
 		t.Error("an answer record with a header cut in half was walked past")
 	}
 
@@ -288,7 +288,7 @@ func TestASectionCutShortIsRefusedRatherThanWalkedPast(t *testing.T) {
 	// question's name above and would be reached by a resolver that answered a
 	// question we never sent - which is the case with nothing else guarding it.
 	nameless := []byte{0, 5, 0x80, 0, 0, 0, 0, 1, 0, 0, 0, 0, 60, 'x'}
-	if _, err := Parse(nameless, 5, TypeA); err == nil {
+	if _, err := Parse(nameless, 5, "example.com", TypeA); err == nil {
 		t.Error("an answer record whose name runs past the end of the packet was read")
 	}
 }
@@ -347,7 +347,7 @@ func TestANameThatCannotBeAskedIsRefusedHere(t *testing.T) {
 // package from having an opinion about a list that is not ours. A code we do not
 // recognise is a fact about the resolver, and refusing it would hide it.
 func TestAnUnknownResponseCodeIsReportedAsItself(t *testing.T) {
-	got, err := Parse(answer{id: 6, rcode: 11, question: TypeA}.bytes(), 6, TypeA)
+	got, err := Parse(answer{id: 6, rcode: 11, question: TypeA}.bytes(), 6, "example.com", TypeA)
 	if err != nil {
 		t.Fatalf("an unrecognised response code was refused: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestAnUnknownResponseCodeIsReportedAsItself(t *testing.T) {
 // should have been sixteen would put an invented address in a report.
 func TestARecordOfTheRightTypeWithTheWrongLengthIsRefused(t *testing.T) {
 	short := record{kind: TypeAAAA, class: 1, data: []byte{0x20, 0x01}}
-	if _, err := Parse(answer{id: 8, question: TypeAAAA, records: []record{short}}.bytes(), 8, TypeAAAA); err == nil {
+	if _, err := Parse(answer{id: 8, question: TypeAAAA, records: []record{short}}.bytes(), 8, "example.com", TypeAAAA); err == nil {
 		t.Error("an AAAA record carrying two bytes was read as an address")
 	}
 }
@@ -375,5 +375,84 @@ func TestAskingForATypeNothingCanReadIsRefused(t *testing.T) {
 	}
 	if got := Type(16).String(); got != "TYPE16" {
 		t.Errorf("a type outside the list prints as %q rather than as its number", got)
+	}
+}
+
+// TestAnAnswerToAnotherQuestionIsNotOurs is P3-8, and it is the second half of
+// the defence the unpredictable identifier is the first half of.
+//
+// An identifier is sixteen bits. An off-path answer only has to guess those, and
+// until this check it did not have to match the question at all. RFC 5452
+// section 9.1 names both checks together.
+func TestAnAnswerToAnotherQuestionIsNotOurs(t *testing.T) {
+	whole := answer{id: 42, question: TypeA, records: []record{{kind: TypeA, data: []byte{192, 0, 2, 10}}}}
+
+	// The right identifier, the right type, somebody else's name.
+	if _, err := Parse(whole.bytes(), 42, "elsewhere.test", TypeA); !errors.Is(err, ErrNotOurs) {
+		t.Errorf("an answer about another name came back as %v, want ErrNotOurs", err)
+	}
+	// The right identifier, the right name, another type.
+	if _, err := Parse(whole.bytes(), 42, "example.com", TypeAAAA); !errors.Is(err, ErrNotOurs) {
+		t.Errorf("an answer about another type came back as %v, want ErrNotOurs", err)
+	}
+
+	// THE TWIN, AND IT IS THE REASON THIS CHECK WAS SKIPPED BEFORE. A resolver
+	// may echo the question in any case and stay correct - RFC 4343 - so a byte
+	// comparison would refuse working resolvers. This one folds case.
+	if _, err := Parse(whole.bytes(), 42, "EXAMPLE.COM", TypeA); err != nil {
+		t.Errorf("an answer echoing the question in another case was refused: %v", err)
+	}
+	if _, err := Parse(whole.bytes(), 42, "example.com", TypeA); err != nil {
+		t.Errorf("an ordinary answer was refused: %v", err)
+	}
+	// A trailing dot is the same name, and a person may well type one.
+	if _, err := Parse(whole.bytes(), 42, "example.com.", TypeA); err != nil {
+		t.Errorf("an answer to a name written with a trailing dot was refused: %v", err)
+	}
+}
+
+// TestANameThatRunsOutBeforeTheQuestionDoesIsNotOurs covers the bounds of the
+// question comparison - P3-8.
+//
+// A COMPRESSION POINTER IN A QUESTION IS REFUSED RATHER THAN FOLLOWED. The
+// question section is the first thing in a message, so there is nothing before
+// it to point at: a pointer there is either a malformed packet or somebody being
+// clever, and neither is an answer to our question.
+func TestANameThatRunsOutBeforeTheQuestionDoesIsNotOurs(t *testing.T) {
+	whole := answer{id: 42, question: TypeA, records: []record{{kind: TypeA, data: []byte{192, 0, 2, 10}}}}
+
+	// A name SHORTER than the one asked about: the labels match as far as they
+	// go and then the name ends.
+	if _, err := Parse(whole.bytes(), 42, "example.com.extra", TypeA); !errors.Is(err, ErrNotOurs) {
+		t.Errorf("an answer about a shorter name came back as %v, want ErrNotOurs", err)
+	}
+	// A name LONGER than the one asked about: the wanted labels run out while the
+	// encoded name goes on.
+	if _, err := Parse(whole.bytes(), 42, "example", TypeA); !errors.Is(err, ErrNotOurs) {
+		t.Errorf("an answer about a longer name came back as %v, want ErrNotOurs", err)
+	}
+
+	// A message that ends inside the question's name.
+	cut := whole.bytes()[:headerLen+5]
+	if _, err := Parse(cut, 42, "example.com", TypeA); err == nil {
+		t.Error("a message that stops inside its own question was accepted")
+	}
+
+	// AND THE HELPER IS ASKED DIRECTLY FOR THE ONE CASE Parse CANNOT REACH.
+	// Parse only compares a name whose end it has already found inside the
+	// message, so the bounds check below is unreachable from there - it is what
+	// stands between a future second caller and an index panic on somebody
+	// else's packet. A test through Parse alone would leave it looking exercised
+	// and never run it.
+	if sameName([]byte{3, 'a', 'b', 'c'}, 99, "abc") {
+		t.Error("a name read from past the end of a message was called a match")
+	}
+
+	// A question whose first label is a compression pointer.
+	pointed := whole.bytes()
+	pointed[headerLen] = 0xc0
+	pointed[headerLen+1] = 0x0c
+	if _, err := Parse(pointed, 42, "example.com", TypeA); err == nil {
+		t.Error("a compression pointer in the question section was accepted")
 	}
 }

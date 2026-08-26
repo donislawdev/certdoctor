@@ -508,3 +508,39 @@ func TestSwitchingEveryBudgetOffMeansNoLimitRatherThanNoAttempt(t *testing.T) {
 		}
 	}
 }
+
+// TestAnAttemptFallingOverIsThisLayersDefectRatherThanTheProcessDying is R-1
+// arriving at the layer that has to say what it means.
+//
+// net.Dialer is not code this program owns, and the goroutine it runs on is one
+// the orchestrator's recover cannot see. Before this, a panic there took the
+// whole run down with no report and an exit code from outside the table.
+func TestAnAttemptFallingOverIsThisLayersDefectRatherThanTheProcessDying(t *testing.T) {
+	in := workingInput(func(context.Context, string, int) (io.Closer, error) {
+		panic("the dialler fell over")
+	})
+	in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
+
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown {
+		t.Errorf("an attempt fell over inside this program and the layer said %s", got.Status)
+	}
+	if got.Reason != status.ReasonProbeError {
+		t.Errorf("the reason is %q, and probe_error is what means the probe fell over", got.Reason)
+	}
+	if !strings.Contains(got.Detail, "fell over") {
+		t.Errorf("the sentence does not say what happened: %q", got.Detail)
+	}
+	// AND IT SAYS NOTHING ABOUT ANY ADDRESS. Rows from the same call as a panic
+	// are rows from code we have just watched misbehave.
+	if len(got.Findings) != 0 {
+		t.Errorf("the layer kept %d row(s) from the call that fell over", len(got.Findings))
+	}
+
+	// THE TWIN. An ordinary failure is still a finding about the address rather
+	// than about this program, or this rule would swallow every real refusal.
+	ordinary := Ask(context.Background(), workingInput(connectFailing(errors.New("connection refused"))))
+	if ordinary.Reason == status.ReasonProbeError {
+		t.Errorf("an ordinary refusal came out as this program falling over: %q", ordinary.Detail)
+	}
+}

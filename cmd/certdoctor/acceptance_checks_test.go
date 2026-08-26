@@ -77,13 +77,20 @@ func TestTheShippedBinaryWritesNoFileNobodyAskedFor(t *testing.T) {
 	}
 }
 
-// TestTheShippedBinaryLeavesNoLitterWhenAWriteFails covers the branches OBS26
-// says no test executes, because they cannot be reached portably from inside.
+// TestTheShippedBinaryRefusesADirectoryAndLeavesNoLitter is P3-7 through the
+// binary, and it replaced a check that measured something else.
 //
-// From outside they can: a destination that is an existing DIRECTORY is refused
-// by every platform at the rename, which is exactly the half-finished write
-// whose cleanup nobody had ever run.
-func TestTheShippedBinaryLeavesNoLitterWhenAWriteFails(t *testing.T) {
+// IT USED TO REACH THE HALF-FINISHED WRITE, which was the only portable way in:
+// a destination that is an existing DIRECTORY is refused by every platform at
+// the rename. P3-7 put a refusal in FRONT of that, so the binary never gets
+// there any more - and the old check would have gone on passing while proving
+// nothing, which is the shape OBS81 names. The cleanup it used to cover is
+// reached in process now, through writeAndRename.
+//
+// WHAT IT COVERS INSTEAD IS THE ANSWER A PERSON GETS. Measured before the fix:
+// "moving the finished report to .: rename .\.certdoctor-report-1719771881 .:
+// Access is denied." - true, and about a temporary file nobody mentioned.
+func TestTheShippedBinaryRefusesADirectoryAndLeavesNoLitter(t *testing.T) {
 	dir := t.TempDir()
 	inTheWay := filepath.Join(dir, "report.json")
 	if err := os.Mkdir(inTheWay, 0o755); err != nil {
@@ -100,7 +107,17 @@ func TestTheShippedBinaryLeavesNoLitterWhenAWriteFails(t *testing.T) {
 		t.Errorf("a failed run put %d bytes on standard output", len(r.stdout))
 	}
 	if left := appeared(before, census(t, dir)); len(left) != 0 {
-		t.Errorf("a failed write left %v behind in somebody's directory", left)
+		t.Errorf("a refused write left %v behind in somebody's directory", left)
+	}
+	// AND THE SENTENCE IS OURS RATHER THAN THE OPERATING SYSTEM'S. Without this
+	// assertion the check passes on the old behaviour too - the run failed and
+	// cleaned up after itself either way, and what changed is the only part a
+	// person reads.
+	if !strings.Contains(r.stderr, "is a directory rather than a file") {
+		t.Errorf("the binary does not say what is wrong with the destination: %q", r.stderr)
+	}
+	if strings.Contains(r.stderr, "certdoctor-report-") {
+		t.Errorf("the binary names a temporary file nobody asked for: %q", r.stderr)
 	}
 }
 

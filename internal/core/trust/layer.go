@@ -2,7 +2,9 @@ package trust
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/status"
@@ -60,6 +62,21 @@ type Input struct {
 	// Machine is what a remediation command needs to know about where it will be
 	// run - handed in, never read here.
 	Machine Machine
+	// Now is the clock, and it is a port for the same reason it is one in every
+	// other layer: a budget that read the real clock would behave differently
+	// under test than in production, which is the one place a wrong measurement
+	// is invisible.
+	Now func() time.Time
+	// PerProbe caps ONE probe - R-5.
+	//
+	// WITHOUT IT THIS LAYER ACCUSED THE MACHINE OF ITS OWN ARITHMETIC. A probe
+	// runs somebody else's process, six keytool calls measured at 3.4 s on the
+	// owner's machine, and until now they were handed the run's context and
+	// nothing else. When that context expired every store came back unassessed
+	// and the verdict said access_denied - "certdoctor was not allowed to read
+	// this" - about stores nobody had failed to read. Zero means no cap of its
+	// own, and the share of the layer's remaining time still applies.
+	PerProbe time.Duration
 }
 
 // Result is what this layer establishes.
@@ -77,6 +94,7 @@ const (
 	noLeaf   = "no way to learn what the server's leaf was supplied, so who signed it could not be named"
 	noOS     = "no platform was supplied, so a command this machine could run could not be written"
 	noProbes = "no probes were supplied, so nothing on this machine was asked"
+	noClock  = "no clock was supplied, so no probe could be given a share of the time this layer has left"
 	nothing  = "the server presented no certificate, so there was nothing for any store to judge"
 	noneHere = "no runtime this program knows how to ask was found on this machine"
 )
@@ -108,12 +126,41 @@ func Ask(ctx context.Context, in Input) Result {
 	var rows []row
 	var asked, trusting, unassessed int
 
+	// HOW MANY PROBES ARE LEFT TO ASK, COUNTED BEFORE THE FIRST ONE RUNS - R-5.
+	// The share arithmetic needs a divisor, and one taken inside the loop would
+	// shrink as the loop advanced, so the last probe would be handed everything
+	// that was left - which is the starvation ADR36 removed from L1.
+	left := 0
+	for _, descriptor := range descriptors {
+		if _, present := in.Probes[descriptor.ID]; present {
+			left++
+		}
+	}
+	timedOut := 0
+
 	for _, descriptor := range descriptors {
 		probe, present := in.Probes[descriptor.ID]
 		if !present {
 			continue
 		}
-		stores, err := probe(ctx, chain)
+		probeCtx, done, remaining := in.share(ctx, left)
+		left--
+		if remaining == 0 {
+			// NOT A REFUSAL AND NOT AN EMPTY STORE. Nothing was asked, so nothing
+			// was denied - this row is about our budget.
+			rows = append(rows, unaskable(descriptor, errNoTimeLeft))
+			asked++
+			unassessed++
+			timedOut++
+			continue
+		}
+		stores, err := probe(probeCtx, chain)
+		if done != nil {
+			done()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			timedOut++
+		}
 		if err != nil {
 			// ONE PROBE FAILING DOES NOT SINK THE LAYER. It becomes a row saying
 			// so, because "we could not ask git" is a different fact from "git
@@ -176,8 +223,56 @@ func Ask(ctx context.Context, in Input) Result {
 		findings = append(findings, r.finding())
 	}
 
-	return verdict(findings, asked, trusting, unassessed)
+	return verdict(findings, asked, trusting, unassessed, timedOut)
 }
+
+// errNoTimeLeft is what a probe that never ran carries into its row.
+//
+// It is a value rather than a sentence built at the call site, because the row
+// and the verdict have to agree about which of the two things happened, and a
+// second spelling of it is a second place for one fact.
+var errNoTimeLeft = errors.New("this layer had no time left to ask, so this store was never read")
+
+// share is one probe's slice of whatever the layer has left - R-5, and the
+// arithmetic is ADR36's.
+//
+// IT IS WRITTEN HERE RATHER THAN SHARED WITH L1, AND THE REASON IS MEASURED
+// RATHER THAN AESTHETIC. The two are the same shape and carry different
+// vocabulary - queries against probes - and the mutation register anchors on an
+// exact string inside one named file, so neither copy disarms the other's entry.
+// That is the harm OBS50 measured, and it does not arise here. A THIRD copy
+// would be the moment to extract it.
+//
+// A layer with no deadline at all falls back to the probe's own cap, and to no
+// cap when there is not one - the same two answers, and the same OBS62 trap, as
+// every other budget in this program.
+func (in Input) share(ctx context.Context, probesLeft int) (context.Context, context.CancelFunc, time.Duration) {
+	deadline, set := ctx.Deadline()
+	if !set {
+		if in.PerProbe > 0 {
+			limited, cancel := context.WithTimeout(ctx, in.PerProbe)
+			return limited, cancel, in.PerProbe
+		}
+		return ctx, nil, unlimited
+	}
+	remaining := deadline.Sub(in.Now())
+	if remaining <= 0 {
+		return ctx, nil, 0
+	}
+	if probesLeft > 1 {
+		remaining /= time.Duration(probesLeft)
+	}
+	if in.PerProbe > 0 && in.PerProbe < remaining {
+		remaining = in.PerProbe
+	}
+	limited, cancel := context.WithTimeout(ctx, remaining)
+	return limited, cancel, remaining
+}
+
+// unlimited is the answer for a probe nothing caps at all. It is negative rather
+// than zero because zero means "no time left, do not ask" - OBS62, paid for once
+// already in L1.
+const unlimited = -1
 
 // row is one line of the matrix as first collected, before anything that needs
 // the whole matrix has been worked out.
@@ -246,7 +341,7 @@ func unaskable(descriptor Descriptor, err error) row {
 // binding here for the same reason: a sentence naming only the failures reads as
 // though everything else was fine, and one naming only the unknowns reads as
 // though nothing was established.
-func verdict(findings []report.Finding, asked, trusting, unassessed int) Result {
+func verdict(findings []report.Finding, asked, trusting, unassessed, timedOut int) Result {
 	if asked == 0 {
 		// docs/20 rule 1: a runtime that is not installed sits outside the
 		// matrix. Finding none of them is not a failure of this machine.
@@ -263,7 +358,16 @@ func verdict(findings []report.Finding, asked, trusting, unassessed int) Result 
 		return Result{Status: status.Fail, Detail: fmt.Sprintf(
 			"%d of %d store(s) do not trust the presented chain", distrusting, asked), Findings: findings}
 	case unassessed == asked:
-		return Result{Status: status.Unknown, Reason: status.ReasonAccessDenied, Detail: fmt.Sprintf(
+		// WHICH OF THE TWO HAPPENED, RATHER THAN ONE ANSWER FOR BOTH - R-5.
+		// access_denied says "certdoctor was not allowed to read this", which is
+		// an accusation about the machine's permissions. A layer whose budget ran
+		// out was not refused anything, and sending somebody to look at file
+		// permissions for our own arithmetic is the shape ADR58 removed from L1.
+		reason := status.ReasonAccessDenied
+		if timedOut > 0 {
+			reason = status.ReasonTimeout
+		}
+		return Result{Status: status.Unknown, Reason: reason, Detail: fmt.Sprintf(
 			"none of the %d store(s) found could be assessed", asked), Findings: findings}
 	case unassessed > 0:
 		return Result{Status: status.Warn, Detail: fmt.Sprintf(
@@ -287,6 +391,8 @@ func (in Input) breach() string {
 		return noOS
 	case len(in.Probes) == 0:
 		return noProbes
+	case in.Now == nil:
+		return noClock
 	}
 	return ""
 }

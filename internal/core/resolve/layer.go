@@ -303,7 +303,10 @@ func (in Input) walk(ctx context.Context) Result {
 	sent := 0
 	for _, resolver := range in.Resolvers {
 		for _, recordType := range dnsmsg.AllTypes {
-			finding := in.askOne(ctx, resolver, recordType, counted.total-sent)
+			finding, cutShort := in.askOne(ctx, resolver, recordType, counted.total-sent)
+			if cutShort {
+				counted.truncated++
+			}
 			sent++
 			counted.direct += tally(finding, seen)
 			findings = append(findings, finding)
@@ -335,7 +338,13 @@ func (in Input) walk(ctx context.Context) Result {
 		// run that held one view. The verdict below is reached without a class
 		// instead, which is what the single-lens path already does when the
 		// missing lens is the other one.
-		if len(in.Resolvers) > 0 {
+		// AND NOT FROM AN ANSWER WE KNOW IS SHORT - R-3. The TC bit says the
+		// resolver had more to say than fitted, so comparing what arrived against
+		// the other view can report a split horizon that is really a packet that
+		// did not fit. The rows keep their addresses and keep saying they may be
+		// short: what stops is the comparison, exactly as it stops when there is
+		// only one view to compare - ADR65.
+		if len(in.Resolvers) > 0 && counted.truncated == 0 {
 			counted.divergence = classify(unionOf(findings), finding.NameResolution.Addresses,
 				counted.direct > 0, counted.systemAnswered)
 			finding.NameResolution.Divergence = counted.divergence
@@ -412,7 +421,7 @@ func (in Input) walk(ctx context.Context) Result {
 	// strength of somebody having answered - and "answered" there means a
 	// resolver saying there is no such name. The lens count is not what makes a
 	// name resolve.
-	if counted.divergence == "" && len(found) == 0 && answered > 0 {
+	if counted.divergence == "" && counted.truncated == 0 && len(found) == 0 && answered > 0 {
 		return Result{Status: status.Fail, Detail: in.oneLensDetail(), Findings: findings}
 	}
 
@@ -532,6 +541,10 @@ type tallies struct {
 	systemAnswered bool
 	// divergence is empty when there was no second lens to compare against.
 	divergence report.Divergence
+	// truncated is how many direct answers did not fit - R-3. A short list is a
+	// SUBSET of the truth, so a comparison built on it can invent a difference
+	// that is not there.
+	truncated int
 }
 
 // unionOf folds every direct answer into one set of addresses - ADR31.
@@ -904,6 +917,13 @@ func (in Input) answeredDetail(t tallies) string {
 	if t.divergence != "" {
 		said += fmt.Sprintf(", and %s", t.divergence.Meaning())
 	}
+	// AND A COMPARISON THAT WAS NOT MADE IS SAID OUT LOUD - R-3, inviolable rule
+	// 1. A run whose answers did not fit reads exactly like a run whose views
+	// agreed, unless the sentence carrying the good news admits which question
+	// was left unanswered.
+	if t.truncated > 0 {
+		said += fmt.Sprintf(", and %d answer(s) did not fit, so the two views were not compared", t.truncated)
+	}
 	return said
 }
 
@@ -915,10 +935,15 @@ func (in Input) answeredDetail(t tallies) string {
 // that did less than it promised.
 // queriesLeft counts this query and every one after it, so the share it is given
 // shrinks as the walk goes on and grows again whenever somebody answers early.
-func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.Type, queriesLeft int) report.Finding {
+// IT ALSO SAYS WHETHER THE ANSWER WAS CUT SHORT - R-3. The TC bit means the
+// resolver had more to say than fitted, so the addresses in this row are a
+// SUBSET of the truth. The row has always said so in words; what the layer used
+// to do with them was compare them against the other view as though they were
+// complete.
+func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.Type, queriesLeft int) (report.Finding, bool) {
 	remaining := in.limitFor(ctx, queriesLeft)
 	if remaining == 0 {
-		return in.finding(resolver, recordType, answer{noAnswer: report.NoAnswerNotAsked})
+		return in.finding(resolver, recordType, answer{noAnswer: report.NoAnswerNotAsked}), false
 	}
 
 	// THE IDENTIFIER IS KEPT AND CHECKED AGAINST THE REPLY, and the first version
@@ -934,7 +959,7 @@ func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.T
 		// user typed, not about their network, and it is the same for every
 		// resolver - which the row says by carrying the reason rather than a
 		// response code somebody could read as coming from this resolver.
-		return in.finding(resolver, recordType, answer{noAnswer: report.NoAnswerUnreadableAnswer})
+		return in.finding(resolver, recordType, answer{noAnswer: report.NoAnswerUnreadableAnswer}), false
 	}
 
 	queryCtx := ctx
@@ -949,18 +974,22 @@ func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.T
 	elapsed := in.Now().Sub(started)
 
 	if err != nil {
-		return in.finding(resolver, recordType, answer{noAnswer: reasonFor(err), elapsed: elapsed})
+		return in.finding(resolver, recordType, answer{noAnswer: reasonFor(err), elapsed: elapsed}), false
 	}
-	message, err := dnsmsg.Parse(reply, id, recordType)
+	message, err := dnsmsg.Parse(reply, id, in.Name, recordType)
 	if err != nil {
-		return in.finding(resolver, recordType, answer{noAnswer: report.NoAnswerUnreadableAnswer, elapsed: elapsed})
+		return in.finding(resolver, recordType, answer{
+			noAnswer: report.NoAnswerUnreadableAnswer,
+			stray:    errors.Is(err, dnsmsg.ErrNotOurs),
+			elapsed:  elapsed,
+		}), false
 	}
 	return in.finding(resolver, recordType, answer{
 		code:      message.ResponseCode,
 		truncated: message.Truncated,
 		addresses: message.Addresses,
 		elapsed:   elapsed,
-	})
+	}), message.Truncated
 }
 
 // limitFor is how long one query may take: the shorter of its own limit and its
@@ -1032,6 +1061,14 @@ type answer struct {
 	code      string
 	noAnswer  report.NoAnswer
 	truncated bool
+	// stray says the reply was readable and answered a DIFFERENT question - R-4.
+	// dnsmsg.ErrNotOurs exists to tell that apart from a malformed packet, and
+	// its only consumer used to flatten the two into one sentence. They send a
+	// reader to two different places: a broken resolver, or an answer from
+	// somewhere else on the wire. There is no field for it in the schema and this
+	// does not add one - the difference lives in the sentence, which is where a
+	// reader meets it.
+	stray     bool
 	addresses []string
 	elapsed   time.Duration
 }
@@ -1070,7 +1107,16 @@ func (in Input) finding(resolver string, recordType dnsmsg.Type, a answer) repor
 // that renderer exists.
 func summaryOf(name, resolver string, recordType dnsmsg.Type, a answer) string {
 	if a.noAnswer != "" {
-		return fmt.Sprintf("%s gave no answer for %s %s: %s", resolver, name, recordType, a.noAnswer.Meaning())
+		said := a.noAnswer.Meaning()
+		if a.stray {
+			// R-4. The sentinel was introduced deliberately and then read by
+			// nobody, so this reply came out as "unreadable" - which points at a
+			// broken resolver when what happened is that something else on the
+			// wire answered.
+			said = "a readable reply arrived answering a different question than the one this program asked, " +
+				"so it was not taken as this resolver's answer"
+		}
+		return fmt.Sprintf("%s gave no answer for %s %s: %s", resolver, name, recordType, said)
 	}
 	summary := fmt.Sprintf("%s answered %s for %s %s", resolver, a.code, name, recordType)
 	if a.truncated {

@@ -54,7 +54,7 @@ func FuzzParsingAnAnswerNeverPanics(f *testing.F) {
 			return
 		}
 
-		got, err := Parse(msg, wantID, want)
+		got, err := Parse(msg, wantID, "example.com", want)
 		if err != nil {
 			return
 		}

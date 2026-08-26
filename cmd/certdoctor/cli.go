@@ -173,7 +173,7 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 			Resolution:  resolutionInput(o, env, parsed, found, foundErr, targets),
 			Reach:       reachInput(o, env, parsed, targets),
 			Handshake:   handshakeInput(o, env, parsed, targets),
-			Trust:       trustInput(env),
+			Trust:       trustInput(o, env),
 			Authorise:   authoriser(parsed, targets),
 		})
 	if walkFault != nil {
@@ -777,7 +777,7 @@ func deliver(o *options, env environment, document []byte) *fault {
 // A MISSING PORT PRODUCES AN EMPTY MAP RATHER THAN A PANIC, and L5 reports that
 // as "nothing was asked" - our own omission named as ours, never as a machine
 // with no runtimes on it.
-func trustInput(env environment) trust.Input {
+func trustInput(o *options, env environment) trust.Input {
 	if env.trustProbes == nil {
 		return trust.Input{}
 	}
@@ -787,6 +787,12 @@ func trustInput(env environment) trust.Input {
 		// Both values come from this environment rather than being read inside
 		// the layer, so an assessment stays reproducible from its input.
 		Machine: trust.Machine{OS: env.platform.OS, Home: env.home},
+		// The clock and the per-probe cap, so that a probe running somebody
+		// else's process gets a SHARE of what this layer has left rather than all
+		// of it - R-5. Without them a spent budget came out as access_denied,
+		// which accuses this machine's permissions of our own arithmetic.
+		Now:      env.now,
+		PerProbe: budget(o.probeTimeout),
 	}
 }
 

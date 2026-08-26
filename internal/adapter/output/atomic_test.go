@@ -133,7 +133,12 @@ func TestAFailedRenameLeavesNoTemporaryFileBehind(t *testing.T) {
 		t.Fatalf("setting the destination up as a directory failed: %v", err)
 	}
 
-	if err := WriteFile(occupied, []byte("x")); err == nil {
+	// IT REACHES PAST THE PRE-FLIGHT REFUSAL ON PURPOSE - P3-7 put one in front
+	// of WriteFile, and this test is about what happens when it did not see the
+	// problem: a destination that becomes a directory between the check and the
+	// rename, or a run interrupted mid-write. The courtesy is checked one test
+	// down; this is the guarantee.
+	if err := writeAndRename(occupied, []byte("x")); err == nil {
 		t.Fatal("renaming onto a directory reported success")
 	}
 
@@ -240,4 +245,46 @@ func namesIn(t *testing.T, directory string) []string {
 		names = append(names, entry.Name())
 	}
 	return names
+}
+
+// TestADirectoryIsRefusedWithAnAnswerRatherThanTheOperatingSystemsWords is P3-7.
+//
+// MEASURED ON THIS MACHINE 2026-08-27 BEFORE THE FIX. "--out ." said:
+//
+//	moving the finished report to .: rename .\.certdoctor-report-1719771881 .:
+//	Access is denied.
+//
+// Every word of that is true and none of it is the answer. It names a temporary
+// file the person never mentioned, and it says access when the problem is that a
+// directory is not a file - so a reader goes and looks at permissions. Naming a
+// directory is an ordinary slip, especially with tab completion.
+func TestADirectoryIsRefusedWithAnAnswerRatherThanTheOperatingSystemsWords(t *testing.T) {
+	directory := t.TempDir()
+
+	err := WriteFile(directory, []byte("report"))
+	if err == nil {
+		t.Fatal("a directory was accepted as a destination for the report")
+	}
+	if !strings.Contains(err.Error(), "is a directory rather than a file") {
+		t.Errorf("the refusal does not say what is wrong: %v", err)
+	}
+	if strings.Contains(err.Error(), "certdoctor-report-") {
+		t.Errorf("the refusal names a temporary file nobody asked for: %v", err)
+	}
+	// AND NOTHING WAS LEFT BEHIND. The refusal happens before a temporary file
+	// exists, which is the reason it is at the top of WriteFile rather than
+	// wrapped around the failure further in.
+	entries, readErr := os.ReadDir(directory)
+	if readErr != nil {
+		t.Fatalf("reading the directory back: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Errorf("the refused write left %d file(s) in the directory", len(entries))
+	}
+
+	// THE TWIN. An ordinary path inside that directory still works, or this rule
+	// would refuse every destination.
+	if err := WriteFile(filepath.Join(directory, "report.json"), []byte("report")); err != nil {
+		t.Errorf("an ordinary path was refused: %v", err)
+	}
 }

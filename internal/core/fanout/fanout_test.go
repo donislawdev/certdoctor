@@ -1,6 +1,7 @@
 package fanout
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -202,5 +203,70 @@ func TestNoAttemptsIsNotACallersBugToDiscoverAtRunTime(t *testing.T) {
 		if got := ran.Load(); got != 0 {
 			t.Errorf("a count of %d ran %d attempt(s)", count, got)
 		}
+	}
+}
+
+// TestAnAttemptThatFallsOverIsCaughtRatherThanKillingTheProcess is R-1.
+//
+// The recover in the orchestrator runs on the goroutine that walks the layers
+// and cannot see these. Before this, a panic anywhere under attempt took the
+// process down with no report at all and an exit code from outside the table -
+// and attempt reaches code this program does not own, net.Dialer for L3 and
+// crypto/tls for L4.
+func TestAnAttemptThatFallsOverIsCaughtRatherThanKillingTheProcess(t *testing.T) {
+	ran := make([]bool, 4)
+	err := Over(4, func(i int) {
+		ran[i] = true
+		if i == 2 {
+			panic("somebody else's code fell over")
+		}
+	})
+
+	if err == nil {
+		t.Fatal("an attempt panicked and the run came back clean")
+	}
+	if !strings.Contains(err.Error(), "attempt 2") {
+		t.Errorf("the error does not name which attempt fell over: %v", err)
+	}
+	if !strings.Contains(err.Error(), "somebody else's code fell over") {
+		t.Errorf("the error does not carry what was thrown: %v", err)
+	}
+	// AND THE OTHERS STILL RAN. Walking away from the rest of a wave would leave
+	// sockets being opened behind us, which is the reason there is no early
+	// return in this function at all.
+	for i, did := range ran {
+		if !did {
+			t.Errorf("attempt %d never ran because another one fell over", i)
+		}
+	}
+}
+
+// TestARunWhereNothingFallsOverComesBackClean is the twin, and without it the
+// test above is satisfied by a function that always reports a panic.
+func TestARunWhereNothingFallsOverComesBackClean(t *testing.T) {
+	if err := Over(3, func(int) {}); err != nil {
+		t.Errorf("nothing panicked and the run reported %v", err)
+	}
+	if err := Over(0, func(int) { t.Error("an attempt ran for a count of zero") }); err != nil {
+		t.Errorf("a count of zero reported %v", err)
+	}
+}
+
+// TestTheAttemptNamedIsTheFirstByIndexRatherThanByTiming keeps one run from
+// naming a different address every time it is repeated.
+func TestTheAttemptNamedIsTheFirstByIndexRatherThanByTiming(t *testing.T) {
+	err := Over(4, func(i int) {
+		if i == 3 {
+			panic("late")
+		}
+		if i == 1 {
+			panic("early")
+		}
+	})
+	if err == nil {
+		t.Fatal("two attempts panicked and the run came back clean")
+	}
+	if !strings.Contains(err.Error(), "attempt 1") {
+		t.Errorf("the error names an attempt other than the first by index: %v", err)
 	}
 }

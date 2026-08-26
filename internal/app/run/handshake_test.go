@@ -370,15 +370,31 @@ func TestABrokenHandshakeAnswerReachesNoTrustStore(t *testing.T) {
 	var shook []string
 	w := seamWiring("example.com", 443, func([]string) {}, &shook)
 	w.Handshake.Shake = func(context.Context, string, int, string) (handshake.Presented, error) {
-		// Completed, and nothing presented. Session resumption in TLS 1.3 and the
-		// anonymous suites both do this.
-		return handshake.Presented{Completed: true, Version: "TLS 1.3"}, nil
+		// A CERTIFICATE WITH NO ISSUER, WHICH RFC 5280 SECTION 4.1.2.4 FORBIDS -
+		// so the row can only be a malformed certificate or a defect of ours, and
+		// the contract refuses it either way.
+		//
+		// THE VEHICLE CHANGED WITH ADR66 AND THE TEST DID NOT. It used to be a
+		// completed handshake presenting nothing, which the contract refused - and
+		// that was the refusal OBS78 measured as wrong, because TLS 1.3 session
+		// resumption and the anonymous suites produce exactly it. This test is
+		// about the SEAM, not about which row is illegal, so it needs a row that
+		// is still illegal.
+		return handshake.Presented{
+			Completed: true,
+			Version:   "TLS 1.3",
+			Chain: []handshake.Certificate{{
+				Subject:           "CN=partner.test",
+				FingerprintSHA256: "aa",
+			}},
+		}, nil
 	}
 
 	// L5 wired only as far as it needs to be to look at the chain at all: it
 	// refuses on its own missing plumbing before it ever reads one.
 	var askedAbout [][]byte
 	w.Trust = coretrust.Input{
+		Now:     func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
 		Machine: coretrust.Machine{OS: "testos"},
 		Probes: map[string]coretrust.Probe{
 			"git": func(_ context.Context, chain [][]byte) ([]report.TrustStore, error) {

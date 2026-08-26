@@ -565,3 +565,75 @@ func TestNoHandshakeHandsOnNoLeaf(t *testing.T) {
 		t.Error("no handshake completed and a chain was handed on anyway")
 	}
 }
+
+// TestAnAttemptFallingOverIsThisLayersDefectRatherThanTheProcessDying is R-1 at
+// L4, where the code that is not ours is crypto/tls handling a stranger's
+// certificate.
+func TestAnAttemptFallingOverIsThisLayersDefectRatherThanTheProcessDying(t *testing.T) {
+	in := workingInput(func(context.Context, string, int, string) (Presented, error) {
+		panic("the handshake fell over")
+	})
+	in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
+
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown {
+		t.Errorf("an attempt fell over inside this program and the layer said %s", got.Status)
+	}
+	if got.Reason != status.ReasonProbeError {
+		t.Errorf("the reason is %q, and probe_error is what means the probe fell over", got.Reason)
+	}
+	if len(got.Findings) != 0 {
+		t.Errorf("the layer kept %d row(s) from the call that fell over", len(got.Findings))
+	}
+
+	// THE TWIN. A server rejecting the handshake is a fact about the server.
+	ordinary := Ask(context.Background(), workingInput(func(context.Context, string, int, string) (Presented, error) {
+		return Presented{}, ErrRejected
+	}))
+	if ordinary.Reason == status.ReasonProbeError {
+		t.Errorf("an ordinary rejection came out as this program falling over: %q", ordinary.Detail)
+	}
+}
+
+// TestAHandshakeThatPresentedNothingIsAnOrdinaryRow is OBS78 end to end - ADR66.
+//
+// TLS 1.3 session resumption and the anonymous suites complete a handshake and
+// present no certificate. The report contract used to refuse such a row for
+// carrying no leaf fingerprint, and a refused finding discards the WHOLE layer -
+// so a legal server produced "the layer broke its own contract", about us.
+//
+// NOT MEASURED AGAINST A REAL SERVER, and that is said out loud: the fixture
+// shows what the contract does with such a row, not that somebody sent one.
+func TestAHandshakeThatPresentedNothingIsAnOrdinaryRow(t *testing.T) {
+	in := workingInput(func(context.Context, string, int, string) (Presented, error) {
+		return Presented{Completed: true, Version: "TLS 1.3", CipherSuite: 4865}, nil
+	})
+	in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
+
+	got := Ask(context.Background(), in)
+	rows := rowsOf(got)
+	if len(rows) != 2 {
+		t.Fatalf("%d row(s) for two addresses", len(rows))
+	}
+	for i, row := range rows {
+		if !row.Completed {
+			t.Errorf("row %d says the handshake did not complete", i)
+		}
+		if row.LeafFingerprintSHA256 != "" || len(row.Chain) != 0 || row.ChainComplete {
+			t.Errorf("row %d describes a certificate nobody presented: %+v", i, row)
+		}
+		// AND THE LATER ADDRESS DOES NOT COMPARE WHAT WAS NEVER PRESENTED. "The
+		// same certificate as the first address" about two rows holding none is a
+		// measurement of two things neither of which happened.
+		if row.MatchesFirstAddress != nil {
+			t.Errorf("row %d compares a certificate against the first address and has none", i)
+		}
+	}
+	// AND THE ROWS SURVIVE THE CONTRACT, which is the whole point: a refused
+	// finding takes every other row of this layer with it.
+	for _, finding := range got.Findings {
+		if breach := finding.Breach(); breach != "" {
+			t.Errorf("a legal row was refused by the contract: %s", breach)
+		}
+	}
+}

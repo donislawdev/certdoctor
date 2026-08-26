@@ -21,10 +21,13 @@ const atOnce = fanout.AtOnce
 // one rule; written once for L3 and again for L4 it would be one rule in two
 // places, which is what OBS50 measured the cost of. So this file says what to do
 // per address and the shared package says how many at a time.
-func (in Input) fanOut(ctx context.Context, addresses []string) []report.Finding {
+func (in Input) fanOut(ctx context.Context, addresses []string) ([]report.Finding, error) {
 	findings := make([]report.Finding, len(addresses))
-	fanout.Over(len(addresses), func(i int) {
+	// AN ATTEMPT THAT FELL OVER COMES BACK AS AN ERROR AND NOT AS A ROW - R-1.
+	// The slot of a goroutine that panicked holds a zero-valued finding, which
+	// the report contract refuses, so a row would be this layer reporting its own
+	// defect as a fact about one address. The caller says what it means instead.
+	return findings, fanout.Over(len(addresses), func(i int) {
 		findings[i] = in.tryOne(ctx, addresses[i])
 	})
-	return findings
 }

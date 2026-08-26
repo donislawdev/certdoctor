@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/status"
@@ -77,6 +78,7 @@ func full() Input {
 		PresentedLeaf:  leaf,
 		Machine:        aMachine(),
 		Probes:         map[string]Probe{"git": nil},
+		Now:            func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
 	}
 }
 
@@ -404,5 +406,131 @@ func TestARefusedCommandSaysWhyOnItsRow(t *testing.T) {
 		if strings.Contains(finding.Summary, "no command is offered") {
 			t.Errorf("a row with a command still explains why it has none: %q", finding.Summary)
 		}
+	}
+}
+
+// TestAProbeGetsAShareOfWhatIsLeftRatherThanAllOfIt is R-5.
+//
+// A probe runs somebody else's process - six keytool calls measured at 3.4 s on
+// the owner's machine - and until now each was handed the run's whole context.
+// The first slow one would then spend everything the layer had, and the rest
+// would come back unassessed with nobody having refused them anything. That is
+// the starvation ADR36 removed from L1, arriving one layer down.
+func TestAProbeGetsAShareOfWhatIsLeftRatherThanAllOfIt(t *testing.T) {
+	var handed []time.Time
+	record := func(ctx context.Context, _ [][]byte) ([]report.TrustStore, error) {
+		deadline, set := ctx.Deadline()
+		if !set {
+			t.Error("a probe was handed a context with no deadline on a run that has one")
+		}
+		handed = append(handed, deadline)
+		return nil, nil
+	}
+
+	in := full()
+	in.Now = time.Now
+	in.Probes = map[string]Probe{descriptors[0].ID: record, descriptors[1].ID: record}
+
+	layer := time.Now().Add(2 * time.Second)
+	ctx, cancel := context.WithDeadline(context.Background(), layer)
+	defer cancel()
+	Ask(ctx, in)
+
+	if len(handed) != 2 {
+		t.Fatalf("%d probe(s) ran, want 2", len(handed))
+	}
+	// With two probes to ask, the first may have half of what is left - never all
+	// of it. Half of two seconds is a second, so anything later than 1.5 seconds
+	// from now is the whole budget handed to the first caller.
+	if !handed[0].Before(layer.Add(-500 * time.Millisecond)) {
+		t.Errorf("the first probe was handed the layer's whole remaining time")
+	}
+}
+
+// TestASpentBudgetIsNotReportedAsAPermissionProblem is the half of R-5 that
+// reaches the reader.
+//
+// access_denied means "certdoctor was not allowed to read this", which is an
+// accusation about this machine's permissions. A layer whose budget ran out was
+// not refused anything, and sending somebody to look at file permissions for our
+// own arithmetic is the shape ADR58 removed from L1.
+func TestASpentBudgetIsNotReportedAsAPermissionProblem(t *testing.T) {
+	in := full()
+	in.Now = time.Now
+	in.Probes = map[string]Probe{descriptors[0].ID: func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		t.Error("a probe ran on a budget that was already spent")
+		return nil, nil
+	}}
+
+	spent, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	got := Ask(spent, in)
+	if got.Status != status.Unknown {
+		t.Errorf("a layer that asked nothing answered %s", got.Status)
+	}
+	if got.Reason != status.ReasonTimeout {
+		t.Errorf("the reason is %q, and nobody refused this program anything", got.Reason)
+	}
+
+	// THE TWIN, AND WITHOUT IT access_denied COULD DISAPPEAR ALTOGETHER. A store
+	// that really could not be read still says so.
+	refused := probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		return nil, errors.New("open cacerts: permission denied")
+	})
+	if got = Ask(context.Background(), refused); got.Reason != status.ReasonAccessDenied {
+		t.Errorf("a store that could not be read came out as %q", got.Reason)
+	}
+}
+
+// TestTheBudgetFallsBackTheSameWayEveryOtherOneInThisProgramDoes covers the two
+// answers a layer with no deadline of its own can give - R-5, OBS62.
+//
+// ZERO AND UNLIMITED ARE OPPOSITE ANSWERS AND THE TRAP IS REAL. OBS62 was paid
+// for once already in L1, where "no limit" answered zero and every call site read
+// that as "no time left, do not ask" - so the run that switched both budgets off
+// asked nothing at all.
+func TestTheBudgetFallsBackTheSameWayEveryOtherOneInThisProgramDoes(t *testing.T) {
+	asked := 0
+	in := full()
+	in.Now = time.Now
+	in.Probes = map[string]Probe{descriptors[0].ID: func(ctx context.Context, _ [][]byte) ([]report.TrustStore, error) {
+		asked++
+		if _, set := ctx.Deadline(); set != (in.PerProbe > 0) {
+			t.Errorf("with PerProbe=%v the probe got a deadline=%v", in.PerProbe, set)
+		}
+		return nil, nil
+	}}
+
+	// No layer deadline and no cap of its own: nothing limits this probe, and it
+	// still has to be ASKED.
+	Ask(context.Background(), in)
+
+	// No layer deadline and a cap of its own: the cap is the whole answer.
+	in.PerProbe = 3 * time.Second
+	Ask(context.Background(), in)
+
+	if asked != 2 {
+		t.Errorf("%d probe(s) ran across both fallbacks, want 2", asked)
+	}
+}
+
+// TestAMissingClockIsOurOmissionAndReadsAsOurs covers the port added with R-5.
+//
+// A forgotten port has to read as our own gap rather than as a machine with no
+// runtimes on it - the same rule every other port in this layer follows.
+func TestAMissingClockIsOurOmissionAndReadsAsOurs(t *testing.T) {
+	in := probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		t.Error("a probe ran on a layer that has no clock")
+		return nil, nil
+	})
+	in.Now = nil
+
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown || got.Reason != status.ReasonProbeError {
+		t.Errorf("a missing clock produced %s/%s, want unknown/probe_error", got.Status, got.Reason)
+	}
+	if !strings.Contains(got.Detail, "clock") {
+		t.Errorf("the sentence does not name the missing port: %q", got.Detail)
 	}
 }

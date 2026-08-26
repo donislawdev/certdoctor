@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
@@ -69,15 +68,17 @@ func selectedBy(install Install, javaHome string, pathDirs []string) []string {
 	var by []string
 	root := filepath.Clean(install.Root)
 
-	if javaHome != "" && filepath.Clean(javaHome) == root {
+	// JAVA_HOME GOES THROUGH THE SAME COMPARISON AS PATH - P3-2. It is a path
+	// spelled by a person or by an installer, so it carries the same case
+	// difference, and an equality test would answer that JAVA_HOME points at
+	// nothing on a machine where it points here.
+	if javaHome != "" && probe.SameOrInside(javaHome, root) && probe.SameOrInside(root, javaHome) {
 		by = append(by, "JAVA_HOME")
 	}
 	for _, dir := range pathDirs {
-		cleaned := filepath.Clean(dir)
-		// THE SAME SEGMENT RULE AS THE git PROBE, and for the same measured
-		// reason: a neighbouring install whose name differs by one character
-		// starts with this one's path as TEXT.
-		if cleaned == root || strings.HasPrefix(cleaned, root+string(filepath.Separator)) {
+		// ONE RULE, ONE PLACE - the git probe asks the same function. A second
+		// copy of it is the shape OBS50 has measured four times.
+		if probe.SameOrInside(dir, root) {
 			by = append(by, "PATH")
 			break
 		}

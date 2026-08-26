@@ -1823,3 +1823,80 @@ func TestTheSingleLensVerdictAlsoNeedsAWalkThatFinishedLooking(t *testing.T) {
 		t.Errorf("the sentence does not name the only lens this run had: %q", got.Detail)
 	}
 }
+
+// TestATruncatedAnswerIsNotComparedAgainstTheOtherView is R-1's neighbour R-3.
+//
+// The TC bit says the resolver had more to say than fitted, so the addresses in
+// that row are a SUBSET of the truth. Comparing a subset against the other view
+// reports a split horizon that is really a packet that did not fit - and split
+// horizon is exactly the fault a reader would act on.
+func TestATruncatedAnswerIsNotComparedAgainstTheOtherView(t *testing.T) {
+	in := workingInput(answering(func(id uint16, recordType dnsmsg.Type) ([]byte, error) {
+		reply := replyWith(id, recordType, 0, addressFor(recordType))
+		reply[2] |= 0x02 // TC
+		return reply, nil
+	}))
+	// A system view holding an address our short list does not carry. Without
+	// this rule that difference is classified and reported.
+	in.System = systemAnswering(SystemAnswer{Addresses: []string{"203.0.113.99"}})
+
+	got := Ask(context.Background(), in)
+	if row := systemRowOf(t, got); row.NameResolution.Divergence != "" {
+		t.Errorf("an answer that did not fit was still compared, as %q", row.NameResolution.Divergence)
+	}
+	if got.Status == status.Warn {
+		t.Errorf("a packet that did not fit was reported as a difference between the views: %q", got.Detail)
+	}
+	// AND THE SILENCE IS BROKEN - inviolable rule 1. A comparison that was not
+	// made has to be said, or this reads like two views that agreed.
+	if !strings.Contains(got.Detail, "did not fit") {
+		t.Errorf("the sentence does not say the comparison was skipped: %q", got.Detail)
+	}
+	// The row keeps its addresses and keeps saying they may be short.
+	if !strings.Contains(got.Findings[0].Summary, "truncated") {
+		t.Errorf("the row stopped saying the answer was cut short: %q", got.Findings[0].Summary)
+	}
+
+	// THE TWIN. The same two views, nothing truncated, and the difference IS
+	// classified - or this rule would have removed the comparison altogether.
+	whole := workingInput(answering(func(id uint16, recordType dnsmsg.Type) ([]byte, error) {
+		return replyWith(id, recordType, 0, addressFor(recordType)), nil
+	}))
+	whole.System = systemAnswering(SystemAnswer{Addresses: []string{"203.0.113.99"}})
+	if row := systemRowOf(t, Ask(context.Background(), whole)); row.NameResolution.Divergence == "" {
+		t.Error("two complete views were not compared at all")
+	}
+}
+
+// TestAReplyToADifferentQuestionIsNotCalledUnreadable is R-4.
+//
+// dnsmsg.ErrNotOurs was introduced deliberately to tell a stray datagram from a
+// malformed packet, and its only consumer folded the two into one sentence.
+// They send a reader to two different places: a broken resolver, or something
+// else on the wire answering.
+func TestAReplyToADifferentQuestionIsNotCalledUnreadable(t *testing.T) {
+	in := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		// A well-formed reply carrying somebody else's identifier.
+		return replyWith(31337, dnsmsg.TypeA, 0, addressFor(dnsmsg.TypeA)), nil
+	})
+	in.System = nil
+
+	got := Ask(context.Background(), in)
+	if len(got.Findings) == 0 {
+		t.Fatal("no rows at all, so this test asked nothing")
+	}
+	if !strings.Contains(got.Findings[0].Summary, "different question") {
+		t.Errorf("a reply to another question reads as %q", got.Findings[0].Summary)
+	}
+
+	// THE TWIN. A packet that really is malformed must NOT gain the new sentence,
+	// or the distinction is a word this layer prints about everything.
+	malformed := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		return []byte{1, 2, 3}, nil
+	})
+	malformed.System = nil
+	got = Ask(context.Background(), malformed)
+	if strings.Contains(got.Findings[0].Summary, "different question") {
+		t.Errorf("a malformed packet was reported as an answer to another question: %q", got.Findings[0].Summary)
+	}
+}

@@ -253,7 +253,14 @@ func Ask(ctx context.Context, in Input) Result {
 		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: detail}
 	}
 
-	shown := in.fanOut(ctx, addresses)
+	shown, fell := in.fanOut(ctx, addresses)
+	if fell != nil {
+		// THE SAME RULE AS L3, AND crypto/tls IS WHY IT IS NEEDED HERE - R-1.
+		// This layer hands somebody else's certificate to code this program does
+		// not own, on a goroutine the orchestrator's recover cannot see.
+		return Result{Status: status.Unknown, Reason: status.ReasonProbeError,
+			Detail: "this layer could not finish: " + fell.Error()}
+	}
 	result := in.grade(addresses, shown)
 	result.Presented = presentedOf(shown)
 	result.Leaf = presentedLeafOf(shown)

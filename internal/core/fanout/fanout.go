@@ -17,7 +17,10 @@
 // layers use it without either of them learning about the other.
 package fanout
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // AtOnce caps how many attempts are in flight at the same time.
 //
@@ -53,14 +56,31 @@ const AtOnce = 8
 // EVERY GOROUTINE IS WAITED FOR BEFORE THIS RETURNS, INCLUDING WHEN ATTEMPTS
 // FAIL. There is no early return in here at all, which is deliberate rather than
 // incidental: leaving on the first failure would walk away from sockets still
-// being opened behind us, and a panic inside a goroutine is not caught by the
-// recover in the orchestrator - the process would die with no report and no exit
-// code from the table, which is the argument ADR18 used to keep masking out of
-// the layers. So attempt must not panic, and nothing here returns early.
+// being opened behind us.
+//
+// A PANIC INSIDE ONE OF THESE GOROUTINES IS CAUGHT HERE AND NOWHERE ELSE - R-1.
+// The recover in the orchestrator runs on the goroutine that walks the layers
+// and cannot see these, so before this existed a panic anywhere under attempt
+// killed the process with no report at all and an exit code from outside the
+// table - the same failure ADR18 refused to accept from a shared map. And
+// attempt reaches code this program does not own: net.Dialer for L3, crypto/tls
+// for L4. "attempt must not panic" was a rule with nothing enforcing it, about
+// code we do not write.
+//
+// IT COMES BACK AS AN ERROR RATHER THAN AS A RESULT, and that is the line this
+// package will not cross: it still knows nothing about findings, addresses or
+// layers, so it cannot say what a fallen attempt MEANS. The caller decides that,
+// with its own vocabulary.
 //
 // A count of zero or less runs nothing and returns, rather than being a caller's
 // bug to discover at run time.
-func Over(count int, attempt func(i int)) {
+func Over(count int, attempt func(i int)) error {
+	// ONE SLOT PER ATTEMPT, WRITTEN BY THE GOROUTINE THAT OWNS IT - the same
+	// doctrine as the caller's results, and the reason there is no mutex here.
+	// A lock would be a wider exemption from the concurrency guard for a fact
+	// that needs none.
+	fell := make([]any, max(count, 0))
+
 	// WAVES ARE A LOOP AND NOT A SEMAPHORE, which is what keeps the guard's
 	// exemption this narrow: a semaphore on a channel would need the very
 	// primitive ADR43 refused. A caller re-reading its budget inside attempt can
@@ -77,9 +97,26 @@ func Over(count int, attempt func(i int)) {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
+				defer func() {
+					if cause := recover(); cause != nil {
+						fell[i] = cause
+					}
+				}()
 				attempt(i)
 			}(i)
 		}
 		wg.Wait()
 	}
+
+	// THE FIRST ONE, IN INDEX ORDER RATHER THAN IN THE ORDER THEY HAPPENED. Two
+	// attempts falling over in one run would otherwise name whichever goroutine
+	// lost the race, and the same run would report a different address twice in
+	// a row - the order problem this whole package exists to avoid, arriving
+	// through the error instead of through the results.
+	for i, cause := range fell {
+		if cause != nil {
+			return fmt.Errorf("attempt %d fell over inside this program: %v", i, cause)
+		}
+	}
+	return nil
 }

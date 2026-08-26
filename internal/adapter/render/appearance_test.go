@@ -155,13 +155,36 @@ func TestPaintAlwaysResetsAfterItself(t *testing.T) {
 	}
 }
 
-func TestOfPanicsOnAnInventedStatus(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("Of accepted a status outside the vocabulary - a renderer would then show a made-up appearance")
+// TestAnInventedStatusIsVISIBLYOddRatherThanFatal is P3-6, and it replaces a
+// test that pinned a panic.
+//
+// THE CASE STILL CANNOT ARISE AND IS STILL HANDLED. A status outside the four is
+// a defect in our own code, and the registry test in this file fails the moment
+// one appears - at build time, where a defect belongs. What changed is what
+// happens at RUN time: a panic there killed a report that had already been
+// gathered, every layer walked and every store read, and left no output at all
+// and an exit code from outside the table.
+//
+// WHAT IT MUST NOT BECOME is a plausible-looking substitute. A reader has to be
+// unable to mistake this row for a normal one.
+func TestAnInventedStatusIsVisiblyOddRatherThanFatal(t *testing.T) {
+	invented := status.Status("SKIPPED")
+
+	got := Of(invented)
+	if got.Glyph != "??" || got.ASCII != "??" {
+		t.Errorf("an invented status renders as %+v, which a reader could mistake for a real verdict", got)
+	}
+	for _, s := range status.All {
+		if Of(s).Glyph == got.Glyph {
+			t.Errorf("the fallback appearance is the same as %q, so an invented status is indistinguishable", s)
 		}
-	}()
-	Of(status.Status("SKIPPED"))
+	}
+
+	// AND PAINTING IT LEAVES THE TEXT ALONE rather than emitting an escape
+	// sequence for a colour nobody declared.
+	if painted := Paint(invented, ColorOn, "text"); painted != "text" {
+		t.Errorf("an invented status painted its text as %q", painted)
+	}
 }
 
 // TestAllFourStatusesSideBySide is the screen with every control on it, in test

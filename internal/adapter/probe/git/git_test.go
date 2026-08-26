@@ -80,7 +80,7 @@ func TestTheConfigParserReadsOnlyWhatItUnderstands(t *testing.T) {
 	sslBackend = openssl
 	sslCAInfo = C:/bundle.crt
 `
-	values := parse(sourceOf(map[string]string{"cfg": config}), "cfg")
+	values, _ := parse(sourceOf(map[string]string{"cfg": config}), "cfg")
 	if values["http.sslbackend"] != "openssl" {
 		t.Errorf("backend %q, want openssl - keys are lower cased so case in the file cannot change the answer", values["http.sslbackend"])
 	}
@@ -96,7 +96,7 @@ func TestTheConfigParserReadsOnlyWhatItUnderstands(t *testing.T) {
 }
 
 func TestAMissingConfigIsNotAnError(t *testing.T) {
-	if got := parse(sourceOf(nil), "absent"); len(got) != 0 {
+	if got, _ := parse(sourceOf(nil), "absent"); len(got) != 0 {
 		t.Errorf("a missing file produced %v", got)
 	}
 }
@@ -386,3 +386,41 @@ func TestAnInstallNothingSelectsGetsAnEmptyListRatherThanNil(t *testing.T) {
 // is whether a certificate is out of date - and a test whose answer depends on
 // the day it runs is a test that will one day fail for a reason nobody planted.
 func atNoon() time.Time { return time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC) }
+
+// TestAConfigThatCouldNotBeReadToTheEndIsNotReadAsEmpty is P3-1.
+//
+// bufio.Scanner stops on a line longer than its buffer and says so only when
+// asked, and nobody asked. A config whose reading stopped halfway then looked
+// exactly like a config that sets nothing - so the row would say git uses its
+// built-in default, and a remediation command could name the wrong file, all
+// from a read that never finished.
+func TestAConfigThatCouldNotBeReadToTheEndIsNotReadAsEmpty(t *testing.T) {
+	// One line longer than bufio.Scanner's own buffer.
+	huge := "[http]\n\tsslCAInfo = " + strings.Repeat("x", 80*1024) + "\n"
+	source := sourceOf(map[string]string{"/etc/gitconfig": huge})
+
+	values, err := parse(source, "/etc/gitconfig")
+	if err == nil {
+		t.Fatal("a line this program could not read came back as a config with nothing in it")
+	}
+	if len(values) != 0 {
+		t.Errorf("the half-read config still produced %d value(s)", len(values))
+	}
+
+	// THE TWIN. An ordinary config still parses and still reports no error, or
+	// this rule would turn every machine's git into an unassessed row.
+	ordinary := sourceOf(map[string]string{"/etc/gitconfig": "[http]\n\tsslBackend = openssl\n"})
+	values, err = parse(ordinary, "/etc/gitconfig")
+	if err != nil {
+		t.Fatalf("an ordinary config reported %v", err)
+	}
+	if values["http.sslbackend"] != "openssl" {
+		t.Errorf("an ordinary config parsed to %v", values)
+	}
+
+	// AND A FILE THAT IS NOT THERE IS STILL NOT A FAILURE TO READ ONE. Absence is
+	// the ordinary state of a global gitconfig.
+	if _, err = parse(sourceOf(nil), "/nowhere"); err != nil {
+		t.Errorf("a config that does not exist reported %v", err)
+	}
+}

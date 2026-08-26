@@ -358,7 +358,8 @@ func reachableWiring(shown handshake.Presented, probes map[string]trust.Probe) W
 	// Machine is wired here because L5 refuses an input missing it, the same way
 	// it refuses a missing chain port: without a platform it cannot write a
 	// command this machine could run.
-	trusted := trust.Input{Probes: probes, Machine: trust.Machine{OS: "linux", Home: "/home/jdoe"}}
+	trusted := trust.Input{Probes: probes, Machine: trust.Machine{OS: "linux", Home: "/home/jdoe"},
+		Now: func() time.Time { return time.Unix(1_770_000_000, 0).UTC() }}
 	return Wiring{
 		Environment: envOf(nil),
 		Resolution: resolve.Input{

@@ -180,7 +180,17 @@ func Ask(ctx context.Context, in Input) Result {
 	// THE ATTEMPTS RUN SIDE BY SIDE AND THE ROWS COME BACK IN ADDRESS ORDER. The
 	// fan-out lives in its own file so this one - where every decision this layer
 	// makes is written down - stays under the concurrency guard in full (ADR43).
-	findings := in.fanOut(ctx, addresses)
+	findings, fell := in.fanOut(ctx, addresses)
+	if fell != nil {
+		// AN ATTEMPT THAT FELL OVER IS OUR DEFECT AND THE WHOLE LAYER SAYS SO -
+		// R-1. probe_error means "the probe fell over" (ADR33) and here it is
+		// literally that. It is the whole layer rather than one row because a
+		// panic in code this program does not own has an unknown reach, and the
+		// other rows came from the same call - the argument that keeps a layer
+		// breaking its own contract from shipping seven good rows out of eight.
+		return Result{Status: status.Unknown, Reason: status.ReasonProbeError,
+			Detail: "this layer could not finish: " + fell.Error()}
+	}
 	// The count and the list are built in one walk, from one condition. Two
 	// walks asking the same question two ways is how they start disagreeing -
 	// and a verdict saying "2 of 4 connected" beside a seam handing three

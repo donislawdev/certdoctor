@@ -161,7 +161,13 @@ func (in Input) row(o outcome, carriesChain bool, matchesFirst *bool) report.Fin
 	body.ServerName = o.shown.ServerName
 	body.ClientCertificateRequested = o.shown.ClientCertificateRequested
 	body.LeafFingerprintSHA256 = leafOf(o.shown.Chain)
-	body.MatchesFirstAddress = matchesFirst
+	// THE COMPARISON EXISTS ONLY WHERE THERE IS SOMETHING TO COMPARE - OBS78. A
+	// handshake that completed and presented no certificate is legal, and saying
+	// it presented "the same certificate as the first address" would be a
+	// measurement of two things neither of which happened.
+	if body.LeafFingerprintSHA256 != "" {
+		body.MatchesFirstAddress = matchesFirst
+	}
 
 	if carriesChain {
 		body.ChainComplete = chainComplete(o.shown.Chain)

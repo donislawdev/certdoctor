@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
@@ -47,6 +46,18 @@ func storeFor(source file.Source, install Install, settings Settings, chain [][]
 		Architecture: install.Architecture,
 		Backend:      settings.Backend,
 		SelectedBy:   []string{},
+	}
+
+	// A CONFIG THIS PROGRAM COULD NOT READ TO THE END DECIDES NOTHING - P3-1.
+	// Every branch below concludes something from what the settings DO or do not
+	// say, and a read that stopped halfway makes "does not say" meaningless. This
+	// is inviolable rule 15 at the one place where the alternative is a
+	// confident row built out of half a file.
+	if settings.Unreadable != "" {
+		store.StoreForm = report.StoreSystem
+		store.NotAssessed = "this install's configuration could not be read in full, so what it points at is unknown: " +
+			settings.Unreadable
+		return store
 	}
 
 	switch settings.Backend {
@@ -122,10 +133,11 @@ func level(l string) string {
 // "C:\Program Files\Git" as text, and reporting it as this install would credit
 // one installation with another one's presence on PATH.
 func selectedBy(install Install, pathDirs []string) []string {
-	root := filepath.Clean(install.Root)
+	// AND IT FOLDS CASE WHERE THE PLATFORM DOES - P3-2, the half that was
+	// missing. The rule lives in probe.SameOrInside so that the java probe asks
+	// the same function rather than a copy of it.
 	for _, dir := range pathDirs {
-		cleaned := filepath.Clean(dir)
-		if cleaned == root || strings.HasPrefix(cleaned, root+string(filepath.Separator)) {
+		if probe.SameOrInside(dir, install.Root) {
 			return []string{"PATH"}
 		}
 	}

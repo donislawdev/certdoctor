@@ -15,6 +15,7 @@ package git
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -62,6 +63,14 @@ type Settings struct {
 	BackendLevel string
 	CAInfo       string
 	CAInfoLevel  string
+	// Unreadable names a config file this program could not read to the end -
+	// P3-1. bufio.Scanner stops on a line longer than its buffer and reports it
+	// only if somebody asks, and nobody did: a config whose reading stopped
+	// halfway came out as a config that simply does not set anything. The store
+	// path would then be missing, the row would say git uses its built-in
+	// default, and a remediation command could name the wrong file - all from a
+	// read that never finished. Empty means every file was read to the end.
+	Unreadable string
 }
 
 // find returns every installation whose system config is readable.
@@ -109,7 +118,14 @@ func readSettings(source file.Source, paths []string) Settings {
 		if isSystem(path) {
 			level = "system"
 		}
-		for key, value := range parse(source, path) {
+		values, err := parse(source, path)
+		if err != nil && s.Unreadable == "" {
+			// THE FIRST ONE, AND IT DOES NOT STOP THE WALK. The later files may
+			// still be readable, and what they set is worth reading - what is not
+			// worth doing is concluding anything from what was NOT found.
+			s.Unreadable = fmt.Sprintf("%s could not be read to the end: %v", path, err)
+		}
+		for key, value := range values {
 			switch key {
 			case "http.sslbackend":
 				s.Backend, s.BackendLevel = value, level
@@ -137,11 +153,13 @@ func isSystem(path string) bool {
 // guessed at the rest would produce a confident wrong answer, which is worse
 // here than no answer. The two keys this needs are plain scalars in the [http]
 // section on every machine measured.
-func parse(source file.Source, path string) map[string]string {
+func parse(source file.Source, path string) (map[string]string, error) {
 	values := map[string]string{}
 	reader, err := source(path)
 	if err != nil {
-		return values
+		// A FILE THAT IS NOT THERE IS NOT A FAILURE TO READ ONE. Absence is the
+		// ordinary state of a global gitconfig, and it says nothing was set.
+		return values, nil
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -162,7 +180,11 @@ func parse(source file.Source, path string) map[string]string {
 		}
 		values[section+"."+strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(value)
 	}
-	return values
+	// P3-1. Scan returning false means "no more lines" OR "I stopped" - a line
+	// longer than the buffer, or a read that failed - and the two are told apart
+	// only by asking. Unasked, a config read halfway looks like a config that
+	// sets nothing.
+	return values, scanner.Err()
 }
 
 // readAll is the one place this package turns a port into bytes.

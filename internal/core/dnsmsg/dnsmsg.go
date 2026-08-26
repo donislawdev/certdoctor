@@ -163,7 +163,7 @@ func Query(id uint16, name string, t Type) ([]byte, error) {
 // wantID and want are what was asked. Both are checked rather than trusted: an
 // answer carrying a different identifier is not ours, and NODATA can only be
 // decided by counting records OF THE REQUESTED TYPE.
-func Parse(msg []byte, wantID uint16, want Type) (Message, error) {
+func Parse(msg []byte, wantID uint16, wantName string, want Type) (Message, error) {
 	if len(msg) < headerLen {
 		return Message{}, fmt.Errorf("an answer of %d bytes is shorter than a DNS header", len(msg))
 	}
@@ -174,7 +174,7 @@ func Parse(msg []byte, wantID uint16, want Type) (Message, error) {
 		return Message{}, errors.New("this packet is a question, not an answer")
 	}
 
-	at, err := skipQuestions(msg, int(uint16(msg[4])<<8|uint16(msg[5])))
+	at, err := readQuestions(msg, int(uint16(msg[4])<<8|uint16(msg[5])), wantName, want)
 	if err != nil {
 		return Message{}, err
 	}
@@ -216,23 +216,67 @@ func responseCode(rcode byte, matched int) string {
 }
 
 // skipQuestions walks past the question section to the first answer.
-func skipQuestions(msg []byte, questions int) (int, error) {
+func readQuestions(msg []byte, questions int, wantName string, want Type) (int, error) {
 	at := headerLen
 	for i := 0; i < questions; i++ {
 		next, err := skipName(msg, at)
 		if err != nil {
 			return 0, fmt.Errorf("reading question %d of %d: %w", i+1, questions, err)
 		}
-		// Type and class, four bytes, which have already been checked against
-		// what was asked by the identifier - repeating the comparison here would
-		// refuse a resolver that echoes the question in a different case, which
-		// is legal.
+		// THE FIRST QUESTION IS COMPARED WITH WHAT WAS ASKED - P3-3 in the review,
+		// and it is the second half of the defence the unpredictable identifier
+		// is the first half of. An identifier is sixteen bits: an off-path answer
+		// only has to guess those, and until now it did not have to match the
+		// question at all. RFC 5452 section 9.1 names both checks together.
+		//
+		// THE COMPARISON IS CASE INSENSITIVE, WHICH IS WHY IT WAS SKIPPED BEFORE.
+		// A resolver may echo the question in any case and stays correct - RFC
+		// 4343 - so a byte comparison would refuse working resolvers. Folding
+		// case is the whole difference between refusing them and refusing the
+		// answers that are genuinely not ours.
+		// THE BOUND IS ON next AND NOT ON at, and getting that wrong panicked on
+		// a truncated packet - caught by the test for a section cut short, which
+		// is what that test is for. The type sits AFTER the name, so it is the
+		// end of the name that has to be inside the message.
+		if i == 0 && next+2 <= len(msg) {
+			if !sameName(msg, at, wantName) {
+				return 0, fmt.Errorf("%w: it answers a different name than the one that was asked", ErrNotOurs)
+			}
+			if asked := Type(uint16(msg[next])<<8 | uint16(msg[next+1])); asked != want {
+				return 0, fmt.Errorf("%w: it answers a question about %s and %s was asked", ErrNotOurs, asked, want)
+			}
+		}
 		at = next + 4
 		if at > len(msg) {
 			return 0, fmt.Errorf("question %d of %d runs past the end of a %d byte answer", i+1, questions, len(msg))
 		}
 	}
 	return at, nil
+}
+
+// sameName reports whether the name encoded at "at" is the one that was asked,
+// comparing label by label and folding case - RFC 4343.
+//
+// A COMPRESSION POINTER ANSWERS false RATHER THAN BEING FOLLOWED. The question
+// section is the first thing in a message, so there is nothing before it to
+// point at, and a pointer there is either a malformed packet or somebody being
+// clever. Neither is an answer to our question.
+func sameName(msg []byte, at int, want string) bool {
+	want = strings.TrimSuffix(want, ".")
+	for _, label := range strings.Split(want, ".") {
+		if at >= len(msg) {
+			return false
+		}
+		length := int(msg[at])
+		if length == 0 || length&0xc0 != 0 || at+1+length > len(msg) {
+			return false
+		}
+		if !strings.EqualFold(string(msg[at+1:at+1+length]), label) {
+			return false
+		}
+		at += 1 + length
+	}
+	return at < len(msg) && msg[at] == 0
 }
 
 // readAnswers collects the addresses of the requested type and counts how many

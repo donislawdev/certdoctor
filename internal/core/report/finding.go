@@ -794,7 +794,27 @@ func (t *TLSHandshake) breach() string {
 	case t.NotCompleted != "":
 		return "says the handshake completed and also says why it did not"
 	case t.LeafFingerprintSHA256 == "":
-		return "says the handshake completed and carries no leaf fingerprint, and the fingerprint is what identifies what was presented"
+		// A COMPLETED HANDSHAKE THAT PRESENTED NO CERTIFICATE IS LEGAL - OBS78,
+		// ADR66, and this rule used to refuse it. TLS 1.3 session resumption and
+		// the anonymous suites produce exactly that state, and the row was thrown
+		// away for it - taking every other row of the layer with it, because a
+		// finding the contract refuses discards the whole layer. So the report
+		// said "the layer broke its own contract" about a server that behaved
+		// legally. It is the family of ADR47: our own rule refusing somebody
+		// else's correct behaviour and reporting it as our own not knowing.
+		//
+		// WHAT IS STILL REFUSED IS THE HALF-FILLED ROW. Nothing was presented, so
+		// nothing that describes a certificate may be filled in - the same rule
+		// the not-completed branch above applies to what was negotiated.
+		switch {
+		case len(t.Chain) != 0:
+			return "says nothing was presented and still carries a chain, so it contradicts itself about what arrived"
+		case t.MatchesFirstAddress != nil:
+			return "says nothing was presented and still compares what it presented against the first address"
+		case t.ChainComplete:
+			return "says nothing was presented and calls the chain complete, and there was no chain"
+		}
+		return ""
 	case len(t.Chain) > 0 && t.MatchesFirstAddress != nil:
 		return "carries the full chain and a comparison against the first address, and the row carrying the chain IS the first address"
 	case len(t.Chain) == 0 && t.MatchesFirstAddress == nil:
