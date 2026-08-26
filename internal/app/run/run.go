@@ -151,6 +151,27 @@ func Execute(ctx context.Context, o Options) (report.Report, error) {
 		if broken != nil {
 			notes = append(notes, *broken)
 		}
+		// A LAYER THAT RAN AND GAVE UP HALFWAY SAYS SO IN THE NOTES, not only in
+		// its own row - ADR58, inviolable rule 1.
+		//
+		// THE FLAG ABOVE IS NOT THE PLACE FOR THIS, AND THAT IS THE WHOLE REASON
+		// THIS NOTE EXISTS. run.BudgetExceeded says the RUN ran out of its overall
+		// time, which is a different fact with a different consequence, and
+		// widening it to cover a layer spending its own budget would make a
+		// documented field mean two things. So the flag keeps its meaning and the
+		// silence is broken here instead.
+		//
+		// The wholly skipped layer above has its own note already, and this branch
+		// cannot double it: that path never reaches walkOne.
+		if result.Reason == status.ReasonSkippedBudget {
+			notes = append(notes, report.Note{
+				Kind:   report.NoteSkipped,
+				Layer:  id,
+				Reason: status.ReasonSkippedBudget,
+				Detail: "this layer ran out of its own time budget partway through and did not finish asking, " +
+					"so what it reports is what it managed rather than what there is",
+			})
+		}
 	}
 
 	// MASKED HERE, ONCE, AFTER EVERY LAYER HAS ANSWERED. This is the whole of

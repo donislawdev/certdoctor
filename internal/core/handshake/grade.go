@@ -38,9 +38,16 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	}
 	disagreed := false
 
+	// THE TWO OUTCOMES THAT NEVER LEFT THIS MACHINE, counted in the same walk as
+	// everything else here - ADR58. Both are ours: one is this layer running out
+	// of its own budget before an address came up, the other is our own allowed
+	// set refusing the address.
+	skipped, refused := 0, 0
+
 	for i, o := range outcomes {
 		matches := (*bool)(nil)
-		if o.err == nil && o.shown.Completed {
+		switch {
+		case o.err == nil && o.shown.Completed:
 			completed++
 			if i != carrier {
 				same := leafOf(o.shown.Chain) == leafOf(firstChain)
@@ -49,6 +56,10 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 					disagreed = true
 				}
 			}
+		case errors.Is(o.err, errNotAttempted):
+			skipped++
+		case errors.Is(o.err, ErrRefusedByRule):
+			refused++
 		}
 		findings = append(findings, in.row(o, i == carrier, matches))
 	}
@@ -61,6 +72,20 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	graded := Result{Detail: detail, Findings: findings, ChainWhole: complete}
 
 	switch {
+	case completed == 0 && skipped+refused > 0:
+		// A VERDICT AGAINST THESE SERVERS REQUIRES THAT THIS LAYER FINISHED
+		// TRYING - ADR58. Both counts are ours: this layer running out of its own
+		// budget, and our own allowed set refusing. With nothing completed and
+		// some addresses never spoken to, FAIL says every server refused a
+		// handshake - about servers nothing said hello to.
+		//
+		// ErrNotReached is deliberately NOT one of the two counted. L4 is handed
+		// only the addresses L3 connected to, so it cannot ordinarily see one -
+		// and if it ever does, L3 tried and failed, which is a fact about the
+		// network rather than about our budget.
+		graded.Status = status.Unknown
+		graded.Reason = status.ReasonForNothingAttempted(skipped)
+		graded.Detail = notFinishedDetail(skipped, refused, len(addresses))
 	case completed == 0:
 		graded.Status = status.Fail
 	case !complete:
@@ -73,6 +98,26 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 		graded.Status = status.Pass
 	}
 	return graded
+}
+
+// notFinishedDetail says no handshake completed and this layer did not finish
+// trying - the same shape, and the same argument, as the sentence the
+// connecting layer uses.
+func notFinishedDetail(skipped, refused, addresses int) string {
+	var why string
+	switch {
+	case refused == 0:
+		why = fmt.Sprintf("%d of %d were never spoken to, because this layer ran out of its own time budget first",
+			skipped, addresses)
+	case skipped == 0:
+		why = fmt.Sprintf("%d of %d were never spoken to, because this run's own rule about where it may connect refused them",
+			refused, addresses)
+	default:
+		why = fmt.Sprintf("%d of %d were never spoken to because this layer ran out of its own time budget, and %d more "+
+			"were refused by this run's own rule about where it may connect", skipped, addresses, refused)
+	}
+	return "no address completed a TLS handshake, and this layer did not finish trying: " + why +
+		" - so this is a limit of this run rather than a finding about those servers"
 }
 
 // leafOf is the fingerprint that identifies what a server presented, or empty.

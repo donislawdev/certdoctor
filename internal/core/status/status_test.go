@@ -187,6 +187,25 @@ func TestReasonListIsComplete(t *testing.T) {
 	}
 }
 
+// TestReasonForNothingAttemptedNamesTheBudgetBeforeOurselves pins the ranking
+// three layers depend on - ADR58.
+//
+// BOTH ANSWERS ARE ABOUT US AND THEY SEND A READER TO DIFFERENT PLACES. A budget
+// is something the person running this can change, so naming it points at the
+// thing that can be turned. probe_error says this program applied a rule to
+// itself and stopped, which is true of a refusal by the allowed set and is a
+// defect here rather than anything about their machine.
+func TestReasonForNothingAttemptedNamesTheBudgetBeforeOurselves(t *testing.T) {
+	if got := ReasonForNothingAttempted(1); got != ReasonSkippedBudget {
+		t.Errorf("a layer that dropped work for its budget answered %q, want %q", got, ReasonSkippedBudget)
+	}
+	// Nothing dropped for the budget leaves our own rule, and that is the one
+	// case where blaming this program is the honest answer.
+	if got := ReasonForNothingAttempted(0); got != ReasonProbeError {
+		t.Errorf("a layer stopped by our own rule answered %q, want %q", got, ReasonProbeError)
+	}
+}
+
 func TestUnknownReasonHasNoDescription(t *testing.T) {
 	var r Reason = "made_up"
 	if r.Valid() {

@@ -288,6 +288,40 @@ func (in Input) walk(ctx context.Context) Result {
 		findings = append(findings, finding)
 	}
 
+	// COUNTED BEFORE ANY VERDICT IS RETURNED, NOT ONLY ON THE WAY OUT THROUGH
+	// PASS. It used to be assigned on the last line of this function, so every
+	// sentence built on a FAILING walk said nothing about the queries that were
+	// never sent - which is the half of a curtailed run a reader most needs.
+	counted.notAsked = seen[report.NoAnswerNotAsked]
+
+	refused := seen[report.NoAnswerRefusedByRule]
+
+	// A VERDICT AGAINST THIS NAME REQUIRES THAT THIS LAYER FINISHED LOOKING -
+	// ADR58. Both classes below say something about the name itself rather than
+	// about the difference between the lenses, and neither is safe on a walk that
+	// dropped queries of its own: the resolver never asked is exactly the one
+	// that might have answered, which is what split horizon looks like.
+	//
+	// MEASURED, AND THE FIRST FORM OF THIS RULE DID NOT REACH IT. With
+	// "--probe-timeout 0.001" two queries went out and timed out while three were
+	// never asked, so a gate testing "did anything leave this machine" stayed
+	// shut and the layer still reported FAIL with exit 4 - on a machine that
+	// resolves the same name in 26 ms. The question is not whether we asked
+	// anything, it is whether we asked EVERYTHING.
+	//
+	// WHAT THIS DOES NOT TOUCH, AND IT IS THE VERDICT THAT HAD TO SURVIVE: a walk
+	// that asked every query and got NXDOMAIN from both lenses drops nothing, so
+	// it is still agree_none and still FAIL - the .invalid case measured on
+	// 2026-08-11, ADR40.
+	if againstTheName(counted.divergence) && counted.notAsked+refused > 0 {
+		return Result{
+			Status:   status.Unknown,
+			Reason:   status.ReasonForNothingAttempted(counted.notAsked),
+			Detail:   in.notFinishedDetail(counted, refused),
+			Findings: findings,
+		}
+	}
+
 	// A VERDICT GOES TO THREE OF THE CLASSES AND THE REST ARE NAMED AND LEFT
 	// ALONE. That ratio is the decision, not the count: probe S4 measured the two
 	// views disagreeing on five names out of five, so a layer that warned on
@@ -595,6 +629,42 @@ func systemSummaryOf(name string, a SystemAnswer, source report.Source, sources 
 	// quotes this one.
 
 	return fmt.Sprintf("the system view resolved %s to %d address(es) %s", name, len(a.Addresses), how)
+}
+
+// againstTheName names the two divergence classes whose verdict is about the
+// NAME rather than about the difference between the lenses.
+//
+// THEY ARE LISTED HERE AS WELL AS IN THE SWITCH, and the two lists answer
+// different questions: the switch says what each class produces, this says which
+// of them may not be produced by a walk that gave up early. Folding one into the
+// other would mean the gate had to live inside each case, which is one rule in
+// two places - the shape OBS50 keeps measuring.
+func againstTheName(d report.Divergence) bool {
+	return d == report.DivergenceAgreeNone || d == report.DivergenceNeitherAnswered
+}
+
+// notFinishedDetail is the sentence for a walk that would have ended in a
+// verdict against the name and did not get to ask everything it wanted to.
+//
+// IT IS NOT nothingAnsweredDetail AND MUST NOT BECOME IT. That one says nobody
+// answered, and carries a comment explaining that only a single-lens run can
+// reach it. Here some queries may well have been answered - the reason there is
+// no verdict is that others never went out at all.
+func (in Input) notFinishedDetail(t tallies, refused int) string {
+	var why string
+	switch {
+	case refused == 0:
+		why = fmt.Sprintf("%d of %d queries were never asked, because this layer ran out of its own time budget first",
+			t.notAsked, t.total)
+	case t.notAsked == 0:
+		why = fmt.Sprintf("%d of %d queries never went out, because this run's own rule about where it may connect refused them",
+			refused, t.total)
+	default:
+		why = fmt.Sprintf("%d of %d queries were never asked because this layer ran out of its own time budget, and %d more "+
+			"were refused by this run's own rule about where it may connect", t.notAsked, t.total, refused)
+	}
+	return "no address came back for this name, and this layer did not finish looking: " + why +
+		" - so this is a limit of this run rather than a finding about the name"
 }
 
 // reasonForNothingAnswered picks which of the closed list of reasons describes a

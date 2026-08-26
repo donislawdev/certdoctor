@@ -427,6 +427,73 @@ func TestTheShippedBinaryShowsBothViewsOfAName(t *testing.T) {
 	}
 }
 
+// TestTheShippedBinaryDoesNotBlameTheMachineForItsOwnBudget is ADR58 observed on
+// the shipped binary, and it is the check the defect it fixes would have failed.
+//
+// MEASURED BEFORE THE FIX: "--probe-timeout 0.001" ended with L1 FAIL and exit 4
+// - the code whose own table says "the run succeeded and found at least one
+// failure" - on a machine that resolves the same name in 26 ms, with every row
+// saying this layer had run out of time. The verdict was our arithmetic wearing
+// somebody else's name.
+//
+// IT SKIPS LOUDLY RATHER THAN PASSING VACUOUSLY. A millisecond is not a
+// guarantee that work gets dropped: a machine with a local cache could answer
+// every query inside one, and then there is nothing here to check. That is a
+// skip, and the suite prints its skips for exactly this reason.
+func TestTheShippedBinaryDoesNotBlameTheMachineForItsOwnBudget(t *testing.T) {
+	r := runProgram(t, anUnresolvableTarget, "--json", "--probe-timeout", "0.001")
+	if r.stdout == "" {
+		t.Fatalf("the run produced no document at all: %s", r.stderr)
+	}
+	if err := render.ValidateDocument([]byte(r.stdout)); err != nil {
+		t.Fatalf("a real run produced a document its own schema refuses:\n%v", err)
+	}
+
+	var document struct {
+		Layers []layerRow `json:"layers"`
+		Notes  []struct {
+			Kind  string `json:"kind"`
+			Layer string `json:"layer"`
+		} `json:"notes"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &document); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+
+	var resolution layerRow
+	for _, row := range document.Layers {
+		if row.ID == string(layer.Resolution) {
+			resolution = row
+		}
+	}
+	dropped := 0
+	for _, finding := range resolution.Findings {
+		if body := finding.NameResolution; body != nil && body.NoAnswer != nil && *body.NoAnswer == "not_asked" {
+			dropped++
+		}
+	}
+	if dropped == 0 {
+		t.Skip("NOT CHECKED: this machine answered every query inside a millisecond, so this run dropped no work and " +
+			"there was nothing here to get wrong. This is a skip, not a pass.")
+	}
+
+	if resolution.Status == "FAIL" {
+		t.Errorf("%d quer(ies) were never asked because this program ran out of its own time, and the layer still "+
+			"reported FAIL: %s", dropped, resolution.Detail)
+	}
+	// AND IT SAYS SO WHERE SOMEBODY LOOKS FOR WHAT WAS GIVEN UP. The row carries
+	// it too, but a reader scanning for dropped work reads the notes.
+	said := false
+	for _, note := range document.Notes {
+		if note.Kind == "skipped" && note.Layer == string(layer.Resolution) {
+			said = true
+		}
+	}
+	if !said {
+		t.Error("the run dropped queries and no note says so, which is the silence inviolable rule 1 forbids")
+	}
+}
+
 // TestTheShippedBinaryPutsTheConvertedNameOnTheWire is the international-name
 // fix observed on the shipped binary rather than at a seam inside it.
 //

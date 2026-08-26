@@ -624,6 +624,88 @@ func TestALayerThatArrivedTooLateSaysSoRatherThanBlamingItself(t *testing.T) {
 	}
 }
 
+// TestAVerdictAgainstTheNameNeedsAWalkThatFinishedLooking is ADR58 and its twin
+// in one test, because either half alone can be satisfied by the wrong program.
+//
+// MEASURED BEFORE THIS EXISTED, on the binary: "--probe-timeout 0.001" gave L1
+// FAIL and exit 4 on a machine that resolves the same name in 26 ms, with every
+// row saying the layer had run out of time. The verdict was about our
+// arithmetic and it read as a fact about somebody's resolvers.
+//
+// THE TWIN IS THE HALF THAT MATTERS MORE, and it is the reason the rule is
+// worded around FINISHING rather than around answering. A name under .invalid
+// makes both lenses answer NXDOMAIN, which IS a verdict against the name -
+// measured on 2026-08-11 and pinned by ADR40 - and a first draft of this rule
+// that keyed on "did anything leave this machine" would have kept it while
+// missing the case above. Without this half, the rule could be satisfied by a
+// layer that never says FAIL at all.
+func TestAVerdictAgainstTheNameNeedsAWalkThatFinishedLooking(t *testing.T) {
+	// The half that must be UNKNOWN: two lenses, and a budget already spent, so
+	// nothing was asked and nothing can be concluded.
+	unfinished := workingInput(func(context.Context, string, []byte) ([]byte, error) {
+		t.Error("a query went out on a budget that was already spent")
+		return nil, ErrTimeout
+	})
+	unfinished.Now = time.Now
+	unfinished.System = systemAnswering(SystemAnswer{})
+	spent, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	got := Ask(spent, unfinished)
+	if got.Status != status.Unknown {
+		t.Errorf("a walk that asked nothing answered %s, and it has measured nothing to answer about", got.Status)
+	}
+	if got.Reason != status.ReasonSkippedBudget {
+		t.Errorf("the reason is %q, want %q", got.Reason, status.ReasonSkippedBudget)
+	}
+	if !strings.Contains(got.Detail, "did not finish looking") {
+		t.Errorf("the sentence does not say the layer gave up early: %q", got.Detail)
+	}
+
+	// The half that must stay FAIL: two lenses, a whole budget, both answered,
+	// and neither found an address.
+	finished := workingInput(answeringNoSuchName())
+	finished.System = systemAnswering(SystemAnswer{})
+
+	got = Ask(context.Background(), finished)
+	if got.Status != status.Fail {
+		t.Errorf("a walk that asked everything and found no address answered %s, want %s", got.Status, status.Fail)
+	}
+}
+
+// TestTheSentenceForAnUnfinishedWalkNamesEveryCount is inviolable rule 1 on the
+// one line anybody reads.
+//
+// The reason on the row is a single word from a closed list and has to pick one.
+// This sentence is where a reader finds out that the other thing ALSO happened,
+// so a walk stopped by both a budget and our own rule must say both numbers.
+func TestTheSentenceForAnUnfinishedWalkNamesEveryCount(t *testing.T) {
+	in := workingInput(nil)
+
+	budgetOnly := in.notFinishedDetail(tallies{total: 5, notAsked: 3}, 0)
+	if !strings.Contains(budgetOnly, "3 of 5") || !strings.Contains(budgetOnly, "time budget") {
+		t.Errorf("the budget-only sentence does not say how many were dropped or why: %q", budgetOnly)
+	}
+	if strings.Contains(budgetOnly, "refused") {
+		t.Errorf("the budget-only sentence mentions a refusal that did not happen: %q", budgetOnly)
+	}
+
+	ruleOnly := in.notFinishedDetail(tallies{total: 5}, 2)
+	if !strings.Contains(ruleOnly, "2 of 5") || !strings.Contains(ruleOnly, "own rule") {
+		t.Errorf("the rule-only sentence does not say how many were refused or by what: %q", ruleOnly)
+	}
+	if strings.Contains(ruleOnly, "time budget") {
+		t.Errorf("the rule-only sentence blames a budget that was not the cause: %q", ruleOnly)
+	}
+
+	both := in.notFinishedDetail(tallies{total: 5, notAsked: 3}, 2)
+	for _, want := range []string{"3 of 5", "2 more", "time budget", "own rule"} {
+		if !strings.Contains(both, want) {
+			t.Errorf("the sentence for a walk stopped both ways does not mention %q: %q", want, both)
+		}
+	}
+}
+
 // TestASuccessfulWalkStillSaysWhatItSkipped is the same rule as the test above,
 // on the path where it is easiest to lose.
 //

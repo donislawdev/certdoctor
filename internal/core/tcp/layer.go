@@ -171,13 +171,39 @@ func Ask(ctx context.Context, in Input) Result {
 	// walks asking the same question two ways is how they start disagreeing -
 	// and a verdict saying "2 of 4 connected" beside a seam handing three
 	// addresses to L4 would be one layer contradicting itself inside one row.
+	// AND THE TWO OUTCOMES THAT NEVER LEFT THIS MACHINE ARE COUNTED IN THE SAME
+	// WALK, for the same reason the list above is - ADR58. A second walk asking
+	// "how many did we actually try" is a second place where that question is
+	// answered, and the two would start disagreeing the first time one of them
+	// gained a case.
 	var connected []string
+	skipped, refused := 0, 0
 	for _, finding := range findings {
-		if finding.TCPConnect.Outcome == report.OutcomeConnected {
+		switch finding.TCPConnect.Outcome {
+		case report.OutcomeConnected:
 			connected = append(connected, finding.TCPConnect.Address)
+		case report.OutcomeNotAttempted:
+			skipped++
+		case report.OutcomeRefusedByRule:
+			refused++
 		}
 	}
 	reached := len(connected)
+
+	// A VERDICT AGAINST THESE ADDRESSES REQUIRES THAT THIS LAYER FINISHED TRYING
+	// - ADR58. Both outcomes counted above are facts about US: one is this layer
+	// running out of its own budget, the other is our own allowed set refusing.
+	// With nothing connected and some addresses never dialled, FAIL says
+	// somebody's addresses would not accept a connection - and the one that was
+	// never tried is exactly the one that might have.
+	if reached == 0 && skipped+refused > 0 {
+		return Result{
+			Status:   status.Unknown,
+			Reason:   status.ReasonForNothingAttempted(skipped),
+			Detail:   notFinishedDetail(skipped, refused, addresses),
+			Findings: findings,
+		}
+	}
 
 	if reached == 0 {
 		return Result{Status: status.Fail, Detail: detailFor(reached, addresses), Findings: findings}
@@ -351,6 +377,29 @@ func detailFor(reached int, addresses []string) string {
 	}
 	return fmt.Sprintf("%d of %d address(es) accepted a connection%s",
 		reached, len(addresses), familyNote(addresses))
+}
+
+// notFinishedDetail says nothing connected and this layer did not finish trying.
+//
+// IT NAMES BOTH COUNTS RATHER THAN THE WINNING ONE. The reason on the row is a
+// single word from a closed list and has to pick one, and this sentence is the
+// place a reader finds out that the other also happened - inviolable rule 1
+// applied to the line anybody actually reads.
+func notFinishedDetail(skipped, refused int, addresses []string) string {
+	var why string
+	switch {
+	case refused == 0:
+		why = fmt.Sprintf("%d of %d were never tried, because this layer ran out of its own time budget first",
+			skipped, len(addresses))
+	case skipped == 0:
+		why = fmt.Sprintf("%d of %d were never tried, because this run's own rule about where it may connect refused them",
+			refused, len(addresses))
+	default:
+		why = fmt.Sprintf("%d of %d were never tried because this layer ran out of its own time budget, and %d more "+
+			"were refused by this run's own rule about where it may connect", skipped, len(addresses), refused)
+	}
+	return "no address accepted a connection, and this layer did not finish trying: " + why +
+		" - so this is a limit of this run rather than a finding about those addresses"
 }
 
 // familyNote says which families were tried, when there is more than one.

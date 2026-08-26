@@ -311,14 +311,28 @@ func TestTheRowShownAndTheChainJudgedComeFromOneAddress(t *testing.T) {
 // TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields is the half of the
 // contract easiest to break while making the other half work.
 func TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields(t *testing.T) {
-	for _, err := range []error{ErrRejected, ErrTimeout, ErrNotReached, ErrRefusedByRule, errors.New("nobody wrote a case for this")} {
+	// THE STATUS IS PER CASE AND ADR58 IS WHY. Four of these are a server, or the
+	// network in front of it, answering or failing to. The fifth is OUR OWN
+	// allowed set refusing, so no handshake was ever attempted - and FAIL there
+	// says every server refused, about servers nothing spoke to.
+	for _, tc := range []struct {
+		err        error
+		wantStatus status.Status
+	}{
+		{ErrRejected, status.Fail},
+		{ErrTimeout, status.Fail},
+		{ErrNotReached, status.Fail},
+		{ErrRefusedByRule, status.Unknown},
+		{errors.New("nobody wrote a case for this"), status.Fail},
+	} {
+		err := tc.err
 		in := workingInput(func(context.Context, string, int, string) (Presented, error) {
 			return Presented{}, err
 		})
 		got := Ask(context.Background(), in)
 
-		if got.Status != status.Fail {
-			t.Errorf("%v left the layer at %s", err, got.Status)
+		if got.Status != tc.wantStatus {
+			t.Errorf("%v left the layer at %s, want %s", err, got.Status, tc.wantStatus)
 		}
 		rows := rowsOf(got)
 		if len(rows) != 1 {
@@ -335,6 +349,66 @@ func TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields(t *testing.T) {
 		}
 		if broken := got.Findings[0].Breach(); broken != "" {
 			t.Errorf("%v produced a row its own contract refuses: %s", err, broken)
+		}
+	}
+}
+
+// TestAVerdictAgainstTheseServersNeedsAWalkThatFinishedTrying is ADR58 and its
+// twin, in the layer where the false accusation would be loudest.
+//
+// "None of the addresses completed a TLS handshake" is a sentence about
+// somebody's servers. Said after a layer that never spoke to any of them - its
+// own budget spent, or its own allowed set refusing - it is a sentence about our
+// arithmetic wearing their name. The twin underneath keeps the real failure
+// intact: every address spoken to, every one rejecting, verdict unchanged.
+func TestAVerdictAgainstTheseServersNeedsAWalkThatFinishedTrying(t *testing.T) {
+	unfinished := workingInput(shakeReturning(completeChain("aa")))
+	unfinished.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
+	expired, cancel := context.WithDeadline(context.Background(), unfinished.Now().Add(-time.Second))
+	defer cancel()
+
+	got := Ask(expired, unfinished)
+	if got.Status != status.Unknown {
+		t.Errorf("a layer that spoke to nobody answered %s, and it has measured nothing to answer about", got.Status)
+	}
+	if got.Reason != status.ReasonSkippedBudget {
+		t.Errorf("the reason is %q, want %q", got.Reason, status.ReasonSkippedBudget)
+	}
+	if !strings.Contains(got.Detail, "did not finish trying") {
+		t.Errorf("the sentence does not say the layer gave up early: %q", got.Detail)
+	}
+
+	// The twin: every address spoken to, every one rejecting the handshake.
+	finished := workingInput(func(context.Context, string, int, string) (Presented, error) {
+		return Presented{}, ErrRejected
+	})
+	finished.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
+	if got := Ask(context.Background(), finished); got.Status != status.Fail {
+		t.Errorf("a layer that tried every address and completed none answered %s, want %s", got.Status, status.Fail)
+	}
+}
+
+// TestTheSentenceForAnUnfinishedWalkNamesEveryCount is inviolable rule 1 on the
+// one line anybody reads - the same rule, and the same three shapes, as the
+// connecting layer's sentence.
+func TestTheSentenceForAnUnfinishedWalkNamesEveryCount(t *testing.T) {
+	budgetOnly := notFinishedDetail(3, 0, 3)
+	if !strings.Contains(budgetOnly, "3 of 3") || !strings.Contains(budgetOnly, "time budget") {
+		t.Errorf("the budget-only sentence does not say how many were dropped or why: %q", budgetOnly)
+	}
+	if strings.Contains(budgetOnly, "refused") {
+		t.Errorf("the budget-only sentence mentions a refusal that did not happen: %q", budgetOnly)
+	}
+
+	ruleOnly := notFinishedDetail(0, 2, 3)
+	if !strings.Contains(ruleOnly, "2 of 3") || !strings.Contains(ruleOnly, "own rule") {
+		t.Errorf("the rule-only sentence does not say how many were refused or by what: %q", ruleOnly)
+	}
+
+	both := notFinishedDetail(1, 2, 3)
+	for _, want := range []string{"1 of 3", "2 more", "time budget", "own rule"} {
+		if !strings.Contains(both, want) {
+			t.Errorf("the sentence for a walk stopped both ways does not mention %q: %q", want, both)
 		}
 	}
 }

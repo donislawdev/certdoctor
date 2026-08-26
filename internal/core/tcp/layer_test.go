@@ -150,18 +150,24 @@ func TestANameWithNoAddressesIsNotThisLayersFailure(t *testing.T) {
 // different places, and collapsing them would rebuild the very message they came
 // here to get past.
 func TestEveryWayAnAttemptCanFailKeepsItsOwnWord(t *testing.T) {
+	// THE STATUS COLUMN IS PER CASE RATHER THAN ONE ASSERTION FOR ALL SIX, AND
+	// THAT IS ADR58. Five of these are the network answering, or failing to, and
+	// the layer is right to call that a failure. The sixth is OUR OWN allowed set
+	// refusing, so nothing was ever tried - and FAIL there says somebody's
+	// address would not accept a connection about an address nothing dialled.
 	cases := []struct {
-		err  error
-		want report.ConnectOutcome
+		err        error
+		want       report.ConnectOutcome
+		wantStatus status.Status
 	}{
-		{ErrRefused, report.OutcomeRefused},
-		{ErrTimeout, report.OutcomeTimeout},
-		{ErrUnreachable, report.OutcomeUnreachable},
-		{ErrReset, report.OutcomeReset},
-		{ErrRefusedByRule, report.OutcomeRefusedByRule},
+		{ErrRefused, report.OutcomeRefused, status.Fail},
+		{ErrTimeout, report.OutcomeTimeout, status.Fail},
+		{ErrUnreachable, report.OutcomeUnreachable, status.Fail},
+		{ErrReset, report.OutcomeReset, status.Fail},
+		{ErrRefusedByRule, report.OutcomeRefusedByRule, status.Unknown},
 		// A failure nobody anticipated must never read as a success, and it must
 		// not claim to be one of the diagnoses either.
-		{errors.New("something nobody wrote a case for"), report.OutcomeReset},
+		{errors.New("something nobody wrote a case for"), report.OutcomeReset, status.Fail},
 	}
 
 	for _, tc := range cases {
@@ -173,11 +179,71 @@ func TestEveryWayAnAttemptCanFailKeepsItsOwnWord(t *testing.T) {
 		if rows[0].Outcome != tc.want {
 			t.Errorf("%v came out as %q, want %q", tc.err, rows[0].Outcome, tc.want)
 		}
-		if got.Status != status.Fail {
-			t.Errorf("%v left the layer at %s, and no address accepted a connection", tc.err, got.Status)
+		if got.Status != tc.wantStatus {
+			t.Errorf("%v left the layer at %s, want %s", tc.err, got.Status, tc.wantStatus)
 		}
 		if broken := got.Findings[0].Breach(); broken != "" {
 			t.Errorf("%v produced a row its own contract refuses: %s", tc.err, broken)
+		}
+	}
+}
+
+// TestAVerdictAgainstTheseAddressesNeedsAWalkThatFinishedTrying is ADR58 and its
+// twin, because either half alone can be satisfied by the wrong program.
+//
+// A layer that ran out of its own budget before dialling has measured nothing
+// about anybody's addresses, and FAIL there says they would not accept a
+// connection - about addresses nothing ever dialled. The twin underneath is what
+// stops this from being satisfied by a layer that never says FAIL: when every
+// address WAS tried and every one refused, the failure is real and stays.
+func TestAVerdictAgainstTheseAddressesNeedsAWalkThatFinishedTrying(t *testing.T) {
+	unfinished := workingInput(connectFailing(ErrRefused))
+	unfinished.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
+	expired, cancel := context.WithDeadline(context.Background(), unfinished.Now().Add(-time.Second))
+	defer cancel()
+
+	got := Ask(expired, unfinished)
+	if got.Status != status.Unknown {
+		t.Errorf("a layer that dialled nothing answered %s, and it has measured nothing to answer about", got.Status)
+	}
+	if got.Reason != status.ReasonSkippedBudget {
+		t.Errorf("the reason is %q, want %q", got.Reason, status.ReasonSkippedBudget)
+	}
+	if !strings.Contains(got.Detail, "did not finish trying") {
+		t.Errorf("the sentence does not say the layer gave up early: %q", got.Detail)
+	}
+
+	// The twin: every address tried, every one refused, so the failure is theirs.
+	finished := workingInput(connectFailing(ErrRefused))
+	finished.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
+	if got := Ask(context.Background(), finished); got.Status != status.Fail {
+		t.Errorf("a layer that tried every address and connected to none answered %s, want %s", got.Status, status.Fail)
+	}
+}
+
+// TestTheSentenceForAnUnfinishedWalkNamesEveryCount is inviolable rule 1 on the
+// one line anybody reads - the same rule, and the same three shapes, as the
+// resolving layer's sentence.
+func TestTheSentenceForAnUnfinishedWalkNamesEveryCount(t *testing.T) {
+	addresses := []string{"192.0.2.10", "192.0.2.11", "192.0.2.12"}
+
+	budgetOnly := notFinishedDetail(3, 0, addresses)
+	if !strings.Contains(budgetOnly, "3 of 3") || !strings.Contains(budgetOnly, "time budget") {
+		t.Errorf("the budget-only sentence does not say how many were dropped or why: %q", budgetOnly)
+	}
+	if strings.Contains(budgetOnly, "refused") {
+		t.Errorf("the budget-only sentence mentions a refusal that did not happen: %q", budgetOnly)
+	}
+
+	ruleOnly := notFinishedDetail(0, 2, addresses)
+	if !strings.Contains(ruleOnly, "2 of 3") || !strings.Contains(ruleOnly, "own rule") {
+		t.Errorf("the rule-only sentence does not say how many were refused or by what: %q", ruleOnly)
+	}
+
+	both := notFinishedDetail(1, 2, addresses)
+	for _, want := range []string{"1 of 3", "2 more", "time budget", "own rule"} {
+		if !strings.Contains(both, want) {
+			t.Errorf("the sentence for a walk stopped both ways does not mention %q: %q", want, both)
 		}
 	}
 }

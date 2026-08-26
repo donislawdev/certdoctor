@@ -43,6 +43,57 @@ func baseOptions(clock *fakeClock) Options {
 	}
 }
 
+// TestALayerThatGaveUpHalfwaySaysSoInTheNotes is inviolable rule 1 on the state
+// this program could not report until ADR58.
+//
+// A layer that ran out of ITS OWN budget partway through said so in its own row
+// and nowhere else. run.BudgetExceeded stayed false - correctly, because it
+// means the RUN ran out of its overall time, which is a different fact - so a
+// reader scanning the notes for what was given up found nothing to find.
+//
+// THE TWIN IS WHAT KEEPS THIS FROM BEING A NOTE ON EVERY UNKNOWN. Three of the
+// eight layers report UNKNOWN in every ordinary run because they are not
+// implemented, and a note for each of those would teach people to skip notes -
+// at which point the one that mattered goes with them.
+func TestALayerThatGaveUpHalfwaySaysSoInTheNotes(t *testing.T) {
+	skipped := func(reason status.Reason) report.Report {
+		t.Helper()
+		o := baseOptions(newClock())
+		o.Layers[layer.Resolution] = func(context.Context) Answer {
+			return Answer{Status: status.Unknown, Reason: reason, Detail: "a detail, because unknown demands one"}
+		}
+		got, err := Execute(context.Background(), o)
+		if err != nil {
+			t.Fatalf("the run failed: %v", err)
+		}
+		return got
+	}
+
+	notes := 0
+	got := skipped(status.ReasonSkippedBudget)
+	for _, note := range got.Notes {
+		if note.Kind == report.NoteSkipped && note.Layer == layer.Resolution {
+			notes++
+		}
+	}
+	if notes != 1 {
+		t.Errorf("a layer that ran out of its own budget produced %d notes about it, want exactly 1", notes)
+	}
+	// AND THE FLAG KEEPS ITS OWN MEANING. Widening it to cover a layer spending
+	// its own budget would make a documented field mean two things.
+	if got.Run.BudgetExceeded {
+		t.Error("a layer spending its own budget set the flag that says the RUN ran out of time")
+	}
+
+	// The twin: an unknown for any other reason gets no such note.
+	got = skipped(status.ReasonNothingToCheck)
+	for _, note := range got.Notes {
+		if note.Kind == report.NoteSkipped && note.Layer == layer.Resolution {
+			t.Errorf("a layer that had nothing to look at was reported as having skipped work: %q", note.Detail)
+		}
+	}
+}
+
 // TestALayerThatBreaksItsContractDegradesAloneRatherThanEndingTheRun is the
 // rule that one probe cannot take the report down with it, checked against the
 // shapes a layer can actually get wrong.

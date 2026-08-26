@@ -90,3 +90,36 @@ func (r Reason) Description() string { return reasonDescriptions[r] }
 
 // String makes Reason printable without a conversion at every call site.
 func (r Reason) String() string { return string(r) }
+
+// ReasonForNothingAttempted names why a layer got not one attempt off this
+// machine, given how many it dropped for its own budget.
+//
+// IT LIVES HERE, IN THE VOCABULARY, BECAUSE THREE LAYERS ASK IT AND THE ANSWER
+// IS ABOUT US - ADR58. L1, L3 and L4 each have their own words for what
+// happened to one attempt: a NoAnswer, a ConnectOutcome, an error sentinel.
+// What they share is the question, and a copy of the answer in each of them
+// would be one rule in three places, which is the measured shape of OBS50 -
+// three mutation entries turning into SKIP while the summary differs from a
+// clean one by a single number.
+//
+// THE RANKING IS BUDGET FIRST, AND THAT IS A DECISION RATHER THAN AN ORDERING.
+// Both can be true in one walk. A budget is something the person running this
+// can change, and it is the reason the later attempts never happened at all -
+// so naming it points at the thing that can be turned, while naming our own
+// refusal points at us for a run that also ran out of time.
+//
+// WHAT LANDS ON probe_error IS OURS AND ONLY OURS, exactly as it is in the
+// resolving layer's own chooser: what is left once the budget is ruled out is a
+// refusal by the allowed set, which is this program applying a rule to itself.
+//
+// IT TAKES ONE COUNT RATHER THAN TWO, AND THAT IS DELIBERATE. A second
+// parameter for the refusals would read as though it decided something, and it
+// would not - everything that is not the budget arrives at the same word.
+// Whether nothing left this machine at all is the CALLER's question, asked over
+// the caller's own vocabulary, and this function is only the name for it.
+func ReasonForNothingAttempted(skippedForBudget int) Reason {
+	if skippedForBudget > 0 {
+		return ReasonSkippedBudget
+	}
+	return ReasonProbeError
+}

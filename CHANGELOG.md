@@ -12,6 +12,16 @@ Barely diagnosable yet, and there has been no release.
 
 `certdoctor <url>` produces a whole report. Five of its eight diagnostic layers now say something about your machine - context, name resolution, TCP, TLS and the trust matrix - and the other three report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE`, or with `4 DIAGNOSIS` on something certdoctor can actually diagnose. What exists is the path a real answer travels, built before any answer, so that there is no point at which this program claims to have checked something it has not.
 
+### Changed - a layer no longer blames your machine for certdoctor's own budget
+
+- **A layer that did not get to finish looking now answers `UNKNOWN` instead of `FAIL`, and the run ends `5 INCONCLUSIVE` instead of `4 DIAGNOSIS`.** Measured before the change: `--probe-timeout 0.001` reported that name resolution had failed, and exited 4 - the code whose own table means "the run succeeded and found at least one failure" - on a machine that resolves the same name in 26 ms. Every row underneath said certdoctor had run out of time. The verdict was our arithmetic wearing your network's name.
+
+  **The rule is that a verdict against the thing being examined requires that the layer asked everything it meant to ask.** If nothing succeeded and anything at all was dropped - because certdoctor ran out of its own budget, or because its own rule about where it may connect refused an address - the answer is `UNKNOWN` with a reason, and the sentence says how many were never tried and why. It applies to name resolution, to the connection attempts and to the handshakes.
+
+  **What has NOT changed is the verdict on a layer that finished.** A name that resolves nowhere from both views is still a `FAIL` and still exits 4. So is an address that refuses a connection, and a server that will not complete a handshake. If your CI treats 4 as "certdoctor found something", that continues to mean exactly what it meant.
+
+- **A layer that gave up partway through now says so in the notes**, not only in its own row. `budget_exceeded` is unchanged and still means what it says - that the whole run ran out of its overall time - because a layer spending its own budget is a different fact.
+
 ### Fixed
 
 - **A name with a non-ASCII character in it is now converted before it goes on the wire, so international domain names work.** Asked about `https://bücher.de`, certdoctor used to put the raw characters into the DNS query and into the TLS server name, get `NXDOMAIN` from every resolver, and report a failure about a server that was working - while the same site asked about as `https://xn--bcher-kva.de` came back clean. One machine, one server, two spellings of one name, opposite answers.
