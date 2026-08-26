@@ -73,7 +73,7 @@ const (
 // NIL IS THE ORDINARY ANSWER. On the owner's machine every row of the matrix is
 // green or unassessed, so a run against a public site produces nine rows and no
 // commands - which is the correct output and not an empty feature.
-func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Machine) *report.Fix {
+func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Machine) (*report.Fix, string) {
 	if !chainComplete && !closedElsewhere {
 		// THE FAULT IS THE SERVER'S AND NO STORE CAN REPAIR IT. This is the gate
 		// the contract cannot check, because whether the chain was complete is a
@@ -92,42 +92,58 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 		// IT CANNOT LET A COMMAND THROUGH ON no-intermediate.txt, and that is
 		// what makes it safe: there no store closes the chain, so this stays
 		// shut. The bench checks both directions.
-		return nil
+		return nil, ""
 	}
 	if store.TrustFailure != report.UnknownAuthority {
-		return nil
+		return nil, ""
 	}
 	if store.StoreForm != report.StoreFile || store.StorePath == "" {
-		return nil
+		return nil, ""
 	}
 
 	elevated, why := elevationFor(store.StorePath, m)
 
 	switch store.Runtime {
 	case "java":
+		// EVERY PIECE GOES THROUGH THE SAME QUOTING, THE PLACEHOLDERS INCLUDED.
+		// A person substitutes their own path into <certificate.pem>, and a space
+		// in it is ordinary - ADR59. The angle brackets are a redirection in both
+		// shells this command can land in, so they need the quotes even before
+		// anybody has substituted anything.
+		keytool, keytoolOK := quoteFor(m.OS, keytoolBeside(store))
+		storePath, pathOK := quoteFor(m.OS, store.StorePath)
+		alias, aliasOK := quoteFor(m.OS, aliasPlaceholder)
+		certificate, certificateOK := quoteFor(m.OS, certificatePlaceholder)
+		if !keytoolOK || !pathOK || !aliasOK || !certificateOK {
+			return nil, unwritablePath
+		}
 		return &report.Fix{
 			Command: fmt.Sprintf(`%s -importcert -trustcacerts -keystore %s -storepass changeit -alias %s -file %s`,
-				quote(keytoolBeside(store)), quote(store.StorePath), aliasPlaceholder, certificatePlaceholder),
+				keytool, storePath, alias, certificate),
 			Placeholders:      []string{aliasPlaceholder, certificatePlaceholder},
 			RequiresElevation: elevated,
 			Elevation:         why,
 			// The password is the default one this store was just READ with, so
 			// it is measured rather than assumed - and it is not a secret.
 			Caveat: "installing a newer build of this runtime brings its own store and does not carry this certificate across",
-		}
+		}, ""
 	case "curl", "git":
+		command, ok := appendPEM(store.StorePath, m.OS)
+		if !ok {
+			return nil, unwritablePath
+		}
 		return &report.Fix{
-			Command:           appendPEM(store.StorePath, m.OS),
+			Command:           command,
 			Placeholders:      []string{certificatePlaceholder},
 			RequiresElevation: elevated,
 			Elevation:         why,
 			Caveat: "whatever maintains this bundle - a package manager, or reinstalling the runtime - rewrites the file " +
 				"and removes the certificate again, and this program does not know what maintains it here",
-		}
+		}, ""
 	}
 	// A runtime with a probe and no template gets NO command rather than a
 	// guessed one. The registry test refuses to let that state ship.
-	return nil
+	return nil, ""
 }
 
 // appendPEM is the command that adds one certificate to a PEM bundle without
@@ -139,12 +155,16 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 // alternative, a ">>" redirection, is written by whichever shell the person
 // happens to be in - and Windows PowerShell 5.1 writes UTF-16, which turns a
 // certificate bundle into a file no TLS library will read.
-func appendPEM(storePath, platform string) string {
-	if platform == "windows" {
-		return fmt.Sprintf(`cmd /c copy /b %s+%s %s`,
-			quote(storePath), certificatePlaceholder, quote(storePath))
+func appendPEM(storePath, platform string) (string, bool) {
+	path, pathOK := quoteFor(platform, storePath)
+	certificate, certificateOK := quoteFor(platform, certificatePlaceholder)
+	if !pathOK || !certificateOK {
+		return "", false
 	}
-	return fmt.Sprintf(`cat %s >> %s`, certificatePlaceholder, quote(storePath))
+	if platform == "windows" {
+		return fmt.Sprintf(`cmd /c copy /b %s+%s %s`, path, certificate, path), true
+	}
+	return fmt.Sprintf(`cat %s >> %s`, certificate, path), true
 }
 
 // keytoolBeside names the keytool belonging to THIS installation rather than
@@ -212,9 +232,73 @@ func within(path, directory, os string) bool {
 	return path == directory || strings.HasPrefix(path, directory+"/")
 }
 
-// quote wraps a path so a space in it does not become two arguments.
+// unwritablePath is the sentence a row carries when a command exists in
+// principle and this program will not write it - ADR59. It is not the ordinary
+// nil answer, which needs no explanation, so it says which of the two happened.
+const unwritablePath = "no command is offered for it: the path holds a character that a shell would read as an " +
+	"instruction rather than as part of a name, and a line this program cannot write safely is not written at all"
+
+// windowsMetacharacters are the characters that quoting on Windows does NOT
+// make literal, so a path carrying one gets no command at all - ADR59.
 //
-// "Program Files" is on every Windows machine this tool will meet, and an
-// unquoted command carrying it fails in a way that reads as OUR defect - the
-// person sees a command we printed, runs it, and it does not work.
-func quote(s string) string { return `"` + s + `"` }
+// EACH ONE IS MEASURED ON THIS MACHINE AND HAS AN OFFICIAL SOURCE, because the
+// whole point of this list is that it is a claim about somebody else's shell -
+// inviolable rule 18. Measured 2026-08-26:
+//
+//   - "%": cmd /c echo "a%USERNAME%b" printed "aTestttb". Documented at
+//     https://learn.microsoft.com/windows-server/administration/windows-commands/cmd
+//     (read 2026-08-26): "To substitute variable values in the command line or
+//     scripts, enclose the variable name in percent signs".
+//   - "$" and the backquote: this command begins with "cmd /c" and is pasted
+//     into whatever shell the person is using, which on Windows is as likely to
+//     be PowerShell. Measured: "z$(1+1)z" printed z2z. Documented at
+//     https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_quoting_rules
+//     (read 2026-08-26): a double-quoted string is an expandable string and the
+//     backquote is the escape character.
+//   - the double quote itself ends the quoting and cannot be escaped in a way
+//     both shells agree on.
+//
+// WHAT IS DELIBERATELY NOT HERE, AND IT IS A DECISION RATHER THAN AN OVERSIGHT.
+// "&", "|", "<", ">" and "^" ARE made literal by the quotes - measured, cmd /c
+// echo "a&b|c^d<e>f" printed the lot unchanged - so refusing them would take the
+// command away from paths that are perfectly ordinary. "!" is expanded only when
+// delayed expansion has been turned on, which the same Microsoft page says is
+// off by default, so it stays out too and stands named in ADR59 as the residual.
+const windowsMetacharacters = "%\"$`"
+
+// quoteFor writes one path so that a shell reads it as a single literal word,
+// and answers false when this program cannot write it safely at all.
+//
+// THIS IS THE ONLY LINE THIS PROGRAM HANDS A PERSON TO RUN, and the path in it
+// comes from somebody else's configuration - http.sslCAInfo out of a gitconfig,
+// CURL_CA_BUNDLE out of the environment. The double quotes that used to stand
+// here stop a space from becoming two arguments and stop nothing else: a POSIX
+// shell still expands $(...) inside them.
+//
+// THE POSIX FORM IS THE APOSTROPHE, and the escape looks strange because the
+// standard leaves no other way. IEEE Std 1003.1-2024, Shell Command Language
+// section 2.2.2 (read 2026-08-26,
+// https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html):
+// "Enclosing characters in single-quotes shall preserve the literal value of
+// each character within the single-quotes. A single-quote cannot occur within
+// single-quotes." So an apostrophe is written by leaving the quoting, escaping
+// one apostrophe, and going back in. Measured in WSL the same day, from a file
+// rather than a one-liner: single quotes left $(...) and ${...} untouched.
+//
+// A CONTROL CHARACTER IS REFUSED ON BOTH PLATFORMS, and the reason is the report
+// rather than the shell: a newline inside apostrophes is legal and would turn one
+// printed line into two, which is a command nobody can paste.
+func quoteFor(platform, s string) (string, bool) {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return "", false
+		}
+	}
+	if platform == "windows" {
+		if strings.ContainsAny(s, windowsMetacharacters) {
+			return "", false
+		}
+		return `"` + s + `"`, true
+	}
+	return `'` + strings.ReplaceAll(s, `'`, `'\''`) + `'`, true
+}

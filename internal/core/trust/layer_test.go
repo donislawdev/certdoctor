@@ -357,3 +357,52 @@ func TestTheCommandArrivesAfterTheWholeMatrixHasBeenWalked(t *testing.T) {
 		}
 	}
 }
+
+// TestARefusedCommandSaysWhyOnItsRow is inviolable rule 1 in the one place this
+// program tells somebody to go and do something.
+//
+// "No command" is the ordinary answer and needs no sentence - ADR51, and on the
+// owner's machine every row says it. "There IS a command for this and we will
+// not write it" is a different fact, and a row that looked identical to the
+// ordinary one would be a run that quietly did less than it could. ADR59.
+func TestARefusedCommandSaysWhyOnItsRow(t *testing.T) {
+	no := false
+	refused := aStore("curl", "/usr/bin/curl", &no, "")
+	refused.StorePath = `C:\certs\%USERNAME%\ca.crt`
+
+	in := probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		return []report.TrustStore{refused}, nil
+	})
+
+	var said string
+	for _, finding := range Ask(context.Background(), in).Findings {
+		if finding.Kind == report.FindingTrustStore {
+			if finding.TrustStore.Fix != nil {
+				t.Errorf("a command was written for a path this program cannot write safely: %q",
+					finding.TrustStore.Fix.Command)
+			}
+			said = finding.Summary
+		}
+	}
+	if !strings.Contains(said, "no command is offered") {
+		t.Errorf("the row is silent about the command it did not write: %q", said)
+	}
+
+	// THE TWIN, AND WITHOUT IT THIS TEST IS SATISFIED BY A ROW THAT ALWAYS
+	// APOLOGISES. An ordinary path gets its command and no explanation.
+	ordinary := aStore("curl", "/usr/bin/curl", &no, "")
+	in = probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		return []report.TrustStore{ordinary}, nil
+	})
+	for _, finding := range Ask(context.Background(), in).Findings {
+		if finding.Kind != report.FindingTrustStore {
+			continue
+		}
+		if finding.TrustStore.Fix == nil {
+			t.Fatal("an ordinary path got no command, so the case above proves nothing")
+		}
+		if strings.Contains(finding.Summary, "no command is offered") {
+			t.Errorf("a row with a command still explains why it has none: %q", finding.Summary)
+		}
+	}
+}

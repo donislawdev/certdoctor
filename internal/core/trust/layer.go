@@ -162,7 +162,16 @@ func Ask(ctx context.Context, in Input) Result {
 			// carrying one has passed through the branch that says it was
 			// refused. A probe filling this in itself would be a probe producing
 			// a verdict, which ADR7 keeps out of the adapters.
-			r.store.Fix = fixFor(r.store, whole, closed, in.Machine)
+			var unwritable string
+			r.store.Fix, unwritable = fixFor(r.store, whole, closed, in.Machine)
+			// A REFUSED COMMAND SAYS SO ON THE ROW, AND AN ORDINARY nil DOES NOT.
+			// "No command" is the usual answer and needs no sentence - ADR51 -
+			// but "there is a command for this and we will not write it" is a
+			// different fact, and leaving it silent would be rule 1 broken in the
+			// one place this program tells somebody to do something. ADR59.
+			if unwritable != "" {
+				r.summary = summaryOf(r.store) + " - " + unwritable
+			}
 		}
 		findings = append(findings, r.finding())
 	}
@@ -174,8 +183,10 @@ func Ask(ctx context.Context, in Input) Result {
 // the whole matrix has been worked out.
 type row struct {
 	store report.TrustStore
-	// summary replaces the ordinary wording for a probe that could not run at
-	// all, whose row describes the asking rather than the store.
+	// summary replaces the ordinary wording in the two cases where the ordinary
+	// wording would leave something out: a probe that could not run at all, whose
+	// row describes the asking rather than the store, and a store whose command
+	// this program refused to write - ADR59.
 	summary string
 }
 

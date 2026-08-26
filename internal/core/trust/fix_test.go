@@ -51,7 +51,7 @@ func TestEveryDeclaredRuntimeCanBeFixed(t *testing.T) {
 	for _, descriptor := range All() {
 		t.Run(descriptor.ID, func(t *testing.T) {
 			store := aRefusedStore(descriptor.Runtime, `C:\somewhere\install`, `C:\somewhere\install\store.crt`)
-			fix := fixFor(store, true, false, aMachine())
+			fix, _ := fixFor(store, true, false, aMachine())
 			if fix == nil {
 				t.Fatalf("runtime %q is asked by a probe and has no remediation template, so its rows can be "+
 					"diagnosed and never acted on", descriptor.Runtime)
@@ -73,7 +73,7 @@ func TestEveryDeclaredRuntimeCanBeFixed(t *testing.T) {
 func TestTheThreeGatesEachStopACommandOnTheirOwn(t *testing.T) {
 	// The positive twin first. Without it every case below passes on a function
 	// that never returns anything.
-	if fixFor(aJavaStore(), true, false, aMachine()) == nil {
+	if fix, _ := fixFor(aJavaStore(), true, false, aMachine()); fix == nil {
 		t.Fatal("a store that refused a complete chain for want of a signer got no command, and that is the one case there is a command for")
 	}
 
@@ -153,7 +153,7 @@ func TestTheThreeGatesEachStopACommandOnTheirOwn(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if fix := fixFor(c.store(), c.complete, c.closedElsewhere, aMachine()); fix != nil {
+			if fix, _ := fixFor(c.store(), c.complete, c.closedElsewhere, aMachine()); fix != nil {
 				t.Errorf("a command was produced where %s: %q", c.why, fix.Command)
 			}
 		})
@@ -175,11 +175,11 @@ func TestTheThreeGatesEachStopACommandOnTheirOwn(t *testing.T) {
 // WITHOUT THE NEGATIVE HALF THIS WOULD PASS ON A GATE THAT HAD BEEN DELETED,
 // which is the shape OBS56 records.
 func TestAnIncompleteChainAnotherStoreClosedStillEarnsACommand(t *testing.T) {
-	if fix := fixFor(aJavaStore(), false, true, aMachine()); fix == nil {
+	if fix, _ := fixFor(aJavaStore(), false, true, aMachine()); fix == nil {
 		t.Error("no command for a store that refused a chain another store on this machine closed, " +
 			"which is the middlebox case and the one a command repairs")
 	}
-	if fix := fixFor(aJavaStore(), false, false, aMachine()); fix != nil {
+	if fix, _ := fixFor(aJavaStore(), false, false, aMachine()); fix != nil {
 		t.Errorf("a command was produced for an incomplete chain nothing here closed, which sends "+
 			"somebody to edit a store that is not at fault: %q", fix.Command)
 	}
@@ -188,7 +188,7 @@ func TestAnIncompleteChainAnotherStoreClosedStillEarnsACommand(t *testing.T) {
 	// closed the chain.
 	expired := aJavaStore()
 	expired.TrustFailure = report.Expired
-	if fix := fixFor(expired, false, true, aMachine()); fix != nil {
+	if fix, _ := fixFor(expired, false, true, aMachine()); fix != nil {
 		t.Errorf("the second arm let a command through for an expired certificate: %q", fix.Command)
 	}
 }
@@ -200,7 +200,7 @@ func TestAnIncompleteChainAnotherStoreClosedStillEarnsACommand(t *testing.T) {
 // installs measured on this machine. The command would look right and, on five
 // rows out of six, run a different installation's tool.
 func TestTheJavaCommandNamesTheKeytoolBesideTheStore(t *testing.T) {
-	fix := fixFor(aJavaStore(), true, false, aMachine())
+	fix, _ := fixFor(aJavaStore(), true, false, aMachine())
 	if fix == nil {
 		t.Fatal("no command for a Java store that refused the chain")
 	}
@@ -221,7 +221,7 @@ func TestTheJavaCommandNamesTheKeytoolBesideTheStore(t *testing.T) {
 // about a machine it is not running on.
 func TestTheSeparatorComesFromThePathRatherThanTheBuild(t *testing.T) {
 	store := aRefusedStore("java", "/usr/lib/jvm/jdk-21", "/usr/lib/jvm/jdk-21/lib/security/cacerts")
-	fix := fixFor(store, true, false, posix())
+	fix, _ := fixFor(store, true, false, posix())
 	if fix == nil {
 		t.Fatal("no command for a posix Java store")
 	}
@@ -246,7 +246,7 @@ func TestABundleIsAppendedRatherThanReplaced(t *testing.T) {
 		for _, runtime := range []string{"curl", "git"} {
 			store := aBundleStore()
 			store.Runtime = runtime
-			fix := fixFor(store, true, false, machine)
+			fix, _ := fixFor(store, true, false, machine)
 			if fix == nil {
 				t.Fatalf("no command for a %s bundle on %s", runtime, machine.OS)
 			}
@@ -271,7 +271,7 @@ func TestABundleIsAppendedRatherThanReplaced(t *testing.T) {
 // whichever shell the person happens to be in, and Windows PowerShell 5.1 writes
 // UTF-16 - which turns a certificate bundle into a file no TLS library reads.
 func TestTheAppendCommandFitsThePlatform(t *testing.T) {
-	windows := fixFor(aBundleStore(), true, false, aMachine())
+	windows, _ := fixFor(aBundleStore(), true, false, aMachine())
 	if windows == nil || !strings.Contains(windows.Command, "copy /b") {
 		t.Errorf("the Windows command is not the measured one: %#v", windows)
 	}
@@ -279,7 +279,7 @@ func TestTheAppendCommandFitsThePlatform(t *testing.T) {
 		t.Errorf("the Windows command redirects, and the shell that does it may write UTF-16: %q", windows.Command)
 	}
 
-	elsewhere := fixFor(aBundleStore(), true, false, posix())
+	elsewhere, _ := fixFor(aBundleStore(), true, false, posix())
 	if elsewhere == nil || !strings.Contains(elsewhere.Command, "cat ") || !strings.Contains(elsewhere.Command, ">>") {
 		t.Errorf("the posix command is not an append: %#v", elsewhere)
 	}
@@ -337,7 +337,7 @@ func TestElevationIsAnsweredAndSaysWhy(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			fix := fixFor(c.store, true, false, c.machine)
+			fix, _ := fixFor(c.store, true, false, c.machine)
 			if fix == nil {
 				t.Fatal("no command at all")
 			}
@@ -359,7 +359,7 @@ func TestElevationIsAnsweredAndSaysWhy(t *testing.T) {
 // concludes the tool was wrong the first time.
 func TestEveryCommandSaysWhatOutlivesIt(t *testing.T) {
 	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore()} {
-		fix := fixFor(store, true, false, aMachine())
+		fix, _ := fixFor(store, true, false, aMachine())
 		if fix == nil {
 			t.Fatalf("no command for %s", store.Runtime)
 		}
@@ -373,7 +373,7 @@ func TestEveryCommandSaysWhatOutlivesIt(t *testing.T) {
 // and the validator, which are in two packages and could drift apart.
 func TestAProducedCommandSatisfiesTheContract(t *testing.T) {
 	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore()} {
-		store.Fix = fixFor(store, true, false, aMachine())
+		store.Fix, _ = fixFor(store, true, false, aMachine())
 		finding := report.Finding{
 			Kind:       report.FindingTrustStore,
 			Summary:    "a store that refused the chain",
@@ -382,6 +382,167 @@ func TestAProducedCommandSatisfiesTheContract(t *testing.T) {
 		}
 		if broken := finding.Breach(); broken != "" {
 			t.Errorf("a command this package produced was refused by the contract: %s", broken)
+		}
+	}
+}
+
+// THE QUOTING, WHICH UNTIL ADR59 HAD NO GUARD AT ALL.
+//
+// This is the one line this program hands a person to run, and the path inside
+// it comes from somebody else's configuration - http.sslCAInfo out of a
+// gitconfig, CURL_CA_BUNDLE out of the environment. Every test below has the
+// positive twin OBS56 asks for: a generator that refused everything, or one that
+// quoted everything into uselessness, would satisfy half of them beautifully.
+
+// TestAPosixPathIsWrittenSoThatAShellReadsItAsAName is the defect ADR59 names.
+//
+// Double quotes stop a space from splitting a word and stop nothing else: a
+// POSIX shell expands $(...) inside them, measured in WSL on 2026-08-26 from a
+// file rather than a one-liner. IEEE Std 1003.1-2024 section 2.2.3 lists the
+// three characters that keep their meaning there, and the dollar sign is one.
+func TestAPosixPathIsWrittenSoThatAShellReadsItAsAName(t *testing.T) {
+	store := aBundleStore()
+	store.StorePath = "/etc/ssl/$(id -u)/ca.crt"
+
+	fix, refused := fixFor(store, true, false, posix())
+	if fix == nil {
+		t.Fatalf("a path a shell can be told to read literally got no command at all: %q", refused)
+	}
+	if !strings.Contains(fix.Command, `'/etc/ssl/$(id -u)/ca.crt'`) {
+		t.Errorf("the path is not inside apostrophes, so the shell would run what is in it: %q", fix.Command)
+	}
+	if strings.Contains(fix.Command, `"`) {
+		t.Errorf("a double quote survives in a posix command, and a shell expands inside those: %q", fix.Command)
+	}
+}
+
+// TestAnApostropheInAPathIsWrittenTheOnlyWayAPosixShellAccepts pins the escape
+// that looks like a mistake and is the standard.
+//
+// IEEE Std 1003.1-2024, Shell Command Language section 2.2.2, read 2026-08-26:
+// "A single-quote cannot occur within single-quotes." So the only way to carry
+// one is to leave the quoting, escape it, and go back in.
+func TestAnApostropheInAPathIsWrittenTheOnlyWayAPosixShellAccepts(t *testing.T) {
+	store := aBundleStore()
+	store.StorePath = "/etc/ssl/a'b/ca.crt"
+
+	fix, refused := fixFor(store, true, false, posix())
+	if fix == nil {
+		t.Fatalf("an apostrophe in a path is ordinary and got no command: %q", refused)
+	}
+	if !strings.Contains(fix.Command, `'/etc/ssl/a'\''b/ca.crt'`) {
+		t.Errorf("the apostrophe is not escaped the way a posix shell accepts: %q", fix.Command)
+	}
+}
+
+// TestAWindowsPathThisProgramCannotWriteSafelyGetsNoCommand is the second half
+// of ADR59 - the half that refuses.
+//
+// On Windows the command begins with "cmd /c" and is pasted into whichever shell
+// the person is in, which is as likely to be PowerShell. Neither shell's quotes
+// make these characters literal: measured 2026-08-26, cmd /c echo "a%USERNAME%b"
+// printed aTestttb, and PowerShell "z$(1+1)z" printed z2z.
+func TestAWindowsPathThisProgramCannotWriteSafelyGetsNoCommand(t *testing.T) {
+	for _, path := range []string{
+		`C:\certs\%USERNAME%\ca.crt`,
+		`C:\certs\$(whoami)\ca.crt`,
+		// ` is the backquote: this path needs both it and backslashes, and no
+		// Go literal form carries the two together.
+		"C:\\certs\\\x60whoami\x60\\ca.crt",
+		`C:\certs\a"b\ca.crt`,
+	} {
+		for _, runtime := range []string{"curl", "java"} {
+			store := aRefusedStore(runtime, `C:\certs\install`, path)
+			fix, refused := fixFor(store, true, false, aMachine())
+			if fix != nil {
+				t.Errorf("a command was written for %s carrying a character no quoting makes literal: %q",
+					runtime, fix.Command)
+			}
+			if refused == "" {
+				t.Errorf("no command was written for %s and the row says nothing about why", runtime)
+			}
+		}
+	}
+
+	// THE TWIN. A space is the ordinary case this quoting exists for, and
+	// refusing it would take the command away from every Windows machine.
+	fix, refused := fixFor(aJavaStore(), true, false, aMachine())
+	if fix == nil {
+		t.Fatalf("an ordinary Program Files path got no command: %q", refused)
+	}
+	if refused != "" {
+		t.Errorf("a command was written and the row still says it was refused: %q", refused)
+	}
+}
+
+// TestACharacterTheQuotingSurvivesIsNotRefused is the guard against the other
+// direction, and it is not hypothetical - over-refusing is how a safety rule
+// quietly removes a feature.
+//
+// Measured 2026-08-26: cmd /c echo "a&b|c^d<e>f" printed the lot unchanged, so
+// those characters ARE literal inside the quotes and there is nothing to refuse.
+func TestACharacterTheQuotingSurvivesIsNotRefused(t *testing.T) {
+	store := aRefusedStore("curl", `C:\certs\install`, `C:\certs\a&b(c)^d\ca.crt`)
+
+	fix, refused := fixFor(store, true, false, aMachine())
+	if fix == nil {
+		t.Fatalf("a path whose characters the quotes make literal was refused anyway: %q", refused)
+	}
+	if !strings.Contains(fix.Command, `"C:\certs\a&b(c)^d\ca.crt"`) {
+		t.Errorf("the path is not inside the quotes that make those characters literal: %q", fix.Command)
+	}
+}
+
+// TestAControlCharacterGetsNoCommandOnEitherPlatform refuses for the report's
+// sake rather than the shell's.
+//
+// A newline inside apostrophes is perfectly legal POSIX. It would also turn one
+// printed line into two, and half a command pasted into a terminal is worse than
+// no command at all.
+func TestAControlCharacterGetsNoCommandOnEitherPlatform(t *testing.T) {
+	for _, machine := range []Machine{aMachine(), posix()} {
+		store := aBundleStore()
+		store.StorePath = "/etc/ssl/one\ntwo/ca.crt"
+
+		fix, refused := fixFor(store, true, false, machine)
+		if fix != nil {
+			t.Errorf("on %s a command was written across two lines: %q", machine.OS, fix.Command)
+		}
+		if refused == "" {
+			t.Errorf("on %s the row says nothing about the command it did not get", machine.OS)
+		}
+	}
+}
+
+// TestBothPlaceholdersAreQuotedRatherThanLeftBare is the part of ADR59 that is
+// easy to read as cosmetic.
+//
+// Both placeholders carry angle brackets, which are a redirection in every shell
+// this command can land in - so the command is broken before anybody has
+// substituted anything. And the person substitutes a path of their own into
+// <certificate.pem>, where a space is ordinary.
+func TestBothPlaceholdersAreQuotedRatherThanLeftBare(t *testing.T) {
+	for _, machine := range []Machine{aMachine(), posix()} {
+		mark := `"`
+		if machine.OS != "windows" {
+			mark = `'`
+		}
+		store := aJavaStore()
+		if machine.OS != "windows" {
+			store = aRefusedStore("java", "/opt/jdk-25", "/opt/jdk-25/lib/security/cacerts")
+		}
+
+		fix, refused := fixFor(store, true, false, machine)
+		if fix == nil {
+			t.Fatalf("on %s the java command was refused: %q", machine.OS, refused)
+		}
+		for _, placeholder := range fix.Placeholders {
+			if !strings.Contains(fix.Command, mark+placeholder+mark) {
+				t.Errorf("on %s the placeholder %s stands unquoted in %q", machine.OS, placeholder, fix.Command)
+			}
+		}
+		if len(fix.Placeholders) == 0 {
+			t.Errorf("on %s the java command declares nothing to fill in, so this test asked nothing", machine.OS)
 		}
 	}
 }
