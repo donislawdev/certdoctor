@@ -27,3 +27,11 @@ func unqualified() SigningAuthority {
 	// hole exactly here.
 	return SigningAuthority{Issuer: "CN=somebody else", HeldBy: "some_stores"}
 }
+
+func names() *report.Inspection {
+	// The third shape, added with P6b-K2. Attaching a product name is the step
+	// that turns a count into a sentence about somebody's network, so it is the
+	// same judgement arriving by a second door - and a scanner that knew only
+	// the first type name would let it through while looking busy.
+	return &report.Inspection{Product: "somebody's appliance", MatchedAttribute: "CN"}
+}

@@ -12,6 +12,22 @@ Barely diagnosable yet, and there has been no release.
 
 `certdoctor <url>` produces a whole report. Five of its eight diagnostic layers now say something about your machine - context, name resolution, TCP, TLS and the trust matrix - and the other three report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE`, or with `4 DIAGNOSIS` on something certdoctor can actually diagnose. What exists is the path a real answer travels, built before any answer, so that there is no point at which this program claims to have checked something it has not.
 
+### Added - certdoctor will now name a TLS inspection product, and only when it can show you where the name came from
+
+- **When the certificate you were served was signed by an authority whose name matches a product certdoctor carries a source for, the report says so plainly** - "and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server" - and `--json` carries `signing_authority.inspection` with the product and which part of the issuer's name matched. Everywhere else that field is `null`.
+
+  **`null` there means "not named", never "not inspection".** The measurement certdoctor already made - who signed this, and how many of your trust stores hold an anchor for them - is unchanged, runs on every connection, and never consults the list. Your trust matrix, the commands underneath it and the layer's verdict are all decided before the list is asked anything at all.
+
+- **The list has two entries today: mitmproxy and Cisco Umbrella.** That is short on purpose. An entry exists only where the product's own source code or the vendor's own documentation states the name their certificate is issued under, read at that source and dated. Fortinet documents the name of a certificate *object* rather than the name inside the certificate; Zscaler's, Netskope's, PortSwigger's and Telerik's own pages describe their certificates without stating it. None of them got an entry, and none of them is thereby innocent - they are unnamed.
+
+  **The reason the list cannot be long is the same reason certdoctor never detected inspection by name in the first place.** Every one of these products lets an organisation supply its own certificate authority, and the appliance then signs with your company's name rather than the vendor's. A program that recognised inspection by name would miss exactly the environments this one is built for.
+
+- **What certdoctor still will not do is guess.** With no name, it states what it measured and names both readings, because an intercepting middlebox and your own company's certificate authority are indistinguishable from one connection - measured, they produce the same value in every field certdoctor has. With a name, the caveat changes to say the naming rests on a name in the issuer rather than on anything measured about your network, and the fingerprint stays beside it so somebody else can check.
+
+- **Under `--redact` the product name survives and the issuer does not.** The name came from certdoctor's own list and identifies no host, account or network of yours; the issuer is text out of somebody else's certificate and is where a host name hides.
+
+- **`--json` reports schema 1.10.** One nullable object was added and nothing was removed or changed meaning, so anything reading 1.9 keeps working.
+
 ### Changed - a layer no longer blames your machine for certdoctor's own budget
 
 - **A layer that did not get to finish looking now answers `UNKNOWN` instead of `FAIL`, and the run ends `5 INCONCLUSIVE` instead of `4 DIAGNOSIS`.** Measured before the change: `--probe-timeout 0.001` reported that name resolution had failed, and exited 4 - the code whose own table means "the run succeeded and found at least one failure" - on a machine that resolves the same name in 26 ms. Every row underneath said certdoctor had run out of time. The verdict was our arithmetic wearing your network's name.

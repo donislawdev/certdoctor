@@ -303,3 +303,129 @@ func TestEveryHoldingHasACaveat(t *testing.T) {
 		}
 	}
 }
+
+// TestANamedProductPromotesTheSentenceAndReplacesTheHedge is the other half of
+// TestNoAccusationIsMadeOnAnyHolding, and neither means anything alone.
+//
+// That test proves the program stays quiet on a count. This one proves it is not
+// quiet BECAUSE IT CANNOT SPEAK - a guard that refused everything would pass the
+// first test and be worthless. Both halves come from ADR53: the measurement is
+// what the report states, and a name from the list is the only thing that turns
+// it into a sentence about somebody's network.
+func TestANamedProductPromotesTheSentenceAndReplacesTheHedge(t *testing.T) {
+	leaf := &report.Certificate{
+		Subject:           "CN=registry.example.net",
+		Issuer:            "CN=mitmproxy,O=mitmproxy",
+		FingerprintSHA256: "aa:bb:cc:dd",
+	}
+	stores := []report.TrustStore{
+		holder("curl", "/usr/bin/curl", "/etc/ssl/certs/ca.crt"),
+		refuser("git", "/usr/bin/git", "/etc/git.crt"),
+	}
+	finding := authorityOf(leaf, stores)
+	if finding == nil {
+		t.Fatal("no row for a set of stores that were assessed")
+	}
+	authority := finding.SigningAuthority
+
+	if authority.Inspection == nil {
+		t.Fatal("the issuer names a product on the list and nothing was named")
+	}
+	if authority.Inspection.Product != "mitmproxy" {
+		t.Errorf("named %q rather than the product on the list", authority.Inspection.Product)
+	}
+	if authority.Inspection.MatchedAttribute != "CN" {
+		t.Errorf("said the name came from %q, and a reader checking this needs the right place to look",
+			authority.Inspection.MatchedAttribute)
+	}
+	// THE WHOLE CLAUSE RATHER THAN THE TWO WORDS IN IT, AND THE MUTATION REGISTER
+	// IS WHY. Asked for "intercepted" and "mitmproxy" separately, this passed
+	// against a sentence mangled into gibberish: the accusation survived in the
+	// literal, and the product name survived because THE ISSUER OF THIS VERY
+	// FIXTURE is spelled mitmproxy. Two right answers to a question that was not
+	// being asked - OBS56, caught by the register rather than by reading.
+	const clause = "and that issuer names mitmproxy, a TLS inspection product"
+	if !strings.Contains(finding.Summary, clause) {
+		t.Errorf("the promoted sentence does not name the product and say what it is: %q", finding.Summary)
+	}
+	if !strings.Contains(finding.Summary, "intercepted") {
+		t.Errorf("named a product and would not say what it means: %q", finding.Summary)
+	}
+
+	// THE HEDGE HAD TO CHANGE RATHER THAN GROW. The caveat beside some_stores
+	// says this program cannot tell an appliance from a company's own authority,
+	// which stops being true the moment one is named - a report carrying both
+	// sentences contradicts itself in two adjacent lines.
+	if strings.Contains(authority.Caveat, "cannot tell those two apart") {
+		t.Errorf("kept the hedge that says the two cannot be told apart, beside a line telling them apart: %q",
+			authority.Caveat)
+	}
+	if !strings.Contains(authority.Caveat, "NAME") {
+		t.Errorf("named a product without saying the naming rests on a name: %q", authority.Caveat)
+	}
+
+	// AND THE MEASUREMENT IS UNTOUCHED, which is what "the list is only for
+	// naming" means in code. A reader who does not believe the second half still
+	// has the first, and the first is what produced the rows and the commands.
+	unnamed := authorityOf(aSignedLeaf(), stores)
+	if authority.HeldBy != unnamed.SigningAuthority.HeldBy {
+		t.Errorf("the holding changed with the name: %q against %q", authority.HeldBy,
+			unnamed.SigningAuthority.HeldBy)
+	}
+	if len(authority.TrustingStores) != len(unnamed.SigningAuthority.TrustingStores) ||
+		len(authority.RefusingStores) != len(unnamed.SigningAuthority.RefusingStores) {
+		t.Error("the store lists changed with the name, and the list is only for naming")
+	}
+}
+
+// TestANamedProductIsAcceptedByTheContract closes the loop the two tests above
+// leave open: a sentence this layer is happy with, that the report would then
+// refuse, would take the whole layer down - ADR66 kept that rule and wrote down
+// its price.
+func TestANamedProductIsAcceptedByTheContract(t *testing.T) {
+	leaf := &report.Certificate{
+		Subject:           "CN=registry.example.net",
+		Issuer:            "CN=mitmproxy,O=mitmproxy",
+		FingerprintSHA256: "aa:bb:cc:dd",
+	}
+	finding := authorityOf(leaf, []report.TrustStore{
+		holder("curl", "/usr/bin/curl", "/etc/ssl/certs/ca.crt"),
+		refuser("git", "/usr/bin/git", "/etc/git.crt"),
+	})
+	if broken := finding.Breach(); broken != "" {
+		t.Errorf("the layer produced a finding its own contract refuses: %s", broken)
+	}
+}
+
+// TestAnIssuerNAMEDAfterAnAccusationDoesNotBreakTheContract is the trap this
+// rule would have been without care, and it is worth its own test because the
+// failure would not look like this rule at all.
+//
+// The summary quotes the issuer, which inviolable rule 21 REQUIRES. An authority
+// whose own name contains one of the accusing words would then make every
+// unnamed finding break the report contract - and a broken contract degrades the
+// WHOLE layer. That is the second, unknown trigger ADR66 wrote down the price of.
+// OBS74 is the same lesson learned on the bench: quoting the evidence read as
+// making the accusation.
+func TestAnIssuerNamedAfterAnAccusationDoesNotBreakTheContract(t *testing.T) {
+	leaf := &report.Certificate{
+		Subject: "CN=registry.example.net",
+		// Not on the list: the letters are there and no entry names it, which
+		// is precisely the combination that used to be fatal.
+		Issuer:            "CN=Intercept Systems Internal CA,O=Intercept Systems",
+		FingerprintSHA256: "aa:bb:cc:dd",
+	}
+	finding := authorityOf(leaf, []report.TrustStore{
+		holder("curl", "/usr/bin/curl", "/etc/ssl/certs/ca.crt"),
+	})
+	if finding == nil {
+		t.Fatal("no row for a store that was assessed")
+	}
+	if finding.SigningAuthority.Inspection != nil {
+		t.Error("named a product on the strength of the customer's own company name")
+	}
+	if broken := finding.Breach(); broken != "" {
+		t.Errorf("an ordinary authority whose NAME carries the letters broke the contract, "+
+			"which would degrade all of L5: %s", broken)
+	}
+}

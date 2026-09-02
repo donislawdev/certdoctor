@@ -103,7 +103,30 @@ import (
 // 2026-08-19: a middlebox and an honest internal server produced identical
 // values in every field of this body. A consumer turning some_stores into an
 // alert titled "interception" is making a claim this document does not make.
-const SchemaVersion = "1.9"
+//
+// 1.10 ADDS signing_authority.inspection: a nullable object naming the TLS
+// inspection product whose name appears in the issuer, or null - P6b-K2. No
+// removals and no changed meanings, so a MINOR by rule 2.
+//
+// THIS IS THE FIELD THE PARAGRAPH ABOVE WAS WAITING FOR, and it is the ONLY
+// place in this document where an accusation may be read. held_by stays exactly
+// what it was: a count. inspection is not derived from it and does not change
+// it - a named product appears beside all_stores just as readily as beside
+// some_stores, because how widely a machine holds a signer says nothing about
+// who that signer is. A consumer wanting to alert on interception branches on
+// this being non-null and on nothing else.
+//
+// IT IS AN OBJECT RATHER THAN A STRING, AND THAT IS A DECISION ABOUT GROWTH.
+// This is the finding most likely to gain evidence later - what matched, how
+// strongly it is sourced, whether more than one entry matched. Adding a member
+// to an object is a MINOR; changing a declared string into an object is not,
+// and would break every consumer that had read it. The same shape fix carries,
+// for the same reason.
+//
+// A NULL HERE MEANS "NOT NAMED", NEVER "NOT INSPECTION" - the caveat beside it
+// says so in words, and O11 is why the structural test never depended on this
+// list in the first place.
+const SchemaVersion = "1.10"
 
 // JSON renders the machine readable report.
 //
@@ -649,6 +672,27 @@ type jsonSigningAuthority struct {
 	// HEURISTIC that inviolable rule 21 asks for, carried here so that a
 	// consumer who never reads the terminal still receives it.
 	Caveat string `json:"caveat"`
+	// Inspection names a TLS inspection product, or is null. NULL IS THE
+	// ORDINARY ANSWER and it means "not named", never "not inspection".
+	//
+	// BRANCH ON THIS AND ON NOTHING ELSE if you want to alert on interception.
+	// Every other field in this body has the same value for a middlebox and for
+	// an organisation's own certificate authority - measured, 2026-08-19.
+	Inspection *jsonInspection `json:"inspection"`
+}
+
+// jsonInspection is the only place in this document where a name may be read as
+// an accusation, and it is filled in only from a list carried in this program
+// with a source beside every entry.
+type jsonInspection struct {
+	// Product is the name as this program spells it. IT IS OUR PROSE, not a
+	// string off the wire, so it is not redacted and it will not vary with what
+	// somebody's certificate happens to say.
+	Product string `json:"product"`
+	// MatchedAttribute is which part of the issuer's distinguished name carried
+	// the name - "CN" or "O". It is evidence: it tells a reader where to look to
+	// check this. The value itself is already in issuer and is not repeated.
+	MatchedAttribute string `json:"matched_attribute"`
 }
 
 func signingAuthorityOf(finding report.Finding) *jsonSigningAuthority {
@@ -672,6 +716,12 @@ func signingAuthorityOf(finding report.Finding) *jsonSigningAuthority {
 	}
 	if body.RefusingStores == nil {
 		body.RefusingStores = []string{}
+	}
+	if authority.Inspection != nil {
+		body.Inspection = &jsonInspection{
+			Product:          authority.Inspection.Product,
+			MatchedAttribute: authority.Inspection.MatchedAttribute,
+		}
 	}
 	return &body
 }

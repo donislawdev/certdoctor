@@ -557,6 +557,50 @@ assert_authority() {
         say "the report accuses with '$word' on a holding that is only a count of stores"
       fi
     done
+
+    # AND NOTHING MAY BE NAMED EITHER. The word search above reads English; this
+    # reads the field a machine consumer branches on, and they are two different
+    # ways for the same mistake to arrive.
+    local got_product
+    got_product="$(echo "$document" | jq -r "$pick | .signing_authority.inspection.product // \"\"")"
+    if [ -n "$got_product" ]; then
+      say "the report named '$got_product' where nothing should be named - the structural signature here is"
+      say "identical to the intercepted scenario, measured 2026-08-19, so naming on it accuses an honest server"
+    fi
+  fi
+
+  # THE OTHER DIRECTION, AND WITHOUT IT EVERYTHING ABOVE IS SATISFIED BY A
+  # PROGRAM THAT CANNOT SPEAK AT ALL - P6b-K2.
+  #
+  # Every expectation this bench carried until now was of the form "do not
+  # accuse". A certdoctor that had lost the ability to name anything would pass
+  # all of them and look green. This asks the opposite question of the one
+  # scenario that has a sourced name: it must say the word, and it must say WHICH
+  # product, because naming every issuer 'mitmproxy' would satisfy the first half.
+  if [ "$want_accuse" = "yes" ]; then
+    local got_product want_product lowered
+    got_product="$(echo "$document" | jq -r "$pick | .signing_authority.inspection.product // \"\"")"
+    want_product="$(value "$file" authority_inspection_product)"
+
+    if [ -z "$got_product" ]; then
+      say "expected/ says this issuer is on the inspection-product list and the report named nothing"
+    elif [ -n "$want_product" ] && [ "$got_product" != "$want_product" ]; then
+      say "the report named '$got_product' and expected/ says '$want_product'"
+    fi
+
+    lowered="$(printf '%s %s' "$got_sentence" "$got_caveat" | tr 'A-Z' 'a-z')"
+    if ! echo "$lowered" | grep -qF "intercept"; then
+      say "the report named a product and would not say what it means - a name with no sentence beside it"
+      say "leaves the reader to work out the one thing this program exists to tell them"
+    fi
+
+    # THE HEDGE MUST HAVE CHANGED RATHER THAN SURVIVED. The caveat beside a
+    # holding says these two cannot be told apart, which stops being true the
+    # moment one is named - a report carrying both sentences contradicts itself
+    # in two adjacent lines.
+    if echo "$lowered" | grep -qF "cannot tell those two apart"; then
+      say "the report named a product and kept the hedge saying it cannot tell the two apart"
+    fi
   fi
 
   passed=$((passed + 1))

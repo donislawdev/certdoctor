@@ -270,6 +270,15 @@ var maskedBodies = map[report.FindingKind]func(*redact.Redaction, *report.Findin
 // THE SAME Redaction DOES BOTH LISTS AND THE SUMMARY, so a store named in a list
 // and the same store named in its own row come out as ONE pseudonym - they are
 // keyed by the real name rather than by the field they were found in.
+//
+// THE INSPECTION BODY IS LEFT ALONE, AND THAT IS THE SECOND DECISION IN THIS
+// FUNCTION RATHER THAN AN OVERSIGHT. Neither of its two values came off this
+// machine: the product name is written in our own list and the matched attribute
+// is one of two literals this program chose. Masking them would replace our own
+// prose with a pseudonym for our own prose - and it would take the one sentence
+// the reader pastes into a ticket, in the one finding where being unable to say
+// what was found makes the rest of the report pointless. What that ticket must
+// not carry is the issuer and the store paths, and those are masked above.
 func maskSigningAuthority(r *redact.Redaction, finding *report.Finding) {
 	authority := *finding.SigningAuthority
 	authority.Issuer = r.Text(authority.Issuer)
@@ -526,16 +535,16 @@ func resultOf(id layer.ID, answer Answer) (report.LayerResult, *report.Note) {
 	}
 
 	return report.LayerResult{
-			ID:     id,
-			Status: status.Unknown,
-			Reason: status.ReasonProbeError,
-			Detail: "the layer broke its own contract, so nothing it reported was used",
-		}, &report.Note{
-			Kind:   report.NoteDegraded,
-			Layer:  id,
-			Reason: status.ReasonProbeError,
-			Detail: fmt.Sprintf("layer %s %s - it was recorded as unknown rather than ending the run", id, broken),
-		}
+		ID:     id,
+		Status: status.Unknown,
+		Reason: status.ReasonProbeError,
+		Detail: "the layer broke its own contract, so nothing it reported was used",
+	}, &report.Note{
+		Kind:   report.NoteDegraded,
+		Layer:  id,
+		Reason: status.ReasonProbeError,
+		Detail: fmt.Sprintf("layer %s %s - it was recorded as unknown rather than ending the run", id, broken),
+	}
 }
 
 // contractBreach names what is wrong with an answer, or returns empty for one

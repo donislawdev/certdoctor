@@ -154,6 +154,17 @@ jobs:
   #
   # Pinned to a version rather than @latest. A tool that changes under us turns
   # an unrelated commit red, which teaches people that red means nothing.
+  #
+  # MOVED 2025.1.1 -> 2026.2.1 ON 2026-09-01, BECAUSE THE TOOLCHAIN MOVED AND
+  # THIS TOOL READS ITS OUTPUT. Measured that day against Go 1.27.0: 2025.1.1
+  # answered "export data version 4 is greater than maximum supported version 2"
+  # for four standard library packages and exited 1, which is a red job that says
+  # nothing about this code. 2026.2.1 - released 2026-08-21, and the release note
+  # says it covers Go 1.27 - runs clean here. Licence read at
+  # https://raw.githubusercontent.com/dominikh/go-tools/2026.2.1/LICENSE on
+  # 2026-09-01: MIT, Copyright (c) 2016 Dominik Honnef. It is a CI tool and
+  # never reaches a user, so it is the lightest of the three sieves in docs/22
+  # section 7a - and it is still read rather than assumed.
   static-analysis:
     name: staticcheck
     runs-on: ubuntu-latest
@@ -166,7 +177,7 @@ jobs:
           go-version-file: go.mod
       - name: staticcheck
         shell: bash
-        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 -checks=SA,U ./...
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.1 -checks=SA,U ./...
 
   # A security-adjacent tool with no dependencies still runs on a standard
   # library that gets advisories of its own, and the Go version is pinned in

@@ -136,9 +136,28 @@ authority_held_by=some_stores
 authority_issuer_contains=mitmproxy
 authority_has_fingerprint=yes
 
-# NOT YET, AND NOT BY STRUCTURE EVER. The word belongs to K2 and to a match
-# against the inspection-product list. A "no" here is a pass rather than a gap.
-authority_accuses_interception=no
+# YES SINCE P6b-K2, AND NOT BY STRUCTURE - BY NAME. The structural half of this
+# scenario is identical to internal-ca.txt and always will be; that was measured
+# 2026-08-19 and it is why this file spent a slice saying "no" here.
+#
+# WHAT CHANGED IS NOT THE EVIDENCE, IT IS THAT THE NAME CAN NOW BE SOURCED.
+# mitmproxy generates its own authority as CN=mitmproxy: read at source
+# 2026-09-01 in mitmproxy/options.py (CONF_BASENAME = "mitmproxy") and
+# mitmproxy/certs.py (cn = cn or basename), and measured on this very bench
+# 2026-08-19. That is an entry on the inspection-product list, and the list is
+# the ONLY thing in this program allowed to turn a count into a sentence about
+# somebody's network.
+#
+# THIS PAIR IS THE WHOLE POINT AND IT ONLY WORKS AS A PAIR. internal-ca.txt
+# reaches the same held_by from an honest internal authority and must still say
+# "no" - so a run where BOTH say yes is a program accusing on structure, and a
+# run where both say no is a program that cannot name what it has a source for.
+authority_accuses_interception=yes
+
+# THE NAME ITSELF, so that "it accused somebody" and "it accused the right
+# somebody" are two different assertions. A program that named every issuer
+# "mitmproxy" would pass the line above.
+authority_inspection_product=mitmproxy
 
 # --- the command ---
 #

@@ -262,3 +262,54 @@ func TestMaskingTakesTheNamesAndLeavesTheFingerprint(t *testing.T) {
 		t.Errorf("the name survived in the summary: %q", finding.Summary)
 	}
 }
+
+// TestMaskingKeepsTheProductNameAndStillTakesTheIssuer is the third field split
+// in this one body, and it is the one that would be got wrong by being tidy.
+//
+// THE PRODUCT NAME IS OURS AND THE ISSUER IS THEIRS, which is the whole rule.
+// Masking the product would replace this program's own prose with a pseudonym
+// for this program's own prose - and it would take the one sentence somebody
+// pastes into a ticket, in the finding where being unable to say what was found
+// makes the rest of the report pointless. The issuer is somebody else's text and
+// is where a host name hides, so it goes.
+//
+// THE PRODUCT NAME IS REGISTERED AS SENSITIVE HERE ON PURPOSE, for the reason
+// the test above records at length: a value redaction has never heard of comes
+// out unchanged whether it was put through masking or not, so the assertion
+// would pass in both states and prove nothing. OBS56.
+func TestMaskingKeepsTheProductNameAndStillTakesTheIssuer(t *testing.T) {
+	redaction := redact.New(redact.Everything, redact.Host("jdoe"), redact.Host("mitmproxy"))
+	finding := report.Finding{
+		Kind: report.FindingSigningAuthority,
+		Summary: "CN=jdoe corp CA signed this certificate - and that issuer names mitmproxy, " +
+			"a TLS inspection product, so this connection is being intercepted",
+		Source: report.SourceDetected,
+		SigningAuthority: &report.SigningAuthority{
+			Issuer:          "CN=jdoe corp CA",
+			LeafFingerprint: "aa:bb:cc",
+			HeldBy:          report.HeldBySomeStores,
+			TrustingStores:  []string{`curl C:\Users\jdoe\tools\curl.exe`},
+			RefusingStores:  []string{`java C:\Users\jdoe\jdk-25`},
+			Caveat:          "this name comes from a list this program carries",
+			Inspection:      &report.Inspection{Product: "mitmproxy", MatchedAttribute: "CN"},
+		},
+	}
+
+	Options{Redaction: redaction}.maskFinding(&finding)
+	body := finding.SigningAuthority
+
+	if strings.Contains(body.Issuer, "jdoe") {
+		t.Errorf("the name survived in the issuer: %q", body.Issuer)
+	}
+	if body.Inspection == nil {
+		t.Fatal("the inspection body did not survive masking at all")
+	}
+	if body.Inspection.Product != "mitmproxy" {
+		t.Errorf("the product name was masked to %q - it came from our own list, names no host, account or "+
+			"network, and is the answer somebody redacting a report still needs to send", body.Inspection.Product)
+	}
+	if body.Inspection.MatchedAttribute != "CN" {
+		t.Errorf("the matched attribute was masked to %q, and it is one of two literals this program chose",
+			body.Inspection.MatchedAttribute)
+	}
+}

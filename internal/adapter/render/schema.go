@@ -254,6 +254,15 @@ var schema = object(map[string]node{
 				// document is the reader most likely to raise an alarm from a
 				// single value.
 				"caveat": text(),
+				// The ONLY field in this document an alert may branch on for
+				// interception, and null is the ordinary answer - meaning "not
+				// named", never "not inspection". Declared as an object rather
+				// than a name so that later evidence can join it without
+				// changing the type of anything already published.
+				"inspection": nullable(object(map[string]node{
+					"product":           text(),
+					"matched_attribute": text(),
+				})),
 			})),
 		}))),
 	})),

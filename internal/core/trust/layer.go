@@ -123,8 +123,47 @@ func Ask(ctx context.Context, in Input) Result {
 	// port was answering something else.
 	whole := in.ChainComplete()
 
+	rows, counted := in.walkProbes(ctx, chain)
+
+	// THE MATRIX IS WALKED BEFORE ANY COMMAND IS WRITTEN, AND THAT ORDER IS THE
+	// WHOLE OF ADR55. Whether a refusing store can be repaired depends on a fact
+	// no single row knows: whether ANY store on this machine closed this very
+	// chain. If one did, an anchor that closes it exists, so the store that
+	// refused can be given it - even when the server sent an incomplete chain.
+	// Measured on the bench 2026-08-19: a middlebox signing straight from its
+	// own root produces exactly that state, and the old single-pass gate refused
+	// a command for the one case where adding the certificate is the repair.
+	//
+	// It cannot be done inside the walk, because the answer is not known until
+	// the last probe has been asked.
+	closed := counted.trusting > 0
+
+	findings := in.findingsFrom(rows, whole, closed)
+
+	return verdict(findings, counted.asked, counted.trusting, counted.unassessed, counted.timedOut)
+}
+
+// tally is what the walk counted, kept together because the verdict needs all
+// four of them and a walk returning four bare integers is four chances to hand
+// them over in the wrong order.
+type tally struct {
+	asked      int
+	trusting   int
+	unassessed int
+	timedOut   int
+}
+
+// walkProbes asks every declared probe that this machine has, and collects a row
+// for each store along with the counts the verdict is built from.
+//
+// IT DECIDES NOTHING. No status, no command, no sentence about a signer - those
+// need facts about the WHOLE matrix, which do not exist until this returns. The
+// split is OBS85's named moment taken before anything new was added to this
+// layer rather than after: breaking a function up once the mutation entries are
+// green turns evidence just collected into evidence to collect again.
+func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, tally) {
 	var rows []row
-	var asked, trusting, unassessed int
+	var counted tally
 
 	// HOW MANY PROBES ARE LEFT TO ASK, COUNTED BEFORE THE FIRST ONE RUNS - R-5.
 	// The share arithmetic needs a divisor, and one taken inside the loop would
@@ -136,7 +175,6 @@ func Ask(ctx context.Context, in Input) Result {
 			left++
 		}
 	}
-	timedOut := 0
 
 	for _, descriptor := range descriptors {
 		probe, present := in.Probes[descriptor.ID]
@@ -149,9 +187,9 @@ func Ask(ctx context.Context, in Input) Result {
 			// NOT A REFUSAL AND NOT AN EMPTY STORE. Nothing was asked, so nothing
 			// was denied - this row is about our budget.
 			rows = append(rows, unaskable(descriptor, errNoTimeLeft))
-			asked++
-			unassessed++
-			timedOut++
+			counted.asked++
+			counted.unassessed++
+			counted.timedOut++
 			continue
 		}
 		stores, err := probe(probeCtx, chain)
@@ -159,7 +197,7 @@ func Ask(ctx context.Context, in Input) Result {
 			done()
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
-			timedOut++
+			counted.timedOut++
 		}
 		if err != nil {
 			// ONE PROBE FAILING DOES NOT SINK THE LAYER. It becomes a row saying
@@ -167,35 +205,28 @@ func Ask(ctx context.Context, in Input) Result {
 			// does not trust this" and inviolable rule 15 wants the difference
 			// visible rather than averaged away.
 			rows = append(rows, unaskable(descriptor, err))
-			asked++
-			unassessed++
+			counted.asked++
+			counted.unassessed++
 			continue
 		}
 		for _, store := range stores {
-			asked++
+			counted.asked++
 			switch {
 			case store.TrustsPresentedChain == nil:
-				unassessed++
+				counted.unassessed++
 			case *store.TrustsPresentedChain:
-				trusting++
+				counted.trusting++
 			}
 			rows = append(rows, row{store: store})
 		}
 	}
+	return rows, counted
+}
 
-	// THE MATRIX IS WALKED BEFORE ANY COMMAND IS WRITTEN, AND THAT ORDER IS THE
-	// WHOLE OF ADR55. Whether a refusing store can be repaired depends on a fact
-	// no single row knows: whether ANY store on this machine closed this very
-	// chain. If one did, an anchor that closes it exists, so the store that
-	// refused can be given it - even when the server sent an incomplete chain.
-	// Measured on the bench 2026-08-19: a middlebox signing straight from its
-	// own root produces exactly that state, and the old single-pass gate refused
-	// a command for the one case where adding the certificate is the repair.
-	//
-	// It cannot be done in the loop above, because the answer is not known until
-	// the last probe has been asked.
-	closed := trusting > 0
-
+// findingsFrom turns the collected rows into what the report carries, once the
+// two facts no single row knows - whether the chain was whole, and whether any
+// store on this machine closed it - have been worked out.
+func (in Input) findingsFrom(rows []row, whole, closed bool) []report.Finding {
 	findings := make([]report.Finding, 0, len(rows)+1)
 	// THE SUMMARY LINE COMES FIRST because it is what a reader needs before the
 	// rows mean anything: who signed this, and how much of this machine has
@@ -222,8 +253,7 @@ func Ask(ctx context.Context, in Input) Result {
 		}
 		findings = append(findings, r.finding())
 	}
-
-	return verdict(findings, asked, trusting, unassessed, timedOut)
+	return findings
 }
 
 // errNoTimeLeft is what a probe that never ran carries into its row.

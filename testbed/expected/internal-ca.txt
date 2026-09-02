@@ -88,6 +88,13 @@ authority_has_fingerprint=yes
 # server, which is the harm rule 21 names.
 authority_accuses_interception=no
 
+# AND NOTHING IS NAMED, WHICH IS THE HALF THAT MAKES THE PAIR MEAN ANYTHING.
+# intercepted.txt reaches an identical held_by and an identical trust signature
+# from a middlebox, and IS named - measured 2026-08-19, the two are the same in
+# every field certdoctor has except this one. An empty value here is the false
+# positive inviolable rule 21 calls harm, written down before the code that
+# could commit it.
+authority_inspection_product=
 # --- the command ---
 #
 # All three of ADR51's original conditions hold, so this needs no help from the

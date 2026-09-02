@@ -24,4 +24,15 @@ module github.com/donislawdev/certdoctor
 // Updating this line is a change like any other: it goes through the same
 // analysis, and the release binary is rebuilt and re-measured rather than
 // assumed equivalent.
-go 1.26.5
+//
+// MOVED 1.26.5 -> 1.27.0 ON 2026-09-01, AND THE REASON WAS THE FORMATTER RATHER
+// THAN THE LIBRARY. gofmt does not follow the toolchain switch the go command
+// makes: it is whichever binary sits in the Go installation on PATH. When that
+// installation went to 1.27.0 while this line still said 1.26.5, the local
+// format gate and the one in CI began measuring with two different instruments,
+// and they disagreed IN BOTH DIRECTIONS over one construct in one file -
+// measured the same day, three gofmt versions against internal/app/run/run.go.
+// No formatting of that file is green under both, so the versions had to meet.
+// go1.27.0 was the current stable release, read at https://go.dev/dl/ on
+// 2026-09-01.
+go 1.27.0

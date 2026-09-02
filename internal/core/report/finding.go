@@ -7,10 +7,13 @@ import (
 	// that list. It is here so a connection row can refuse a host name where an
 	// address belongs.
 	"net/netip"
-	// strings is here for one question only: whether a placeholder a fix
-	// declares can actually be FOUND in the command it belongs to. A list of
-	// things to replace that names something not present is a list nobody can
-	// act on.
+	// strings is here for two questions, and both are about a sentence saying
+	// something the fields underneath it do not support. First: whether a
+	// placeholder a fix declares can actually be FOUND in the command it belongs
+	// to - a list of things to replace that names something not present is a
+	// list nobody can act on. Second: whether a signing authority accuses
+	// somebody of intercepting their traffic while naming no product - the one
+	// mistake inviolable rule 21 calls harm rather than a defect.
 	"strings"
 	// time carries certificate validity bounds. They are REPORTED and never
 	// judged here: whether "expired" means anything depends on a clock this
@@ -1193,6 +1196,145 @@ type SigningAuthority struct {
 	// parity rule 12 states for every other finding. It is our own prose, names
 	// nobody, and is therefore never redacted.
 	Caveat string
+	// Inspection is set ONLY when the issuer's name matched a product this
+	// program carries a source for, and nil is the ordinary answer.
+	//
+	// IT IS THE ONE THING THAT MAKES AN ACCUSATION SAYABLE. Everything else in
+	// this body is a count, and ADR53 measured why a count can never be enough:
+	// an intercepting middlebox and an honest internal authority produce
+	// identical values in every other field. Without a name, the report states
+	// the measurement and names both readings. With one, it may say what is
+	// happening - and breach below refuses the words in every other case.
+	Inspection *Inspection
+}
+
+// Inspection names the product whose certificate this appears to be.
+//
+// IT IS A CLAIM ABOUT A NAME, NEVER ABOUT A NETWORK, and the distinction is the
+// whole of it. Nothing was measured about anybody's traffic to produce this: the
+// issuer of the leaf carries a name, and that name matched an entry in a list
+// this program keeps with a source beside every line. An organisation is free to
+// call its own authority anything at all, which is why the fingerprint travels
+// beside this and why the caveat says what the match rests on.
+//
+// IT IS OUR OWN PROSE AND IS NEVER REDACTED. The product name came from our
+// list rather than off the wire, and it names no host, account or network.
+type Inspection struct {
+	// Product is the name as this program spells it, from the list. Required.
+	Product string
+	// MatchedAttribute is which attribute of the issuer's distinguished name
+	// carried the name - "CN" or "O". Required.
+	//
+	// IT IS EVIDENCE RATHER THAN BOOKKEEPING. A reader checking this claim needs
+	// to know where to look, and "the common name says so" and "the organisation
+	// says so" are different strengths of the same claim. It is not a second
+	// spelling of anything: the value itself is already in Issuer, and repeating
+	// the value here would be one fact in two places.
+	MatchedAttribute string
+}
+
+// AccusingWords are the words a reader takes as a finding of fact about their
+// own network rather than as a description of a certificate.
+//
+// THE LIST LIVES HERE, ONCE, AND EVERY OTHER PLACE READS IT. It was written in
+// three places before this - the layer's own test, the bench script, and nowhere
+// that could enforce it - which is the shape OBS50 has measured four times in
+// this tree. The contract is the right home because it is the only one of the
+// three that can REFUSE, rather than notice afterwards.
+//
+// "INSPECTION" IS DELIBERATELY NOT ON IT. The careful sentence this program
+// prints when it cannot tell two situations apart says "TLS inspection looks
+// exactly like this and so does an organisation's own certificate authority",
+// and naming both readings is the opposite of an accusation. These four words
+// have no such use: each of them, on its own, tells somebody their traffic is
+// being read.
+var AccusingWords = []string{"intercept", "mitm", "eavesdrop", "man in the middle"}
+
+// ContainsWord reports whether want appears inside value as whole words,
+// ignoring case.
+//
+// WHOLE WORDS RATHER THAN A SUBSTRING, AND BOTH CALLERS LEARNED IT THE SAME WAY.
+// The accusation rule below reads a sentence for the words above, and the
+// inspection list one layer up reads an issuer for a product name. Measured the
+// day both were written: "mitmproxy" CONTAINS "mitm", so a substring search made
+// the file listing that product accuse somebody, and the same search would tell
+// an organisation called Fortinetworks that it is running an appliance. The
+// first is embarrassing and the second is the harm inviolable rule 21 names.
+//
+// IT LIVES HERE BECAUSE BOTH CALLERS CAN REACH IT AND NEITHER OWNS IT. A copy in
+// each is the shape OBS50 has measured four times in this tree - and the copy
+// that quietly stopped agreeing would be the one deciding whether a sentence is
+// an accusation.
+//
+// A WORD BOUNDARY IS "NOT A LETTER AND NOT A DIGIT", which is enough for the
+// words above and for the names on that list, and says so rather than implying
+// more.
+func ContainsWord(value, want string) bool {
+	lowerValue, lowerWant := strings.ToLower(value), strings.ToLower(want)
+	if lowerWant == "" {
+		return false
+	}
+	for from := 0; from <= len(lowerValue)-len(lowerWant); {
+		at := strings.Index(lowerValue[from:], lowerWant)
+		if at < 0 {
+			return false
+		}
+		start := from + at
+		if boundedAt(lowerValue, start-1) && boundedAt(lowerValue, start+len(lowerWant)) {
+			return true
+		}
+		from = start + 1
+	}
+	return false
+}
+
+// ContainsWordStem reports whether want appears at the START of a word inside
+// value, ignoring case - so a match may carry a suffix.
+//
+// IT IS A SECOND RULE RATHER THAN A LOOSER ONE, AND THE CANARY IS WHAT FORCED
+// THE SPLIT. The two callers need opposite things and both needs are real:
+//
+//	accusation   "intercept" MUST match "intercepted", "intercepting",
+//	             "interception" - a rule that missed those would refuse nothing
+//	             anybody would actually write, while looking strict.
+//	product name "Fortinet" MUST NOT match "Fortinetworks" - an organisation
+//	             running its own authority under a name that merely begins the
+//	             same way is precisely who inviolable rule 21 protects.
+//
+// One rule cannot do both: allowing a suffix is what the first needs and exactly
+// what the second forbids. Measured while writing this, by the canary on the
+// accusation guard, which reported one violation where the fixture plants two.
+func ContainsWordStem(value, want string) bool {
+	lowerValue, lowerWant := strings.ToLower(value), strings.ToLower(want)
+	if lowerWant == "" {
+		return false
+	}
+	for from := 0; from <= len(lowerValue)-len(lowerWant); {
+		at := strings.Index(lowerValue[from:], lowerWant)
+		if at < 0 {
+			return false
+		}
+		start := from + at
+		if boundedAt(lowerValue, start-1) {
+			return true
+		}
+		from = start + 1
+	}
+	return false
+}
+
+// boundedAt reports whether the byte at this index is a word boundary. An index
+// outside the string is one, which is how a match at either end is accepted.
+func boundedAt(value string, index int) bool {
+	if index < 0 || index >= len(value) {
+		return true
+	}
+	c := value[index]
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return false
+	}
+	return true
 }
 
 // AnchorHolding is how widely this machine holds the signer of a chain.
@@ -1252,7 +1394,7 @@ var AllAnchorHoldings = []AnchorHolding{HeldByAllStores, HeldBySomeStores, HeldB
 // counting mistake of ours or an accusation assembled by hand somewhere it
 // should not have been. The guard on the file keeps the judgement in one place
 // and this keeps the shape honest wherever it arrives from.
-func (a *SigningAuthority) breach() string {
+func (a *SigningAuthority) breach(summary string) string {
 	switch {
 	case a.Issuer == "":
 		return "names no issuer, and RFC 5280 section 4.1.2.4 forbids a certificate with an empty one"
@@ -1268,6 +1410,12 @@ func (a *SigningAuthority) breach() string {
 		return "carries no caveat, and a claim of this sort travels with what it does not settle or it does not travel"
 	}
 
+	// AFTER THE FIELD CHECKS, so that the issuer is known to be present when the
+	// next rule takes it back out again.
+	if broken := a.accusation(summary); broken != "" {
+		return broken
+	}
+
 	switch a.HeldBy {
 	case HeldByAllStores:
 		if len(a.TrustingStores) == 0 || len(a.RefusingStores) > 0 {
@@ -1280,6 +1428,55 @@ func (a *SigningAuthority) breach() string {
 	case HeldByNoStores:
 		if len(a.TrustingStores) > 0 || len(a.RefusingStores) == 0 {
 			return "says no store holds the signer while naming a store that does"
+		}
+	}
+	return ""
+}
+
+// accusation refuses the one shape inviolable rule 21 calls harm: telling
+// somebody their traffic is being read, on facts that cannot support it.
+//
+// THE RULE IS STRUCTURAL RATHER THAN LEXICAL, AND THAT IS WHY IT CAN BE
+// CHECKED. It does not try to judge whether a sentence sounds like an
+// accusation - it says that the four words in AccusingWords may appear ONLY
+// when a name from the inspection list is attached, and that a name may only be
+// attached when it is complete enough to be checked. Measured 2026-08-19 and
+// recorded in ADR53: every other field in this body has the same value for an
+// intercepting middlebox and for an honest internal authority, so the presence
+// of a name is the only thing that separates the two.
+//
+// IT SEARCHES THE SUMMARY AND THE CAVEAT TOGETHER, because a reader meets them
+// together and a hedge is not a place to smuggle a claim into.
+//
+// THE ISSUER IS TAKEN OUT BEFORE THE SEARCH, AND WITHOUT THAT THIS RULE WOULD
+// BE A TRAP RATHER THAN A GUARD. The summary quotes the issuer, which is the
+// evidence inviolable rule 21 REQUIRES beside any claim of this sort - and an
+// issuer is somebody else's text. A certificate signed by an authority whose
+// name happens to contain one of these words would then break this contract,
+// which degrades the whole layer: ADR66 kept that rule and wrote down its price,
+// "a second, unknown trigger will take the layer again". This would have been
+// that second trigger, planted deliberately. The bench learned the same lesson on
+// its first run, OBS74: quoting CN=mitmproxy as evidence read as an accusation.
+//
+// Masking does not disturb this. The summary and the issuer go through ONE
+// Redaction keyed by the real name, so a masked issuer is the same pseudonym in
+// both, and removing one still removes it from the other.
+func (a *SigningAuthority) accusation(summary string) string {
+	if a.Inspection != nil {
+		switch {
+		case a.Inspection.Product == "":
+			return "names an inspection product with no name, so the one fact that would make the sentence sayable is missing"
+		case a.Inspection.MatchedAttribute == "":
+			return "names an inspection product without saying which part of the issuer carried the name, " +
+				"and a claim of this sort travels with what it rests on or it does not travel"
+		}
+		return ""
+	}
+	said := strings.ReplaceAll(strings.ToLower(summary), strings.ToLower(a.Issuer), " ") + " " + a.Caveat
+	for _, word := range AccusingWords {
+		if ContainsWordStem(said, word) {
+			return fmt.Sprintf("says %q while naming no inspection product, and every other field here "+
+				"has the same value for a middlebox and for an organisation's own authority", word)
 		}
 	}
 	return ""
@@ -1350,7 +1547,13 @@ func (f Finding) bodyBreach() string {
 	case f.TrustStore != nil:
 		return f.TrustStore.breach()
 	case f.SigningAuthority != nil:
-		return f.SigningAuthority.breach()
+		// THE SUMMARY IS HANDED IN, and this is the second rule in this file
+		// that spans the envelope and the body - the first being the resolution
+		// body above, for the reason ADR23 gives. Here the reason is inviolable
+		// rule 21: the sentence a reader acts on lives in the envelope, and the
+		// one fact that makes an accusation safe to print lives in the body.
+		// Checking either alone would check nothing.
+		return f.SigningAuthority.breach(f.Summary)
 	}
 	return ""
 }

@@ -34,8 +34,18 @@ import (
 // facts would accuse scenario S-3 - four JDKs, curl working, the Java service
 // failing - which is an ordinary corporate machine behaving as designed.
 //
-// SO THE FINDING STATES THE MEASUREMENT AND NAMES BOTH READINGS. Naming one of
-// them waits for a match against the inspection-product list, which is P6b-K2.
+// SO THE FINDING STATES THE MEASUREMENT AND NAMES BOTH READINGS - unless the
+// issuer's name matches the inspection-product list in inspection.go, which is
+// the ONLY thing in this program that may turn a count into a sentence about
+// somebody's network. P6b-K2 built that list; it did not move the line above.
+//
+// WHAT A MATCH CHANGES AND WHAT IT DOES NOT. It adds a clause to the summary, it
+// replaces the caveat with one saying the naming rests on a NAME, and it fills
+// in one field. It does not change the holding, either store list, the
+// fingerprint, the trust rows, the remediation commands or the layer's status -
+// all of those are established before the list is consulted, and they are what
+// the reader acts on either way. That is what "the list is only for naming"
+// means in code rather than in prose.
 
 // authorityOf builds the one row saying who signed this chain and how widely the
 // machine holds them, or returns nil when there is nothing honest to say.
@@ -65,12 +75,61 @@ func authorityOf(leaf *report.Certificate, stores []report.TrustStore) *report.F
 		RefusingStores:  refusing,
 		Caveat:          caveats[held],
 	}
+
+	// THE NAME IS ASKED FOR LAST AND CHANGES NOTHING THAT WAS MEASURED - ADR53.
+	// The holding, the two lists and the fingerprint are already settled above,
+	// and they would be identical whether this matched or not. What a match adds
+	// is permission to say what is happening, and a different caveat: the one
+	// beside a holding says this program cannot tell two situations apart, and
+	// that stops being true the moment the issuer names a product.
+	if named := matchInspection(leaf.Issuer); named != nil {
+		authority.Inspection = &report.Inspection{
+			Product:          named.Product,
+			MatchedAttribute: named.Attribute,
+		}
+		authority.Caveat = inspectionCaveat
+	}
+
 	return &report.Finding{
 		Kind:             report.FindingSigningAuthority,
-		Summary:          sentenceFor(authority),
+		Summary:          summaryFor(authority),
 		Source:           report.SourceDetected,
 		SigningAuthority: &authority,
 	}
+}
+
+// inspectionCaveat is what a NAMED finding does not settle, and it is a
+// different sentence from the three beside the holdings rather than an extra
+// clause on one of them.
+//
+// THE HEDGE HAD TO CHANGE, NOT JUST GROW. The caveat for some_stores says this
+// program cannot tell an inspection appliance from an organisation's own
+// authority - which is exactly right while nothing is named, and false the
+// moment something is. Leaving it in place beside a name would be a report
+// contradicting itself in two adjacent lines.
+//
+// WHAT REPLACES IT SAYS WHAT THE NAMING RESTS ON. It rests on a string in
+// somebody else's certificate matching a list this program carries. That is a
+// good reason to say the word and a bad reason to be certain, and inviolable
+// rule 21 asks for exactly that distance to be printed rather than assumed.
+const inspectionCaveat = "this name comes from a list this program carries, with a source beside every entry - " +
+	"it rests on the NAME in the issuer rather than on anything measured about this network, and an " +
+	"organisation is free to call its own authority anything at all, so the fingerprint above is what " +
+	"somebody checking this would compare"
+
+// summaryFor is the line every surface prints: the measurement, and the name
+// when there is one.
+//
+// THE MEASUREMENT COMES FIRST AND IS UNTOUCHED BY THE NAME. A reader who does
+// not believe the second half still has the first, and the first is the half
+// that produced the trust rows and the commands underneath.
+func summaryFor(a report.SigningAuthority) string {
+	measured := sentenceFor(a)
+	if a.Inspection == nil {
+		return measured
+	}
+	return fmt.Sprintf("%s - and that issuer names %s, a TLS inspection product, so this connection is being "+
+		"intercepted and re-signed between here and the server", measured, a.Inspection.Product)
 }
 
 // sides splits the stores into the ones that hold an anchor closing this chain

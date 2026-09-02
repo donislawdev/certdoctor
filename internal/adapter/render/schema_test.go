@@ -555,6 +555,12 @@ var bodyFixtures = map[report.FindingKind]report.Finding{
 			TrustingStores:  []string{"curl /usr/bin/curl"},
 			RefusingStores:  []string{"java jdk-25"},
 			Caveat:          "TLS inspection looks exactly like this and so does an organisation's own certificate authority",
+			// LEFT nil ON PURPOSE, and it is the state nearly every run is in:
+			// nothing was named. The populated shape is exercised by the test
+			// below, which is a separate document rather than a second fixture
+			// here - a nested object nobody ever renders is a set of key names
+			// the validator never compares against anything.
+			Inspection: nil,
 		},
 	},
 }
@@ -569,19 +575,99 @@ const (
 	issuerFingerprint = "0f2e9d6c3b7a4e8d1c0a5b7f2e9d6c3b7a4e8d1c0a5b7f2e9d6c3b7a4e8d1c0a"
 )
 
-// TestEveryKindOfFindingReachesBothSurfaces is the guard whose absence would let
-// a new kind of finding be invisible in the output while every test stayed green.
+// TestTheNamedInspectionBodyReachesBothSurfaces renders the one shape the
+// fixture above deliberately leaves empty.
 //
-// THE MASKING TABLE ALREADY HAD ONE AND THAT IS WHY IT HAS ONE: a second kind
-// would otherwise have crossed the assembly path untouched. The encoder and the
-// terminal renderer had no equivalent - a kind added without a branch in either
-// would have produced a document with a null where its body belongs, and a row
-// on screen with an empty value, with nothing anywhere going red.
+// WITHOUT IT THE NESTED KEY NAMES ARE DECLARED TWICE AND COMPARED NEVER. The
+// schema is written out separately from the encoder precisely so that renaming a
+// field on one side goes red - and that check only bites on a field some
+// document actually carries. This is the finding where a silently missing key is
+// worst: the consumer branching on it is the one deciding whether to raise an
+// alarm.
 //
-// It asks about STRUCTURE, not wording: the body is present under a key equal to
-// its kind, the document still matches its own schema, and the summary reaches
-// the terminal page. What each surface says is the business of tests that name
-// the kind.
+// IT CHECKS THE TERMINAL TOO, because inviolable rule 12 asks for every finding
+// to be expressible on every surface, and the terminal is where a person decides
+// whether to be alarmed.
+func TestTheNamedInspectionBodyReachesBothSurfaces(t *testing.T) {
+	finding := bodyFixtures[report.FindingSigningAuthority]
+	body := *finding.SigningAuthority
+	body.Inspection = &report.Inspection{Product: "mitmproxy", MatchedAttribute: "CN"}
+	finding.SigningAuthority = &body
+	finding.Summary = "C=US, O=Example CA, CN=Example Root CA signed this certificate - and that issuer " +
+		"names mitmproxy, a TLS inspection product, so this connection is being intercepted"
+
+	if broken := finding.Breach(); broken != "" {
+		t.Fatalf("the named fixture is not a valid finding: %s", broken)
+	}
+
+	r := everyStatusReport()
+	for i := range r.Layers {
+		if r.Layers[i].ID == layer.Resolution {
+			r.Layers[i].Findings = []report.Finding{finding}
+		}
+	}
+
+	document, err := Encode(r)
+	if err != nil {
+		t.Fatalf("encoding: %v", err)
+	}
+	if err := ValidateDocument(document); err != nil {
+		t.Errorf("a document naming an inspection product does not match its own schema: %v", err)
+	}
+	if !strings.Contains(string(document), `"product": "mitmproxy"`) {
+		t.Error("the product name never reached the document")
+	}
+	if !strings.Contains(string(document), `"matched_attribute": "CN"`) {
+		t.Error("the matched attribute never reached the document")
+	}
+
+	var page strings.Builder
+	if err := (Terminal{}).Render(&page, r); err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	if !strings.Contains(page.String(), "inspection product: mitmproxy, named in the issuer's CN") {
+		t.Errorf("the terminal does not say where the name came from:\n%s", page.String())
+	}
+}
+
+// TestAnUnnamedAuthorityRendersInspectionAsNull is the other direction, and it
+// is the state nearly every run is in.
+//
+// A KEY THAT DISAPPEARS WHEN THERE IS NOTHING TO SAY IS A CONSUMER CRASH. The
+// same distinction findings, selected_by and dns_names carry: an absent key says
+// nobody looked, and null says we looked and there is nothing. Here it also has
+// to stay OUT of the terminal, because a line reading "inspection product:" with
+// nothing after it is exactly the alarm this whole slice is shaped to avoid.
+func TestAnUnnamedAuthorityRendersInspectionAsNull(t *testing.T) {
+	finding := bodyFixtures[report.FindingSigningAuthority]
+	if finding.SigningAuthority.Inspection != nil {
+		t.Fatal("the fixture is meant to be the unnamed one")
+	}
+
+	r := everyStatusReport()
+	for i := range r.Layers {
+		if r.Layers[i].ID == layer.Resolution {
+			r.Layers[i].Findings = []report.Finding{finding}
+		}
+	}
+
+	document, err := Encode(r)
+	if err != nil {
+		t.Fatalf("encoding: %v", err)
+	}
+	if !strings.Contains(string(document), `"inspection": null`) {
+		t.Errorf("an unnamed authority did not carry a null inspection key: %s", document)
+	}
+
+	var page strings.Builder
+	if err := (Terminal{}).Render(&page, r); err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	if strings.Contains(page.String(), "inspection product:") {
+		t.Errorf("the terminal named a product where nothing was named:\n%s", page.String())
+	}
+}
+
 func TestEveryKindOfFindingReachesBothSurfaces(t *testing.T) {
 	if len(bodyFixtures) != len(report.AllFindingKinds) {
 		t.Fatalf("%d kinds are declared and %d have a fixture here - one list was edited alone",

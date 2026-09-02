@@ -289,6 +289,17 @@ func writeAuthority(b *strings.Builder, finding report.Finding) {
 	if len(authority.RefusingStores) > 0 {
 		writeTrimmed(b, fmt.Sprintf("        not held by: %s", visible(strings.Join(authority.RefusingStores, ", "))))
 	}
+	// WHERE THE NAME CAME FROM, ON THE SURFACE WHERE SOMEBODY DECIDES WHETHER TO
+	// BE ALARMED. The summary already says the product; this line says which part
+	// of the issuer carried it, which is what a reader would go and check. The
+	// product name is ours and needs no escaping, and the attribute is one of two
+	// literals this program chose - but both go through visible anyway, because
+	// the day one of them stops being ours is not a day anybody will remember
+	// this line.
+	if authority.Inspection != nil {
+		writeTrimmed(b, fmt.Sprintf("        inspection product: %s, named in the issuer's %s",
+			visible(authority.Inspection.Product), visible(authority.Inspection.MatchedAttribute)))
+	}
 	writeTrimmed(b, fmt.Sprintf("        note: %s", visible(authority.Caveat)))
 }
 
