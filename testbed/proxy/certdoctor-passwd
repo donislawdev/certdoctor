@@ -1,0 +1,21 @@
+# A FIXTURE CREDENTIAL FOR A BENCH PROXY. NOT A SECRET, AND NOT REUSED ANYWHERE.
+#
+# The user is "bench" and the password is "benchpass". Both are written here in
+# the open on purpose, because a credential that has to be guessed from a hash is
+# a credential the next session will waste an hour on.
+#
+# WHY IT IS SAFE TO COMMIT. This proxy listens only on 172.28.0.0/16, a network
+# that exists inside one docker compose file and is unreachable from anywhere
+# else. It fronts a bench whose only origin returns a fixed string. The same
+# reasoning ADR71 recorded for "changeit" applies: a published default is not a
+# leak, and pretending otherwise teaches people to hunt for secrets that are not
+# there.
+#
+# WHAT WOULD MAKE THIS WRONG, said plainly so nobody has to re-derive it: giving
+# this proxy a route to anything real, or reusing this pair on a machine that
+# matters. Neither is a thing this bench can do by accident - both would take a
+# deliberate edit to compose.yml.
+#
+# The hash is Apache MD5 (apr1), which is what basic_ncsa_auth reads. Generated
+# 2026-09-02 with: openssl passwd -apr1 -salt certdoc benchpass
+bench:$apr1$certdoc$zDkAZ54Ld7iTWUBi/H/vF0

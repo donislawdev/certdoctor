@@ -1,0 +1,46 @@
+# A PAC file that is not valid JavaScript - slice P4c, for P8-K1.
+#
+# DERIVED FROM pac/files/broken.pac, which ends in a line that is not JavaScript
+# at all. Nothing about this expectation was read off a run.
+#
+# 🔴 THE POINT OF THIS FILE IS THAT THE ORACLE IS WRONG HERE, AND IT IS WRITTEN
+# DOWN BEFORE ANYBODY CAN BE MISLED BY IT.
+#
+# Measured 2026-09-02: libproxy 0.5.12 prints a warning to stderr and then
+# answers direct://. That is a SILENT FALLBACK - a machine whose proxy
+# configuration is broken gets routed as though it had none, and nobody is told.
+# It is a reasonable thing for a library to do and it is the opposite of what
+# this product must do.
+#
+# docs/21 section 2a is exactly about this: an oracle that repairs answers the
+# question "will a real client accept it", never "is it correctly built". So
+# libproxy's answer is RECORDED here and is NOT compared. A future session
+# reading two different answers must not conclude the product is wrong.
+
+target=http://via.proxy.test/
+pac_url=http://pac.proxy.test/pac/broken.pac
+
+# What the independent evaluator does, written down so it cannot surprise
+# anybody. NOT an expectation about certdoctor.
+oracle_libproxy_says=direct://
+oracle_is_authoritative=no
+
+# --- L2: nothing reads this yet ---
+#
+# Condition 5 of the sandbox in docs/14 section 2.1, verbatim: an error in the
+# PAC is UNKNOWN with a reason, never an exception and never PASS. The reason
+# vocabulary is settled for this one - a file that will not parse is
+# unrecognized_output, which is what that value has always meant.
+#
+# 🔴 DIRECT IS THE ONE ANSWER THAT MUST NEVER COME OUT OF HERE. It is what
+# libproxy says, it is what most software does, and it would make certdoctor
+# agree with the machine's own silence instead of breaking it.
+l2_status=UNKNOWN
+l2_reason=unrecognized_output
+l2_proxy_forbidden=none
+l2_must_not_say=DIRECT
+
+# The run must survive it. A PAC is somebody else's file arriving over plain HTTP
+# and the layer above must not lose its own report to it - ADR66 counts the price
+# of one bad row taking a whole layer, and this is the input most likely to try.
+run_survives=yes

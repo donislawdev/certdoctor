@@ -1,0 +1,87 @@
+# A proxy configured in the environment, credentials and all - slice P4c.
+#
+# THIS FILE IS DERIVED FROM THE BENCH'S CONFIGURATION AND FROM THE PRODUCT'S
+# CONTRACT, NOT FROM ITS OUTPUT. Nothing below was read off a run.
+#
+# IT IS THE ONE PROXY SCENARIO WITH A READER TODAY, and that is why it is first.
+# L2 does not exist and will not until P8, but L0 has read HTTPS_PROXY,
+# https_proxy and NO_PROXY since P2 - internal/core/machine/variables.go - so
+# three claims can be settled now rather than deferred with the rest.
+#
+# 🔴 THE THIRD ONE HAS NEVER BEEN CHECKED AGAINST A RUNNING BINARY BEFORE.
+# Inviolable rule 17 says credentials never reach a report or a log whatever
+# --redact is set to, and D1 says the same from the product side. That rule has
+# unit tests and a fuzz target behind it, and until this bench existed there was
+# nowhere to point a real proxy URL with a real password in it.
+
+target=https://partner.test/
+
+# --- what the run is given ---
+#
+# The password is deliberately shaped like one - long enough that a partial mask
+# would leave a recognisable tail, which a short one would not.
+env_https_proxy=http://benchuser:s3cr3t-not-real-4c7f@172.28.0.128:3128
+env_no_proxy=direct.proxy.test,localhost
+
+# --- claim 1: the variable is REPORTED ---
+#
+# Silence about a configured proxy would be the same fault OBS72 was about, one
+# layer up. The row has to exist.
+l0_status=PASS
+l0_names_variable=HTTPS_PROXY
+l0_names_variable_2=NO_PROXY
+
+# --- claim 2: the password does NOT survive, anywhere, in any surface ---
+#
+# Checked against the JSON document and against the human-readable report, since
+# inviolable rule 12 says every finding exists on every surface - which means a
+# leak does too.
+#
+# NO --redact IS PASSED ON PURPOSE. Masking userinfo is a property of the layer
+# that produces it, not an option the user has to remember. If this only held
+# under --redact the rule would be wrong as written.
+secret_absent=s3cr3t-not-real-4c7f
+
+# The user name is a credential too. It is listed separately because a mask that
+# takes the password and leaves the account name is a partial fix somebody could
+# mistake for a whole one.
+secret_absent_2=benchuser
+
+# --- claim 3: reading a variable does not mean OBEYING it ---
+#
+# docs/14 section 3: "we read them and show them, but never let them change WHAT
+# the tool does - otherwise a run stops being reproducible from the command
+# visible in a CI log".
+#
+# 🔴 PROSE UNTIL NOW. The premise is that nothing in the product goes through a
+# transport that honours these variables - measured 2026-09-02, zero imports of
+# net/http in internal/ and cmd/ outside tests - but a premise is not a run.
+#
+# The check runs the same target twice, once with the variables and once without,
+# and compares the status of every layer and the exit code. Timings differ
+# between any two runs and are not compared. A DIFFERENCE HERE IS A REAL DEFECT:
+# it would mean the environment silently rerouted a diagnosis.
+#
+# 🔴 AND THE PROXY IS ASKED, WHICH IS THE HALF THAT NEEDS SOMEBODY ELSE. Equal
+# statuses only show the run came out the same - a request that went through the
+# proxy AND SUCCEEDED would leave every status untouched. So the proxy's own log
+# is counted immediately before and immediately after the run with the variables
+# set, and it must not have grown by one line.
+#
+# That is inviolable rule 16 checked from outside. The set of permitted targets
+# is enforced by a guard inside the program, and a guard inside the program is
+# precisely the thing an outsider has no way to verify.
+env_changes_nothing=yes
+
+# --- L2: nothing reads these yet, and verify.sh says so out loud ---
+#
+# WRITTEN NOW, BEFORE THE LAYER, because that is the only order in which they are
+# an oracle rather than a transcript. When P8-K3 lands, the deferred list in
+# verify-inside.sh empties itself by these keys existing.
+l2_status=PASS
+l2_proxy=172.28.0.128:3128
+l2_source=environment
+
+# The exception list is part of the answer, not a footnote. A report naming the
+# proxy without naming what bypasses it answers half the question.
+l2_bypass_names=direct.proxy.test

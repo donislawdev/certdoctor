@@ -146,11 +146,86 @@ services:
       # the matrix show some runtimes accepting the traffic and others not.
       - mitmconf:/home/mitmproxy/.mitmproxy
 
+  # The server that hands out the PAC file, and the origin the proxy scenarios
+  # are aimed at - slice P4c, feeding P8.
+  #
+  # THE SAME NGINX IMAGE THE partner SERVICE ALREADY PINS. A second copy of a
+  # version somebody has to keep in step is a second place to get it wrong, and
+  # this service asks nothing of nginx that the other one does not.
+  #
+  # IT IS BOTH THE SOURCE OF THE RULE AND THE SUBJECT OF IT. via, direct and auth
+  # all resolve here, so the only thing that differs between those three
+  # scenarios is what the PAC file says - and the PAC file comes from this same
+  # server. One address, one variable.
+  pac:
+    image: nginx:1.30.4-alpine
+    volumes:
+      - ./pac/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./pac/files:/srv/pac:ro
+    networks:
+      testbed:
+        ipv4_address: 172.28.0.90
+    healthcheck:
+      # It asks for the PAC file itself rather than for the port, because a
+      # server answering on 80 while the alias is wrong is exactly the failure
+      # this bench would otherwise report as a product defect.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/pac/proxy.pac"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+
+  # The forward proxy - slice P4c, and the reason this slice can be an oracle at
+  # all.
+  #
+  # squid 7.2, from Canonical's image, tag last updated 2026-09-01 - read at
+  # https://hub.docker.com/v2/repositories/ubuntu/squid/tags on 2026-09-02.
+  # Upstream's current stable SERIES is 7 and its newest point release is 7.7,
+  # dated 2026-08-24 - read at https://www.squid-cache.org/Versions/ on
+  # 2026-09-02. SO THIS PIN IS THE RIGHT SERIES AND AN OLDER POINT RELEASE, said
+  # outright rather than rounded up to "current". Squid is licensed GPL, which is
+  # the same family as this project and raises no question under docs/09 section
+  # 10 - and it is a bench tool in any case, never shipped to a user.
+  #
+  # THE IMAGE IS ROOTLESS AND RUNS UNDER PEBBLE rather than a plain entrypoint -
+  # measured 2026-09-02, UID 584792. That matters for one thing only, and it is
+  # handled below: /var/log/squid is owned by that user IN THE IMAGE, so a named
+  # volume mounted there inherits the ownership and squid can write its log.
+  #
+  # WHY A SECOND PROXY WHEN mitmproxy IS ALREADY HERE: see proxy/certdoctor.conf.
+  # Short version - the claims are about protocol behaviour, and checking them
+  # against one implementation twice would make that implementation the truth.
+  proxy:
+    image: ubuntu/squid:7.2-26.04_edge
+    volumes:
+      - ./proxy/certdoctor.conf:/etc/squid/conf.d/certdoctor.conf:ro
+      - ./proxy/certdoctor-passwd:/etc/squid/certdoctor-passwd:ro
+      # THE ORACLE ITSELF. Everything this proxy is asked to do lands in here,
+      # and the verification container mounts it read only. It is somebody else's
+      # record of what happened, which is the one thing our own code cannot be.
+      - proxylog:/var/log/squid
+    # It has to resolve the bench's names the way the bench does, or it would ask
+    # Docker's resolver and get NXDOMAIN for names only this bench knows - the
+    # same reason the mitm service names this resolver.
+    dns:
+      - 172.28.0.53
+    depends_on:
+      pac:
+        condition: service_healthy
+    networks:
+      testbed:
+        ipv4_address: 172.28.0.128
+
 volumes:
   # The chain lives here and never in the working tree. ADR5 says a private key
   # is never committed; a volume makes that true by construction rather than by a
   # .gitignore pattern that somebody could widen later.
   certs:
+
+  # The proxy's access log. It is a VOLUME rather than a bind mount so that a
+  # bench run cannot leave a log file lying in the working tree - inviolable rule
+  # 14 is about the product, but a measuring rig that litters teaches the habit
+  # the rule exists to prevent.
+  proxylog:
 
   # The middlebox's own CA, minted at its startup. Same rule as certs above and
   # for the same reason: a private key belongs in a volume, never in the tree.

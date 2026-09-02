@@ -40,9 +40,19 @@ set -o pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
-if ! docker compose -f "$here/compose.yml" ps --status running 2>/dev/null | grep -q dns; then
-  echo "testbed: the DNS bench is not running."
-  echo "testbed: start it with  docker compose -f testbed/compose.yml up -d"
+# EVERY SERVICE IS NAMED RATHER THAN JUST THE FIRST ONE, and the reason is
+# OBS76: a service can die in the middle of a session while "docker compose ps"
+# answers with an EMPTY LISTING rather than an error. A check that asked only
+# about dns would then let a run proceed against half a bench and report the
+# missing half as product defects.
+running="$(docker compose -f "$here/compose.yml" ps --status running 2>/dev/null)"
+missing=""
+for service in dns partner mitm pac proxy; do
+  echo "$running" | grep -q "$service" || missing="$missing $service"
+done
+if [ -n "$missing" ]; then
+  echo "testbed: these bench services are not running:$missing"
+  echo "testbed: start them with  docker compose -f testbed/compose.yml up -d"
   exit 1
 fi
 
@@ -56,8 +66,9 @@ if ! (cd "$repo" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$workspac
 fi
 
 cp "$here/verify-inside.sh" "$workspace/verify-inside.sh"
+cp "$here/oracle-pac.sh" "$workspace/oracle-pac.sh"
 cp -r "$here/expected" "$workspace/expected"
-chmod +x "$workspace/certdoctor" "$workspace/verify-inside.sh"
+chmod +x "$workspace/certdoctor" "$workspace/verify-inside.sh" "$workspace/oracle-pac.sh"
 
 # TWO DIFFERENT PATH PROBLEMS ON ONE LINE, AND THEY PULL IN OPPOSITE DIRECTIONS.
 #
@@ -74,6 +85,34 @@ mount="$workspace"
 if command -v cygpath >/dev/null 2>&1; then
   mount="$(cygpath -m "$workspace")"
 fi
+
+# THE SECOND OPINION IS COLLECTED FIRST, IN A CONTAINER OF ITS OWN - slice P4c.
+#
+# WHY IT CANNOT LIVE IN THE RUN BELOW. That container's resolver is the bench,
+# and the bench answers NXDOMAIN for everything it does not own, so no package
+# can be fetched there. This one keeps its own resolver and is TOLD where the PAC
+# server is, which is also the stronger arrangement: the thing being measured has
+# no way to influence the instrument.
+#
+# IT RUNS BEFORE THE COMPARISON so that its answers are on disk when the run
+# starts, and so that the run can drive its own client from what the EVALUATOR
+# said rather than from an address written into a script. That is what makes the
+# proxy log a witness instead of a formality - had the PAC said something else,
+# the client would have gone somewhere else.
+#
+# IT NEVER STOPS THE RUN. A missing second opinion is a missing witness, and
+# verify-inside.sh reports it as one. Turning it into an abort would mean a
+# machine without a network could not check the eight scenarios that need no
+# network at all.
+echo "testbed: asking libproxy what the bench's PAC files mean"
+MSYS_NO_PATHCONV=1 docker run --rm \
+  --network certdoctor-testbed_testbed \
+  --add-host pac.proxy.test:172.28.0.90 \
+  -v "$mount:/w" \
+  nicolaka/netshoot:v0.16 \
+  /w/oracle-pac.sh || echo "testbed: the second opinion could not be collected - the run says so below"
+
+echo
 
 # TWO VOLUMES ARRIVE READ ONLY, AND THEY ARE WHAT MAKES S-1 A MATRIX.
 #
@@ -93,5 +132,6 @@ MSYS_NO_PATHCONV=1 docker run --rm \
   -v "$mount:/w" \
   -v certdoctor-testbed_certs:/certs:ro \
   -v certdoctor-testbed_mitmconf:/mitmconf:ro \
+  -v certdoctor-testbed_proxylog:/proxylog:ro \
   nicolaka/netshoot:v0.16 \
   /w/verify-inside.sh

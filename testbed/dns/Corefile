@@ -30,6 +30,15 @@ example.net:53 {
     errors
 }
 
+# The third zone that answers on the wire, and the only one whose names differ
+# from each other in nothing but what a PAC file says about them - P4c. The
+# server they point at hands out that PAC file as well, so one address is both
+# the subject of the question and the source of the rule.
+proxy.test:53 {
+    file /etc/coredns/proxy.test.zone
+    errors
+}
+
 # A name whose resolver is broken rather than absent. Measured on this image:
 # forwarding to an unroutable address produces SILENCE, not SERVFAIL, so the
 # response code has to be stated outright - docs/17 section 6d.

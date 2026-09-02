@@ -1,0 +1,66 @@
+# The PAC sends this name through the proxy - slice P4c, the positive half.
+#
+# DERIVED FROM pac/files/proxy.pac BY READING IT, before any evaluator was
+# pointed at it. The name ends in .proxy.test, it is not a plain host name, and
+# it matches neither "direct.*" nor "auth.*" - so the dnsDomainIs branch decides
+# and the answer is the open proxy.
+#
+# 🔴 THIS FILE AND proxy-pac-direct.txt ONLY MEAN ANYTHING AS A PAIR. Both names
+# resolve to the same address, on the same server, returning the same body. The
+# only thing that differs between them is what the PAC file says. So a request
+# that turns up in the proxy log for one and not for the other cannot be
+# explained by anything except the routing rule - there is no second variable
+# left to blame.
+
+target=http://via.proxy.test/
+
+# --- W1: the independent evaluator ---
+#
+# libproxy 0.5.12 is somebody else's implementation of the same twelve PAC helper
+# functions ADR10 requires certdoctor to write for itself. It is asked the same
+# question about the same bytes, and its answer is printed on every run whether
+# it agrees or not - the same discipline dig gets in check_scenario.
+#
+# IT RUNS BESIDE THE BENCH, NOT INSIDE IT, and that is deliberate rather than a
+# workaround. The verification container's resolver is the bench, which answers
+# NXDOMAIN for everything it does not own, so a package could never be fetched
+# there. Running the evaluator in its own container with its own resolver means
+# the bench cannot influence the oracle at all.
+#
+# THE VOCABULARY IS libproxy'S, NOT OURS. It prints a URL for a proxy and
+# direct:// for no proxy, and the expectation is written in those terms so that
+# nothing has to be translated before it is compared.
+pac_url=http://pac.proxy.test/pac/proxy.pac
+pac_host=via.proxy.test
+pac_expect=http://172.28.0.128:3128
+
+# --- W2: did the request actually arrive ---
+#
+# 🔴 THIS IS THE ROW docs/21 SECTION 2b CALLED A GAP BY NATURE. On any machine
+# it is: nothing can be asked "will this runtime use that proxy". On this bench
+# it is not, because the proxy keeps a log and the log is not our code.
+#
+# THE CLIENT IS DRIVEN BY libproxy'S ANSWER, NOT BY THIS FILE. The check reads
+# what the evaluator said and turns THAT into a curl invocation. Had the PAC sent
+# this name direct, curl would have gone direct and the token below would be
+# missing - so the presence of the token is caused by the PAC rather than by the
+# script arranging for it.
+#
+# THE TOKEN IS UNIQUE PER RUN because the log is cumulative and survives a
+# restart. Counting lines would make yesterday's run part of today's evidence.
+proxy_log_expect=present
+http_expect=200
+
+# --- what this witness does NOT establish, said rather than glossed over ---
+#
+# It shows that a request following this PAC reaches this proxy. It does NOT show
+# that a particular runtime would read this PAC and follow it - that needs a
+# client with its own PAC support, and no such client is on this bench. docs/21
+# section 2b now carries three rows where it carried one, and this fills two of
+# them. The third stays open and is named there.
+
+# --- L2: nothing reads these yet ---
+l2_status=PASS
+l2_proxy=172.28.0.128:3128
+l2_source=pac
+l2_pac_url=http://pac.proxy.test/pac/proxy.pac

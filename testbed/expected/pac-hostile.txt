@@ -1,0 +1,65 @@
+# The PAC file that tries to get out of the sandbox - slice P4c, and it is the
+# bench for the guard docs/24 makes MANDATORY for P8.
+#
+# DERIVED FROM pac/files/hostile.pac. That file probes for require, process,
+# fetch, XMLHttpRequest, setTimeout, console, a file reader and a runtime global,
+# and returns a proxy directive NAMING whichever it found. So a sandbox that
+# leaks does not throw - it produces a visible, named answer that cannot be
+# mistaken for an unrelated fault.
+#
+# WHY IT IS SERVED OVER HTTP RATHER THAN ONLY BEING A UNIT-TEST FIXTURE. The unit
+# test will exercise the evaluator. This exercises the WHOLE PATH the real thing
+# takes: fetched over plain HTTP from an address in the machine's configuration,
+# parsed, evaluated, refused. Between those two there is room for a fault that
+# neither alone would find.
+#
+# 🔴 THIS IS THE ONE PLACE IN THE PRODUCT WHERE WE EXECUTE SOMEBODY ELSE'S CODE.
+# ADR8 permits it as a deliberate, named exception under five conditions, all of
+# which must hold at once and none of which is negotiable. This file is how the
+# bench asks whether they do.
+
+target=http://via.proxy.test/
+pac_url=http://pac.proxy.test/pac/hostile.pac
+
+# --- corroboration from a second engine, which is NOT the same as proof ---
+#
+# Measured 2026-09-02: libproxy 0.5.12 answers "none.seen" here, so its evaluator
+# exposes none of these either. Probe S12 measured the same about a fresh goja
+# Runtime. Two independent engines agreeing is worth recording and is still a
+# statement about THOSE engines - what certdoctor exposes depends on what
+# certdoctor injects, and only its own guard can settle that.
+oracle_libproxy_says=http://none.seen:1
+oracle_is_authoritative=no
+
+# --- L2: nothing reads these yet ---
+#
+# The only acceptable answer. Every other value of this key is a leak with a name
+# attached, and the name says which condition failed.
+l2_pac_result=PROXY none.seen:1
+
+# Conditions 1 and 2 of docs/14 section 2.1, as facts to be checked rather than
+# as prose to be trusted.
+sandbox_no_host_objects=yes
+sandbox_no_network=yes
+sandbox_no_filesystem=yes
+
+# 🔴 THE FOUR NAMES THAT MUST NEVER APPEAR IN A REPORT PRODUCED FROM THIS FILE.
+# Each is a directive the PAC returns only if the matching global was reachable,
+# so any one of them in the output is the guard failing loudly - which is the
+# reason the file answers instead of throwing.
+leak_forbidden=leaked.require:1,leaked.process:1,leaked.fetch:1,leaked.xhr:1
+leak_forbidden_2=leaked.settimeout:1,leaked.console:1,leaked.filesystem:1,leaked.deno:1
+
+# The other three files in pac/files/ that belong to this guard and get their
+# expectations at P8-K1, when there is an evaluator to point at them. Named here
+# so the set does not quietly lose a member.
+#
+#   runaway.pac    - never returns. Time limit, condition 3.
+#   bomb.pac       - allocates without bound. Memory ceiling by stopwatch.
+#   recursion.pac  - unbounded recursion. THE ONE THAT MADE SetMaxCallStackSize
+#                    a condition rather than tuning - ten seconds and 213 MiB at
+#                    default settings, 1 ms with the limit set.
+#   null.pac       - returns null, which goja exports as the STRING "null".
+#   lookahead.pac  - a regular expression otto could not compile. The measurement
+#                    that rejected that engine, kept as a file so the decision has
+#                    a witness on the bench and not only in a probe log.

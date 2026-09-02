@@ -1,0 +1,57 @@
+# The PAC sends this name PAST the proxy - slice P4c, the negative half, and the
+# scenario this whole product exists for.
+#
+# DERIVED FROM pac/files/proxy.pac BY READING IT. The name matches shExpMatch
+# "direct.*", which is the first rule after the plain-host-name check, so it
+# returns DIRECT and never reaches the branch that would proxy it.
+#
+# 🔴 THE FAULT THIS REPRODUCES IS THE ONE ADR8 CALLS THE PRODUCT'S REASON TO
+# EXIST. A proxy is configured on the machine. The environment says so, the
+# system settings say so, and anybody reading either would tell you the request
+# goes through it. The PAC sends this one name straight out, and there is no
+# tool that will tell you so.
+#
+# IT ONLY MEANS ANYTHING PAIRED WITH proxy-pac-via.txt. Same address, same
+# server, same body, same run. One variable.
+
+target=http://direct.proxy.test/
+
+# The environment is set exactly as in proxy-env.txt, so this scenario is not
+# "no proxy configured" - it is "a proxy is configured AND the PAC overrides it".
+# Without this line the scenario would be trivially true.
+env_https_proxy=http://benchuser:s3cr3t-not-real-4c7f@172.28.0.128:3128
+
+# --- W1: the independent evaluator ---
+pac_url=http://pac.proxy.test/pac/proxy.pac
+pac_host=direct.proxy.test
+pac_expect=direct://
+
+# --- W2: the request must be ABSENT from the proxy log ---
+#
+# 🔴 AN ABSENCE IS ONLY EVIDENCE IF THE PRESENCE WAS POSSIBLE, which is why the
+# client is driven by libproxy's answer rather than by this file. If the PAC had
+# said PROXY, the same code path would have sent this through the proxy and the
+# token would be there. The absence is therefore caused by the rule, not by the
+# script declining to try.
+#
+# The token is unique per run, so "absent" means absent from this run rather than
+# absent from a log somebody truncated.
+proxy_log_expect=absent
+http_expect=200
+
+# --- L2: nothing reads these yet ---
+#
+# THE SENTENCE MATTERS MORE THAN THE STATUS HERE. A report that says "a proxy is
+# configured" and stops has told somebody the opposite of what is happening on
+# their machine. Naming the bypass is the answer.
+l2_status=PASS
+l2_proxy=none
+l2_source=pac
+l2_bypass_reason=pac
+l2_pac_url=http://pac.proxy.test/pac/proxy.pac
+
+# The verdict must name the PAC as the thing that decided, and must not say the
+# request goes through the proxy in the environment. Written down before the
+# layer that could get it wrong exists - the same guard no-intermediate.txt is.
+verdict_names=pac
+verdict_forbidden=goes through the proxy,uses HTTPS_PROXY

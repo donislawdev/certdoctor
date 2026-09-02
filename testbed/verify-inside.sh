@@ -15,6 +15,27 @@ passed=0
 failed=0
 notes=0
 
+# A TOKEN UNIQUE TO THIS RUN, because the proxy's access log is CUMULATIVE and
+# survives a restart of everything else - slice P4c.
+#
+# Every request the proxy scenarios make carries it in the query string, and the
+# log records the whole URL. Without it, "this request is absent" would mean
+# "absent from a file nobody truncated", and yesterday's run would be part of
+# today's evidence. Counting lines before and after would have the same fault the
+# moment two runs overlapped.
+run_token="cdrun-$(date +%s)-$$"
+
+# Where the second opinion landed. Written by oracle-pac.sh in a container of its
+# own, BEFORE this one started - see verify.sh for why it cannot live here.
+oracle=/w/oracle-pac.txt
+
+# oracle_answer pulls libproxy's verdict for one scenario out of that file. An
+# empty answer means there was no second opinion this run, which is a MISSING
+# WITNESS and is reported as one rather than passed over.
+oracle_answer() {
+  grep "^$1|" "$oracle" 2>/dev/null | head -1 | cut -d'|' -f3
+}
+
 # value pulls one key out of an expectation file. Lines are key=value and
 # anything starting with # is prose explaining WHY, which is most of each file.
 value() {
@@ -704,7 +725,292 @@ bench_serves_the_interception_path() {
   return 0
 }
 
-if ! bench_serves_this_tree || ! bench_serves_the_complete_chain || ! bench_serves_the_interception_path; then
+# THE SAME TRAP A FOURTH AND FIFTH TIME, AND BOTH WERE WALKED INTO WHILE BUILDING
+# THIS SLICE RATHER THAN BEING ANTICIPATED - slice P4c.
+#
+# CoreDNS reads the Corefile once, at startup, so a zone added to the working
+# tree was invisible to a container that had been up for ten hours: every name in
+# proxy.test came back NXDOMAIN while "docker compose up -d" reported everything
+# healthy. That is OBS64 for the fourth time.
+#
+# And squid caches DNS answers, including the negative ones it collected while
+# that zone did not exist, so restarting the resolver was not enough - the proxy
+# went on believing the names did not exist. That is the same shape one service
+# further along, and it is new.
+#
+# WITHOUT THIS CHECK BOTH FAULTS READ AS PRODUCT DEFECTS: a proxy that will not
+# forward and an origin that cannot be reached, reported accurately about a bench
+# that is not the one in this tree.
+bench_serves_the_proxy_bench() {
+  local code
+
+  code="$(curl -s -o /dev/null -w '%{http_code}' http://pac.proxy.test/pac/proxy.pac 2>/dev/null)"
+  if [ "$code" != "200" ]; then
+    echo "testbed: the PAC server did not serve /pac/proxy.pac - HTTP ${code:-no answer}."
+    echo "testbed: nginx reads its configuration ONCE, at startup, and that file is a bind mount."
+    echo "testbed: fix:  docker compose -f testbed/compose.yml restart pac"
+    return 1
+  fi
+
+  code="$(curl -s -o /dev/null -w '%{http_code}' -x http://172.28.0.128:3128 http://via.proxy.test/ 2>/dev/null)"
+  if [ "$code" != "200" ]; then
+    echo "testbed: the proxy did not forward on 3128 - HTTP ${code:-no answer}."
+    echo "testbed: squid caches DNS, negative answers included, so a zone added after it"
+    echo "testbed: started stays invisible to it however healthy the container looks."
+    echo "testbed: fix:  docker compose -f testbed/compose.yml restart proxy"
+    return 1
+  fi
+
+  code="$(curl -s -o /dev/null -w '%{http_code}' -x http://172.28.0.128:3129 http://auth.proxy.test/ 2>/dev/null)"
+  if [ "$code" != "407" ]; then
+    echo "testbed: the proxy answered ${code:-nothing} on 3129 where a challenge - 407 - was expected."
+    echo "testbed: the credential rule lives in proxy/certdoctor.conf, which squid reads at startup."
+    echo "testbed: fix:  docker compose -f testbed/compose.yml restart proxy"
+    return 1
+  fi
+
+  # THE ORACLE ITSELF HAS TO BE READABLE BEFORE ANY SCENARIO BELIEVES IT. An
+  # unreadable log would make every "absent from the proxy log" check pass for
+  # the wrong reason, which is the most dangerous shape a green line can take.
+  if [ ! -r /proxylog/access.log ]; then
+    echo "testbed: the proxy access log is not readable at /proxylog/access.log."
+    echo "testbed: every proxy scenario would then agree for the wrong reason, so none run."
+    echo "testbed: fix:  docker compose -f testbed/compose.yml up -d --force-recreate proxy"
+    return 1
+  fi
+
+  return 0
+}
+
+# check_proxy_env is the ONE proxy scenario with a reader today, and the reason
+# this slice is not a bench waiting on a consumer - slice P4c.
+#
+# L2 does not exist. L0 has read the proxy variables since P2, so three claims
+# can be settled now: the variable is reported, the password in it does not
+# survive, and reading it does not mean OBEYING it.
+#
+# THE THIRD IS THE ONE THAT HAS NEVER BEEN RUN. docs/14 section 3 says the
+# environment must never change WHAT the tool does, and the premise behind that -
+# nothing in the product uses a transport honouring these variables - was read
+# out of the imports rather than measured. Here it is measured: the same target,
+# twice, once with the variables and once without.
+check_proxy_env() {
+  local file="$expected/proxy-env.txt"
+  local target proxy_var noproxy_var secret secret2 var1 var2
+
+  target="$(value "$file" target)"
+  proxy_var="$(value "$file" env_https_proxy)"
+  noproxy_var="$(value "$file" env_no_proxy)"
+  secret="$(value "$file" secret_absent)"
+  secret2="$(value "$file" secret_absent_2)"
+  var1="$(value "$file" l0_names_variable)"
+  var2="$(value "$file" l0_names_variable_2)"
+
+  say() {
+    echo "    DIFFERS: $1"
+    failed=$((failed + 1))
+  }
+
+  echo "  proxy scenario proxy-env  ->  $target"
+
+  local base base_code doc code human
+  base="$(env -u HTTPS_PROXY -u https_proxy -u NO_PROXY -u no_proxy "$binary" "$target" --json 2>/dev/null)"
+  base_code=$?
+
+  # THE PROXY IS ASKED TOO, AND IT IS THE STRONGEST FORM OF THIS CLAIM.
+  #
+  # Comparing layer statuses shows the run came out the same. It does not show
+  # that nothing was SENT to the proxy along the way - a request that went
+  # through it and succeeded would leave the statuses untouched. So the log is
+  # snapshotted around the run: if certdoctor obeyed the variable, squid wrote a
+  # line, and the count moved.
+  #
+  # This is inviolable rule 16 with a witness that is not our code. The target
+  # set is enforced by a guard inside the program, and a guard inside the program
+  # is exactly what an outsider cannot check.
+  local log_before log_after
+  log_before="$(wc -l < /proxylog/access.log 2>/dev/null || echo 0)"
+
+  doc="$(HTTPS_PROXY="$proxy_var" NO_PROXY="$noproxy_var" "$binary" "$target" --json 2>/dev/null)"
+  code=$?
+  human="$(HTTPS_PROXY="$proxy_var" NO_PROXY="$noproxy_var" "$binary" "$target" --no-color 2>/dev/null)"
+
+  log_after="$(wc -l < /proxylog/access.log 2>/dev/null || echo 0)"
+  if [ "$log_before" != "$log_after" ]; then
+    say "the proxy log GREW during a run with the variables set - certdoctor sent something through it"
+  fi
+
+  if [ -z "$doc" ]; then
+    say "certdoctor produced no document at all with the proxy variables set"
+    return
+  fi
+
+  # CLAIM 1: the variables are reported. Asked of the L0 layer specifically and
+  # by exact string, so a substring somewhere else in the document cannot answer
+  # for it.
+  local seen
+  for seen in "$var1" "$var2"; do
+    [ -n "$seen" ] || continue
+    if ! echo "$doc" | jq -e --arg v "$seen" \
+      '[.layers[] | select(.id=="L0") | .. | strings] | any(. == $v)' >/dev/null 2>&1; then
+      say "L0 does not name $seen, and silence about a configured proxy is the fault OBS72 was"
+    fi
+  done
+
+  # CLAIM 2: the credential does not survive. Both surfaces, because inviolable
+  # rule 12 says every finding exists on all of them - which means a leak does
+  # too. NO --redact is passed: masking userinfo is a property of the layer that
+  # produces it, not an option a user has to remember.
+  local surface
+  for surface in "$doc" "$human"; do
+    if echo "$surface" | grep -qF "$secret"; then
+      say "THE PASSWORD SURVIVED into a report surface - inviolable rule 17"
+    fi
+    if echo "$surface" | grep -qF "$secret2"; then
+      say "the account name survived into a report surface, which is half a credential"
+    fi
+  done
+
+  # CLAIM 3: the environment changed nothing. Layer statuses and the exit code,
+  # never timings - two runs differ in those by nature and comparing them would
+  # make this flap.
+  local base_shape shape
+  base_shape="$(echo "$base" | jq -c '[.layers[] | {id, status}]' 2>/dev/null)"
+  shape="$(echo "$doc" | jq -c '[.layers[] | {id, status}]' 2>/dev/null)"
+  if [ "$base_shape" != "$shape" ]; then
+    say "setting the proxy variables CHANGED the layer statuses - $base_shape became $shape"
+  fi
+  if [ "$base_code" != "$code" ]; then
+    say "setting the proxy variables changed the exit code from $base_code to $code"
+  fi
+
+  echo "    certdoctor: exit $code with the variables, $base_code without | layers $shape"
+  echo "    secret:     absent from both surfaces"
+  echo "    proxy log:  $log_before lines before the run, $log_after after - nothing was sent through it"
+
+  if [ "$base_shape" = "$shape" ]; then
+    passed=$((passed + 1))
+  fi
+}
+
+# check_pac_route is the row docs/21 section 2b called a gap by nature - and the
+# reason P4c was given a job that document did not foresee.
+#
+# TWO WITNESSES, NEITHER OF THEM OUR CODE. libproxy says what the PAC MEANS.
+# squid's access log says whether the request ARRIVED. Between them they answer
+# two of the three questions that row was really asking, and the third - whether
+# a given runtime would read this PAC and obey it - stays open and is named.
+#
+# 🔴 THE CLIENT IS DRIVEN BY THE ORACLE'S ANSWER, NOT BY THIS SCRIPT. That is the
+# whole design. If the PAC had said something else, libproxy would have said so
+# and curl would have gone somewhere else - so a request appearing in the log is
+# caused by the routing rule rather than by a proxy address written in here. An
+# absence means the same thing in reverse, which is the only way an absence is
+# evidence at all.
+check_pac_route() {
+  local name="$1"
+  local file="$expected/$name.txt"
+  local target host want_answer want_log want_http want_tag pending
+
+  target="$(value "$file" target)"
+  host="$(value "$file" pac_host)"
+  want_answer="$(value "$file" pac_expect)"
+  want_log="$(value "$file" proxy_log_expect)"
+  want_http="$(value "$file" http_expect)"
+  want_tag="$(value "$file" proxy_log_tag)"
+  pending="$(value "$file" pending_decision)"
+
+  if [ -n "$pending" ]; then
+    say() {
+      echo "    UNSETTLED ($pending): $1"
+      notes=$((notes + 1))
+    }
+  else
+    say() {
+      echo "    DIFFERS: $1"
+      failed=$((failed + 1))
+    }
+  fi
+
+  echo "  proxy scenario $name  ->  $target"
+
+  local got_answer
+  got_answer="$(oracle_answer "$name")"
+  if [ -z "$got_answer" ]; then
+    echo "    NOT CHECKED: there was no second opinion this run - libproxy was not available."
+    echo "        The bench can still be run, but this scenario proved nothing."
+    notes=$((notes + 1))
+    return
+  fi
+
+  # THE SECOND OPINION IS PRINTED WHATEVER HAPPENS, exactly as dig is in
+  # check_scenario. When it disagrees with the expectation, the first suspect is
+  # the PAC file or our reading of it - not the product, which has not been asked
+  # anything yet.
+  echo "    libproxy says: $host -> $got_answer"
+  if [ "$got_answer" != "$want_answer" ]; then
+    say "libproxy reads this PAC as $got_answer, and expected/ says $want_answer"
+  fi
+
+  local -a client
+  case "$got_answer" in
+    direct://)
+      client=(--noproxy '*')
+      ;;
+    http://*)
+      client=(-x "$got_answer")
+      ;;
+    *)
+      say "libproxy answered $got_answer, which this bench cannot turn into a request"
+      return
+      ;;
+  esac
+
+  # THE TOKEN GOES IN THE PATH, NOT IN A QUERY STRING, AND THAT IS A MEASUREMENT
+  # RATHER THAN A PREFERENCE. Measured 2026-09-02 on the first run of this bench:
+  # squid strips everything after "?" from a logged URL by default, so a request
+  # that had visibly succeeded through the proxy was reported as never having
+  # arrived. The configuration now turns that off, and the token moved anyway - a
+  # witness that can be silenced by a privacy setting on the thing being watched
+  # is not a witness worth relying on.
+  local token got_http
+  token="$run_token-$name"
+  got_http="$(curl -s -o /dev/null -w '%{http_code}' "${client[@]}" "${target%/}/$token" 2>/dev/null)"
+
+  if [ -n "$want_http" ] && [ "$got_http" != "$want_http" ]; then
+    say "the client following that answer got HTTP $got_http, expected $want_http"
+  fi
+
+  # Squid writes unbuffered, but the request returning and the line landing are
+  # still two events. A bounded wait beats a race that would be blamed on the
+  # product the first time it lost.
+  local seen="absent" i=0 line=""
+  while [ "$i" -lt 25 ]; do
+    line="$(grep -F "$token" /proxylog/access.log 2>/dev/null | head -1)"
+    if [ -n "$line" ]; then
+      seen="present"
+      break
+    fi
+    i=$((i + 1))
+    sleep 0.2
+  done
+
+  if [ "$seen" != "$want_log" ]; then
+    say "the proxy log says this request was $seen, expected $want_log"
+  fi
+
+  if [ -n "$want_tag" ] && [ -n "$line" ] && ! echo "$line" | grep -qF "$want_tag"; then
+    say "the proxy logged this as something other than $want_tag"
+  fi
+
+  echo "    proxy log:  $seen${line:+  ->  $(echo "$line" | awk '{print $4, $6, $7}')}"
+
+  if [ "$got_answer" = "$want_answer" ] && [ "$seen" = "$want_log" ]; then
+    passed=$((passed + 1))
+  fi
+}
+
+if ! bench_serves_this_tree || ! bench_serves_the_complete_chain || ! bench_serves_the_interception_path || ! bench_serves_the_proxy_bench; then
   exit 1
 fi
 
@@ -767,6 +1073,44 @@ check_authority internal-ca
 
 echo
 
+# THE PROXY BENCH - slice P4c, and the first scenarios here whose witness is
+# somebody else's LOG rather than somebody else's TOOL.
+#
+# proxy-env is checkable end to end today, because L0 has read these variables
+# since P2. The three that follow are the oracle for a claim L2 will make later:
+# they establish what the PAC means and where the request went, so that when P8
+# arrives the expectation it is measured against was written first.
+#
+# THE THREE ROUTING SCENARIOS ONLY MEAN ANYTHING TOGETHER. via, direct and auth
+# resolve to one address on one server returning one body. The PAC is the only
+# difference between them.
+check_proxy_env
+
+echo
+
+check_pac_route proxy-pac-via
+echo
+check_pac_route proxy-pac-direct
+echo
+check_pac_route proxy-auth
+
+# 🔴 say() IS GLOBAL IN BASH EVEN WHEN IT IS DEFINED INSIDE A FUNCTION, and the
+# scenario immediately above carries a pending_decision - so it has just left
+# say() as the UNSETTLED variant, which counts a note instead of a failure.
+#
+# Nothing below uses it today, so this changes no result. It is here because the
+# next person to add a scenario after this line would inherit that quietly: a
+# real disagreement would be printed as a parked question and the run would stay
+# green. Every function above redefines say() before using it, which is what has
+# kept this harmless so far - this restores the default rather than relying on
+# that habit holding forever.
+say() {
+  echo "    DIFFERS: $1"
+  failed=$((failed + 1))
+}
+
+echo
+
 # WHAT THIS RUN DID NOT ASSESS, SAID OUT LOUD RATHER THAN LEFT AS SILENCE.
 #
 # P4b put two benches in place - a server that withholds its intermediate, and a
@@ -801,6 +1145,49 @@ if [ "$deferred" -gt 0 ]; then
   echo "testbed: those $deferred expectation(s) were written from the bench's configuration"
   echo "testbed: BEFORE anything could read them, which is the only order that makes them"
   echo "testbed: an oracle rather than a transcript. Verify them by hand with openssl."
+  echo
+fi
+
+# THE SECOND SELF-BUILDING LIST, AND IT EXISTS FOR THE SAME REASON THE FIRST ONE
+# DOES - slice P4c, waiting for P8.
+#
+# L2 is the one layer of the eight that has nothing behind it but an identifier
+# in internal/core/layer/layer.go. Every expectation naming a key that starts
+# with l2_ is therefore beyond what this script can ask, however well the bench
+# around it works.
+#
+# IT KEYS ON THE PREFIX RATHER THAN ON ONE FIELD NAME because the shape of an L2
+# finding is not settled - ADR75 approved adding the finding kind and the fields
+# in P8-K3 without saying what they are called. A list keyed on a name nobody has
+# chosen yet would go stale the day somebody chose it. It empties itself when the
+# layer arrives, exactly as the interception list will.
+pending_l2=0
+for file in "$expected"/*.txt; do
+  [ -e "$file" ] || continue
+  if grep -qE '^l2_' "$file" 2>/dev/null; then
+    if [ "$pending_l2" -eq 0 ]; then
+      echo "testbed: NOT ASSESSED HERE - expectations about L2, which does not exist yet:"
+    fi
+    pending_l2=$((pending_l2 + 1))
+    echo "    $(basename "$file" .txt)  ->  $(value "$file" target)"
+
+    # A DECISION WAITING ON THE OWNER IS PRINTED HERE OR IT IS INVISIBLE. The
+    # pending_decision mechanism only turns a DIFFERENCE into a note, and a layer
+    # nothing reads produces no differences at all - so a question parked in one
+    # of these files would sit unread until somebody opened it by chance. Naming
+    # it on every run is the difference between a parked question and a lost one.
+    decision="$(value "$file" pending_decision)"
+    if [ -n "$decision" ]; then
+      echo "        AWAITING A DECISION: $decision"
+    fi
+  fi
+done
+if [ "$pending_l2" -gt 0 ]; then
+  echo "testbed: those $pending_l2 expectation(s) were written from the bench's configuration"
+  echo "testbed: and from the product's contract BEFORE the layer existed. What the bench"
+  echo "testbed: CAN establish today is checked above: what the PAC means, according to an"
+  echo "testbed: evaluator that is not ours, and where the request actually went, according"
+  echo "testbed: to a log that is not ours either. The layer that will read them is P8."
   echo
 fi
 

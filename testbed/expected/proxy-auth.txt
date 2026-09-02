@@ -1,0 +1,75 @@
+# The proxy demands a credential - slice P4c, feeding the 407 detection named in
+# the P8-K3 description.
+#
+# DERIVED FROM pac/files/proxy.pac AND FROM proxy/certdoctor.conf. The name
+# matches shExpMatch "auth.*", so the PAC returns port 3129, and the squid
+# snippet denies that port to anything without proxy_auth - which is the rule
+# that makes squid answer 407 rather than 403.
+#
+# WHY A SEPARATE PORT RATHER THAN A SEPARATE PROXY. Same process, same rules,
+# same log, same origin. The only difference between this scenario and
+# proxy-pac-via.txt is the authentication requirement, so a difference in what
+# comes back has one possible cause.
+
+target=http://auth.proxy.test/
+
+# --- W1: the independent evaluator ---
+pac_url=http://pac.proxy.test/pac/proxy.pac
+pac_host=auth.proxy.test
+pac_expect=http://172.28.0.128:3129
+
+# --- W2: the proxy log, and W3: what the client is told ---
+#
+# 🔴 THE CLIENT ITSELF IS THE THIRD WITNESS HERE, and it is the strongest kind
+# this project has - the same kind check_trust already uses when it asks curl
+# whether it really refuses a chain. certdoctor will eventually say "this proxy
+# will demand credentials". curl is asked, and curl gets 407.
+#
+# NO CREDENTIALS ARE SENT. The bench has a working pair - see certdoctor-passwd -
+# but the fact under test is what happens to a machine that has none, because
+# that is the machine whose build is failing.
+proxy_log_expect=present
+http_expect=407
+
+# The line squid writes for a challenge. Recorded because it is the difference
+# between "the proxy refused you" and "the proxy asked who you are", and those
+# two send a person to different places.
+proxy_log_tag=TCP_DENIED/407
+
+# --- L2: nothing reads these yet ---
+#
+# UNKNOWN RATHER THAN FAIL, and the reason is inviolable rule 15 read carefully.
+# A proxy asking for credentials is not a broken proxy and not a broken machine -
+# it is a machine that has not been told who it is. The layer knows the proxy
+# will be used and knows it will challenge. It does NOT know whether credentials
+# exist somewhere it cannot see, so it must not pronounce on the outcome.
+l2_status=UNKNOWN
+l2_proxy=172.28.0.128:3129
+l2_source=pac
+l2_auth_required=yes
+
+# 🔴 THE REASON IS DELIBERATELY LEFT UNDECIDED, AND THIS FILE WILL NOT INVENT IT.
+#
+# UNKNOWN carries a reason from a CLOSED list of seven - unrecognized_output,
+# timeout, access_denied, probe_error, skipped_budget, nothing_to_check and
+# transport_error, in internal/core/status/reason.go. Not one of them describes a
+# proxy asking who you are. An eighth is load-bearing change 3, and the register
+# shows every previous addition getting a decision of its own - ADR33 for the
+# sixth, ADR39 for the seventh.
+#
+# Writing a new value here would decide that in a bench file, which is exactly
+# the shape of change this project asks to be asked about. So the expectation
+# states the REQUIREMENT and leaves the vocabulary open, and the bench counts the
+# difference as UNSETTLED rather than as a failure until the owner rules.
+#
+# WHAT IS NOT OPEN: whatever the word turns out to be, access_denied must not be
+# it. ADR70 removed that word from a place it did not belong once already, and
+# OBS90 records it still sitting in another - a machine where nobody denied
+# anything being told that something did.
+l2_reason=UNDECIDED
+l2_reason_forbidden=access_denied
+pending_decision=eighth UNKNOWN reason for a proxy that demands credentials - closed list, load-bearing change 3, owner's call in P8-K3
+
+# It must not accuse the machine's trust stores, which is what a run that stops
+# at 407 looks like from further down the pipeline.
+verdict_forbidden=trust store,certificate

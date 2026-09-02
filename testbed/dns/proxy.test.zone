@@ -1,0 +1,51 @@
+; The zone the proxy scenarios are asked about - slice P4c, feeding P8.
+;
+; WHY A ZONE OF ITS OWN RATHER THAN MORE NAMES IN ok.test. Every name in ok.test
+; resolves into a documentation range on purpose, so that a run against the DNS
+; bench cannot open a connection to anything. These names have to do the
+; opposite: a proxy scenario is only worth anything if a real request can be sent
+; and then found again in somebody's log. Keeping the two apart means the rule
+; stated in ok.test.zone stays true rather than acquiring exceptions.
+;
+; THE THREE SCENARIO NAMES POINT AT ONE AND THE SAME SERVER, AND THAT IS THE
+; WHOLE EXPERIMENTAL DESIGN. via, direct and auth are the same address, the same
+; port and the same content. The only thing that differs between them is what the
+; PAC file says about them. So when one request turns up in the proxy log and
+; another does not, the PAC is the only thing that can have caused it - there is
+; no second variable to blame.
+;
+; Every address is inside the bench's own subnet and unreachable from anywhere
+; else, the same deliberate exception partner.test already documents.
+$ORIGIN proxy.test.
+$TTL 60
+
+@   IN SOA ns.proxy.test. admin.proxy.test. (
+        1          ; serial
+        7200       ; refresh
+        3600       ; retry
+        1209600    ; expire
+        3600 )     ; minimum
+
+@   IN NS  ns.proxy.test.
+ns  IN A   172.28.0.53
+
+; The server that hands out the PAC file over plain HTTP, which is how a machine
+; normally gets one. It is also the origin the three names below answer from.
+pac     IN A   172.28.0.90
+
+; The proxy itself. It is named here because a PAC file naming a bare address is
+; a PAC file nobody would recognise, and because the name is what a person reads
+; in a report.
+gw      IN A   172.28.0.128
+
+; PAC says: go through the open proxy. This request MUST appear in the proxy log.
+via     IN A   172.28.0.90
+
+; PAC says: go direct, even though a proxy is configured. This request MUST NOT
+; appear in the proxy log - the negative half of the oracle, and the half that
+; gives the positive one its meaning.
+direct  IN A   172.28.0.90
+
+; PAC says: go through the proxy that demands credentials. Reaching it without
+; any produces 407, which is the fact P8-K3 has to detect.
+auth    IN A   172.28.0.90
