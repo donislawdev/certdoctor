@@ -291,3 +291,41 @@ func TestTheAccusingWordsAreMatchedByStemAndTheProductNamesAreNot(t *testing.T) 
 		t.Error("a whole-word match found a word inside a longer one")
 	}
 }
+
+// TestAWordBoundaryIsARuneAndNotAByte is the defect this rule had until it was
+// measured, and the measurement is in the test rather than in a comment.
+//
+// A distinguished name is somebody else's UTF-8. While the boundary counted
+// BYTES, every non-ASCII letter looked like a separator, so a product name
+// sitting flush against an accented letter matched as a whole word. Measured
+// 2026-09-02, before the fix: all three of the first cases below came back true.
+// They are written as escapes because every .go file in this tree is pure ASCII,
+// which is a guard of its own - and it caught this test on its first run.
+// Each is a company being told it runs an inspection appliance because of how
+// its own name is spelled - the false positive inviolable rule 21 calls harm.
+//
+// THE FOURTH CASE IS WHY THIS IS NOT SOLVED BY REFUSING NON-ASCII. A real match
+// separated by an ordinary space still has to fire, or the fix would have traded
+// one wrong answer for another.
+func TestAWordBoundaryIsARuneAndNotAByte(t *testing.T) {
+	cases := []struct {
+		value, want string
+		match       bool
+	}{
+		// Written as escapes because every .go file in this tree is pure ASCII -
+		// a guard of its own, and it caught this test on its first run.
+		{"Cisco Umbrella\u0119 Ltd", "Cisco Umbrella", false},
+		{"\u017cmitmproxy", "mitmproxy", false},
+		{"mitmproxy\u0105", "mitmproxy", false},
+		{"Cisco Umbrella Root CA", "Cisco Umbrella", true},
+		{"Fortinetworks Sp. z o.o.", "Fortinet", false},
+		// Bytes that are not valid UTF-8 at all. Failing closed here is the
+		// direction that costs a sentence rather than an accusation.
+		{"mitmproxy\xff\xfe", "mitmproxy", false},
+	}
+	for _, c := range cases {
+		if got := ContainsWord(c.value, c.want); got != c.match {
+			t.Errorf("ContainsWord(%q, %q) = %v, want %v", c.value, c.want, got, c.match)
+		}
+	}
+}

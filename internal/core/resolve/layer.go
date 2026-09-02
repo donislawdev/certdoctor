@@ -298,20 +298,8 @@ func (in Input) walk(ctx context.Context) Result {
 		counted.total++
 	}
 
-	findings := make([]report.Finding, 0, counted.total)
 	seen := map[report.NoAnswer]int{}
-	sent := 0
-	for _, resolver := range in.Resolvers {
-		for _, recordType := range dnsmsg.AllTypes {
-			finding, cutShort := in.askOne(ctx, resolver, recordType, counted.total-sent)
-			if cutShort {
-				counted.truncated++
-			}
-			sent++
-			counted.direct += tally(finding, seen)
-			findings = append(findings, finding)
-		}
-	}
+	findings, sent := in.askEveryResolver(ctx, &counted, seen)
 
 	// THE SYSTEM VIEW GOES LAST AND THE ORDER IS FIXED RATHER THAN CONVENIENT.
 	// Whichever lens goes second asks a resolver whose cache the first one just
@@ -352,6 +340,51 @@ func (in Input) walk(ctx context.Context) Result {
 		findings = append(findings, finding)
 	}
 
+	return in.verdictFor(findings, counted, seen)
+}
+
+// askEveryResolver puts the same question to every resolver this machine names,
+// for every record type, and counts what came back.
+//
+// IT IS THE DIRECT LENS AND NOTHING ELSE. The system lens is asked separately
+// and deliberately second - see the comment at that call site - and no verdict
+// is reached here, because a verdict needs both lenses to have finished.
+//
+// THE TALLIES ARE WRITTEN THROUGH A POINTER RATHER THAN RETURNED, so that the
+// counting lines are the same lines they were before this function existed.
+// Several of them are the target of a mutation entry, and an entry anchors on
+// exact text at an exact indentation - OBS50 is what happens when one rule ends
+// up spelled two ways, and this is the cheaper end of the same care.
+func (in Input) askEveryResolver(ctx context.Context, counted *tallies, seen map[report.NoAnswer]int) ([]report.Finding, int) {
+	findings := make([]report.Finding, 0, counted.total)
+	sent := 0
+	for _, resolver := range in.Resolvers {
+		for _, recordType := range dnsmsg.AllTypes {
+			finding, cutShort := in.askOne(ctx, resolver, recordType, counted.total-sent)
+			if cutShort {
+				counted.truncated++
+			}
+			sent++
+			counted.direct += tally(finding, seen)
+			findings = append(findings, finding)
+		}
+	}
+	return findings, sent
+}
+
+// verdictFor turns a finished walk into the one answer this layer gives.
+//
+// IT IS SPLIT OUT BECAUSE OF WHEN, NOT BECAUSE OF LENGTH - OBS85 named the
+// moment as "the first slice touching this layer, before anything is added to
+// it". No remaining slice of M1 touches L1: P4c is a bench, P8 is L2 and P9
+// closes the milestone - so that moment was never going to arrive on its own.
+// P9 also turns the measured sizes into a ceiling, which would have made 78
+// lines the permanent shape of the longest function in this tree.
+//
+// EVERY LINE BELOW SITS AT THE DEPTH IT SAT AT BEFORE. Half a dozen of them are
+// anchors in the mutation register, and an anchor is exact text including its
+// indentation.
+func (in Input) verdictFor(findings []report.Finding, counted tallies, seen map[report.NoAnswer]int) Result {
 	// COUNTED BEFORE ANY VERDICT IS RETURNED, NOT ONLY ON THE WAY OUT THROUGH
 	// PASS. It used to be assigned on the last line of this function, so every
 	// sentence built on a FAILING walk said nothing about the queries that were

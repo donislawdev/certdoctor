@@ -15,6 +15,12 @@ import (
 	// somebody of intercepting their traffic while naming no product - the one
 	// mistake inviolable rule 21 calls harm rather than a defect.
 	"strings"
+	// unicode and unicode/utf8 answer one question: where a word ends. Asked of
+	// the byte instead of the rune, that question named a product inside somebody
+	// else's accented name - measured, and the direction of that mistake is the
+	// one rule 21 calls harm.
+	"unicode"
+	"unicode/utf8"
 	// time carries certificate validity bounds. They are REPORTED and never
 	// judged here: whether "expired" means anything depends on a clock this
 	// package does not own, and the layers take their clock as a port for
@@ -1266,9 +1272,14 @@ var AccusingWords = []string{"intercept", "mitm", "eavesdrop", "man in the middl
 // that quietly stopped agreeing would be the one deciding whether a sentence is
 // an accusation.
 //
-// A WORD BOUNDARY IS "NOT A LETTER AND NOT A DIGIT", which is enough for the
-// words above and for the names on that list, and says so rather than implying
-// more.
+// A WORD BOUNDARY IS "NOT A LETTER AND NOT A DIGIT", asked of the RUNE rather
+// than of the byte - and that distinction was a defect until it was measured.
+// A distinguished name is somebody else's UTF-8, and while the boundary counted
+// bytes every non-ASCII letter looked like a separator: measured 2026-09-02,
+// "CN=Cisco Umbrellae Ltd" spelled with an accented e was NAMED as the product,
+// and so were "zmitmproxy" and "mitmproxya" with accented letters. Each is the
+// false positive inviolable rule 21 calls harm, arriving through an encoding
+// detail rather than through the rule anybody had written down.
 func ContainsWord(value, want string) bool {
 	lowerValue, lowerWant := strings.ToLower(value), strings.ToLower(want)
 	if lowerWant == "" {
@@ -1280,7 +1291,7 @@ func ContainsWord(value, want string) bool {
 			return false
 		}
 		start := from + at
-		if boundedAt(lowerValue, start-1) && boundedAt(lowerValue, start+len(lowerWant)) {
+		if boundedBefore(lowerValue, start) && boundedAfter(lowerValue, start+len(lowerWant)) {
 			return true
 		}
 		from = start + 1
@@ -1315,7 +1326,7 @@ func ContainsWordStem(value, want string) bool {
 			return false
 		}
 		start := from + at
-		if boundedAt(lowerValue, start-1) {
+		if boundedBefore(lowerValue, start) {
 			return true
 		}
 		from = start + 1
@@ -1323,18 +1334,35 @@ func ContainsWordStem(value, want string) bool {
 	return false
 }
 
-// boundedAt reports whether the byte at this index is a word boundary. An index
-// outside the string is one, which is how a match at either end is accepted.
-func boundedAt(value string, index int) bool {
-	if index < 0 || index >= len(value) {
+// boundedBefore reports whether the rune ending at this byte index is a word
+// boundary. An index at or before the start of the string is one, which is how a
+// match at the beginning is accepted.
+func boundedBefore(value string, index int) bool {
+	if index <= 0 {
 		return true
 	}
-	c := value[index]
-	switch {
-	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-		return false
+	r, _ := utf8.DecodeLastRuneInString(value[:index])
+	return !wordRune(r)
+}
+
+// boundedAfter is the same question at the other end of a match.
+func boundedAfter(value string, index int) bool {
+	if index >= len(value) {
+		return true
 	}
-	return true
+	r, _ := utf8.DecodeRuneInString(value[index:])
+	return !wordRune(r)
+}
+
+// wordRune says what counts as part of a word.
+//
+// LETTERS AND DIGITS IN ANY SCRIPT, not just the ASCII ones. RuneError is
+// treated as part of a word as well, so a name carrying bytes that are not valid
+// UTF-8 fails CLOSED - it produces no match rather than a match made across
+// rubbish, which is the direction that costs a sentence instead of an
+// accusation.
+func wordRune(r rune) bool {
+	return r == utf8.RuneError || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // AnchorHolding is how widely this machine holds the signer of a chain.

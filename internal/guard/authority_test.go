@@ -351,6 +351,15 @@ func namesSigningAuthority(expr ast.Expr) bool {
 // test-only code, so no mutation entry aims at it and none is disarmed by it -
 // which is the harm OBS50 actually measures.
 //
+// THE TWO HAVE ALREADY DIVERGED ONCE AND IT CANNOT BITE HERE, which is said out
+// loud rather than left to be discovered. report.ContainsWordStem asks the RUNE
+// whether it is a letter, because a distinguished name is somebody else's UTF-8
+// and counting bytes there named a product inside an accented name - measured
+// 2026-09-02. This one still counts bytes, and it never sees a non-ASCII one:
+// every .go file in this tree is pure ASCII, which is guard row 8 with a canary
+// of its own. If that guard ever goes, this comment is wrong and this function
+// is the second thing to fix.
+//
 // IT MATCHES A STEM RATHER THAN A WHOLE WORD, and the canary is what settled
 // that: "intercept" has to catch "intercepted" and "intercepting", or this
 // scanner refuses nothing anybody would actually write while looking strict. The
