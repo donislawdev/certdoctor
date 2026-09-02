@@ -7,22 +7,27 @@ import (
 	"testing"
 )
 
-// THERE ARE THREE LISTS BELOW AND THEY GET NARROWER, WHICH IS THE POINT. The
-// first switches this guard off for a whole file. The second and third switch
-// off a single question each, and everything they do NOT excuse stays reported
-// for ever by the same walk that covers every other file. Each has a canary of
-// its own, because a list nobody checks is a hole rather than an exemption.
+// THERE ARE FOUR LISTS BELOW AND THEY GET NARROWER, WHICH IS THE POINT. The
+// first switches this guard off for a whole file. The other three switch off a
+// single question each, and everything they do NOT excuse stays reported for
+// ever by the same walk that covers every other file. Each has a canary of its
+// own, because a list nobody checks is a hole rather than an exemption.
+//
+// THE LISTS ARE NAMED RATHER THAN NUMBERED, AND THAT IS A LESSON PAID FOR -
+// ADR77. Two earlier records called the sandbox list "the fifth", counted across
+// all nine guards in this package rather than across this file's own. Position
+// is not identity: the same mistake the slice numbers in docs 24 made.
 //
 // concurrencyAllowlist names the files allowed to hold ANY concurrency
 // primitive.
 //
-// IT IS EMPTY AND HAS STAYED EMPTY THROUGH THREE OCCASIONS THAT WERE MEANT TO
-// FILL IT - the orchestrator (ADR15), the system view's dialler (ADR35) and now
-// L3's fan-out (ADR43). Each time the answer was a narrower exemption instead,
-// for the reason ADR15 gives: an entry here switches the guard off for that file
-// for ever, and in practice nobody ever takes one off again. Anything that can
-// be expressed as "this file may do exactly one more thing" belongs on a list
-// below, not here.
+// IT IS EMPTY AND HAS STAYED EMPTY THROUGH FOUR OCCASIONS THAT WERE MEANT TO
+// FILL IT - the orchestrator (ADR15), the system view's dialler (ADR35), L3's
+// fan-out (ADR43) and now the PAC sandbox's stopwatch (ADR77). Each time the
+// answer was a narrower exemption instead, for the reason ADR15 gives: an entry
+// here switches the guard off for that file for ever, and in practice nobody
+// ever takes one off again. Anything that can be expressed as "this file may do
+// exactly one more thing" belongs on a list below, not here.
 var concurrencyAllowlist = map[string]bool{}
 
 // lockOnlyAllowlist names files allowed to HOLD A LOCK and nothing else.
@@ -81,15 +86,53 @@ var lockOnlyAllowlist = map[string]bool{
 // what stays true of rule 1 is that Connect and tryOne are still synchronous
 // functions that do not know anybody runs them in parallel.
 var fanOutAllowlist = map[string]bool{
-	// THE ONE FILE IN THIS PROGRAM THAT STARTS A GOROUTINE. One WaitGroup per
-	// wave, one write per index, no channel.
+	// THE ONE FILE IN THIS PROGRAM THAT FANS WORK OUT. One WaitGroup per wave,
+	// one write per index, no channel.
 	//
 	// IT IS SHARED BY L3 AND L4 RATHER THAN COPIED INTO EACH - ADR45. That keeps
 	// this list one entry long, which is the number worth defending: a second
 	// entry here would mean a second place where the same promise is made, and
 	// the first thing to notice would be the mutation register reporting SKIP
 	// rather than anybody reading the code (OBS50).
+	//
+	// IT STOPPED BEING THE ONLY FILE THAT STARTS A GOROUTINE ON 2026-09-02, and
+	// this sentence used to say it was. The sandbox stopwatch below starts one
+	// too, for a different reason and under a narrower exemption.
 	"internal/core/fanout/fanout.go": true,
+}
+
+// sandboxAllowlist names the files allowed to START A GOROUTINE and nothing
+// else - not even sync.
+//
+// IT IS THE NARROWEST OF THE FOUR, NARROWER THAN THE FAN-OUT LIST, AND THAT WAS
+// MEASURED RATHER THAN COPIED. ADR77 settled that the PAC sandbox's stopwatch
+// gets its own list and left the contents open on purpose, warning that copying
+// the neighbouring list would be the mistake: fanOutAllowlist excuses a go
+// statement AND the sync import, because a WaitGroup is how it waits for its
+// wave. This one excuses the go statement alone.
+//
+// WHY NO sync IS NEEDED, WHICH IS THE WHOLE REASON THIS LIST CAN BE THIS NARROW.
+// The stopwatch has nothing to report back through shared memory. It watches the
+// clock and the heap, and when either passes its limit it calls Runtime.Interrupt
+// with a value saying WHICH - and that value comes back to the evaluating
+// goroutine inside goja's own *InterruptedError. So the answer travels through
+// the engine rather than through a variable two goroutines touch. There is no
+// counter, no flag, no result slot, and therefore no lock and no atomic.
+//
+// It stops by watching a context it never receives from: ctx.Err() is a method
+// call, not a channel receive, so even the cancellation exemption below is not
+// needed here.
+//
+// THE PRICE, NAMED RATHER THAN GLOSSED: this goroutine is NOT waited for. It
+// exits within one tick of the evaluation returning, which means a Runtime must
+// never be reused - a late Interrupt would otherwise land on the NEXT PAC
+// evaluation. The sandbox builds a fresh Runtime per evaluation and says so, and
+// that is what makes the missing WaitGroup safe rather than merely cheap.
+var sandboxAllowlist = map[string]bool{
+	// The PAC sandbox's stopwatch - the only thing in this program that has to
+	// interrupt code we did not write. ADR8 permits executing a PAC file under
+	// five conditions; this file is how the third of them is enforced.
+	"internal/adapter/pac/stopwatch.go": true,
 }
 
 // TestALockOnlyFileMayHoldALockAndNothingElse is the canary for the narrow
@@ -173,7 +216,55 @@ func TestAFanOutFileMayStartGoroutinesAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestEveryConcurrencyExemptionNamesAFileThatExists keeps the three lists from
+// TestASandboxFileMayStartAGoroutineAndNothingElse is the canary for the fourth
+// and narrowest exemption. Without it that list is a hole nobody checks.
+//
+// It plants a file on the sandbox list and hands the scanner a fixture that
+// imports both halves of sync, starts a goroutine, opens a channel, sends,
+// receives and selects. ONE thing must stop being reported and SIX must still
+// be - and the test NAMES all seven rather than counting, because a count passes
+// just as well when the wrong half survives.
+//
+// THE sync ASSERTION IS THE ONE THAT EARNS THIS TEST, and it is the mirror image
+// of the assertion that earns the fan-out canary above. There, sync/atomic is
+// the single difference from the lock-only list. Here, plain sync is the single
+// difference from the fan-out list - so it is the one a tidying edit would
+// collapse by accident, leaving two lists that look different and behave
+// identically. ADR77 warned about exactly this by refusing to say in advance
+// what this list would excuse.
+func TestASandboxFileMayStartAGoroutineAndNothingElse(t *testing.T) {
+	const planted = "internal/adapter/probe/planted.go"
+	sandboxAllowlist[planted] = true
+	defer delete(sandboxAllowlist, planted)
+
+	tr := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "concurrency_violation.go", planted)},
+	}
+	violations := checkConcurrencyContainment(tr)
+
+	var said string
+	for _, v := range violations {
+		said += v.Detail + "\n"
+	}
+	if strings.Contains(said, "go statement") {
+		t.Errorf("a sandbox file was still reported for a go statement, which is the one thing this list exists to permit.\nreported:\n%s", said)
+	}
+	for _, kept := range []string{
+		// The whole reason this list is narrower than the fan-out one: a
+		// stopwatch that needs no WaitGroup needs no sync at all.
+		`import of "sync"`,
+		`import of "sync/atomic"`,
+		"channel type", "channel send", "channel receive", "select statement",
+	} {
+		if !strings.Contains(said, kept) {
+			t.Errorf("a sandbox file got away with a %s, and the exemption was meant to cover the go statement alone.\nreported:\n%s",
+				kept, said)
+		}
+	}
+}
+
+// TestEveryConcurrencyExemptionNamesAFileThatExists keeps the four lists from
 // rotting.
 //
 // AN ENTRY POINTING AT A FILE NOBODY WROTE YET, OR AT ONE SINCE RENAMED, IS AN
@@ -200,6 +291,7 @@ func TestEveryConcurrencyExemptionNamesAFileThatExists(t *testing.T) {
 		{"concurrencyAllowlist", concurrencyAllowlist},
 		{"lockOnlyAllowlist", lockOnlyAllowlist},
 		{"fanOutAllowlist", fanOutAllowlist},
+		{"sandboxAllowlist", sandboxAllowlist},
 	} {
 		for entry := range list.entries {
 			if !present[entry] {
@@ -340,9 +432,11 @@ func checkConcurrencyContainment(tr tree) []Violation {
 			}
 			switch node := n.(type) {
 			case *ast.GoStmt:
-				// The one primitive the fan-out list excuses. The walk keeps
-				// descending, so a channel INSIDE the goroutine is still reported.
-				if fanOutAllowlist[sf.rel] {
+				// The one primitive the fan-out and sandbox lists excuse. The walk
+				// keeps descending, so a channel INSIDE the goroutine is still
+				// reported - which is the difference between a narrow exemption
+				// and switching the guard off for a file.
+				if fanOutAllowlist[sf.rel] || sandboxAllowlist[sf.rel] {
 					return true
 				}
 				report(node.Pos(), "go statement")

@@ -13,6 +13,107 @@
 # this dependency do beyond the thing we want from it. Editing this file to make
 # CI green is the same act as editing a golden value for the same reason.
 #
-# The list is currently one line, and that is the whole point of writing it now.
+# IT WENT FROM ONE LINE TO FIFTEEN ON 2026-09-02, and its own comment said it was
+# written for this moment. ADR75 approved goja as this project's first external
+# dependency, for the one feature that cannot be built without executing
+# somebody else's code: evaluating a PAC file.
+#
+# THE COUNT IS FIFTEEN RATHER THAN THE THIRTEEN ADR75 PREDICTED, and both halves
+# of the difference are measured. That record counted external modules and this
+# file also carries our own; and x/text had to be upgraded, which pulled x/sync
+# in and moved three others. The number is whatever "go list -m all" prints, and
+# CI compares against exactly that.
+#
+# ONLY FIVE OF THE FOURTEEN ARE COMPILED. docs/22 section 7a asks for three
+# different rigours depending on whether a dependency reaches the user, so the
+# list below is split by what "go list -deps" actually reports rather than by
+# what go.mod suggests. The other nine are in the module graph because a
+# dependency's go.mod names them - for its own tests and tools - and none of them
+# is linked.
+#
+# NOTHING IS LINKED INTO THE BINARY YET, MEASURED THE SAME DAY. In P8-K1 the
+# sandbox exists but no layer calls it, so "go list -deps ./cmd/certdoctor"
+# reports our module alone. The five below arrive in the shipped binary when L2
+# starts asking, in P8-K3, and the binary grows then rather than now.
 
 github.com/donislawdev/certdoctor
+
+# --- linked into the binary: full sieve, both questions, both answers blocking
+#
+# Licences below were read AT SOURCE on 2026-09-02, for these exact versions, as
+# inviolable rule 5 requires - never from memory and never by analogy, because a
+# library's licence changes between releases and the stale claim is the one that
+# sounds most confident.
+
+# The JavaScript engine. MIT - "Copyright (c) 2016 Dmitry Panov" and
+# "Copyright (c) 2012 Robert Krimen", read at
+# https://raw.githubusercontent.com/dop251/goja/43234fa61381/LICENSE
+#
+# THIRD QUESTION OF THE SIEVE - what it does beyond what we want: a complete
+# ECMAScript 5.1 runtime, of which a PAC file uses a fraction. That surface is
+# the reason the sandbox in internal/adapter/pac exists and the reason docs/14
+# section 2.1 lists five conditions rather than trusting the engine.
+github.com/dop251/goja v0.0.0-20260901132549-43234fa61381
+
+# The regular expression engine goja uses. MIT - "Copyright (c) Doug Clark",
+# read at https://pkg.go.dev/github.com/dlclark/regexp2/v2@v2.5.2?tab=licenses
+#
+# IT IS THE REASON goja WAS CHOSEN OVER otto AND NOT AN INCIDENTAL COST - ADR75.
+# otto stands on re2, which has no backtracking, so a PAC file using lookahead
+# fails to compile there and certdoctor would call a working machine's
+# configuration broken. testbed/pac/files/lookahead.pac keeps that measurement.
+github.com/dlclark/regexp2/v2 v2.5.2
+
+# Source map support, used by goja for stack traces. BSD-2-Clause -
+# "Copyright (c) 2016 The github.com/go-sourcemap/sourcemap Contributors", read
+# at https://pkg.go.dev/github.com/go-sourcemap/sourcemap@v2.1.3+incompatible?tab=licenses
+# and confirmed against the LICENSE file of that version, which carries two
+# conditions rather than three.
+github.com/go-sourcemap/sourcemap v2.1.3+incompatible
+
+# Profile format support. Apache-2.0, read at
+# https://raw.githubusercontent.com/google/pprof/798e818bf904/LICENSE
+#
+# A JAVASCRIPT ENGINE PULLING IN pprof IS A SURPRISE AND IT IS RECORDED RATHER
+# THAN PASSED OVER, as ADR75 asked. Measured: goja/profiler.go imports
+# pprof/profile for a CPU profiler OF JAVASCRIPT, which certdoctor never starts -
+# it is inert unless StartProfile is called, and nothing here calls it.
+#
+# IT IS ALSO THE ONLY NON-PERMISSIVE-SIMPLE LICENCE IN THIS LIST. Apache-2.0 is
+# one-way compatible with GPL-3.0, so an Apache-2.0 work may be included in a
+# GPLv3 one but not the reverse. That is a legal reading rather than a
+# measurement - an OPINION, not a source - and it is the reason this line is
+# spelled out instead of being grouped with the BSD and MIT ones.
+github.com/google/pprof v0.0.0-20230207041349-798e818bf904
+
+# Unicode text handling. BSD-3-Clause - "Copyright 2009 The Go Authors", read at
+# https://pkg.go.dev/golang.org/x/text@v0.39.0?tab=licenses
+#
+# THE VERSION IS AN UPGRADE PAST WHAT goja ASKS FOR, AND IT IS A SECURITY FIX
+# RATHER THAN TIDYING. goja requires v0.3.8, and govulncheck reported
+# GO-2026-5970 against it on 2026-09-02: an infinite loop on invalid input in
+# x/text, reachable through goja.Object.String - which is the call certdoctor
+# makes to read a PAC file's answer. Measured the same day: the sandbox's
+# interrupt does NOT stop native Go called from JavaScript, so that loop would
+# have run without any limit able to end it, on input arriving as somebody
+# else's file over plain HTTP. v0.39.0 is the fixed version and govulncheck is
+# clean on it. Upgrading was the owner's decision, taken on that measurement.
+golang.org/x/text v0.39.0
+
+# --- in the module graph, NOT linked: looser rigour, versions still pinned
+#
+# Each of these is named by a dependency's go.mod for its own tests or tools.
+# "go list -deps" does not report one of them, so none reaches a user and none
+# is a work this project distributes. They are listed because the gate compares
+# against "go list -m all", and left unexplained they would look like nine
+# undeclared dependencies.
+
+github.com/Masterminds/semver/v3 v3.5.0
+github.com/chzyer/readline v1.5.0
+github.com/dop251/goja_nodejs v0.0.0-20211022123610-8dd9abb0616d
+github.com/goccy/go-yaml v1.19.2
+github.com/ianlancetaylor/demangle v0.0.0-20220319035150-800ac71e25c2
+golang.org/x/mod v0.37.0
+golang.org/x/sync v0.21.0
+golang.org/x/sys v0.0.0-20220310020820-b874c991c1a5
+golang.org/x/tools v0.47.0

@@ -71,3 +71,14 @@ github.com/donislawdev/certdoctor/internal/core/trust 98
 github.com/donislawdev/certdoctor/internal/adapter/probe/git 92
 github.com/donislawdev/certdoctor/internal/adapter/probe/java 94
 github.com/donislawdev/certdoctor/internal/adapter/probe/curl 98
+
+# The PAC sandbox arrived 2026-09-02 with P8-K1. Floors are the measured value
+# rounded DOWN to a whole percent, the same rule every line above follows.
+#
+# The two packages are one feature split across the layer boundary on purpose:
+# core/pac holds the twelve helper functions as pure Go so they can be checked
+# with no JavaScript in sight, and adapter/pac holds the engine. That split is
+# also why both numbers are high - neither half needs a broken machine to
+# exercise it.
+github.com/donislawdev/certdoctor/internal/core/pac 93
+github.com/donislawdev/certdoctor/internal/adapter/pac 94
