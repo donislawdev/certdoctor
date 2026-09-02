@@ -12,6 +12,20 @@ Barely diagnosable yet, and there has been no release.
 
 `certdoctor <url>` produces a whole report. Five of its eight diagnostic layers now say something about your machine - context, name resolution, TCP, TLS and the trust matrix - and the other three report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE`, or with `4 DIAGNOSIS` on something certdoctor can actually diagnose. What exists is the path a real answer travels, built before any answer, so that there is no point at which this program claims to have checked something it has not.
 
+### Fixed - git no longer disappears from the trust matrix on a machine that has no git configuration
+
+- **A git with no configuration file used to get no row at all.** It sat outside the report next to the runtimes you do not have installed, while the binary was sitting on your PATH reading a trust store. Measured in a Debian-based container: `git 2.54.0` present at `/usr/bin/git`, `git config --list --show-origin` printing nothing, no `/etc/gitconfig`. That is an ordinary machine, not a rare one - and certdoctor was silent about it rather than saying it did not know.
+
+  **What proves git is installed is now the binary on your PATH**, and a configuration file only says which store that binary reads. Where there is no configuration the row says so: git uses whichever libcurl it was built against, and the store that build reads is compiled into it. That is `UNKNOWN` with a reason, which is what this program owes you when it cannot tell - and the row now exists for that answer to stand in.
+
+- **You may see more than one git row, one per git binary on your PATH.** On the machine this was written on there are two: a small launcher in `Git\cmd` and the real binary in `Git\mingw64\bin`. Both are listed because either is what a script might invoke, and on another machine two such binaries can be two different builds reading two different stores - which is the disagreement this matrix exists to show. `curl` has worked this way since the matrix arrived.
+
+  **Rows are named by the binary now**, so a git row reads `C:\Program Files\Git\cmd\git.exe` rather than the install directory. Since the matrix has more rows on such a machine, the sentence counting them changes with it.
+
+- **A directory named `git` or `curl` on your PATH is no longer mistaken for the program.** Opening a directory succeeds on Windows and on Linux alike, so certdoctor now requires that it can actually read a byte from the file before it will describe anything as that runtime's trust store.
+
+- **Nothing about `--json` changed.** No field arrives, leaves or changes meaning, and the schema stays at 1.10 - there are simply more `trust_store` rows on machines that were missing one.
+
 ### Added - certdoctor will now name a TLS inspection product, and only when it can show you where the name came from
 
 - **When the certificate you were served was signed by an authority whose name matches a product certdoctor carries a source for, the report says so plainly** - "and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server" - and `--json` carries `signing_authority.inspection` with the product and which part of the issuer's name matched. Everywhere else that field is `null`.

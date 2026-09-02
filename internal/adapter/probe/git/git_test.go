@@ -40,20 +40,25 @@ func sourceOf(files map[string]string) func(string) (io.ReadCloser, error) {
 	}
 }
 
-// A DIRECTORY IS NOT AN INSTALLATION - ADR48 part 2. Measured on this machine
-// for Java: two Program Files\Java\latest directories with no store inside. A
-// row invented from a name would be a claim about a store nobody has.
-func TestOnlyAReadableConfigCountsAsAnInstall(t *testing.T) {
+// THE FALLBACK STILL NEEDS A FILE THAT IS THERE. Git for Windows can be
+// installed without putting anything on PATH, so a system config with no binary
+// beside it is a real installation - but a config that is NOT there is not one,
+// and a row invented from a name would be a claim about a store nobody has,
+// which is what ADR48 part 2 refuses for Java.
+func TestAnInstallFoundOnlyByItsConfigIsStillFound(t *testing.T) {
 	source := sourceOf(map[string]string{`C:\Program Files\Git\etc\gitconfig`: "[http]\n"})
 	found := find(source, []string{
 		`C:\Program Files\Git\etc\gitconfig`,
 		`C:\Program Files (x86)\Git\etc\gitconfig`,
-	})
+	}, nil)
 	if len(found) != 1 {
 		t.Fatalf("found %d installs, want 1 - the second config is not there", len(found))
 	}
-	if found[0].Root != `C:\Program Files\Git` {
-		t.Errorf("root %q, want the install directory", found[0].Root)
+	if found[0].Root != `C:\Program Files\Git` || found[0].Instance != `C:\Program Files\Git` {
+		t.Errorf("got %+v, want the install directory as both root and identity", found[0])
+	}
+	if found[0].OnPath {
+		t.Error("an install nothing on PATH points at was reported as reachable by a typed command")
 	}
 	if found[0].Architecture != "x64" {
 		t.Errorf("architecture %q, want x64", found[0].Architecture)
@@ -64,9 +69,128 @@ func TestOnlyAReadableConfigCountsAsAnInstall(t *testing.T) {
 // answers, so the row has to say which one it is.
 func TestTheBitnessComesFromThePath(t *testing.T) {
 	source := sourceOf(map[string]string{`C:\Program Files (x86)\Git\etc\gitconfig`: "[http]\n"})
-	found := find(source, []string{`C:\Program Files (x86)\Git\etc\gitconfig`})
+	found := find(source, []string{`C:\Program Files (x86)\Git\etc\gitconfig`}, nil)
 	if len(found) != 1 || found[0].Architecture != "x86" {
 		t.Fatalf("got %+v, want one x86 install", found)
+	}
+}
+
+// TestAGitWithNoConfigurationAtAllStillGetsARow is OBS72, and it is the whole
+// point of this slice.
+//
+// MEASURED IN THE BENCH IMAGE 2026-08-19 AND AGAIN 2026-09-02: git 2.54.0 there
+// has no config file at any level - "git config --list --show-origin" prints
+// nothing and /etc/gitconfig does not exist - while /usr/bin/git sits there
+// reading whatever store libcurl was built with. Proving installation by the
+// CONFIGURATION dropped that git out of the matrix beside the runtimes that are
+// genuinely absent. Inviolable rule 15 asks for an UNKNOWN carrying a reason,
+// and there was not even a row for one to stand in.
+func TestAGitWithNoConfigurationAtAllStillGetsARow(t *testing.T) {
+	source := sourceOf(map[string]string{"/usr/bin/git": "ELF"})
+
+	found := find(source, systemConfigs, []string{"/usr/bin"})
+	if len(found) != 1 {
+		t.Fatalf("found %d installs, want 1 - the binary is there and the config is not", len(found))
+	}
+	if found[0].Instance != filepath.Clean("/usr/bin/git") {
+		t.Errorf("the install is called %q, and the binary is what a person can act on", found[0].Instance)
+	}
+	if found[0].SystemConfig != "" {
+		t.Errorf("a config was claimed at %q, and this machine has none", found[0].SystemConfig)
+	}
+
+	stores, err := Probe(source, nil, []string{"/usr/bin"}, atNoon)(t.Context(), [][]byte{{0x30}})
+	if err != nil {
+		t.Fatalf("the probe failed: %v", err)
+	}
+	if len(stores) != 1 {
+		t.Fatalf("got %d rows, want 1", len(stores))
+	}
+	if stores[0].TrustsPresentedChain != nil {
+		t.Error("a git whose store is compiled into libcurl produced a verdict about trust")
+	}
+	if !strings.Contains(stores[0].NotAssessed, "libcurl") {
+		t.Errorf("the row does not say what decides the store: %q", stores[0].NotAssessed)
+	}
+}
+
+// THE SYSTEM CONFIG IS FOUND NEXT TO THE BINARY, AND THE TWO DEPTHS ARE
+// MEASURED - 2026-09-02, by asking each binary itself with
+// "git config --list --show-origin --system". C:\Program Files\Git\cmd\git.exe
+// answered with the config one directory up; C:\Program Files\Git\mingw64\bin\
+// git.exe answered with the SAME file, two directories up, because its own
+// mingw64\etc\gitconfig does not exist. Two up is also what reaches
+// /etc/gitconfig from /usr/bin/git.
+func TestTheSystemConfigIsFoundNextToTheBinary(t *testing.T) {
+	source := sourceOf(map[string]string{
+		`C:\Program Files\Git\cmd\git.exe`:         "MZ",
+		`C:\Program Files\Git\mingw64\bin\git.exe`: "MZ",
+		`C:\Program Files\Git\etc\gitconfig`:       "[http]\n\tsslBackend = openssl\n",
+	})
+
+	found := find(source, nil, []string{
+		`C:\Program Files\Git\cmd`,
+		`C:\Program Files\Git\mingw64\bin`,
+	})
+	if len(found) != 2 {
+		t.Fatalf("found %d installs, want one per binary: %+v", len(found), found)
+	}
+	for _, install := range found {
+		if install.SystemConfig != `C:\Program Files\Git\etc\gitconfig` {
+			t.Errorf("%s reads %q, and both binaries answered with the same file", install.Instance, install.SystemConfig)
+		}
+		if !install.OnPath {
+			t.Errorf("%s was found by walking PATH and does not say so", install.Instance)
+		}
+	}
+}
+
+// A CONFIG ALREADY CLAIMED BY A BINARY IS NOT A SECOND INSTALLATION. On this
+// machine both git.exe name C:\Program Files\Git\etc\gitconfig, which is also
+// in the fallback list - and without this the matrix would report three gits
+// where there are two.
+func TestAConfigAlreadyClaimedByABinaryIsNotASecondInstall(t *testing.T) {
+	source := sourceOf(map[string]string{
+		`C:\Program Files\Git\cmd\git.exe`:   "MZ",
+		`C:\Program Files\Git\etc\gitconfig`: "[http]\n",
+	})
+
+	found := find(source, systemConfigs, []string{`C:\Program Files\Git\cmd`})
+	if len(found) != 1 {
+		t.Fatalf("found %d installs, want 1: %+v", len(found), found)
+	}
+	if !found[0].OnPath {
+		t.Errorf("the surviving install is the config-only one: %+v", found[0])
+	}
+}
+
+// A CONFIG FOUND NEXT TO A BINARY IS A SYSTEM CONFIG EVEN WHEN THE LIST HAS
+// NEVER HEARD OF IT, and the level is the field that decides whether a
+// colleague needs the same fix or the opposite one.
+func TestAConfigFoundNextToABinaryIsReportedAtSystemLevel(t *testing.T) {
+	const config = `C:\Program Files\Git\mingw64\etc\gitconfig`
+	source := sourceOf(map[string]string{
+		`C:\Program Files\Git\mingw64\bin\git.exe`: "MZ",
+		config: "[http]\n\tsslBackend = openssl\n",
+	})
+
+	found := find(source, nil, []string{`C:\Program Files\Git\mingw64\bin`})
+	if len(found) != 1 || found[0].SystemConfig != config {
+		t.Fatalf("got %+v, want the config one directory up", found)
+	}
+	settings := readSettings(source, found[0].SystemConfig, nil)
+	if settings.Backend != "openssl" || settings.BackendLevel != "system" {
+		t.Errorf("backend %q at %q, want openssl at system", settings.Backend, settings.BackendLevel)
+	}
+}
+
+// A BINARY FOUND BY WALKING PATH ANSWERS selected_by WITHOUT LOOKING AGAIN, and
+// saying so is not what ADR48 part 4 bans: the ban is on letting PATH pick ONE
+// installation, and this walked all of them.
+func TestABinaryFoundOnPathIsSelectedByPath(t *testing.T) {
+	got := selectedBy(Install{Instance: "/usr/bin/git", Root: "/usr/bin", OnPath: true}, nil)
+	if len(got) != 1 || got[0] != "PATH" {
+		t.Errorf("got %v, want PATH", got)
 	}
 }
 
@@ -115,7 +239,7 @@ func TestGlobalConfigOverridesSystemAndTheLevelIsRecorded(t *testing.T) {
 		"/home/jdoe/.gitconfig": "[http]\n\tsslCAInfo = C:/mine.crt\n",
 	})
 
-	settings := readSettings(source, []string{system, "/home/jdoe/.gitconfig"})
+	settings := readSettings(source, system, []string{"/home/jdoe/.gitconfig"})
 	if settings.Backend != "openssl" || settings.BackendLevel != "system" {
 		t.Errorf("backend %q at %q, want openssl at system", settings.Backend, settings.BackendLevel)
 	}
@@ -184,7 +308,7 @@ func TestABundleHoldingTheAnchorTrustsTheChain(t *testing.T) {
 	anchorPEM, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": string(anchorPEM)})
 
-	store := storeFor(source, Install{Root: "/git", Architecture: "x64"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
+	store := storeFor(source, Install{Instance: "/usr/bin/git", Root: "/usr/bin", Architecture: "x64"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("no verdict was reached: %s", store.NotAssessed)
@@ -207,7 +331,7 @@ func TestABundleWithoutTheAnchorDoesNotTrustTheChain(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": string(otherPEM)})
 
-	store := storeFor(source, Install{Root: "/git"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
+	store := storeFor(source, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("an unrelated bundle produced no verdict: %s", store.NotAssessed)
@@ -226,7 +350,7 @@ func TestABundleWithoutTheAnchorDoesNotTrustTheChain(t *testing.T) {
 // here as exactly this row.
 func TestAnUnreadableBundleIsUnknownRatherThanDistrust(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
-	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settingsFor("/gone.crt"), [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/gone.crt"), [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("a bundle that could not be read produced a verdict about trust")
@@ -239,7 +363,7 @@ func TestAnUnreadableBundleIsUnknownRatherThanDistrust(t *testing.T) {
 func TestABundleWithNoCertificatesSaysSo(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": "not a certificate at all\n"})
-	store := storeFor(source, Install{Root: "/git"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
+	store := storeFor(source, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("an empty bundle produced a verdict")
@@ -254,7 +378,7 @@ func TestABundleWithNoCertificatesSaysSo(t *testing.T) {
 func TestSchannelDefersToTheSystemStoreProbe(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "schannel", BackendLevel: "system"}
-	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settings, [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("the git probe answered a question about the platform store")
@@ -267,7 +391,7 @@ func TestSchannelDefersToTheSystemStoreProbe(t *testing.T) {
 func TestAnUnknownBackendIsNamedRatherThanGuessed(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "nss", BackendLevel: "global"}
-	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settings, [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("an unknown backend produced a verdict")
@@ -287,7 +411,7 @@ func TestAnUnknownBackendIsNamedRatherThanGuessed(t *testing.T) {
 // the bundle libcurl was compiled with, and the row says that instead.
 func TestNoBackendNamedIsTheOrdinaryCaseAndSaysSo(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
-	store := storeFor(sourceOf(nil), Install{Root: "/git"}, Settings{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, Settings{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("a git naming no backend produced a verdict about trust")
@@ -303,7 +427,7 @@ func TestNoBackendNamedIsTheOrdinaryCaseAndSaysSo(t *testing.T) {
 func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "openssl", BackendLevel: "system"}
-	store := storeFor(sourceOf(nil), Install{Root: "/git"}, settings, [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("openssl with no bundle named produced a verdict")
@@ -346,6 +470,42 @@ func TestTheProbeProducesOneRowPerInstall(t *testing.T) {
 	f := report.Finding{Kind: report.FindingTrustStore, Summary: "one row", Source: report.SourceDetected, TrustStore: &stores[0]}
 	if breach := f.Breach(); breach != "" {
 		t.Errorf("the probe produced a row the contract refuses: %s", breach)
+	}
+}
+
+// ONE ROW PER BINARY, AND THE COST IS NAMED RATHER THAN HIDDEN - ADR74.
+// Measured on this machine 2026-09-02: the two git.exe on PATH belong to ONE
+// Git for Windows install and read the same bundle, so a person sees two rows
+// saying the same thing. Folding them together was refused because the key
+// would have to be the store, and in the bench image two DIFFERENT gits both
+// have no config at all - so the fold would hide one of them, which is the
+// silence this whole slice removes.
+func TestEveryGitOnPathGetsItsOwnRow(t *testing.T) {
+	anchorPEM, leafDER := anchorAndLeaf(t)
+	source := sourceOf(map[string]string{
+		`C:\Program Files\Git\cmd\git.exe`:         "MZ",
+		`C:\Program Files\Git\mingw64\bin\git.exe`: "MZ",
+		`C:\Program Files\Git\etc\gitconfig`:       "[http]\n\tsslBackend = openssl\n\tsslCAInfo = /bundle.crt\n",
+		"/bundle.crt":                              string(anchorPEM),
+	})
+
+	stores, err := Probe(source, nil, []string{
+		`C:\Program Files\Git\cmd`,
+		`C:\Program Files\Git\mingw64\bin`,
+	}, atNoon)(t.Context(), [][]byte{leafDER})
+	if err != nil {
+		t.Fatalf("the probe failed: %v", err)
+	}
+	if len(stores) != 2 {
+		t.Fatalf("got %d rows, want one per binary", len(stores))
+	}
+	if stores[0].Instance == stores[1].Instance {
+		t.Errorf("two rows carry the same identity %q, and a row nobody can attribute is a row nobody can act on", stores[0].Instance)
+	}
+	for _, store := range stores {
+		if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain {
+			t.Errorf("%s did not trust a chain its own bundle anchors: %s", store.Instance, store.NotAssessed)
+		}
 	}
 }
 

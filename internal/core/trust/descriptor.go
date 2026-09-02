@@ -97,9 +97,15 @@ var descriptors = []Descriptor{
 		TrustSource: "http.sslBackend decides: schannel uses the Windows store, openssl uses the file named by http.sslCAInfo",
 		Source:      Measured,
 		Evidence: "Measured on the owner's machine 2026-08-18: git 2.55.0.windows.3 reports http.sslbackend=openssl and " +
-			"http.sslcainfo pointing at its own 229042-byte bundle, both from the SYSTEM level - so adding a CA to the " +
-			"Windows store fixes a browser and does not fix git clone. Read from the config files rather than by running " +
-			"git, which is why this probe needs no process at all.",
+			"http.sslcainfo pointing at its own bundle, both from the SYSTEM level - so adding a CA to the Windows " +
+			"store fixes a browser and does not fix git clone. That bundle held 229042 bytes then and 185311 on " +
+			"2026-09-02 under git 2.55.0.windows.5: it is somebody else's file and it moves, which is why the probe " +
+			"reads it rather than remembering it. Read from the config files rather than by running git, which is why " +
+			"this probe needs no process at all. Measured again 2026-09-02, and that measurement moved what proves an " +
+			"installation: the CONFIGURATION is optional - git 2.54.0 in a Debian based image has none at any level - " +
+			"so a binary on PATH is the proof, and a configuration only says which store that binary reads. Both " +
+			"git.exe on PATH here answered git config --list --show-origin --system with the same file, one directory " +
+			"above the cmd folder and two above the mingw64 one.",
 		FixSource: Documentation,
 		FixEvidence: "git-config, Documentation/config/http.adoc, read 2026-08-19 at " +
 			"https://git-scm.com/docs/git-config - http.sslCAInfo is \"File containing the certificates to verify the " +

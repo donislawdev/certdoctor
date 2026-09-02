@@ -19,7 +19,7 @@ import (
 // assessment has to be reproducible from its input.
 func Probe(source file.Source, globalConfigs []string, pathDirs []string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(_ context.Context, chain [][]byte) ([]report.TrustStore, error) {
-		installs := find(source, systemConfigs)
+		installs := find(source, systemConfigs, pathDirs)
 		if len(installs) == 0 {
 			// NOT AN ERROR. docs/20 rule 1: a runtime that is not here sits
 			// outside the matrix, and "git is not installed" is not a fact about
@@ -29,8 +29,7 @@ func Probe(source file.Source, globalConfigs []string, pathDirs []string, now fu
 
 		stores := make([]report.TrustStore, 0, len(installs))
 		for _, install := range installs {
-			paths := append([]string{install.SystemConfig}, globalConfigs...)
-			store := storeFor(source, install, readSettings(source, paths), chain, now())
+			store := storeFor(source, install, readSettings(source, install.SystemConfig, globalConfigs), chain, now())
 			store.SelectedBy = selectedBy(install, pathDirs)
 			stores = append(stores, store)
 		}
@@ -42,7 +41,7 @@ func Probe(source file.Source, globalConfigs []string, pathDirs []string, now fu
 func storeFor(source file.Source, install Install, settings Settings, chain [][]byte, now time.Time) report.TrustStore {
 	store := report.TrustStore{
 		Runtime:      "git",
-		Instance:     install.Root,
+		Instance:     install.Instance,
 		Architecture: install.Architecture,
 		Backend:      settings.Backend,
 		SelectedBy:   []string{},
@@ -132,7 +131,15 @@ func level(l string) string {
 // function is written to avoid: "C:\Program Files\Git2\cmd" starts with
 // "C:\Program Files\Git" as text, and reporting it as this install would credit
 // one installation with another one's presence on PATH.
+//
+// AN INSTALLATION FOUND ON PATH ANSWERS THIS WITHOUT LOOKING AGAIN, and saying
+// so is not the thing ADR48 part 4 bans. That ban is on letting PATH pick ONE
+// installation; this walked all of them, and reporting afterwards that a typed
+// command reaches this one is a property of the row, not the way it was found.
 func selectedBy(install Install, pathDirs []string) []string {
+	if install.OnPath {
+		return []string{"PATH"}
+	}
 	// AND IT FOLDS CASE WHERE THE PLATFORM DOES - P3-2, the half that was
 	// missing. The rule lives in probe.SameOrInside so that the java probe asks
 	// the same function rather than a copy of it.

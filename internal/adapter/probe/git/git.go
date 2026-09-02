@@ -7,7 +7,7 @@
 // reasons; a probe that does not need it does not get it.
 //
 // WHY GIT IS THE TEXTBOOK CASE FOR THIS WHOLE PRODUCT, measured on the same day:
-// git reports sslbackend=openssl and reads its OWN 229042-byte bundle, while the
+// git reports sslbackend=openssl and reads its OWN bundle, while the
 // curl.exe sitting in the same install directory is built on Schannel and asks
 // Windows. Adding a company CA to the Windows store fixes one and not the other,
 // and no other tool will tell somebody that.
@@ -21,14 +21,25 @@ import (
 	"strings"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
+	"github.com/donislawdev/certdoctor/internal/adapter/probe"
 )
 
 // Install is one git installation found on this machine.
 type Install struct {
-	// Root is the install directory - the identity a person reads, and what
-	// tells two installations apart when both are present.
+	// Instance is the identity a person reads and what tells two installations
+	// apart: the binary where one was found, and the install directory where
+	// only a config was.
+	Instance string
+	// OnPath says this installation was found by walking PATH, so a command
+	// somebody types reaches it.
+	OnPath bool
+	// Root is the install directory. It answers selected_by for an installation
+	// found by its config rather than by its binary, and nothing else.
 	Root string
-	// SystemConfig is the gitconfig belonging to this install.
+	// SystemConfig is the gitconfig this installation reads, and EMPTY IS AN
+	// ORDINARY ANSWER rather than a gap - OBS72. Measured 2026-08-19 and again
+	// 2026-09-02 in the bench image: git 2.54.0 there has no config file at any
+	// level, and "git config --list --show-origin" prints nothing at all.
 	SystemConfig string
 	// Architecture is x86 where the path says so, and x64 otherwise. Measured on
 	// this machine for Java: two installs differing ONLY by "(x86)" have separate
@@ -36,12 +47,13 @@ type Install struct {
 	Architecture string
 }
 
-// systemConfigs are the places a git installation keeps its system-level config.
+// systemConfigs are the places a git installation keeps its system-level config
+// when no binary on PATH claimed one.
 //
-// THE LIST IS SEARCHED, NOT DERIVED FROM PATH - ADR48 part 4. PATH names one
-// installation, and this machine proves the difference elsewhere: six Java
-// installs with JAVA_HOME naming one, two curl binaries with PATH naming one.
-// PATH is used below to ENRICH a row, never to find it.
+// IT IS A FALLBACK AND NO LONGER THE PROOF - OBS72. Git for Windows can be
+// installed without putting anything on PATH, and that install still has this
+// file and still reads a store; dropping the list would swap one false negative
+// for another. What it must not do again is decide whether git EXISTS.
 var systemConfigs = []string{
 	`C:\Program Files\Git\etc\gitconfig`,
 	`C:\Program Files (x86)\Git\etc\gitconfig`,
@@ -73,29 +85,102 @@ type Settings struct {
 	Unreadable string
 }
 
-// find returns every installation whose system config is readable.
+// find returns every git installation this machine has.
 //
-// A PATH THAT IS NOT THERE IS NOT AN INSTALLATION. The same rule ADR48 part 2
-// states for Java stores, and for the same measured reason: this machine has two
-// C:\Program Files\Java\latest directories with no store inside, and a row
-// invented from a directory name would be a claim about a store nobody has.
-func find(source file.Source, candidates []string) []Install {
+// THE BINARY IS WHAT PROVES ONE, AND THE CONFIGURATION PROVES NOTHING - OBS72,
+// and this is the line that used to be the other way round. A git config file
+// is OPTIONAL: measured in the bench image, git 2.54.0 has none at any level
+// while /usr/bin/git sits there reading some store. Requiring one meant git
+// dropped out of the matrix beside the runtimes that are genuinely absent -
+// silence about somebody's machine, where inviolable rule 15 asks for an
+// UNKNOWN carrying a reason.
+//
+// IT IS A SEARCH OF PATH AND NOT A SELECTION FROM IT - ADR50. The ban in ADR48
+// part 4 is on taking the ONE binary PATH puts first; walking every directory
+// and keeping every hit produces the matrix rather than a favourite. Measured
+// 2026-09-02: this machine has git.exe in two PATH directories.
+//
+// AND THE FALLBACK RUNS SECOND SO IT CANNOT DOUBLE-COUNT. A config already
+// claimed by a binary is not a second installation - on this machine both
+// binaries name C:\Program Files\Git\etc\gitconfig, which is also in the list
+// above, and without this the matrix would report three gits where there are
+// two.
+func find(source file.Source, candidates []string, pathDirs []string) []Install {
 	var found []Install
+	claimed := map[string]bool{}
+
+	for _, binary := range probe.Binaries(source, pathDirs, "git.exe", "git") {
+		config := systemConfigNear(source, binary)
+		if config != "" {
+			claimed[probe.PathKey(config)] = true
+		}
+		found = append(found, Install{
+			Instance:     binary,
+			OnPath:       true,
+			Root:         filepath.Dir(binary),
+			SystemConfig: config,
+			Architecture: architectureOf(binary),
+		})
+	}
+
 	for _, config := range candidates {
+		if claimed[probe.PathKey(config)] {
+			continue
+		}
 		reader, err := source(config)
 		if err != nil {
 			continue
 		}
 		_ = reader.Close()
-
 		root := filepath.Dir(filepath.Dir(config))
-		architecture := "x64"
-		if strings.Contains(config, "(x86)") {
-			architecture = "x86"
-		}
-		found = append(found, Install{Root: root, SystemConfig: config, Architecture: architecture})
+		found = append(found, Install{
+			Instance:     root,
+			Root:         root,
+			SystemConfig: config,
+			Architecture: architectureOf(config),
+		})
 	}
 	return found
+}
+
+// systemConfigNear finds the system config belonging to one git binary.
+//
+// THE CANDIDATES ARE MEASURED BY ASKING THE BINARIES THEMSELVES, 2026-09-02,
+// which is the only honest way to claim where somebody else's program looks -
+// inviolable rule 18. Both git.exe on this machine answered
+// "git config --list --show-origin --system" with C:/Program Files/Git/etc/
+// gitconfig: one directory up for C:\Program Files\Git\cmd\git.exe, two for
+// C:\Program Files\Git\mingw64\bin\git.exe, whose own mingw64\etc\gitconfig
+// does not exist. Two up is also what reaches /etc/gitconfig from /usr/bin/git,
+// and one up is what reaches /usr/local/etc/gitconfig and the homebrew prefix.
+//
+// FINDING NOTHING IS AN ANSWER AND NOT A FAILURE. The row then says git uses
+// whatever libcurl it was built with, which is a true sentence about a machine
+// with no git configuration on it.
+func systemConfigNear(source file.Source, binary string) string {
+	dir := filepath.Dir(binary)
+	for _, candidate := range []string{
+		filepath.Join(dir, "..", "etc", "gitconfig"),
+		filepath.Join(dir, "..", "..", "etc", "gitconfig"),
+	} {
+		candidate = filepath.Clean(candidate)
+		reader, err := source(candidate)
+		if err != nil {
+			continue
+		}
+		_ = reader.Close()
+		return candidate
+	}
+	return ""
+}
+
+// architectureOf reads the bitness off a path, because two installs differing
+// ONLY by "(x86)" have separate stores and separate answers.
+func architectureOf(path string) string {
+	if strings.Contains(path, "(x86)") {
+		return "x86"
+	}
+	return "x64"
 }
 
 // readSettings applies the config files in git's own precedence order.
@@ -111,39 +196,41 @@ func find(source file.Source, candidates []string) []Install {
 // overrides, which can both change the answer for one specific remote - the
 // report says what the general setting is, and a subsection aimed at one host
 // would not show up. Neither is silent: both are named in the descriptor.
-func readSettings(source file.Source, paths []string) Settings {
+// THE SYSTEM CONFIG ARRIVES NAMED RATHER THAN RECOGNISED, and that is a defect
+// removed rather than a tidier signature. The level used to be decided by
+// asking whether a path was in systemConfigs, which stopped being true the
+// moment a config could be found NEXT TO A BINARY: C:\Program Files\Git\mingw64
+// \etc\gitconfig is a system config that list has never heard of, and it would
+// have been reported at global level - in the one field that decides whether a
+// colleague needs the same fix or the opposite one.
+func readSettings(source file.Source, systemConfig string, globals []string) Settings {
 	var s Settings
-	for _, path := range paths {
-		level := "global"
-		if isSystem(path) {
-			level = "system"
-		}
-		values, err := parse(source, path)
-		if err != nil && s.Unreadable == "" {
-			// THE FIRST ONE, AND IT DOES NOT STOP THE WALK. The later files may
-			// still be readable, and what they set is worth reading - what is not
-			// worth doing is concluding anything from what was NOT found.
-			s.Unreadable = fmt.Sprintf("%s could not be read to the end: %v", path, err)
-		}
-		for key, value := range values {
-			switch key {
-			case "http.sslbackend":
-				s.Backend, s.BackendLevel = value, level
-			case "http.sslcainfo":
-				s.CAInfo, s.CAInfoLevel = value, level
-			}
-		}
+	if systemConfig != "" {
+		s.apply(source, systemConfig, "system")
+	}
+	for _, path := range globals {
+		s.apply(source, path, "global")
 	}
 	return s
 }
 
-func isSystem(path string) bool {
-	for _, candidate := range systemConfigs {
-		if candidate == path {
-			return true
+// apply folds one config file into the settings, at the level it was read from.
+func (s *Settings) apply(source file.Source, path, level string) {
+	values, err := parse(source, path)
+	if err != nil && s.Unreadable == "" {
+		// THE FIRST ONE, AND IT DOES NOT STOP THE WALK. The later files may
+		// still be readable, and what they set is worth reading - what is not
+		// worth doing is concluding anything from what was NOT found.
+		s.Unreadable = fmt.Sprintf("%s could not be read to the end: %v", path, err)
+	}
+	for key, value := range values {
+		switch key {
+		case "http.sslbackend":
+			s.Backend, s.BackendLevel = value, level
+		case "http.sslcainfo":
+			s.CAInfo, s.CAInfoLevel = value, level
 		}
 	}
-	return false
 }
 
 // parse reads the [http] section of one config file into lower-cased keys.

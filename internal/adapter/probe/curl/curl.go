@@ -16,7 +16,6 @@ package curl
 import (
 	"context"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
@@ -42,46 +41,19 @@ type Install struct {
 	OnPath  bool
 }
 
-// find walks EVERY directory on PATH and returns EVERY curl it finds.
+// find returns EVERY curl this machine has on PATH.
 //
-// THIS IS A SEARCH AND NOT A SELECTION - ADR50. Taking the first hit would be
-// naming a favourite, which is what ADR48 part 4 forbids and what would have
-// hidden the second curl on this machine. Walking all of them produces the
-// matrix instead.
-//
-// IT LOOKS FOR A FILE AND NOT FOR A NAME, which docs/20 flags at this
-// descriptor: on Windows "curl" is also a PowerShell alias for
-// Invoke-WebRequest, so a name that resolves proves nothing about a binary.
+// THE WALK ITSELF IS CONSUMED RATHER THAN WRITTEN HERE - probe.Binaries. It is
+// the same question the git probe asks, and a second copy of it is the shape
+// OBS50 has taken four times in this tree: an entry aimed at one copy stops
+// proving anything about the other, and the two drift the first time one of
+// them gains a case. Why the walk searches instead of selecting, why it looks
+// for a file rather than a name, and why one byte has to come back, are all
+// recorded there.
 func find(source file.Source, pathDirs []string) []Install {
 	var found []Install
-	seen := map[string]bool{}
-
-	for _, dir := range pathDirs {
-		for _, name := range []string{"curl.exe", "curl"} {
-			path := filepath.Join(dir, name)
-			cleaned := filepath.Clean(path)
-			// DEDUPLICATED CASE-INSENSITIVELY, AND THIS WAS A MEASURED DEFECT rather
-			// than a precaution. PATH on this machine carries system32 in two
-			// spellings - Windows and WINDOWS - and filepath.Clean does not fold
-			// case, so the first run of this probe reported ONE binary as TWO stores
-			// and the verdict counted ten where there are nine.
-			//
-			// THE COST, NAMED: on a case-sensitive filesystem two genuinely different
-			// files whose names differ only by case would be folded into one. That is
-			// a pathology nobody ships, while counting one binary twice is measured
-			// and here.
-			key := strings.ToLower(cleaned)
-			if seen[key] {
-				continue
-			}
-			reader, err := source(path)
-			if err != nil {
-				continue
-			}
-			_ = reader.Close()
-			seen[key] = true
-			found = append(found, Install{Path: cleaned, OnPath: true})
-		}
+	for _, path := range probe.Binaries(source, pathDirs, "curl.exe", "curl") {
+		found = append(found, Install{Path: path, OnPath: true})
 	}
 	return found
 }
