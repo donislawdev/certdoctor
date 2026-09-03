@@ -336,6 +336,19 @@ func (in Input) tryOne(ctx context.Context, address string) report.Finding {
 // ZERO STILL MEANS "no time left, do not try" AND unlimited MEANS "nothing caps
 // this at all" - the collision OBS62 was made of, and the reason those are two
 // values rather than one.
+//
+// WHAT KEEPS unlimited OUT OF A REAL RUN IS ONE FUNCTION IN cmd/, AND THIS LAYER
+// CANNOT SEE IT. budget() in cmd/certdoctor/flags.go turns --timeout 0 into a
+// day rather than into no deadline, so every layer here is handed a context with
+// one. Take that away and an address that accepts a connection and then says
+// nothing holds this run open with nothing able to end it.
+//
+// dns.Socket REFUSES THAT CASE OUTRIGHT - errNoDeadline in
+// internal/adapter/dns/network.go - and this layer does not, which is an
+// asymmetry named here rather than quietly relied on. Making the two match would
+// change what these ports do when called with a bare context, which is a
+// decision rather than a comment: the exported ports are already reachable from
+// tests, and L2 will be a third caller.
 func (in Input) limitFor(ctx context.Context) time.Duration {
 	deadline, set := ctx.Deadline()
 	if !set {

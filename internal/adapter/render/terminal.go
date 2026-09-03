@@ -150,10 +150,49 @@ func visible(s string) string {
 			// Not valid UTF-8. The byte is shown as itself rather than replaced
 			// with a substitution character, so the report says what is really
 			// there instead of what a decoder made of it.
-			fmt.Fprintf(&b, `\x%02x`, s[i])
+			b.WriteString(notText(s[i]))
 		case unsafeRune(r):
 			fmt.Fprintf(&b, `\u%04x`, r)
 		default:
+			b.WriteString(s[i : i+size])
+		}
+		i += size
+	}
+	return b.String()
+}
+
+// notText is HOW THIS PROGRAM SPELLS A BYTE THAT IS NOT TEXT, and it lives once
+// because two surfaces have to say the same thing about the same byte.
+//
+// Both renderers meet this case and until 2026-09-04 they answered it
+// differently: the terminal wrote the byte as itself, and encoding/json quietly
+// swapped it for U+FFFD - so one run produced two documents disagreeing about a
+// value, and --json was the one that invented. A second spelling of this would
+// bring that back by a slower route.
+func notText(b byte) string { return fmt.Sprintf(`\x%02x`, b) }
+
+// decodable rewrites the bytes of s that are not valid UTF-8, and leaves
+// everything else exactly as it is.
+//
+// IT IS DELIBERATELY NARROWER THAN visible, AND THE DIFFERENCE IS THE WHOLE
+// POINT. A terminal INTERPRETS an escape sequence or a bidirectional override,
+// so those have to be defanged before they reach one. A JSON consumer does not:
+// it decodes an escaped override back into the character and gets the value
+// that was really there, which is what a machine readable document is for. The one thing JSON
+// cannot carry is a byte that is not text at all, and there encoding/json
+// substitutes without saying so - the single case where the document stops being
+// a record of the machine and becomes a record of a decoder.
+func decodable(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			b.WriteString(notText(s[i]))
+		} else {
 			b.WriteString(s[i : i+size])
 		}
 		i += size

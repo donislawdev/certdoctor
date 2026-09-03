@@ -1731,3 +1731,69 @@ func TestOnlyTheLensReadFromAnotherGoroutineIsHandedASetThatCannotGrow(t *testin
 		}
 	}
 }
+
+// TestAResolverListCutToTheLimitSaysSoInTheReport is the visible half of the
+// limit, and without it the limit would be the very thing it protects against.
+//
+// A list quietly cut to three reads exactly like a machine configured with
+// three. Somebody holding their own resolv.conf beside this report would find
+// the report wrong and have nothing to tell them why - a run that did less than
+// it looked like it did, which is inviolable rule 1.
+func TestAResolverListCutToTheLimitSaysSoInTheReport(t *testing.T) {
+	h := &harness{written: map[string][]byte{}}
+	guarded(context.Background(), []string{"https://example.com", "--format", "json"}, environment{
+		stdout:     &h.stdout,
+		stderr:     &h.stderr,
+		capability: func(bool) render.Capability { return render.Capability{} },
+		now:        func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
+		platform:   report.Platform{OS: "testos", Arch: "testarch"},
+		privilege:  report.PrivilegeUnknown,
+		lookupEnv:  func(string) (string, bool) { return "", false },
+		writeFile:  func(string, []byte) error { return nil },
+		nameservers: func() (dns.Nameservers, error) {
+			return dns.Nameservers{
+				ToAsk:       []string{"192.0.2.53"},
+				Known:       []string{"192.0.2.53"},
+				From:        "/etc/resolv.conf",
+				BeyondLimit: 4,
+				Repeated:    1,
+			}, nil
+		},
+		queryID: func() uint16 { return 1 },
+		exchange: func(*allowed.Targets) resolve.Exchange {
+			return func(context.Context, string, []byte) ([]byte, error) { return nil, resolve.ErrTimeout }
+		},
+	})
+
+	document := h.stdout.String()
+	for _, wanted := range []string{"/etc/resolv.conf", "4 were past the limit", "1 repeated"} {
+		if !strings.Contains(document, wanted) {
+			t.Errorf("the report does not say %q, so the trimming is invisible", wanted)
+		}
+	}
+
+	// AND THE NOTE DISAPPEARS WHEN NOTHING WAS TRIMMED. A note that never goes
+	// away teaches people to skip notes, and then the one that mattered goes with
+	// them - the same argument the privilege note carries.
+	quiet := &harness{written: map[string][]byte{}}
+	guarded(context.Background(), []string{"https://example.com", "--format", "json"}, environment{
+		stdout:     &quiet.stdout,
+		stderr:     &quiet.stderr,
+		capability: func(bool) render.Capability { return render.Capability{} },
+		now:        func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
+		platform:   report.Platform{OS: "testos", Arch: "testarch"},
+		privilege:  report.PrivilegeUnknown,
+		lookupEnv:  func(string) (string, bool) { return "", false },
+		writeFile:  func(string, []byte) error { return nil },
+		nameservers: func() (dns.Nameservers, error) {
+			return dns.Nameservers{ToAsk: []string{"192.0.2.53"}, Known: []string{"192.0.2.53"}, From: "/etc/resolv.conf"}, nil
+		},
+		queryID: func() uint16 { return 1 },
+		exchange: func(*allowed.Targets) resolve.Exchange {
+			return func(context.Context, string, []byte) ([]byte, error) { return nil, resolve.ErrTimeout }
+		},
+	})
+	if strings.Contains(quiet.stdout.String(), "names more resolvers than this run asked") {
+		t.Error("a run that trimmed nothing still carries the note about trimming")
+	}
+}

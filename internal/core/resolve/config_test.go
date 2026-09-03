@@ -49,18 +49,89 @@ func TestTheNameserverOrderIsTheFilesOrder(t *testing.T) {
 		file.WriteString("nameserver " + address + "\n")
 	}
 
-	// Repeated, because a single comparison passes half the time on six entries
-	// out of a map and would look like a working test.
+	// THE FILE STILL HAS SIX LINES AFTER MaxNameservers ARRIVED, and that is what
+	// keeps this test as sharp as it was. Only three addresses come back now, and
+	// three entries out of a map agree by accident far too often - so the other
+	// three are checked where they went: Skipped carries lines 4, 5 and 6, in the
+	// file's order. The failure this guards against, a parser keyed by line
+	// number ranging over a map, still has six things to put in the wrong order.
 	for attempt := 0; attempt < 20; attempt++ {
 		got, err := ParseResolverConfig([]byte(file.String()))
 		if err != nil {
 			t.Fatalf("an ordinary resolv.conf was refused: %v", err)
 		}
-		for i := range want {
+		if len(got.Nameservers) != MaxNameservers {
+			t.Fatalf("attempt %d kept %d nameserver(s), and the limit is %d", attempt, len(got.Nameservers), MaxNameservers)
+		}
+		for i := range got.Nameservers {
 			if got.Nameservers[i] != want[i] {
 				t.Fatalf("attempt %d read the file out of order: %v", attempt, got.Nameservers)
 			}
 		}
+		if len(got.Skipped) != len(want)-MaxNameservers {
+			t.Fatalf("attempt %d named %d skipped line(s) for %d lines past the limit: %v",
+				attempt, len(got.Skipped), len(want)-MaxNameservers, got.Skipped)
+		}
+		for i, skipped := range got.Skipped {
+			if skipped.Line != MaxNameservers+1+i {
+				t.Fatalf("attempt %d reported the skipped lines out of order: %v", attempt, got.Skipped)
+			}
+		}
+	}
+}
+
+// TestThisRunAsksNoMoreResolversThanThePlatformWould is the limit, and it is a
+// correctness property before it is a limit.
+//
+// MEASURED AT SOURCE 2026-09-04, twice: Go's own dnsconfig_unix.go takes a
+// nameserver only while len(conf.servers) < 3, and glibc declares MAXNS 3. The
+// system view goes through Go's resolver, so a direct view asking a fourth
+// resolver compares itself against a lens that can never have asked it - and any
+// disagreement it then reports was manufactured by this program.
+func TestThisRunAsksNoMoreResolversThanThePlatformWould(t *testing.T) {
+	got, err := ParseResolverConfig([]byte(
+		"nameserver 10.0.0.1\nnameserver 10.0.0.2\nnameserver 10.0.0.3\nnameserver 10.0.0.4\n"))
+	if err != nil {
+		t.Fatalf("an ordinary resolv.conf was refused: %v", err)
+	}
+	if len(got.Nameservers) != 3 {
+		t.Fatalf("kept %v, and the platform reads three", got.Nameservers)
+	}
+	if len(got.Skipped) != 1 || got.Skipped[0].Line != 4 {
+		t.Fatalf("the fourth line was not named as skipped: %v", got.Skipped)
+	}
+	if !strings.Contains(got.Skipped[0].Why, "three") {
+		t.Errorf("the reason does not say what the limit is: %q", got.Skipped[0].Why)
+	}
+}
+
+// TestARepeatedResolverIsConsultedOnceAndCountedOnce covers both halves of the
+// duplicate rule, and they pull in opposite directions on purpose.
+//
+// A repeat must not become a second query, a second row and a second pseudonym.
+// It must still COST one of the three slots, because the reader this list
+// mirrors appends duplicates and stops at three regardless - so a file naming
+// one address three times leaves that platform with one resolver and no room
+// for a fourth line, and this program has to arrive at the same population.
+func TestARepeatedResolverIsConsultedOnceAndCountedOnce(t *testing.T) {
+	got, err := ParseResolverConfig([]byte(
+		"nameserver 10.0.0.1\nnameserver 10.0.0.1\nnameserver 10.0.0.1\nnameserver 10.0.0.9\n"))
+	if err != nil {
+		t.Fatalf("an ordinary resolv.conf was refused: %v", err)
+	}
+	if len(got.Nameservers) != 1 || got.Nameservers[0] != "10.0.0.1" {
+		t.Fatalf("a repeated address was consulted more than once: %v", got.Nameservers)
+	}
+	if len(got.Skipped) != 3 {
+		t.Fatalf("%d skipped line(s) for two repeats and one line past the limit: %v", len(got.Skipped), got.Skipped)
+	}
+	if !strings.Contains(got.Skipped[0].Why, "already") {
+		t.Errorf("the repeat was not named as one: %q", got.Skipped[0].Why)
+	}
+	// The fourth line is past the limit BECAUSE the repeats used slots, which is
+	// the half that keeps this list the same population the platform reads.
+	if !strings.Contains(got.Skipped[2].Why, "three") {
+		t.Errorf("the fourth line was not refused by the limit: %q", got.Skipped[2].Why)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -238,5 +239,114 @@ func TestASocketWithADeadlineIsOpened(t *testing.T) {
 	}
 	if err := conn.Close(); err != nil {
 		t.Errorf("closing it failed: %v", err)
+	}
+}
+
+// queuedConn hands back a list of datagrams, one per Read, and then fails the
+// way a socket past its deadline does.
+type queuedConn struct {
+	datagrams [][]byte
+	reads     int
+}
+
+func (q *queuedConn) Write(p []byte) (int, error) { return len(p), nil }
+func (q *queuedConn) Close() error                { return nil }
+
+func (q *queuedConn) Read(p []byte) (int, error) {
+	if q.reads >= len(q.datagrams) {
+		return 0, os.ErrDeadlineExceeded
+	}
+	n := copy(p, q.datagrams[q.reads])
+	q.reads++
+	return n, nil
+}
+
+// datagramWithID is the smallest thing this port judges: a DNS header carrying
+// an identifier. Nothing here parses further, and neither does the code it
+// exercises.
+func datagramWithID(id uint16) []byte {
+	msg := make([]byte, 12)
+	msg[0], msg[1] = byte(id>>8), byte(id)
+	// The answer bit, so that nothing downstream mistakes this for a question.
+	msg[2] = 0x80
+	return msg
+}
+
+// TestAStrayDatagramDoesNotCostTheRealAnswer is R-4's other half, and the half
+// nothing acted on until 2026-09-04.
+//
+// dnsmsg's comment on ErrNotOurs already said that a datagram carrying somebody
+// else's identifier means "the real answer may still be coming". This port read
+// exactly one datagram and closed the socket, so the first stray one produced a
+// row saying a working resolver had answered a different question.
+func TestAStrayDatagramDoesNotCostTheRealAnswer(t *testing.T) {
+	const ours = 0x4d2
+	query := datagramWithID(ours)
+	real := append(datagramWithID(ours), 0xAA)
+	conn := &queuedConn{datagrams: [][]byte{
+		datagramWithID(ours + 1),
+		datagramWithID(ours + 2),
+		real,
+	}}
+
+	got, err := Exchange(func(context.Context, string) (io.ReadWriteCloser, error) {
+		return conn, nil
+	})(context.Background(), "192.0.2.53", query)
+	if err != nil {
+		t.Fatalf("two stray datagrams lost a real answer: %v", err)
+	}
+	if len(got) != len(real) || got[len(got)-1] != 0xAA {
+		t.Fatalf("the answer handed back is not the one that matched: %v", got)
+	}
+	if conn.reads != 3 {
+		t.Errorf("read %d datagram(s), and the answer was the third", conn.reads)
+	}
+}
+
+// TestAFloodOfStrayDatagramsEndsAsATimeoutThatSaysSo pins the other end of the
+// loop: it cannot spin, and what it reports is the truer of the two sentences.
+//
+// A resolver whose answer never arrives is a timeout, not an unreadable answer -
+// and the count of what did arrive is what explains it.
+func TestAFloodOfStrayDatagramsEndsAsATimeoutThatSaysSo(t *testing.T) {
+	const ours = 0x4d2
+	conn := &queuedConn{datagrams: [][]byte{
+		datagramWithID(ours + 1),
+		datagramWithID(ours + 2),
+	}}
+
+	_, err := Exchange(func(context.Context, string) (io.ReadWriteCloser, error) {
+		return conn, nil
+	})(context.Background(), "192.0.2.53", datagramWithID(ours))
+	if !errors.Is(err, resolve.ErrTimeout) {
+		t.Fatalf("got %v, want a timeout - nothing answered the question that was asked", err)
+	}
+	if !strings.Contains(err.Error(), "2 datagram(s)") {
+		t.Errorf("the failure does not say what arrived instead: %v", err)
+	}
+}
+
+// TestAReplyCarryingOurIdentifierIsHandedOverEvenWhenItAnswersSomethingElse is
+// the boundary of the loop, and it is deliberately NOT retried.
+//
+// A datagram with our identifier and the wrong question is a resolver behaving
+// badly, and nothing better is coming. The layer reports it as the stray it is,
+// which is a different sentence from a timeout and sends a reader somewhere
+// else. Retrying here would replace that finding with a wait.
+func TestAReplyCarryingOurIdentifierIsHandedOverEvenWhenItAnswersSomethingElse(t *testing.T) {
+	const ours = 0x4d2
+	conn := &queuedConn{datagrams: [][]byte{append(datagramWithID(ours), 0xBB)}}
+
+	got, err := Exchange(func(context.Context, string) (io.ReadWriteCloser, error) {
+		return conn, nil
+	})(context.Background(), "192.0.2.53", datagramWithID(ours))
+	if err != nil {
+		t.Fatalf("a reply carrying our own identifier was not handed over: %v", err)
+	}
+	if conn.reads != 1 {
+		t.Errorf("read %d datagram(s), and the first one was ours to judge", conn.reads)
+	}
+	if len(got) != 13 || got[12] != 0xBB {
+		t.Errorf("the bytes handed to the layer are not the ones that arrived: %v", got)
 	}
 }

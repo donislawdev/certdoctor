@@ -636,4 +636,38 @@ func TestAHandshakeThatPresentedNothingIsAnOrdinaryRow(t *testing.T) {
 			t.Errorf("a legal row was refused by the contract: %s", breach)
 		}
 	}
+
+	// THE SENTENCE HAS TO SAY THE SAME THING AS THE BODY, and until 2026-09-04 it
+	// did not. MatchesFirstAddress was left nil above, correctly; the summary was
+	// built from the same comparison anyway, and with no carrier at all
+	// leafOf(nil) == leafOf(nil) made it "presented the same certificate as the
+	// first address" - about a certificate that does not exist and an address
+	// that was never chosen. The body is what a machine reads and the summary is
+	// what a person reads, and the person was the one being told the untruth.
+	for i, finding := range got.Findings {
+		for _, forbidden := range []string{"the same certificate", "a DIFFERENT certificate"} {
+			if strings.Contains(finding.Summary, forbidden) {
+				t.Errorf("row %d compares a certificate nobody presented: %q", i, finding.Summary)
+			}
+		}
+		if !strings.Contains(finding.Summary, "no certificate") {
+			t.Errorf("row %d does not say what actually happened: %q", i, finding.Summary)
+		}
+	}
+
+	// AND THE LAYER'S OWN SENTENCE, which carried the same untruth one level up:
+	// chainComplete of an empty chain is false, so the verdict fell into the
+	// branch about a server that "did not send the issuer of the first one" -
+	// there being no first one. The STATUS is deliberately left alone: a server
+	// that authenticates itself with nothing is a failure for a tool asked why a
+	// connection does not work, and changing that is a different decision.
+	if got.Status != status.Fail {
+		t.Errorf("got %s, want FAIL - nothing here authenticated the server", got.Status)
+	}
+	if strings.Contains(got.Detail, "issuer of the first one") {
+		t.Errorf("the layer sentence describes a certificate nobody presented: %q", got.Detail)
+	}
+	if !strings.Contains(got.Detail, "no certificate") {
+		t.Errorf("the layer sentence does not say what actually happened: %q", got.Detail)
+	}
 }

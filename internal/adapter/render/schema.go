@@ -334,6 +334,21 @@ func nullable(n node) node {
 // schema is an internal failure and must not be printed: whoever receives it
 // would parse it against the contract we published and get a different answer
 // than we did.
+//
+// IT PARSES THE DOCUMENT A SECOND TIME AND THAT COSTS MEMORY, WHICH IS NAMED
+// HERE SO IT CAN BE ADDED UP RATHER THAN DISCOVERED. Unmarshalling into `any`
+// builds a full tree of map[string]any and []any, several times the size of the
+// bytes it came from; alive at the same time are those bytes, the encoder's
+// buffer, and the report.Report they were built from. Call it four times the
+// document.
+//
+// IT IS A DELIBERATE COST RATHER THAN AN OVERSIGHT: this is the last gate before
+// a contract leaves the process, and checking it against a tree the caller
+// handed us would be checking our own idea of the document rather than the
+// document. At today's size - a report of a few tens of kilobytes - the whole
+// multiple is noise. It is written down because the thing that would make it
+// matter is a report driven very large by somebody else's configuration, and
+// that pressure now has a bound at its source: resolve.MaxNameservers.
 func ValidateDocument(document []byte) error {
 	var decoded any
 	if err := json.Unmarshal(document, &decoded); err != nil {

@@ -289,12 +289,32 @@ func networkParamsResolvers() ([]string, error) {
 		return nil, fmt.Errorf("GetNetworkParams did not report a buffer size")
 	}
 
+	// THE SIZE COMES FROM THE OTHER SIDE AND THE CAST BELOW TRUSTS IT COMPLETELY.
+	// Everything after this line reads fields at fixed offsets and then walks a
+	// linked list through them; a buffer shorter than the structure makes every
+	// one of those reads run past its end, and Go says nothing about it because
+	// unsafe.Pointer is the point at which it stops looking. Refusing is the only
+	// answer available - there is no partial FIXED_INFO to read - and an error
+	// here costs the API list while the registry list still stands on its own,
+	// which is the fallback this function was already built around.
+	if uintptr(size) < unsafe.Sizeof(fixedInfo{}) {
+		return nil, fmt.Errorf("GetNetworkParams asked for %d bytes and FIXED_INFO is %d, so the answer was refused rather than read past its end",
+			size, unsafe.Sizeof(fixedInfo{}))
+	}
+
 	buffer := make([]byte, size)
 	result, _, _ := proc.Call(uintptr(unsafe.Pointer(&buffer[0])), uintptr(unsafe.Pointer(&size)))
 	if result != 0 {
 		return nil, fmt.Errorf("GetNetworkParams returned %d", result)
 	}
 
+	// ALIGNMENT IS THE OTHER HALF AND IT IS NOT GUARANTEED BY THE LANGUAGE.
+	// fixedInfo contains a pointer, so it wants pointer alignment, and a []byte
+	// promises none - Go's allocator gives it in practice for a block this size
+	// and that is an implementation detail rather than a contract. It is written
+	// down rather than worked around: the fix would be to allocate a fixedInfo
+	// and cast the other way, which trades this for having to know the exact
+	// layout of a structure whose tail is variable.
 	info := (*fixedInfo)(unsafe.Pointer(&buffer[0]))
 	var out []string
 	for node := &info.DNSServerList; node != nil; node = node.Next {

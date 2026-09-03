@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"reflect"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -386,14 +387,65 @@ func Encode(r report.Report) ([]byte, error) {
 	encoder := json.NewEncoder(&buffer)
 	encoder.SetIndent("", "  ")
 
+	document := documentFor(r)
+	// BYTES THAT ARE NOT TEXT ARE SPELLED OUT BEFORE THE ENCODER CAN SWALLOW
+	// THEM. encoding/json substitutes U+FFFD for every one of them and returns no
+	// error, so a store path or a certificate subject carrying a stray byte came
+	// out of --json as a value nobody has - while the terminal, from the same
+	// run, printed what was really there. One run, two documents, and the machine
+	// readable one was the one inventing.
+	//
+	// IT WALKS THE DOCUMENT RATHER THAN NAMING FIELDS, and that is the whole
+	// reason it is worth its reflection. There are eighty-eight string fields
+	// across seventeen structures here; a rule applied field by field is a rule
+	// that will be missed by the eighty-ninth, and missing it is SILENT - the
+	// value simply comes out wrong. Walking makes a new field covered by
+	// existing, and forgetting impossible rather than unlikely.
+	decodeSafely(reflect.ValueOf(&document).Elem())
+
 	// HTML escaping is left on. Certificate subjects arrive from the network
 	// and this renderer is not the place to decide what is safe to drop into a
 	// page - turning it off here would buy slightly prettier output and hand a
 	// footgun to whoever embeds the result somewhere else.
-	if err := encoder.Encode(documentFor(r)); err != nil {
+	if err := encoder.Encode(document); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
+}
+
+// decodeSafely applies decodable to every string reachable from v.
+//
+// IT ONLY EVER WALKS THIS PACKAGE'S OWN DOCUMENT TYPES, which is what makes the
+// shape below complete rather than optimistic: strings, pointers to them, slices
+// of them, and structures containing them. There are no maps, no interfaces
+// carrying arbitrary values and no channels in a jsonReport, and a kind arriving
+// here that is none of the above is left exactly as it was - the safe direction,
+// since the alternative would be a walker quietly rewriting something it does not
+// understand.
+func decodeSafely(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.String:
+		// CanSet is false for an unexported field. There are none in this
+		// document today; asking is what keeps that from becoming a panic if one
+		// ever appears.
+		if v.CanSet() {
+			if fixed := decodable(v.String()); fixed != v.String() {
+				v.SetString(fixed)
+			}
+		}
+	case reflect.Pointer, reflect.Interface:
+		if !v.IsNil() {
+			decodeSafely(v.Elem())
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			decodeSafely(v.Index(i))
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			decodeSafely(v.Field(i))
+		}
+	}
 }
 
 func documentFor(r report.Report) jsonReport {

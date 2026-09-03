@@ -192,7 +192,7 @@ func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, tally) {
 			counted.timedOut++
 			continue
 		}
-		stores, err := probe(probeCtx, chain)
+		stores, err := askProbe(probeCtx, probe, chain)
 		// THE BUDGET IS ASKED ABOUT ITSELF, RATHER THAN READ OFF A PROBE'S
 		// ERROR. Every probe in this tree turns a failure into a row and
 		// returns no error at all - java/probe.go, curl/probe.go, git/probe.go
@@ -369,6 +369,47 @@ func summaryOf(store report.TrustStore) string {
 }
 
 // unaskable is the row for a probe that could not run at all.
+// askProbe runs one probe and turns a panic into an ordinary error, so that a
+// probe falling over becomes a row like any other failure.
+//
+// WHY THIS LAYER NEEDS IT AND THE OTHERS DID NOT NOTICE. L3 and L4 reach code
+// this program does not own too, but they reach it under fanout.Over, whose
+// goroutines catch their own panics because nothing else can - ADR67. This layer
+// asks its probes in a plain sequential loop, so before this existed a panic
+// went straight past it to the recover in main: the exit code stayed inside the
+// table and the whole report went with it, after every layer had finished and
+// every store had been read. That is the inversion the orchestrator forbids in
+// so many words - a probe that cannot answer degrades, and it degrades ALONE.
+//
+// AND THE PROBES HERE ARE THE ONES MOST EXPOSED. They pull PEM out of keytool's
+// output, INI out of a gitconfig somebody else wrote, and hand certificates
+// from the wire to crypto/x509. None of that is ours and none of it promised
+// not to panic.
+//
+// IT IS A SECOND recover IN THIS TREE AND THAT IS DELIBERATE RATHER THAN
+// OVERLOOKED. Routing this through fanout.Over would consume the existing one
+// and costs no exemption - measured, internal/core/tcp/fanout.go and
+// internal/core/handshake/fanout.go both call it and neither is on any
+// concurrency list. It was refused for what it would invite: this layer asks
+// its probes ONE AT A TIME because they share one budget by division, and a
+// fan-out primitive sitting here is an invitation to raise the one to N without
+// going back through that arithmetic. The two recovers also answer different
+// questions - a goroutine's panic cannot reach its caller at all, this one can
+// and is deliberately turned into a row - and the mutation register keeps them
+// apart by file, so neither entry blunts the other.
+//
+// The named returns are what let the deferred function replace both: a probe
+// that fell over has no stores, and handing back whatever it managed to append
+// before falling would be reporting a half-read machine as a whole one.
+func askProbe(ctx context.Context, probe Probe, chain [][]byte) (stores []report.TrustStore, err error) {
+	defer func() {
+		if cause := recover(); cause != nil {
+			stores, err = nil, fmt.Errorf("it fell over inside this program: %v", cause)
+		}
+	}()
+	return probe(ctx, chain)
+}
+
 func unaskable(descriptor Descriptor, err error) row {
 	return row{
 		store: report.TrustStore{

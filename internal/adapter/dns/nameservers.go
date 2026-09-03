@@ -24,6 +24,18 @@ type Nameservers struct {
 	Known []string
 	// From names where the list came from, in words that go into the report.
 	From string
+	// BeyondLimit counts nameserver lines this machine records that this run
+	// will not ask because the platform's own resolver would not ask them
+	// either, and Repeated counts the ones naming an address already on the
+	// list. Both are zero on Windows, where no such limit exists.
+	//
+	// THEY TRAVEL SO THAT THE TRIMMING IS NOT SILENT. A list quietly cut to
+	// three reads exactly like a machine that has three, which is the shape
+	// inviolable rule 1 exists to forbid - a run that did less than it looked
+	// like it did. They are two numbers rather than one because they answer two
+	// different questions for whoever is looking at their resolv.conf.
+	BeyondLimit int
+	Repeated    int
 }
 
 // merged folds the two lists into Known without losing order or duplicating.

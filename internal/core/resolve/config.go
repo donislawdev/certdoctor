@@ -35,6 +35,16 @@ type ResolverConfig struct {
 	// ban on silence applied to a parser: a file that was read and half
 	// understood must not read like a file that was read and understood.
 	Skipped []Skipped
+	// BeyondLimit counts nameserver lines refused by MaxNameservers and Repeated
+	// counts those naming an address already on the list.
+	//
+	// THEY ARE COUNTERS RATHER THAN A SEARCH THROUGH Skipped, and the difference
+	// is the rule about reading somebody's output by its text - which applies to
+	// our own text too. Why is this file's English, documented above as having no
+	// registry, so another package matching on it would be matching a sentence
+	// nobody promised to keep.
+	BeyondLimit int
+	Repeated    int
 }
 
 // NameSources is the `hosts:` line of nsswitch.conf: where this system looks up
@@ -87,9 +97,11 @@ type Skipped struct {
 
 // Reasons a line is skipped.
 const (
-	whyNotText    = "its value is not text"
-	whyNotAddress = "its value is not an address"
-	whyUnknown    = "this parser does not use that directive"
+	whyNotText     = "its value is not text"
+	whyNotAddress  = "its value is not an address"
+	whyUnknown     = "this parser does not use that directive"
+	whyBeyondLimit = "this platform's own resolver stops at three nameservers and so do we"
+	whyAlreadyList = "the same address is already on the list"
 )
 
 // UnsupportedEncoding is returned for a file this parser will not read.
@@ -185,6 +197,10 @@ func ParseResolverConfig(data []byte) (ResolverConfig, error) {
 	}
 
 	var config ResolverConfig
+	// accepted counts the nameserver lines the platform's own reader would have
+	// taken, which is not the same as len(config.Nameservers) once duplicates
+	// are collapsed - see appendNameserver.
+	accepted := 0
 	for index, line := range lines(decoded) {
 		number := index + 1
 		keyword, value, ok := directive(line)
@@ -193,7 +209,7 @@ func ParseResolverConfig(data []byte) (ResolverConfig, error) {
 		}
 		switch keyword {
 		case "nameserver":
-			config.Nameservers, config.Skipped = appendNameserver(config.Nameservers, config.Skipped, number, value)
+			accepted = config.addNameserver(number, accepted, value)
 		case "search":
 			config.Search, config.Skipped = appendSearch(config.Search, config.Skipped, number, value)
 		case "domain":
@@ -212,19 +228,84 @@ func ParseResolverConfig(data []byte) (ResolverConfig, error) {
 	return config, nil
 }
 
-func appendNameserver(servers []string, skipped []Skipped, number int, value string) ([]string, []Skipped) {
+// MaxNameservers is how many nameserver lines of a resolv.conf this run will
+// use, and it is a MEASUREMENT of what the platform does rather than a limit we
+// picked.
+//
+// READ AT SOURCE ON 2026-09-04, TWICE, BECAUSE IT IS A CLAIM ABOUT SOMEBODY
+// ELSE'S RUNTIME - inviolable rule 18:
+//
+//   - Go's own resolver, $GOROOT/src/net/dnsconfig_unix.go, takes a nameserver
+//     only while "len(conf.servers) < 3", with the comment "small, but the
+//     standard limit". That is the reader BEHIND OUR SYSTEM VIEW, so it decides
+//     which resolvers the second lens can ever consult.
+//   - glibc declares "#define MAXNS 3 /* max # name servers we'll track */" in
+//     bits/types/res_state.h - measured in the gcc:15 image the same day.
+//
+// musl is NOT quoted here: the alpine images this project runs do not ship
+// resolv.h, so nothing was read, and a third source asserted from memory would
+// be exactly what rule 18 forbids.
+//
+// WHY IT IS A CORRECTNESS FIX AND NOT ONLY A LIMIT. Without it the direct lens
+// queries resolvers the system lens will never touch, and the divergence
+// classification then compares two different populations - it would report a
+// disagreement produced by our own instrument. It also closes the size of what
+// a mounted /etc/resolv.conf can make this run do: a one megabyte file is about
+// 55 000 nameserver lines, and every one of them became a query, a finding, a
+// pseudonym and a compiled expression.
+//
+// IT IS DELIBERATELY NOT APPLIED ON WINDOWS. There the list comes from the
+// registry and from GetNetworkParams, the platform's own resolver applies no
+// such limit, and cutting it to three would hide resolvers this machine really
+// does use - see internal/adapter/dns/nameservers_windows.go.
+const MaxNameservers = 3
+
+// addNameserver adds one nameserver line, or says why it did not.
+//
+// accepted is how many nameserver lines the reader we are mirroring would have
+// taken so far, DUPLICATES INCLUDED - Go appends a repeat and still stops at
+// three, so a file listing one address three times leaves it with exactly that
+// one address and no room for a fourth line. Counting unique values instead
+// would let this program consult a resolver the platform never would, which is
+// the very mismatch the limit exists to remove.
+func (c *ResolverConfig) addNameserver(number, accepted int, value string) int {
 	switch {
 	case !readable(value):
-		return servers, append(skipped, Skipped{Line: number, Why: whyNotText})
+		c.Skipped = append(c.Skipped, Skipped{Line: number, Why: whyNotText})
 	// A nameserver has to be an address, and this is the one place a value is
 	// checked for meaning rather than for shape. The reason is inviolable rule
 	// 16: this address goes into the set of places this program may connect to,
 	// and a set entry that is not an address is a hole in a promise, not an
 	// untidy report.
 	case !isAddress(value):
-		return servers, append(skipped, Skipped{Line: number, Why: whyNotAddress})
+		c.Skipped = append(c.Skipped, Skipped{Line: number, Why: whyNotAddress})
+	case accepted >= MaxNameservers:
+		c.Skipped = append(c.Skipped, Skipped{Line: number, Why: whyBeyondLimit})
+		c.BeyondLimit++
+	case alreadyListed(c.Nameservers, value):
+		// NAMED RATHER THAN DROPPED, and it costs one of the three slots. The
+		// second half is what keeps this list the same population the platform
+		// reads; the first is what keeps a duplicated line from becoming two
+		// queries, two rows and two pseudonyms for one machine.
+		c.Skipped = append(c.Skipped, Skipped{Line: number, Why: whyAlreadyList})
+		c.Repeated++
+		return accepted + 1
+	default:
+		c.Nameservers = append(c.Nameservers, value)
+		return accepted + 1
 	}
-	return append(servers, value), skipped
+	return accepted
+}
+
+// alreadyListed is a linear scan and that is not a shortcut: the list it
+// searches is three long by construction.
+func alreadyListed(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func appendSearch(search []string, skipped []Skipped, number int, value string) ([]string, []Skipped) {

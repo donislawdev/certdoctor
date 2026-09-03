@@ -119,6 +119,28 @@ var ErrNotOurs = errors.New("this answer belongs to a different question")
 
 const headerLen = 12
 
+// ID reads the identifier out of a query or an answer, and reports whether the
+// message was long enough to have one.
+//
+// IT IS EXPORTED FOR ONE CALLER AND THAT CALLER IS THE REASON IT EXISTS. The
+// socket in internal/adapter/dns has to tell "a datagram answering an older
+// question of ours" from "the answer", so that a stray one does not make it
+// close the socket on a resolver that was about to reply. Doing that needs two
+// bytes of the header, and the alternative was for the adapter to index msg[0]
+// and msg[1] itself - a second place in this tree that knows where a DNS
+// identifier lives, which is the measured shape of OBS50 in miniature. Parse
+// consumes this too, so there is one such place and not two.
+//
+// It answers about the BYTES and never about whether they are ours: comparing is
+// the caller's business, because the two callers compare against different
+// things.
+func ID(msg []byte) (uint16, bool) {
+	if len(msg) < headerLen {
+		return 0, false
+	}
+	return uint16(msg[0])<<8 | uint16(msg[1]), true
+}
+
 // Query builds a query for one name and one record type.
 //
 // The identifier is a parameter rather than something generated here, because
@@ -164,10 +186,11 @@ func Query(id uint16, name string, t Type) ([]byte, error) {
 // answer carrying a different identifier is not ours, and NODATA can only be
 // decided by counting records OF THE REQUESTED TYPE.
 func Parse(msg []byte, wantID uint16, wantName string, want Type) (Message, error) {
-	if len(msg) < headerLen {
+	id, ok := ID(msg)
+	if !ok {
 		return Message{}, fmt.Errorf("an answer of %d bytes is shorter than a DNS header", len(msg))
 	}
-	if id := uint16(msg[0])<<8 | uint16(msg[1]); id != wantID {
+	if id != wantID {
 		return Message{}, fmt.Errorf("%w: it carries id %d and %d was asked", ErrNotOurs, id, wantID)
 	}
 	if msg[2]&0x80 == 0 {

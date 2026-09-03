@@ -58,6 +58,13 @@ func Enumerate(open file.Source) (Nameservers, error) {
 		ToAsk: config.Nameservers,
 		Known: config.Nameservers,
 		From:  ResolverConfPath,
+		// CARRIED SO THE TRIMMING REACHES A PERSON. The parser stops at the same
+		// three nameservers this platform's own resolver stops at and collapses a
+		// repeated address, both of which are right - and both of which would make
+		// a machine with seven configured resolvers look like a machine with
+		// three if nothing said so.
+		BeyondLimit: config.BeyondLimit,
+		Repeated:    config.Repeated,
 	}, nil
 }
 

@@ -176,6 +176,58 @@ func TestOneProbeFailingDoesNotSinkTheLayer(t *testing.T) {
 	}
 }
 
+// TestAProbeThatFallsOverBecomesARowRatherThanKillingTheReport is the same rule
+// as the one above, for the failure a probe does not get to return.
+//
+// L3 AND L4 HAVE HAD THIS SINCE ADR67 AND L5 DID NOT. Their attempts run under
+// fanout.Over, which catches a panic and hands it back as an error; this layer
+// called its probes in a plain loop, so a panic went straight past it to the
+// recover in main. The exit code stayed inside the table - 1 RUNTIME - and the
+// whole report went with it: every layer had finished, every store had been
+// read, and nothing was printed. That is the exact inversion the orchestrator's
+// own comment forbids, "a probe that cannot answer degrades, and it degrades
+// ALONE".
+//
+// THE PROBES HERE ARE THE ONES MOST EXPOSED TO SOMEBODY ELSE'S BYTES. They parse
+// PEM out of keytool, INI out of a gitconfig, and hand certificates from the
+// wire to crypto/x509 - none of which this program wrote, and none of which
+// promised us it would not panic.
+func TestAProbeThatFallsOverBecomesARowRatherThanKillingTheReport(t *testing.T) {
+	var got Result
+	func() {
+		defer func() {
+			if cause := recover(); cause != nil {
+				t.Fatalf("a probe that fell over took the whole layer with it: %v", cause)
+			}
+		}()
+		got = Ask(context.Background(), probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+			panic("keytool printed a block crypto/x509 could not read")
+		}))
+	}()
+	if got.Status != status.Unknown {
+		t.Errorf("got %s, want UNKNOWN - a probe falling over is not a verdict about a store", got.Status)
+	}
+	if len(got.Findings) != 1 {
+		t.Fatalf("a probe that fell over produced %d rows, and silence about it is forbidden", len(got.Findings))
+	}
+	body := got.Findings[0].TrustStore
+	if body.TrustsPresentedChain != nil {
+		t.Error("a probe that fell over still produced a verdict about a store")
+	}
+	// The row has to name the failure rather than describing an empty store, and
+	// it has to carry the cause: "git could not be asked" without the reason
+	// sends a person to look at git.
+	if !strings.Contains(body.NotAssessed, "could not run") {
+		t.Errorf("the row does not say the probe could not run: %q", body.NotAssessed)
+	}
+	if !strings.Contains(body.NotAssessed, "crypto/x509") {
+		t.Errorf("the row drops what actually went wrong: %q", body.NotAssessed)
+	}
+	if breach := got.Findings[0].Breach(); breach != "" {
+		t.Errorf("the layer produced a finding its own contract refuses: %s", breach)
+	}
+}
+
 func TestTheVerdictCountsStoresRatherThanRuntimes(t *testing.T) {
 	cases := []struct {
 		name   string

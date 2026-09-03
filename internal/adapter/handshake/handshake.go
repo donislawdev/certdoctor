@@ -122,6 +122,26 @@ func negotiate(ctx context.Context, conn net.Conn, serverName string) (core.Pres
 		// A guard refuses this field in every other file of this program.
 		InsecureSkipVerify: true,
 
+		// PINNED TO WHAT THE LIBRARY DOES TODAY, SO THAT A VERDICT NEVER CHANGES
+		// BECAUSE A TOOLCHAIN DID. Leaving this unset takes crypto/tls's own
+		// client default, which is TLS 1.2 now and is a number the standard
+		// library is free to raise - and the day it does, servers this tool
+		// reported on last week would come back as servers that refuse a
+		// handshake, with nothing in this repository having changed. That is the
+		// same argument the toolchain line in go.mod already carries.
+		//
+		// WHAT IT DELIBERATELY DOES NOT DO, WRITTEN DOWN BECAUSE IT IS A REAL
+		// DIAGNOSTIC GAP: a server speaking only TLS 1.0 or 1.1 - an internal
+		// appliance, which is exactly the machine this tool is for - is refused
+		// by US, and the row says "the server did not complete a TLS handshake"
+		// without saying who declined. Answering that properly means trying again
+		// at a lower floor and reporting the old version as the finding, which is
+		// a new behaviour and a new sentence rather than a constant. Open
+		// question O10 is the other half of it: a real 1.0 server usually offers
+		// only cipher suites Go has removed, so the version alone would not
+		// settle the retry.
+		MinVersion: tls.VersionTLS12,
+
 		NextProtos: alpn,
 
 		// The server asking us to authenticate is one of the commonest causes of

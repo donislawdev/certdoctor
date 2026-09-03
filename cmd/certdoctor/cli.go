@@ -22,6 +22,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/idna"
+	"github.com/donislawdev/certdoctor/internal/core/layer"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
@@ -168,7 +169,7 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 	shown, removed := redaction.Target(typed.String())
 	targets := allowedTargets(parsed, found)
 
-	finished, walkFault := walk(ctx, o, env, targetReduction{target: shown, removed: removed}, redaction,
+	finished, walkFault := walk(ctx, o, env, targetReduction{target: shown, removed: removed}, redaction, found,
 		run.Wiring{
 			Environment: env.lookupEnv,
 			Resolution:  resolutionInput(o, env, parsed, found, foundErr, targets),
@@ -199,7 +200,7 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 // verdict that disagrees with the rows beneath it is an internal failure, never
 // something to print and let the reader sort out.
 func walk(ctx context.Context, o *options, env environment, shown targetReduction, redaction *redact.Redaction,
-	wiring run.Wiring) (report.Report, *fault) {
+	found dns.Nameservers, wiring run.Wiring) (report.Report, *fault) {
 	finished, err := run.Execute(ctx, run.Options{
 		Tool:        report.Tool{Name: toolName, Version: toolVersion},
 		Target:      shown.target,
@@ -210,7 +211,7 @@ func walk(ctx context.Context, o *options, env environment, shown targetReductio
 		LayerBudget: budget(o.probeTimeout),
 		Now:         env.now,
 		Layers:      run.Wire(wiring),
-		Notes:       pendingNotes(shown, env.privilege),
+		Notes:       pendingNotes(shown, env.privilege, found),
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -750,9 +751,12 @@ var standingNotes = []report.Note{
 
 // pendingNotes is the standing list plus whatever this particular invocation
 // added to it.
-func pendingNotes(shown targetReduction, privilege report.PrivilegeLevel) []report.Note {
+func pendingNotes(shown targetReduction, privilege report.PrivilegeLevel, found dns.Nameservers) []report.Note {
 	notes := append([]report.Note{}, standingNotes...)
 	notes = append(notes, trustCoverageNote())
+	if note, trimmed := resolverTrimNote(found); trimmed {
+		notes = append(notes, note)
+	}
 	// An unknown privilege level is a legitimate answer and it is also the one
 	// that makes a later comparison of two reports meaningless, so it is never
 	// left to be noticed in the field alone. When the level IS established this
@@ -774,6 +778,43 @@ func pendingNotes(shown targetReduction, privilege report.PrivilegeLevel) []repo
 		})
 	}
 	return notes
+}
+
+// resolverTrimNote says that this machine records resolvers this run did not
+// ask, and why.
+//
+// WITHOUT IT THE TRIMMING IS INVISIBLE, WHICH IS THE ONE THING IT MAY NOT BE. A
+// list cut to three reads exactly like a machine configured with three, and
+// somebody comparing the report against their own resolv.conf would find the
+// report wrong with no way to tell why. Inviolable rule 1: a run that did less
+// than it promised says so.
+//
+// IT IS NoteSkipped RATHER THAN A NEW KIND. The vocabulary is closed and this is
+// planned work that was not done - the same shape as an address the budget never
+// reached - so it needs no addition to a public contract.
+func resolverTrimNote(found dns.Nameservers) (report.Note, bool) {
+	if found.BeyondLimit == 0 && found.Repeated == 0 {
+		return report.Note{}, false
+	}
+	var why string
+	switch {
+	case found.Repeated == 0:
+		why = fmt.Sprintf("%d were past the limit", found.BeyondLimit)
+	case found.BeyondLimit == 0:
+		why = fmt.Sprintf("%d repeated an address already on the list", found.Repeated)
+	default:
+		why = fmt.Sprintf("%d were past the limit and %d repeated an address already on the list",
+			found.BeyondLimit, found.Repeated)
+	}
+	return report.Note{
+		Kind:  report.NoteSkipped,
+		Layer: layer.Resolution,
+		Field: "findings[].name_resolution.resolver",
+		Detail: fmt.Sprintf("%s names more resolvers than this run asked: %s. "+
+			"This platform's own resolver reads three and no more - measured in Go's dnsconfig_unix.go and in glibc's MAXNS - "+
+			"so asking a fourth would compare this report against a lens that could never have asked it",
+			found.From, why),
+	}, true
 }
 
 // renderReport turns the report into the bytes that will be delivered.

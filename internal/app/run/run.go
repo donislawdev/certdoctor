@@ -178,6 +178,23 @@ func Execute(ctx context.Context, o Options) (report.Report, error) {
 	// ADR18 in one line: probes hand back raw evidence and this is the only
 	// place that takes credentials out of it. Doing it per layer would put the
 	// masking package inside the code that is going to become concurrent.
+	//
+	// AND EVERYTHING FROM HERE ON IS OUTSIDE --timeout, WHICH IS WORTH SAYING
+	// WHERE THE FIRST STEP OF IT IS. The context above bounds the LAYER WALK.
+	// Masking, assembly, the report's own validation, encoding, the schema check
+	// and writing the bytes all happen afterwards, with no deadline and nothing
+	// able to interrupt them - a reader of "--timeout 60" has every right to
+	// assume otherwise.
+	//
+	// IT IS NAMED RATHER THAN FIXED, AND THE REASON IS MEASURED. The external
+	// review of 2026-09-02 called this dangerous because masking cost grows with
+	// the number of sensitive names and the list was unbounded. The list is
+	// bounded since 2026-09-04 - see resolve.MaxNameservers - and the cost is
+	// linear rather than quadratic in it: 14.4 microseconds per masked string at
+	// two names, 1.25 milliseconds at 1025, recorded in the redact package's own
+	// benchmark. At the handful of names this program can now hold, the whole of
+	// this phase is well under a millisecond, so a deadline here would guard
+	// nothing and would add a way for a finished run to produce no report.
 	o.mask(results, notes)
 
 	return o.assemble(started, results, notes, exceeded), nil

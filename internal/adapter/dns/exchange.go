@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/dial"
+	"github.com/donislawdev/certdoctor/internal/core/dnsmsg"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 )
 
@@ -44,23 +45,76 @@ func Exchange(dialer dial.Dialer) resolve.Exchange {
 			return nil, translate(err)
 		}
 
-		answer := make([]byte, answerLimit)
-		read, err := conn.Read(answer)
-		// BYTES FIRST, ERROR SECOND, AND THAT IS THE io CONTRACT RATHER THAN
-		// leniency. A Reader is allowed to hand back data AND io.EOF in the same
-		// call, and the documented rule is that a caller processes the n > 0
-		// bytes before considering the error. The first version checked the error
-		// first and threw away a complete answer that arrived that way.
+		// ONE STRAY DATAGRAM USED TO COST THE WHOLE ANSWER. This read the first
+		// thing that arrived and closed the socket, so a datagram carrying
+		// somebody else's identifier - a late reply to an earlier query of ours,
+		// or an off-path packet with a forged source - became a row saying this
+		// resolver answered a different question, while the real answer was still
+		// on its way. dnsmsg's own comment on ErrNotOurs said as much and nothing
+		// acted on it.
 		//
-		// A connected UDP socket does not do this - a datagram comes back with a
-		// nil error - but the port is an io.ReadWriteCloser and the next thing
-		// behind it might. Being wrong here is silent: the answer is discarded and
-		// the row reads as a resolver that said nothing.
-		if read == 0 && err != nil {
-			return nil, translate(err)
+		// THE LOOP IS NARROW ON PURPOSE, AND THE NARROWNESS IS THE WHOLE DESIGN.
+		// It reads again only when the IDENTIFIER differs, which is the one case
+		// where more may still be coming. A datagram carrying OUR identifier and
+		// answering a different question is a resolver behaving badly - nothing
+		// better is coming, and the layer still reports it as the stray it is,
+		// through the path R-4 built. So this does not swallow that finding; it
+		// stops the socket from being closed before the answer exists.
+		//
+		// IT CANNOT SPIN. The socket carries the deadline this run gave it, so a
+		// resolver flooding us with mismatched datagrams ends as a timeout rather
+		// than as an unreadable answer - which is the truer of the two sentences.
+		wantID, known := dnsmsg.ID(query)
+		answer := make([]byte, answerLimit)
+		strays := 0
+		for {
+			// BYTES FIRST, ERROR SECOND, AND THAT IS THE io CONTRACT RATHER THAN
+			// leniency. A Reader is allowed to hand back data AND io.EOF in the
+			// same call, and the documented rule is that a caller processes the
+			// n > 0 bytes before considering the error. The first version checked
+			// the error first and threw away a complete answer that arrived that
+			// way.
+			//
+			// A connected UDP socket does not do this - a datagram comes back with
+			// a nil error - but the port is an io.ReadWriteCloser and the next
+			// thing behind it might. Being wrong here is silent: the answer is
+			// discarded and the row reads as a resolver that said nothing.
+			read, err := conn.Read(answer)
+			if read == 0 && err != nil {
+				return nil, timedOutPast(translate(err), strays)
+			}
+			if !known {
+				// We could not read our own query's identifier, so we are in no
+				// position to judge anybody else's. Hand back what arrived and let
+				// the layer's parser have the argument.
+				return answer[:read], nil
+			}
+			if id, ok := dnsmsg.ID(answer[:read]); ok && id != wantID {
+				strays++
+				continue
+			}
+			return answer[:read], nil
 		}
-		return answer[:read], nil
 	}
+}
+
+// timedOutPast adds the count of mismatched datagrams to a failure they help
+// explain.
+//
+// WHY IT GOES IN THE ERROR AND NOT IN A FIELD. The seam between this port and
+// the layer is ([]byte, error) and thirty-one stand-ins in this tree are shaped
+// like it; widening it for a rare diagnostic would be thirty-one mechanical
+// edits to tests, which is how a test quietly stops asserting what it did.
+//
+// WHAT THAT LEAVES OUT, SAID PLAINLY: strays that arrive BEFORE a real answer
+// are absorbed and never reported, because a successful exchange has nowhere to
+// put them. The case worth hearing about is the one where they are the whole
+// story, and that is this one.
+func timedOutPast(err error, strays int) error {
+	if strays == 0 {
+		return err
+	}
+	return fmt.Errorf("%w, and %d datagram(s) answering a different question arrived while waiting", err, strays)
 }
 
 // translate maps what the network did onto the three failures the layer can tell

@@ -285,6 +285,14 @@ func (in Input) unusable() string {
 
 // limitFor is the longest this attempt may take: the per-address cap or what is
 // left of the layer's budget, whichever is smaller - ADR44.
+//
+// THE SAME UNGUARDED CASE AS L3's, AND THE SAME ONE FUNCTION HOLDING IT SHUT.
+// With neither a deadline on the context nor a PerAddress this answers
+// unlimited, and a server that completes a TCP connection and then never speaks
+// keeps the handshake open with nothing able to end it. Nothing in this package
+// prevents that: budget() in cmd/certdoctor/flags.go does, by turning
+// --timeout 0 into a day rather than into no deadline at all. Named here because
+// the invariant lives two layers away and these ports are exported.
 func (in Input) limitFor(ctx context.Context) time.Duration {
 	deadline, set := ctx.Deadline()
 	if !set {
@@ -362,6 +370,21 @@ func detailFor(completed, total int, chain []Certificate, complete bool, disagre
 	switch {
 	case completed == 0:
 		return fmt.Sprintf("none of the %d address(es) completed a TLS handshake", total)
+	case len(chain) == 0:
+		// A HANDSHAKE COMPLETED AND NOTHING AUTHENTICATED THE SERVER. It has to
+		// come before the branch below, which would otherwise describe a missing
+		// issuer "of the first one" when there is no first one - chainComplete is
+		// false for an empty chain, so that is exactly where this case landed
+		// until 2026-09-04. Same untruth as the row sentence in summaryFor, one
+		// level up, and found while fixing that one.
+		//
+		// THE STATUS IS STILL FAIL and this sentence does not soften it. ADR66
+		// settled that such a handshake is LEGAL, which is a different question
+		// from whether it answers the one this tool was asked: a server that
+		// authenticates itself with nothing leaves every trust store on this
+		// machine with nothing to judge.
+		return fmt.Sprintf("%d of %d address(es) completed a handshake and presented no certificate, so nothing on this machine has anything to judge - this is a fact about the server rather than about this machine",
+			completed, total)
 	case !complete:
 		return fmt.Sprintf("the server presented %d certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine",
 			len(chain))

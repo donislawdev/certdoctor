@@ -223,6 +223,25 @@ func reasonFor(err error) string {
 // summaryFor is the sentence a surface prints when it has no special handling
 // for this kind of finding.
 func summaryFor(address string, port int, shown Presented, carriesChain bool, matchesFirst *bool) string {
+	// NOTHING WAS PRESENTED, SO NOTHING IS COMPARED - the same rule the body
+	// already obeys through MatchesFirstAddress, arriving here two weeks late.
+	//
+	// OBS78 stopped this row from CARRYING a comparison and left it SAYING one.
+	// With no address presenting a certificate there is no carrier, so every
+	// completed row is measured against an empty chain, leafOf(nil) equals
+	// leafOf(nil), and the sentence read "presented the same certificate as the
+	// first address" - naming a certificate that does not exist and an address
+	// that was never chosen. The mirror case is no better: a row holding nothing
+	// beside a carrier that holds something read "presented a DIFFERENT
+	// certificate", which still claims this address presented one.
+	//
+	// It goes FIRST, before carriesChain, and that ordering is free rather than
+	// load-bearing: carrierIndex will not name a row with an empty chain, so the
+	// two conditions cannot both be true. It is written this way so that a later
+	// change to carrierIndex cannot produce "presented 0 certificate(s)".
+	if len(shown.Chain) == 0 {
+		return fmt.Sprintf("%s on port %d completed a handshake and presented no certificate", address, port)
+	}
 	if carriesChain {
 		return fmt.Sprintf("%s on port %d presented %d certificate(s)", address, port, len(shown.Chain))
 	}
