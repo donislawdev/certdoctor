@@ -992,6 +992,20 @@ func (in Input) askOne(ctx context.Context, resolver string, recordType dnsmsg.T
 		// user typed, not about their network, and it is the same for every
 		// resolver - which the row says by carrying the reason rather than a
 		// response code somebody could read as coming from this resolver.
+		//
+		// THIS IS NO LONGER REACHABLE FROM A TYPED URL - ADR82. The entry point
+		// asks dnsmsg.EncodableName about the wire spelling and refuses the run,
+		// because the wording below is wrong in a way the reason cannot fix:
+		// unreadable_answer renders as "a reply arrived and could not be read as
+		// an answer to this question", and measured on the binary that sentence
+		// named this machine's own resolver by address for a query that never
+		// left and a reply that never came.
+		//
+		// It stays as a defence against OUR defect, which is the one trigger
+		// left: a record type outside the two this program supplies itself. If
+		// it ever fires the sentence will still be wrong, and fixing that means
+		// a SIXTH NoAnswer value - a closed public list, load-bearing change 3 -
+		// which is not worth spending on a branch only our own bug can reach.
 		return in.finding(resolver, recordType, answer{noAnswer: report.NoAnswerUnreadableAnswer}), false
 	}
 

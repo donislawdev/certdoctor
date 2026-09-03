@@ -331,6 +331,14 @@ func TestANameThatCannotBeAskedIsRefusedHere(t *testing.T) {
 			if _, err := Query(1, value, TypeA); err == nil {
 				t.Errorf("%q was encoded into a query", value)
 			}
+			// THE SECOND CALLER, AGAINST THE SAME TABLE RATHER THAN AGAINST A
+			// COPY OF IT. The entry point asks EncodableName before it lets a
+			// name into the run, so a wrapper that answered nil would put the
+			// defect straight back - and a second table here would be a second
+			// place for one rule, which is what OBS50 measures.
+			if err := EncodableName(value); err == nil {
+				t.Errorf("%q was accepted by EncodableName and refused by Query", value)
+			}
 		})
 	}
 
@@ -339,6 +347,9 @@ func TestANameThatCannotBeAskedIsRefusedHere(t *testing.T) {
 	for _, value := range []string{"example.com", "example.com.", "a", strings.Repeat("a", 63) + ".example"} {
 		if _, err := Query(1, value, TypeA); err != nil {
 			t.Errorf("%q is a name a resolver would accept and it was refused: %v", value, err)
+		}
+		if err := EncodableName(value); err != nil {
+			t.Errorf("%q is a name a resolver would accept and EncodableName refused it: %v", value, err)
 		}
 	}
 }

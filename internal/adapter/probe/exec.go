@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
 
 // OutputLimit caps how much of a child's output is kept, per stream.
@@ -31,6 +32,27 @@ import (
 // is a program behaving in a way we did not predict. Truncation is REPORTED
 // rather than silent - a run that did less than it promised has to say so.
 const OutputLimit = 1 << 20
+
+// waitDelay bounds how long Run keeps waiting for OUTPUT once the child itself
+// is gone. It belongs in the same paragraph as OutputLimit and for the same
+// reason: both are places where somebody else decides when this program stops.
+//
+// WAITING FOR THE PIPES IS NOT THE SAME EVENT AS WAITING FOR THE CHILD. os/exec
+// hands the child a pipe rather than a file, so a grandchild that inherited the
+// descriptor holds it open long after its parent has been killed, and Wait sits
+// on end-of-file that has not arrived. Measured 2026-09-03 on Windows and in
+// golang:1.27-alpine, with a 300 ms budget and a grandchild alive for 30 s: Run
+// came back after 30.02 s and 30.03 s - AND CAME BACK WITH NO ERROR, so a
+// hundredfold overrun of the budget looked exactly like an answer. With this
+// delay set the same measurement is 2.016 s and 2.004 s, and it comes back as an
+// error that says whose limit stopped it.
+//
+// THE NUMBER IS A BOUND AND NOT A COST. It starts running only once the context
+// is done or the child has already exited, so a probe that answers normally
+// never pays it: the same measurement with a child that replies at once took
+// 9 ms and 3 ms with the delay set. Two seconds is far longer than draining a
+// pipe nobody is writing to, and far shorter than any budget a person sets.
+const waitDelay = 2 * time.Second
 
 // Output is what one program said, and how it ended.
 //
@@ -81,6 +103,10 @@ type Runner func(ctx context.Context, executable string, args ...string) (Output
 // one, so it comes back in Output.ExitCode. The error return is for the cases
 // where the question could not be put at all - the program is missing, the path
 // is a directory, the run was cancelled.
+//
+// AND OUR OWN BUDGET IS NOT AN ANSWER EITHER, which is the half that used to be
+// missing and the half a reader of the report actually met. See the context
+// check below.
 func Run(ctx context.Context, executable string, args ...string) (Output, error) {
 	if !filepath.IsAbs(executable) {
 		return Output{}, fmt.Errorf("%w: %q", ErrNotAbsolute, executable)
@@ -91,6 +117,7 @@ func Run(ctx context.Context, executable string, args ...string) (Output, error)
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	command.Stdin = nil
+	command.WaitDelay = waitDelay
 
 	err := command.Run()
 
@@ -104,7 +131,36 @@ func Run(ctx context.Context, executable string, args ...string) (Output, error)
 	switch {
 	case err == nil:
 		return out, nil
+	case errors.Is(err, exec.ErrWaitDelay):
+		// THE CHILD IS GONE AND ITS OUTPUT IS NOT. Somebody it started still
+		// holds the pipe, so what we have is whatever arrived before waitDelay
+		// ran out - which is a fact about OUR limit and has to say so rather
+		// than travel as a complete answer.
+		return Output{}, fmt.Errorf(
+			"%s left its output open after it was gone, and this program waited %v for it: %w",
+			executable, waitDelay, err)
 	case errors.As(err, &exitErr):
+		// OUR OWN BUDGET IS NEVER SOMEBODY ELSE'S ANSWER - #1 of the external
+		// review, and the recipe it proposed does not work here. A child killed
+		// because this program's deadline expired arrives as an ExitError too,
+		// and what it carries cannot be told apart from a refusal: measured
+		// 2026-09-03, Windows reports ExitCode 1 with ProcessState.Exited() TRUE
+		// while Linux reports -1 with Exited() false, and errors.Is(err,
+		// context.DeadlineExceeded) is false on both. So a gate on Exited()
+		// would never fire on the owner's machine, and the exit code 1 it would
+		// have let through is indistinguishable from "the program ran and said
+		// no". THE CONTEXT IS THE ONLY DISCRIMINATOR THAT HOLDS ON BOTH.
+		//
+		// Left visible to a reader: this said "keytool exited with 1" about a
+		// keytool that answered nothing, because certdoctor stopped it.
+		//
+		// THE err == nil BRANCH ABOVE IS DELIBERATELY NOT GATED THE SAME WAY. A
+		// child that finished and exited zero answered the question, and
+		// discarding that because the clock ran out a moment later would throw
+		// away evidence already in hand.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Output{}, fmt.Errorf("%s was stopped before it answered: %w", executable, ctxErr)
+		}
 		// The program ran and said no. That is an answer.
 		out.ExitCode = exitErr.ExitCode()
 		return out, nil

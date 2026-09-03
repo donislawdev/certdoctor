@@ -48,27 +48,33 @@ l2_proxy=172.28.0.128:3129
 l2_source=pac
 l2_auth_required=yes
 
-# 🔴 THE REASON IS DELIBERATELY LEFT UNDECIDED, AND THIS FILE WILL NOT INVENT IT.
+# 🔴 THE REASON WAS NAMED BY THE OWNER ON 2026-09-03 AND IS NOT YET DECLARED IN
+# CODE - ADR80. This file no longer says UNDECIDED, and it does not yet say
+# something the program can produce either. Those are two different states and
+# the difference is the whole point of leaving the line here.
 #
-# UNKNOWN carries a reason from a CLOSED list of seven - unrecognized_output,
-# timeout, access_denied, probe_error, skipped_budget, nothing_to_check and
-# transport_error, in internal/core/status/reason.go. Not one of them describes a
-# proxy asking who you are. An eighth is load-bearing change 3, and the register
-# shows every previous addition getting a decision of its own - ADR33 for the
-# sixth, ADR39 for the seventh.
+# UNKNOWN carries a reason from a CLOSED list, which grew to EIGHT on 2026-09-03
+# - unrecognized_output, timeout, access_denied, probe_error, skipped_budget,
+# nothing_to_check, transport_error and undetermined, in
+# internal/core/status/reason.go. The eighth was added for OBS90, where a layer
+# that had assessed nothing said access_denied about stores nobody had refused.
+# NOT ONE OF THE EIGHT DESCRIBES A PROXY ASKING WHO YOU ARE, so this scenario is
+# unchanged by that addition: undetermined is about an answer that settles
+# nothing, and a 407 settles a great deal.
 #
-# Writing a new value here would decide that in a bench file, which is exactly
-# the shape of change this project asks to be asked about. So the expectation
-# states the REQUIREMENT and leaves the vocabulary open, and the bench counts the
-# difference as UNSETTLED rather than as a failure until the owner rules.
+# The ninth is credentials_required, decided in the same ADR and deliberately
+# NOT written into internal/core/status/reason.go yet: it has no code site until
+# L2 exists, and a value in a public contract that nothing can produce is a
+# promise to a consumer that nothing keeps. P8-K3 adds it together with
+# limit_exceeded, which is that ADR's tenth and belongs to the PAC sandbox
+# ceilings.
 #
-# WHAT IS NOT OPEN: whatever the word turns out to be, access_denied must not be
-# it. ADR70 removed that word from a place it did not belong once already, and
-# OBS90 records it still sitting in another - a machine where nobody denied
-# anything being told that something did.
-l2_reason=UNDECIDED
+# WHAT WAS NEVER OPEN: access_denied must not be it. ADR70 removed that word from
+# a place it did not belong, ADR80 removed it from the second place OBS90 found,
+# and nothing in this program produces it today.
+l2_reason=credentials_required
 l2_reason_forbidden=access_denied
-pending_decision=eighth UNKNOWN reason for a proxy that demands credentials - closed list, load-bearing change 3, owner's call in P8-K3
+pending_decision=ninth UNKNOWN reason credentials_required is NAMED (ADR80) and not yet declared - P8-K3 adds it with the layer that can produce it
 
 # It must not accuse the machine's trust stores, which is what a run that stops
 # at 407 looks like from further down the pipeline.

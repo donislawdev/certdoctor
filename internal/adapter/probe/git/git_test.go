@@ -19,6 +19,29 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
+// hostSpelling is the twin of the one in probe/binaries_test.go, where the
+// comment explains why all four of these test packages need it.
+func hostSpelling(path string) string {
+	return strings.ReplaceAll(path, `\`, string(filepath.Separator))
+}
+
+// The Windows install tree these fixtures describe, spelled for the host.
+//
+// THE SHAPE STAYS WINDOWS AND ONLY THE SEPARATOR FOLLOWS THE PLATFORM. What
+// these tests exercise is path ARITHMETIC - filepath.Dir walking up from a
+// config, segment matching against PATH - and that arithmetic needs separators
+// the platform can take apart. Left Windows-spelled, filepath.Dir answers "."
+// off Windows because the whole path is one element, and six tests here failed
+// on exactly that while passing on the machine they were written on.
+var (
+	gitRoot      = hostSpelling(`C:\Program Files\Git`)
+	gitCmdDir    = hostSpelling(`C:\Program Files\Git\cmd`)
+	gitCmdExe    = hostSpelling(`C:\Program Files\Git\cmd\git.exe`)
+	gitMingwDir  = hostSpelling(`C:\Program Files\Git\mingw64\bin`)
+	gitMingwExe  = hostSpelling(`C:\Program Files\Git\mingw64\bin\git.exe`)
+	gitSysConfig = hostSpelling(`C:\Program Files\Git\etc\gitconfig`)
+)
+
 // sourceOf turns a map into the file port, so these tests touch no disk.
 //
 // PATHS ARE COMPARED AFTER filepath.Clean BECAUSE THE PROBE STORES THEM THAT
@@ -26,13 +49,22 @@ import (
 // configs on this machine are written with forward slashes - so a fixture keyed
 // on the raw string would miss on Windows and hit on Linux, which is a test that
 // passes for the wrong reason on one of them.
+//
+// IT IS THE HOST'S FILESYSTEM AND NOT A WINDOWS ONE, AND THAT DISTINCTION WAS
+// MEASURED ON 2026-09-02. An earlier repair had this fake fold a backslash into
+// the host separator, which made every Windows path resolve on Linux - including
+// the raw entries of the production systemConfigs list, which conjured a third
+// git installation out of a machine that has two. A fake more permissive than
+// the disk it stands for invents subjects the code will never meet.
 func sourceOf(files map[string]string) func(string) (io.ReadCloser, error) {
+	key := func(path string) string { return filepath.Clean(path) }
+
 	cleaned := make(map[string]string, len(files))
 	for path, body := range files {
-		cleaned[filepath.Clean(path)] = body
+		cleaned[key(path)] = body
 	}
 	return func(path string) (io.ReadCloser, error) {
-		body, ok := cleaned[filepath.Clean(path)]
+		body, ok := cleaned[key(path)]
 		if !ok {
 			return nil, errors.New("no such file")
 		}
@@ -46,15 +78,15 @@ func sourceOf(files map[string]string) func(string) (io.ReadCloser, error) {
 // and a row invented from a name would be a claim about a store nobody has,
 // which is what ADR48 part 2 refuses for Java.
 func TestAnInstallFoundOnlyByItsConfigIsStillFound(t *testing.T) {
-	source := sourceOf(map[string]string{`C:\Program Files\Git\etc\gitconfig`: "[http]\n"})
+	source := sourceOf(map[string]string{gitSysConfig: "[http]\n"})
 	found := find(source, []string{
-		`C:\Program Files\Git\etc\gitconfig`,
-		`C:\Program Files (x86)\Git\etc\gitconfig`,
+		gitSysConfig,
+		hostSpelling(`C:\Program Files (x86)\Git\etc\gitconfig`),
 	}, nil)
 	if len(found) != 1 {
 		t.Fatalf("found %d installs, want 1 - the second config is not there", len(found))
 	}
-	if found[0].Root != `C:\Program Files\Git` || found[0].Instance != `C:\Program Files\Git` {
+	if found[0].Root != gitRoot || found[0].Instance != gitRoot {
 		t.Errorf("got %+v, want the install directory as both root and identity", found[0])
 	}
 	if found[0].OnPath {
@@ -123,20 +155,17 @@ func TestAGitWithNoConfigurationAtAllStillGetsARow(t *testing.T) {
 // /etc/gitconfig from /usr/bin/git.
 func TestTheSystemConfigIsFoundNextToTheBinary(t *testing.T) {
 	source := sourceOf(map[string]string{
-		`C:\Program Files\Git\cmd\git.exe`:         "MZ",
-		`C:\Program Files\Git\mingw64\bin\git.exe`: "MZ",
-		`C:\Program Files\Git\etc\gitconfig`:       "[http]\n\tsslBackend = openssl\n",
+		gitCmdExe:    "MZ",
+		gitMingwExe:  "MZ",
+		gitSysConfig: "[http]\n\tsslBackend = openssl\n",
 	})
 
-	found := find(source, nil, []string{
-		`C:\Program Files\Git\cmd`,
-		`C:\Program Files\Git\mingw64\bin`,
-	})
+	found := find(source, nil, []string{gitCmdDir, gitMingwDir})
 	if len(found) != 2 {
 		t.Fatalf("found %d installs, want one per binary: %+v", len(found), found)
 	}
 	for _, install := range found {
-		if install.SystemConfig != `C:\Program Files\Git\etc\gitconfig` {
+		if install.SystemConfig != gitSysConfig {
 			t.Errorf("%s reads %q, and both binaries answered with the same file", install.Instance, install.SystemConfig)
 		}
 		if !install.OnPath {
@@ -151,11 +180,19 @@ func TestTheSystemConfigIsFoundNextToTheBinary(t *testing.T) {
 // where there are two.
 func TestAConfigAlreadyClaimedByABinaryIsNotASecondInstall(t *testing.T) {
 	source := sourceOf(map[string]string{
-		`C:\Program Files\Git\cmd\git.exe`:   "MZ",
-		`C:\Program Files\Git\etc\gitconfig`: "[http]\n",
+		gitCmdExe:    "MZ",
+		gitSysConfig: "[http]\n",
 	})
 
-	found := find(source, systemConfigs, []string{`C:\Program Files\Git\cmd`})
+	// THE FALLBACK LIST IS NAMED HERE RATHER THAN TAKEN FROM PRODUCTION, and
+	// the reason is not tidiness. systemConfigs carries Windows and Unix
+	// spellings in one list, while this fixture follows the host separator - so
+	// off Windows the production entry could never match and the collision this
+	// test is about would not happen at all. The rule under test is that a
+	// config already claimed by a binary is not a second installation, and
+	// naming the colliding path states it more plainly than borrowing a list
+	// whose other entries have nothing to do with this scenario.
+	found := find(source, []string{gitSysConfig}, []string{gitCmdDir})
 	if len(found) != 1 {
 		t.Fatalf("found %d installs, want 1: %+v", len(found), found)
 	}
@@ -168,13 +205,13 @@ func TestAConfigAlreadyClaimedByABinaryIsNotASecondInstall(t *testing.T) {
 // NEVER HEARD OF IT, and the level is the field that decides whether a
 // colleague needs the same fix or the opposite one.
 func TestAConfigFoundNextToABinaryIsReportedAtSystemLevel(t *testing.T) {
-	const config = `C:\Program Files\Git\mingw64\etc\gitconfig`
+	config := hostSpelling(`C:\Program Files\Git\mingw64\etc\gitconfig`)
 	source := sourceOf(map[string]string{
-		`C:\Program Files\Git\mingw64\bin\git.exe`: "MZ",
-		config: "[http]\n\tsslBackend = openssl\n",
+		gitMingwExe: "MZ",
+		config:      "[http]\n\tsslBackend = openssl\n",
 	})
 
-	found := find(source, nil, []string{`C:\Program Files\Git\mingw64\bin`})
+	found := find(source, nil, []string{gitMingwDir})
 	if len(found) != 1 || found[0].SystemConfig != config {
 		t.Fatalf("got %+v, want the config one directory up", found)
 	}
@@ -483,16 +520,13 @@ func TestTheProbeProducesOneRowPerInstall(t *testing.T) {
 func TestEveryGitOnPathGetsItsOwnRow(t *testing.T) {
 	anchorPEM, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{
-		`C:\Program Files\Git\cmd\git.exe`:         "MZ",
-		`C:\Program Files\Git\mingw64\bin\git.exe`: "MZ",
-		`C:\Program Files\Git\etc\gitconfig`:       "[http]\n\tsslBackend = openssl\n\tsslCAInfo = /bundle.crt\n",
-		"/bundle.crt":                              string(anchorPEM),
+		gitCmdExe:     "MZ",
+		gitMingwExe:   "MZ",
+		gitSysConfig:  "[http]\n\tsslBackend = openssl\n\tsslCAInfo = /bundle.crt\n",
+		"/bundle.crt": string(anchorPEM),
 	})
 
-	stores, err := Probe(source, nil, []string{
-		`C:\Program Files\Git\cmd`,
-		`C:\Program Files\Git\mingw64\bin`,
-	}, atNoon)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, nil, []string{gitCmdDir, gitMingwDir}, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -514,16 +548,16 @@ func TestEveryGitOnPathGetsItsOwnRow(t *testing.T) {
 // installation with another one's presence on PATH - and the row would then tell
 // somebody that the git they type is the one this report describes.
 func TestPathSelectionMatchesOnASegmentAndNotOnText(t *testing.T) {
-	install := Install{Root: `C:\Program Files\Git`}
+	install := Install{Root: gitRoot}
 
-	if got := selectedBy(install, []string{`C:\Program Files\Git2\cmd`}); len(got) != 0 {
+	if got := selectedBy(install, []string{hostSpelling(`C:\Program Files\Git2\cmd`)}); len(got) != 0 {
 		t.Errorf("a neighbouring install claimed this one's place on PATH: %v", got)
 	}
-	if got := selectedBy(install, []string{`C:\Program Files\Git\cmd`}); len(got) != 1 || got[0] != "PATH" {
+	if got := selectedBy(install, []string{gitCmdDir}); len(got) != 1 || got[0] != "PATH" {
 		t.Errorf("the install on PATH was not recognised: %v", got)
 	}
 	// The root itself on PATH counts too.
-	if got := selectedBy(install, []string{`C:\Program Files\Git`}); len(got) != 1 {
+	if got := selectedBy(install, []string{gitRoot}); len(got) != 1 {
 		t.Errorf("the root on PATH was not recognised: %v", got)
 	}
 }

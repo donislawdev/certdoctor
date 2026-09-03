@@ -1164,8 +1164,22 @@ func TestTheShippedBinaryOffersNoCommandWhereNothingIsBroken(t *testing.T) {
 	if !strings.Contains(document, `"trust_store"`) {
 		t.Fatal("no trust store row reached the document, so nothing here says anything about commands")
 	}
+	// A PRECONDITION, NOT AN ASSERTION - and it was spelled as one until
+	// 2026-09-02, which is why this check was red on every CI runner while
+	// passing on the machine it was written on. Its own sentence says the case
+	// is absent, and "this is not the case this check is about" is the wording
+	// of a skip: the six Java stores, two curls and git that make this machine
+	// the subject are not on a runner, so the subject is MISSING rather than
+	// broken. A test that fails because its scenario did not occur reports the
+	// absence of a machine as a defect in the program.
+	//
+	// IT IS LOUD BECAUSE acceptance.sh PRINTS SKIPS AND SAYS THEY ARE THINGS
+	// NOBODY CHECKED. That banner is exactly the protection this needs: a
+	// precondition that quietly stopped being met would take this guard away
+	// without anybody noticing, which is the failure this file exists to catch.
 	if !strings.Contains(document, `"trusts_presented_chain": true`) {
-		t.Fatal("no store on this machine trusted the chain, so this is not the case this check is about")
+		t.Skip("NOT CHECKED: no store on this machine trusted the presented chain, so the case this check is " +
+			"about - a machine with nothing wrong with it - did not occur. This is a skip, not a pass.")
 	}
 
 	if !strings.Contains(document, `"fix": null`) {

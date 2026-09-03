@@ -12,6 +12,44 @@ Barely diagnosable yet, and there has been no release.
 
 `certdoctor <url>` produces a whole report. Five of its eight diagnostic layers now say something about your machine - context, name resolution, TCP, TLS and the trust matrix - and the other three report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE`, or with `4 DIAGNOSIS` on something certdoctor can actually diagnose. What exists is the path a real answer travels, built before any answer, so that there is no point at which this program claims to have checked something it has not.
 
+### Fixed - a second Ctrl-C now works, and a closed pipe no longer kills the run without a word
+
+- **Pressing Ctrl-C twice ends the run.** The first one still takes the ordinary path: the run stops, says `interrupted before the run finished`, and ends with `130 INTERRUPTED`. Every interrupt after that used to be swallowed - measured, three of them left the process running - so if anything ever failed to stop, `kill` was the only way out. A second interrupt now ends the run at once, says so, and still uses `130`.
+
+  The second one is an emergency exit: nothing is cleaned up and no report is produced, which is what it says. That is the same cost any signal-ended run pays, and the alternative was a run that could not be stopped.
+
+- **`certdoctor --json | head` no longer dies with a status of 141.** On Linux and macOS, writing to a pipe whose reader has gone kills the process outright - measured, a one megabyte document ended the run with 141, which is not in this program's table of exit codes and arrives with no message. It now comes back as `6 IO` with a sentence saying the report could not be written, so you can tell you saw part of a diagnosis rather than all of it.
+
+  You have probably never seen this: a report smaller than the pipe buffer is handed over before the reader can be missed, and today's `--json` report is about half that size. The margin shrinks as your trust matrix grows. On Windows this never happened and nothing changed.
+
+- **A note about a temporary file, added rather than a change.** `--out` writes to a temporary file beside your destination and renames it, and it removes that file whenever the write fails. If certdoctor is killed by a signal in the moment between the two, a `.certdoctor-report-*` file is left behind. The window is one write, and cleaning up from a signal handler brings problems of its own.
+
+### Fixed - a mistyped URL is now named as a mistyped URL, and an error message no longer prints your password
+
+- **A URL with a port and no host name is refused where you can still see the typo.** `https://:8080`, `https://user@:80` and `http://:` used to run, produce a name resolution layer that broke its own contract, and end with `5 INCONCLUSIVE` - a sentence saying **certdoctor** is defective about something you mistyped. They now end with `2 USAGE` and a message saying a host name is missing.
+
+- **A name no resolver could be asked about is refused the same way.** `https://a..b`, `https://.` and a name with a label over 63 bytes used to end with `4 DIAGNOSIS` and a red name resolution layer - a verdict about **your DNS** for a name that never went on the wire, because certdoctor could not encode it. Worse, every row of that layer named one of your resolvers by address and said a reply had arrived from it that could not be read. No query had left and no reply had come.
+
+  A name with a trailing dot is absolute and still works, which is the case that stops this from being "refuse anything unusual".
+
+- 🔴 **An error message no longer prints credentials from your URL.** Measured on this binary: `certdoctor "https://bob:hunter2@example.com:99999"` printed the password on standard error - where CI logs come from - while the same run masked the same URL correctly inside the report. Four messages did it, two of them twice in one line, and one of those second copies came from inside Go's own parse error. Every message certdoctor writes to standard error now goes through the same credential floor the report uses, and it does so in one place rather than at each message.
+
+  A URL with nothing to hide still appears in its own message, or you could not tell which argument was wrong.
+
+- **What this changes for a script.** Three families of mistyped input that used to end with `4` or `5` now end with `2 USAGE`. The table of exit codes is unchanged - what changed is which input earns which code, the same way a port outside 1-65535 already did.
+
+### Fixed - certdoctor no longer blames somebody else's program for its own time limit, and no longer says a store was refused when nothing was
+
+- **A probe that certdoctor stopped itself was reported as the runtime answering "no".** With a short `--probe-timeout` you would read `the trust store could not be read: keytool exited with 1` - about a keytool that answered nothing at all, because certdoctor killed it when the budget ran out. Measured on this machine: the same run printed `context deadline exceeded` on the other rows, so one cause produced two sentences and one of them accused a program that had done nothing wrong.
+
+  **The row now says who stopped it**: `keytool.exe was stopped before it answered: context deadline exceeded`. Telling the two apart is not simple, which is why it was wrong: a killed child reports exit code 1 on Windows - the same number a program that ran and refused would report - and -1 on Linux, and neither carries the deadline. The only thing that separates them on both is certdoctor's own clock.
+
+- **A probe whose output was held open by an orphaned process could outlast the whole run.** If a runtime's binary started something else that inherited its output, certdoctor waited for end-of-file that was never coming. Measured on Windows and Linux: a 300 ms budget produced a 30 second call, and it came back **without an error**, so a hundredfold overrun looked exactly like an answer. There is now a two second bound on waiting for output after the process itself is gone, and exceeding it is reported rather than absorbed. A probe that answers normally is unaffected - measured at 9 ms and 3 ms with the bound in place.
+
+- **The trust matrix said `access_denied` on machines where nothing was denied.** Measured in a container with git installed and no `/etc/gitconfig`, which is an ordinary Linux machine: every store came back unassessed and the layer answered *"certdoctor was not allowed to read this"*, sending you to check file permissions for a store nobody had refused. The row itself was right - git names no backend, so the bundle it reads is compiled into its libcurl - and the layer above it turned that into an accusation.
+
+  **`--json` reports schema 1.11**, because the closed list of reasons behind `UNKNOWN` gains an eighth value, `undetermined`: the layer asked, and what came back does not settle the question. Nothing else about the document changed - no field arrives, leaves or changes meaning - but a consumer that branches on every reason now has one more case. `access_denied` is still declared and nothing produces it today; certdoctor cannot yet recognise an actual refusal, and would rather say nothing than say that.
+
 ### Fixed - git no longer disappears from the trust matrix on a machine that has no git configuration
 
 - **A git with no configuration file used to get no row at all.** It sat outside the report next to the runtimes you do not have installed, while the binary was sitting on your PATH reading a trust store. Measured in a Debian-based container: `git 2.54.0` present at `/usr/bin/git`, `git config --list --show-origin` printing nothing, no `/etc/gitconfig`. That is an ordinary machine, not a rare one - and certdoctor was silent about it rather than saying it did not know.
@@ -24,7 +62,7 @@ Barely diagnosable yet, and there has been no release.
 
 - **A directory named `git` or `curl` on your PATH is no longer mistaken for the program.** Opening a directory succeeds on Windows and on Linux alike, so certdoctor now requires that it can actually read a byte from the file before it will describe anything as that runtime's trust store.
 
-- **Nothing about `--json` changed.** No field arrives, leaves or changes meaning, and the schema stays at 1.10 - there are simply more `trust_store` rows on machines that were missing one.
+- **Nothing about `--json` changed.** No field arrives, leaves or changes meaning, and the schema did not move for this change - it stood at 1.10 at the time - there are simply more `trust_store` rows on machines that were missing one.
 
 ### Added - certdoctor will now name a TLS inspection product, and only when it can show you where the name came from
 

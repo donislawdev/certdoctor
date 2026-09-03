@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestHelperProcess is not a test. It is the program the tests below run, which
@@ -24,6 +26,45 @@ func TestHelperProcess(t *testing.T) {
 	case "refuse":
 		os.Stderr.WriteString("no\n")
 		os.Exit(3)
+	case "sleep":
+		// Longer than any budget a test here sets, so what ends this process is
+		// always the caller's deadline and never its own patience.
+		time.Sleep(15 * time.Second)
+		os.Exit(0)
+	case "spawn":
+		// A GRANDCHILD THAT INHERITS THIS PROCESS'S STDOUT - which is the pipe
+		// Run created - AND OUTLIVES IT. That is the state os/exec documents:
+		// Wait waits for end-of-file on the pipes, and end-of-file does not
+		// arrive while an orphan still holds the descriptor.
+		grand := exec.Command(os.Args[0], "-test.run=TestHelperProcess")
+		// The mode has to be overridden rather than inherited, or the grandchild
+		// would spawn one of its own for ever. exec keeps the LAST value of a
+		// duplicated name, which is why appending is enough.
+		grand.Env = append(os.Environ(), "CERTDOCTOR_HELPER_MODE=hold")
+		grand.Stdout = os.Stdout
+		grand.Stderr = os.Stderr
+		if err := grand.Start(); err != nil {
+			os.Stderr.WriteString("no grandchild: " + err.Error())
+			os.Exit(9)
+		}
+		os.Exit(0)
+	case "hold":
+		// HOLDS THE INHERITED PIPE UNTIL THE OTHER END GOES AWAY, THEN STOPS,
+		// and that is not tidiness - it is what keeps this test from breaking
+		// the build. A grandchild sleeping a fixed time outlives the test that
+		// owns it, and on Windows a running binary cannot be deleted, so go test
+		// fails REMOVING ITS OWN TEST EXECUTABLE: measured here 2026-09-03,
+		// "unlinkat ...\\probe.test.exe: Access is denied". Writing tells this
+		// process when Run has closed its side; the ceiling below is a
+		// backstop for the case where it never does.
+		stop := time.Now().Add(30 * time.Second)
+		for time.Now().Before(stop) {
+			if _, err := os.Stdout.Write([]byte(".")); err != nil {
+				os.Exit(0)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		os.Exit(0)
 	case "readstdin":
 		buf := make([]byte, 8)
 		n, err := os.Stdin.Read(buf)
@@ -122,6 +163,89 @@ func TestACancelledContextStopsTheRun(t *testing.T) {
 	cancel()
 	if _, err := Run(ctx, self(t), "-test.run=TestHelperProcess"); err == nil {
 		t.Fatal("a cancelled run reported success")
+	}
+}
+
+// TestOurOwnBudgetIsNeverTheChildsAnswer is #1 of the external review, and the
+// assertion is written against the measurement rather than against the recipe.
+//
+// THE RECIPE THE REVIEW PROPOSED - gate on ProcessState.Exited() - WOULD PASS
+// THIS TEST ON LINUX AND FAIL IT ON WINDOWS. Measured 2026-09-03 on both:
+// killing the child leaves ExitCode -1 with Exited() false on Linux, and
+// ExitCode 1 with Exited() TRUE on Windows, where 1 is also what a program that
+// ran and refused would say. errors.Is(err, context.DeadlineExceeded) is false
+// on both, because os/exec drops the context error once it already has an
+// ExitError. The context is the only witness left.
+//
+// WHAT A READER MET BEFORE THIS: "the trust store could not be read: keytool
+// exited with 1", about a keytool that answered nothing because certdoctor
+// stopped it.
+func TestOurOwnBudgetIsNeverTheChildsAnswer(t *testing.T) {
+	helper(t, "sleep")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	out, err := Run(ctx, self(t), "-test.run=TestHelperProcess")
+	if err == nil {
+		t.Fatalf("a child stopped by our own deadline came back as an answer, exit code %d", out.ExitCode)
+	}
+	// The caller has to be able to ask WHOSE limit this was, and the layer above
+	// counts timeouts by asking exactly this question.
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("the error is %v, so errors.Is(err, context.DeadlineExceeded) answers false", err)
+	}
+	if out.ExitCode != 0 {
+		t.Errorf("an exit code of %d travelled beside the error, so a caller could still read it as an answer", out.ExitCode)
+	}
+}
+
+// TestOutputHeldOpenByAGrandchildDoesNotOutlastTheBudget is #3, and the number
+// it defends is in waitDelay's own paragraph.
+//
+// MEASURED ON BOTH PLATFORMS 2026-09-03: with WaitDelay left at zero, a 300 ms
+// budget produced a 30 s call - and no error at all, so a hundredfold overrun
+// arrived looking like an answer. The orchestrator checks the context BETWEEN
+// layers, so nothing above this would have noticed.
+func TestOutputHeldOpenByAGrandchildDoesNotOutlastTheBudget(t *testing.T) {
+	helper(t, "spawn")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	started := time.Now()
+	out, err := Run(ctx, self(t), "-test.run=TestHelperProcess")
+	elapsed := time.Since(started)
+
+	if err == nil {
+		t.Fatalf("a run whose output was held open by an orphan came back as an answer after %v", elapsed)
+	}
+	// THE BOUND IS THE ASSERTION, NOT THE IDENTITY OF THE ERROR. Which of the two
+	// honest errors arrives depends on whether the child got to exit before the
+	// deadline, and the machine settles that differently under -race: measured
+	// 2026-09-03, an ordinary run ends in exec.ErrWaitDelay and an instrumented
+	// one in the killed child plus the context. Both are bounded and both name
+	// whose limit stopped the run, so asserting on one of them would make this
+	// test about how fast the machine is.
+	//
+	// The grandchild holds the pipe for up to thirty seconds. Anything near that
+	// is Wait sitting on an end-of-file that was never going to arrive.
+	if elapsed > 10*time.Second {
+		t.Errorf("Run took %v on a 100 ms budget", elapsed)
+	}
+	// AND THE LOWER BOUND IS WHAT STOPS THIS TEST PASSING ON NOTHING - OBS56.
+	// Without it a run where the grandchild never started would look identical:
+	// an error, quickly, and no proof that anything ever held the pipe. Waiting
+	// past a second can only happen because waitDelay was being served.
+	if elapsed < time.Second {
+		t.Errorf("Run came back in %v, so nothing held the pipe open and this test established nothing", elapsed)
+	}
+	if !errors.Is(err, exec.ErrWaitDelay) && !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("the error is %v, and neither limit that could have ended this run is named in it", err)
+	}
+	// NOTHING PARTIAL TRAVELS AS AN ANSWER. What arrived before the delay ran
+	// out is not the whole of what the child had to say, and a caller reading
+	// Output would have no way to tell.
+	if out.Stdout != "" || out.ExitCode != 0 {
+		t.Errorf("a partial answer travelled beside the error: %q, exit %d", out.Stdout, out.ExitCode)
 	}
 }
 

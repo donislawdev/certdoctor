@@ -64,6 +64,18 @@ func WriteFile(path string, data []byte) error {
 // rename, and a run interrupted mid-write must not leave a file in somebody
 // else's directory either way. A test that reaches past the courtesy is testing
 // the guarantee.
+//
+// THE ONE WINDOW THIS CANNOT CLOSE, NAMED RATHER THAN LEFT TO BE DISCOVERED -
+// #20 of the external review, accepted as a note instead of a change. Every
+// FAILURE below removes the temporary file. A SIGNAL between os.CreateTemp and
+// os.Rename does not: the process ends and a .certdoctor-report-* stays in
+// somebody's directory, which is exactly the leftover removeTemporary calls a
+// broken promise. The window is one write plus one Sync.
+//
+// It is left open on purpose. Cleaning up from a signal handler means a handler
+// that touches the file system while the main path is doing the same, which is
+// its own class of defect - and the review, which raised it, recommends the note
+// over the fix for that reason.
 func writeAndRename(path string, data []byte) error {
 	directory := filepath.Dir(path)
 

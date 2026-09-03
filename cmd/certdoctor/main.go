@@ -36,6 +36,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
+	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	coretcp "github.com/donislawdev/certdoctor/internal/core/tcp"
@@ -57,6 +58,19 @@ func mainCode() exitcode.Code {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	// WHAT THIS PROGRAM DOES WHEN THE OUTSIDE WORLD TRIES TO STOP IT, armed in
+	// one call and written down in interrupt.go: a second interrupt ends the run
+	// instead of being dropped, and a broken pipe becomes an error instead of a
+	// death with a status this table does not contain.
+	//
+	// A PLAIN CALL AND NOT A GO STATEMENT, deliberately: registration is
+	// synchronous, so an interrupt arriving in the first millisecond of a run is
+	// already counted. The waiting happens inside, in the one file the
+	// concurrency guard's fifth list names. The disarm is dropped on purpose -
+	// this watch lasts as long as the process does, and there is nothing after
+	// it to hand the undo to.
+	_ = armSignalDefences(os.Stderr)
+
 	return guarded(ctx, os.Args[1:], liveEnvironment())
 }
 
@@ -77,7 +91,13 @@ func mainCode() exitcode.Code {
 func guarded(ctx context.Context, args []string, env environment) (code exitcode.Code) {
 	defer func() {
 		if panicked := recover(); panicked != nil {
-			fmt.Fprintf(env.stderr, "%s: internal failure, no report was produced: %v\n", toolName, panicked)
+			// THROUGH THE CREDENTIAL FLOOR, for the reason complain gives about
+			// itself. A panic value is built from whatever was in hand, and what
+			// is in hand on this path routinely includes the URL a person typed.
+			// This is the one stderr line in the program that nobody wrote on
+			// purpose, which is exactly why it may not be the one that leaks.
+			said := redact.New(redact.Credentials).Text(fmt.Sprintf("%v", panicked))
+			fmt.Fprintf(env.stderr, "%s: internal failure, no report was produced: %s\n", toolName, said)
 			code = exitcode.Runtime
 		}
 	}()

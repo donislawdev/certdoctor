@@ -391,6 +391,27 @@ func skipName(msg []byte, at int) (int, error) {
 // The limits are the protocol's and they are checked here rather than left to
 // the resolver to complain about, because a name that cannot be asked is a fact
 // about the user's input and belongs in the report as one - not as a timeout.
+// EncodableName reports whether name can be put on the wire as a question, and
+// says why not when it cannot.
+//
+// IT IS A THIN WRAPPER ON PURPOSE AND THAT IS THE WHOLE VALUE OF IT. The rule
+// has exactly one implementation, below, and two callers: this package when it
+// builds a query, and the entry point when it reads what a person typed. A
+// second copy of "is this a name a resolver would accept" is the measured shape
+// of OBS50 - one copy gains a case, the other does not, and the mutation entry
+// aimed at one of them stops proving anything about the other.
+//
+// WHY THE ENTRY POINT ASKS AT ALL - ADR60's doctrine, applied to a name instead
+// of to a port. Measured 2026-09-03 on the binary: https://a..b produced L1 FAIL
+// and exit 4 - a verdict about somebody's DNS - for a name no resolver could
+// ever have been asked about, and a row naming this machine's own router as
+// having sent an unreadable reply when no query had left. A typing mistake has
+// to be named where it is still a typing mistake.
+func EncodableName(name string) error {
+	_, err := encodeName(name)
+	return err
+}
+
 func encodeName(name string) ([]byte, error) {
 	// A trailing dot means the name is already absolute and is not an empty
 	// label. Everything this program resolves is treated as absolute anyway.

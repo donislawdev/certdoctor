@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -903,6 +904,192 @@ func TestAPortOutsideItsRangeIsRefusedWhereItIsStillATypingMistake(t *testing.T)
 	// a program that refuses every port.
 	if h := invoke("https://example.com:8443"); h.code == exitcode.Usage {
 		t.Errorf("an ordinary port was refused: %q", h.stderr.String())
+	}
+}
+
+// TestAHostThatIsOnlyAPortIsRefusedWhereItIsStillATypingMistake is the port
+// check's sibling and it is a DIFFERENT check, which is why it exists.
+//
+// url.URL.Host carries the port, so "https://:8080" has a Host of ":8080" -
+// not empty - and a Hostname of "" which is. MEASURED ON THE BINARY: the empty
+// name travelled into L1, every row it built carried no name, the finding
+// contract refused them and the layer was thrown away whole as "the layer broke
+// its own contract". That sentence says THIS PROGRAM is defective about
+// something a person mistyped, which is the shape ADR60 removed once already.
+func TestAHostThatIsOnlyAPortIsRefusedWhereItIsStillATypingMistake(t *testing.T) {
+	for _, target := range []string{"https://:8080", "https://user@:80", "http://:"} {
+		h := invoke(target)
+		if h.code != exitcode.Usage {
+			t.Errorf("%s ended %d, want %d - a port without a host is a typing mistake", target, h.code, exitcode.Usage)
+		}
+		if said := h.stderr.String(); !strings.Contains(said, "no host name") {
+			t.Errorf("%s was refused without saying what is missing: %q", target, said)
+		}
+		// The sentence this replaced. A run that still says it has moved the
+		// blame back onto this program.
+		if said := h.stderr.String(); strings.Contains(said, "broke its own contract") {
+			t.Errorf("%s is still reported as a defect in certdoctor: %q", target, said)
+		}
+		if h.stdout.Len() != 0 {
+			t.Errorf("%s put %d bytes on standard output on the way out", target, h.stdout.Len())
+		}
+	}
+
+	// The twin, without which a program refusing every host would pass.
+	if h := invoke("https://example.com:8080"); h.code == exitcode.Usage {
+		t.Errorf("an ordinary host and port were refused: %q", h.stderr.String())
+	}
+}
+
+// TestANameThatCannotGoOnTheWireIsRefusedRatherThanBlamedOnDNS keeps a verdict
+// about somebody's network off a name no resolver could ever be asked about.
+//
+// MEASURED ON THE BINARY 2026-09-03: "https://a..b", "https://." and a name with
+// a 70-byte label each produced L1 FAIL and exit 4, and every row of them said
+// this machine's own resolver "gave no answer ... a reply arrived and could not
+// be read as an answer to this question" - about a query that never left,
+// because dnsmsg refused to encode the name, and a reply that never came. That
+// is inviolable rule 18 broken against our own run, and it names an innocent
+// third party by address while doing it.
+//
+// THE RULE IS BORROWED RATHER THAN COPIED - dnsmsg.EncodableName wraps the one
+// implementation - so this test and the encoder cannot drift apart.
+func TestANameThatCannotGoOnTheWireIsRefusedRatherThanBlamedOnDNS(t *testing.T) {
+	for _, target := range []string{
+		"https://a..b",
+		"https://.",
+		"https://" + strings.Repeat("a", 70) + ".example.com",
+	} {
+		h := invoke(target)
+		if h.code != exitcode.Usage {
+			t.Errorf("%s ended %d, want %d - a name that cannot be encoded is a typing mistake",
+				target, h.code, exitcode.Usage)
+		}
+		// The sentence it replaced claimed an event that did not happen.
+		if said := h.stderr.String(); strings.Contains(said, "a reply arrived") {
+			t.Errorf("%s still reports a reply that never came: %q", target, said)
+		}
+		if h.stdout.Len() != 0 {
+			t.Errorf("%s put %d bytes on standard output on the way out", target, h.stdout.Len())
+		}
+	}
+
+	// The twin. A trailing dot is an ABSOLUTE name and perfectly askable, so a
+	// check that refused it would be refusing correct input - and this pair is
+	// what stops the rule from being "refuse anything with a dot in an odd
+	// place".
+	if h := invoke("https://example.com."); h.code == exitcode.Usage {
+		t.Errorf("an absolute name was refused: %q", h.stderr.String())
+	}
+}
+
+// TestAFaultMessageNeverCarriesCredentials is inviolable rule 17 applied to the
+// one channel that was missing it.
+//
+// MEASURED ON THE BINARY 2026-09-03, and the same run masked the same URL
+// correctly in the report: four messages printed the password verbatim on
+// standard error, which is where a CI log comes from. The scheme message printed
+// it twice in one line, once in the quoted input and once in the suggestion, and
+// the parse message printed it twice as well - the second time inside the error
+// Go itself returns, which no per-argument fix could have reached.
+func TestAFaultMessageNeverCarriesCredentials(t *testing.T) {
+	const secret = "hunter2"
+	for _, args := range [][]string{
+		{"https://bob:" + secret + "@example.com:99999"},
+		{"https://bob:" + secret + "@"},
+		{"ftp://bob:" + secret + "@x"},
+		{"https://bob:" + secret + "@exa mple.com"},
+		{"https://example.com", "https://bob:" + secret + "@b.example"},
+	} {
+		h := invoke(args...)
+		if said := h.stderr.String(); strings.Contains(said, secret) {
+			t.Errorf("%v put the password on standard error: %q", args, said)
+		}
+		if said := h.stdout.String(); strings.Contains(said, secret) {
+			t.Errorf("%v put the password on standard output: %q", args, said)
+		}
+	}
+
+	// THE TWIN, AND WITHOUT IT A PROGRAM PRINTING NOTHING WOULD PASS. A message
+	// about a URL that carries no credential still has to name the URL, or the
+	// person cannot see which of their arguments was wrong.
+	h := invoke("https://example.com:99999")
+	if said := h.stderr.String(); !strings.Contains(said, "example.com") {
+		t.Errorf("a URL with nothing to hide was masked out of its own message: %q", said)
+	}
+}
+
+// TestOneInterruptGoesToTheOrdinaryPathAndTwoLeaveAtOnce is finding #4, and the
+// rule worth guarding is COUNTING TO TWO.
+//
+// MEASURED 2026-09-03 in golang:1.27-alpine, with the exit status rather than
+// kill -0 as the discriminator - the first driver asked kill -0, which succeeds
+// on a zombie and reported every arm as alive. As it stood, three interrupts
+// left the process running: signal.NotifyContext keeps its registration until
+// stop(), so every interrupt after the first is delivered to a channel nobody
+// reads. BOTH REMEDIES THE REVIEW PROPOSED WERE MEASURED AND NEITHER WORKED -
+// calling stop() after cancellation, and signal.Reset - so this counts arrivals
+// itself, and ends with 130 INTERRUPTED, which is in the frozen table.
+//
+// The first half of this test is the half that matters: ONE interrupt must be
+// left to the ordinary path, which produces a report and its own exit code. A
+// version that left on the first would take the report away from every person
+// who pressed Ctrl-C once.
+func TestOneInterruptGoesToTheOrdinaryPathAndTwoLeaveAtOnce(t *testing.T) {
+	var said bytes.Buffer
+	left := make(chan int, 1)
+	again := make(chan os.Signal, 2)
+	go onTheSecond(again, &said, func(code int) { left <- code })
+
+	again <- os.Interrupt
+	select {
+	case code := <-left:
+		t.Fatalf("one interrupt already ended the run with %d, taking the report with it", code)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	again <- os.Interrupt
+	select {
+	case code := <-left:
+		if want := exitcode.Interrupted.Int(); code != want {
+			t.Errorf("a second interrupt ended with %d, want %d - the code has to be one from the table", code, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a second interrupt did not end the run, so Ctrl-C is still a thing that does nothing")
+	}
+	// INVIOLABLE RULE 1. An ending that produced no report has to say so.
+	if got := said.String(); !strings.Contains(got, "interrupted again") {
+		t.Errorf("the emergency exit said %q, which does not tell the person what happened", got)
+	}
+}
+
+// TestArmingTheSignalDefencesSaysNothingAndCanBeUndone executes the wiring that
+// no test of onTheSecond can reach, and it is deliberately modest about what it
+// proves.
+//
+// WHAT IT PROVES: arming is silent - a person running certdoctor must not be
+// told anything until something actually happens - and the watch can be taken
+// off again, which is what keeps this test from disabling Ctrl-C for every test
+// that runs after it.
+//
+// WHAT IT DOES NOT PROVE, said here rather than left to be assumed: that
+// mainCode calls either of these. mainCode runs the real program, so nothing in
+// process can call it, and neither the arming nor the broken-pipe defence has a
+// guard for its wiring. That gap is written down in docs 25 rather than papered
+// over with an assertion that would pass either way.
+func TestArmingTheSignalDefencesSaysNothingAndCanBeUndone(t *testing.T) {
+	var said bytes.Buffer
+	// Both defences at once, through the same call mainCode uses. The broken
+	// pipe half is a no-op on Windows and an Ignore elsewhere; both are safe in
+	// a test process, and the second is safer than the default it replaces.
+	disarm := armSignalDefences(&said)
+	if disarm == nil {
+		t.Fatal("arming the watch handed back no way to undo it")
+	}
+	defer disarm()
+
+	if got := said.String(); got != "" {
+		t.Errorf("arming the watch already said %q, before anything had happened", got)
 	}
 }
 

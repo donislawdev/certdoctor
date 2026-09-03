@@ -473,13 +473,92 @@ func TestASpentBudgetIsNotReportedAsAPermissionProblem(t *testing.T) {
 		t.Errorf("the reason is %q, and nobody refused this program anything", got.Reason)
 	}
 
-	// THE TWIN, AND WITHOUT IT access_denied COULD DISAPPEAR ALTOGETHER. A store
-	// that really could not be read still says so.
+	// THE TWIN, REPLACED 2026-09-03 BY THE ASSERTION IT SHOULD ALWAYS HAVE BEEN
+	// - ADR80, owner's decision, because removing an assertion is a weakening.
+	//
+	// IT USED TO SAY access_denied HERE, AND IT DECIDED NOTHING. This layer
+	// never reads the text of a probe's error, so the words "permission denied"
+	// in the failure below were decoration: ANY error produced that answer, and
+	// the comment above it claimed the test proved a store that really could not
+	// be read still says so. That is OBS56's shape - a correct assertion over
+	// data that settles nothing.
+	//
+	// What it asserts now is the fact this branch actually has: an error that is
+	// not a timeout is NOT an accusation about permissions. The data decides it,
+	// because a timeout in the same place produces the other answer - the half
+	// above this one.
 	refused := probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
 		return nil, errors.New("open cacerts: permission denied")
 	})
-	if got = Ask(context.Background(), refused); got.Reason != status.ReasonAccessDenied {
-		t.Errorf("a store that could not be read came out as %q", got.Reason)
+	if got = Ask(context.Background(), refused); got.Reason != status.ReasonUndetermined {
+		t.Errorf("a probe that failed without timing out came out as %q", got.Reason)
+	}
+	if got.Reason == status.ReasonAccessDenied {
+		t.Error("nothing in this program may claim a permission was refused until a probe can recognise one")
+	}
+}
+
+// TestABudgetSpentInsideAProbeIsATimeoutRatherThanAnUndeterminedAnswer is the
+// half of R-5 that never worked, and it is the reason #1's own recipe was not
+// enough.
+//
+// EVERY PROBE IN THIS TREE SWALLOWS ITS FAILURES INTO A ROW and returns no
+// error - java, curl and git all end in "return stores, nil" - so the layer's
+// old test, errors.Is on the probe's error, could not fire outside a test that
+// wrote the error itself. The probe below does exactly what a real one does: it
+// spends the budget, reports rows it could not assess, and returns nil.
+func TestABudgetSpentInsideAProbeIsATimeoutRatherThanAnUndeterminedAnswer(t *testing.T) {
+	spender := func(ctx context.Context, _ [][]byte) ([]report.TrustStore, error) {
+		<-ctx.Done()
+		return []report.TrustStore{{
+			Runtime:     "git",
+			Instance:    "one",
+			StoreForm:   report.StoreSystem,
+			NotAssessed: "the trust store could not be read: this was stopped before it answered",
+			SelectedBy:  []string{},
+		}}, nil
+	}
+
+	in := probesOf(spender)
+	in.Now = time.Now
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	got := Ask(ctx, in)
+	if got.Status != status.Unknown {
+		t.Fatalf("a layer that assessed nothing answered %s", got.Status)
+	}
+	if got.Reason != status.ReasonTimeout {
+		t.Errorf("a probe stopped by its own budget came out as %q, and our arithmetic is not an answer about this machine", got.Reason)
+	}
+}
+
+// TestStoresThatAnsweredNothingAreNotAnAccusationAboutPermissions is OBS90
+// written down as a test - ADR80.
+//
+// MEASURED 2026-09-03 IN AN ALPINE CONTAINER with git installed and no
+// /etc/gitconfig, which is most Linux machines: the one row said, correctly,
+// that git names no http.sslBackend so the bundle it reads is compiled into it,
+// and the layer above turned that into "certdoctor was not allowed to read
+// this". Nothing was refused, nothing timed out, and the reader was sent to
+// look at file permissions.
+func TestStoresThatAnsweredNothingAreNotAnAccusationAboutPermissions(t *testing.T) {
+	silent := probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		return []report.TrustStore{{
+			Runtime:     "git",
+			Instance:    "/usr/bin/git",
+			StoreForm:   report.StoreSystem,
+			NotAssessed: "git names no http.sslBackend, so it uses the one libcurl was built with",
+			SelectedBy:  []string{},
+		}}, nil
+	})
+
+	got := Ask(context.Background(), silent)
+	if got.Status != status.Unknown {
+		t.Fatalf("a layer that assessed nothing answered %s", got.Status)
+	}
+	if got.Reason != status.ReasonUndetermined {
+		t.Errorf("the reason is %q, and nobody refused this program anything", got.Reason)
 	}
 }
 

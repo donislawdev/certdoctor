@@ -12,13 +12,34 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/probe"
 )
 
+// hostSpelling is the twin of the one in probe/binaries_test.go, where the
+// comment explains why all four of these test packages need it.
+func hostSpelling(path string) string {
+	return strings.ReplaceAll(path, `\`, string(filepath.Separator))
+}
+
+// The Windows tree these fixtures describe, spelled for the host. Only the
+// separator follows the platform - the shape stays Windows, because that is the
+// machine being described.
+var (
+	jdk25      = hostSpelling(`C:\jdk-25`)
+	jdk25Store = hostSpelling(`C:\jdk-25\lib\security\cacerts`)
+	jdk25Tool  = hostSpelling(`C:\jdk-25\bin\keytool.exe`)
+	jdk25Javac = hostSpelling(`C:\jdk-25\bin\javac.exe`)
+	jre8       = hostSpelling(`C:\jre8`)
+	jre8Store  = hostSpelling(`C:\jre8\lib\security\cacerts`)
+	jre8Tool   = hostSpelling(`C:\jre8\bin\keytool.exe`)
+)
+
 func sourceOf(paths ...string) func(string) (io.ReadCloser, error) {
+	key := func(path string) string { return filepath.Clean(path) }
+
 	present := map[string]bool{}
 	for _, path := range paths {
-		present[filepath.Clean(path)] = true
+		present[key(path)] = true
 	}
 	return func(path string) (io.ReadCloser, error) {
-		if !present[filepath.Clean(path)] {
+		if !present[key(path)] {
 			return nil, errors.New("no such file")
 		}
 		return io.NopCloser(strings.NewReader("")), nil
@@ -29,14 +50,14 @@ func sourceOf(paths ...string) func(string) (io.ReadCloser, error) {
 // two directories named latest, in both bitnesses, with no store inside.
 func TestADirectoryWithoutAStoreIsNotAnInstall(t *testing.T) {
 	source := sourceOf(
-		`C:\jdk-25\lib\security\cacerts`, `C:\jdk-25\bin\keytool.exe`, `C:\jdk-25\bin\javac.exe`,
+		jdk25Store, jdk25Tool, jdk25Javac,
 		// THE latest DIRECTORY IS GIVEN A keytool ON PURPOSE. Without one it would be
 		// rejected by the SECOND gate - no tool to read a store with - and the missing
 		// store would never be the reason. The mutation register caught exactly that:
 		// a fixture where two gates can both refuse proves neither of them.
-		`C:\Program Files\Java\latest\bin\keytool.exe`,
+		hostSpelling(`C:\Program Files\Java\latest\bin\keytool.exe`),
 	)
-	found := find(source, []string{`C:\jdk-25`, `C:\Program Files\Java\latest`})
+	found := find(source, []string{jdk25, hostSpelling(`C:\Program Files\Java\latest`)})
 	if len(found) != 1 {
 		t.Fatalf("found %d installs, want 1 - latest has no store", len(found))
 	}
@@ -49,8 +70,8 @@ func TestADirectoryWithoutAStoreIsNotAnInstall(t *testing.T) {
 // in a JRE - measured on both - so the row says which it is without reading a
 // directory name, which is inviolable rule 19 turned on our own filesystem.
 func TestAStoreWithoutJavacIsAJRE(t *testing.T) {
-	source := sourceOf(`C:\jre8\lib\security\cacerts`, `C:\jre8\bin\keytool.exe`)
-	found := find(source, []string{`C:\jre8`})
+	source := sourceOf(jre8Store, jre8Tool)
+	found := find(source, []string{jre8})
 	if len(found) != 1 || found[0].Variant != "jre" {
 		t.Fatalf("got %+v, want one jre", found)
 	}
@@ -59,18 +80,18 @@ func TestAStoreWithoutJavacIsAJRE(t *testing.T) {
 // An installation whose keytool is missing cannot be read at all, so it is not
 // an install this probe can speak for.
 func TestAStoreWithNoKeytoolIsNotAnInstall(t *testing.T) {
-	source := sourceOf(`C:\broken\lib\security\cacerts`)
-	if found := find(source, []string{`C:\broken`}); len(found) != 0 {
+	source := sourceOf(hostSpelling(`C:\broken\lib\security\cacerts`))
+	if found := find(source, []string{hostSpelling(`C:\broken`)}); len(found) != 0 {
 		t.Errorf("found %+v, want none - there is no keytool to read the store with", found)
 	}
 }
 
 func TestTheBitnessComesFromThePath(t *testing.T) {
 	source := sourceOf(
-		`C:\Program Files (x86)\Java\jre8\lib\security\cacerts`,
-		`C:\Program Files (x86)\Java\jre8\bin\keytool.exe`,
+		hostSpelling(`C:\Program Files (x86)\Java\jre8\lib\security\cacerts`),
+		hostSpelling(`C:\Program Files (x86)\Java\jre8\bin\keytool.exe`),
 	)
-	found := find(source, []string{`C:\Program Files (x86)\Java\jre8`})
+	found := find(source, []string{hostSpelling(`C:\Program Files (x86)\Java\jre8`)})
 	if len(found) != 1 || found[0].Architecture != "x86" {
 		t.Fatalf("got %+v, want one x86 install", found)
 	}
@@ -107,14 +128,20 @@ func TestAKeytoolThatRefusesIsUnknownWithAReason(t *testing.T) {
 // JAVA_HOME NAMES ONE OF SIX ON THIS MACHINE - measured - so it may enrich a row
 // and may never find one. An install nothing selects is perfectly real.
 func TestSelectionNamesJavaHomeAndPathWithoutFindingAnything(t *testing.T) {
-	install := Install{Root: `C:\jdk-25`}
+	// SPELLED FOR THE HOST because selectedBy matches PATH by SEGMENT, and a
+	// segment needs a separator the platform recognises - left Windows-spelled
+	// this whole tree is one element off Windows and the PATH half silently
+	// stops being asked, which is how this passed here and failed on two other
+	// platforms.
+	root := hostSpelling(`C:\jdk-25`)
+	install := Install{Root: root}
 
-	by := selectedBy(install, `C:\jdk-25`, []string{`C:\jdk-25\bin`})
+	by := selectedBy(install, root, []string{hostSpelling(`C:\jdk-25\bin`)})
 	if len(by) != 2 || by[0] != "JAVA_HOME" || by[1] != "PATH" {
 		t.Errorf("got %v, want both JAVA_HOME and PATH", by)
 	}
 	// The neighbouring-install trap, same as the git probe.
-	if got := selectedBy(install, "", []string{`C:\jdk-250\bin`}); len(got) != 0 {
+	if got := selectedBy(install, "", []string{hostSpelling(`C:\jdk-250\bin`)}); len(got) != 0 {
 		t.Errorf("a neighbouring install claimed this one's place on PATH: %v", got)
 	}
 	if got := selectedBy(install, "", nil); got == nil || len(got) != 0 {
@@ -127,14 +154,14 @@ func TestSelectionNamesJavaHomeAndPathWithoutFindingAnything(t *testing.T) {
 // green. Measured shape: six installs on this machine, each its own row.
 func TestTheProbeReturnsOneRowPerInstall(t *testing.T) {
 	source := sourceOf(
-		`C:\jdk-25\lib\security\cacerts`, `C:\jdk-25\bin\keytool.exe`, `C:\jdk-25\bin\javac.exe`,
-		`C:\jre8\lib\security\cacerts`, `C:\jre8\bin\keytool.exe`,
+		jdk25Store, jdk25Tool, jdk25Javac,
+		jre8Store, jre8Tool,
 	)
 	run := func(context.Context, string, ...string) (probe.Output, error) {
 		return probe.Output{ExitCode: 1}, nil
 	}
 
-	stores, err := Probe(source, run, []string{`C:\jdk-25`, `C:\jre8`, `C:\nothing`}, `C:\jdk-25`, nil, atNoon)(context.Background(), [][]byte{{0x30}})
+	stores, err := Probe(source, run, []string{jdk25, jre8, hostSpelling(`C:\nothing`)}, jdk25, nil, atNoon)(context.Background(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}

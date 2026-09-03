@@ -126,7 +126,21 @@ import (
 // A NULL HERE MEANS "NOT NAMED", NEVER "NOT INSPECTION" - the caveat beside it
 // says so in words, and O11 is why the structural test never depended on this
 // list in the first place.
-const SchemaVersion = "1.10"
+//
+// 1.11 ADDS AN EIGHTH VALUE TO THE CLOSED reason VOCABULARY: undetermined -
+// ADR80, closing OBS90. No field is added or removed and no meaning changes, so
+// a MINOR by rule 2 - but a consumer that branches exhaustively on reason now
+// has eight cases, which is the whole point of the version being here.
+//
+// WHAT CHANGES FOR A CONSUMER THAT ALREADY SHIPPED. A run that used to answer
+// reason: "access_denied" for L5 now answers reason: "undetermined" whenever
+// every store came back unassessed and none of them timed out. Measured
+// 2026-09-03 in an alpine container with git and no /etc/gitconfig, which is
+// most Linux machines: the old word sent a reader to check file permissions for
+// a machine on which nothing had been refused. access_denied is still declared
+// and nothing produces it today; the reason that is deliberate is written where
+// the word lives, in internal/core/status/reason.go.
+const SchemaVersion = "1.11"
 
 // JSON renders the machine readable report.
 //

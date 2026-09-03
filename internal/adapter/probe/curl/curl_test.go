@@ -13,13 +13,33 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
+// hostSpelling is the twin of the one in probe/binaries_test.go, where the
+// comment explains why all four of these test packages need it.
+func hostSpelling(path string) string {
+	return strings.ReplaceAll(path, `\`, string(filepath.Separator))
+}
+
+// The Windows tree these fixtures describe, spelled for the host. The SHAPE is
+// Windows because that is the machine being described; only the separator
+// follows the platform, so that filepath.Join and filepath.Clean have something
+// they can take apart.
+var (
+	winSystem32     = hostSpelling(`C:\Windows\system32`)
+	winSystem32Loud = hostSpelling(`C:\WINDOWS\system32`)
+	system32Curl    = hostSpelling(`C:\Windows\system32\curl.exe`)
+	gitBin          = hostSpelling(`C:\Program Files\Git\mingw64\bin`)
+	gitBinCurl      = hostSpelling(`C:\Program Files\Git\mingw64\bin\curl.exe`)
+)
+
 func sourceOf(paths ...string) func(string) (io.ReadCloser, error) {
+	key := func(path string) string { return strings.ToLower(filepath.Clean(path)) }
+
 	present := map[string]bool{}
 	for _, path := range paths {
-		present[strings.ToLower(filepath.Clean(path))] = true
+		present[key(path)] = true
 	}
 	return func(path string) (io.ReadCloser, error) {
-		if !present[strings.ToLower(filepath.Clean(path))] {
+		if !present[key(path)] {
 			return nil, errors.New("no such file")
 		}
 		return io.NopCloser(strings.NewReader("bundle")), nil
@@ -35,8 +55,8 @@ func versionSaying(line string) probe.Runner {
 // EVERY curl ON PATH, NOT THE FIRST ONE - ADR50. Measured: two on this machine,
 // and taking the first would have hidden the one shipped inside Git.
 func TestEveryCurlOnPathIsFound(t *testing.T) {
-	source := sourceOf(`C:\Windows\system32\curl.exe`, `C:\Program Files\Git\mingw64\bin\curl.exe`)
-	found := find(source, []string{`C:\Windows\system32`, `C:\Program Files\Git\mingw64\bin`})
+	source := sourceOf(system32Curl, gitBinCurl)
+	found := find(source, []string{winSystem32, gitBin})
 	if len(found) != 2 {
 		t.Fatalf("found %d curl binaries, want 2", len(found))
 	}
@@ -47,8 +67,8 @@ func TestEveryCurlOnPathIsFound(t *testing.T) {
 // reported ONE binary as TWO stores and the verdict counted ten where there are
 // nine. Caught by running the binary.
 func TestOneBinaryReachedByTwoSpellingsIsOneRow(t *testing.T) {
-	source := sourceOf(`C:\Windows\system32\curl.exe`)
-	found := find(source, []string{`C:\Windows\system32`, `C:\WINDOWS\system32`})
+	source := sourceOf(system32Curl)
+	found := find(source, []string{winSystem32, winSystem32Loud})
 	if len(found) != 1 {
 		t.Fatalf("found %d rows for one binary: %+v", len(found), found)
 	}
@@ -144,9 +164,9 @@ func TestACurlThatRefusesToReportIsUnassessed(t *testing.T) {
 // THE WHOLE PROBE, END TO END. Measured shape on this machine: two binaries,
 // both Schannel, so two rows and no verdicts.
 func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
-	source := sourceOf(`C:\Windows\system32\curl.exe`, `C:\git\bin\curl.exe`)
+	source := sourceOf(system32Curl, hostSpelling(`C:\git\bin\curl.exe`))
 	stores, err := Probe(source, versionSaying("curl 8.21.0 libcurl/8.21.0 Schannel"),
-		[]string{`C:\Windows\system32`, `C:\WINDOWS\system32`, `C:\git\bin`, `C:\empty`}, "", atNoon)(context.Background(), [][]byte{{0x30}})
+		[]string{winSystem32, winSystem32Loud, hostSpelling(`C:\git\bin`), hostSpelling(`C:\empty`)}, "", atNoon)(context.Background(), [][]byte{{0x30}})
 
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)

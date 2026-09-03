@@ -193,10 +193,27 @@ func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, tally) {
 			continue
 		}
 		stores, err := probe(probeCtx, chain)
+		// THE BUDGET IS ASKED ABOUT ITSELF, RATHER THAN READ OFF A PROBE'S
+		// ERROR. Every probe in this tree turns a failure into a row and
+		// returns no error at all - java/probe.go, curl/probe.go, git/probe.go
+		// all end in "return stores, nil" - so the line below it was the only
+		// witness, and it never fired outside a test. That is why R-5's counter
+		// could grow one way only: through the remaining == 0 branch above, for
+		// a probe that never started.
+		//
+		// IT IS READ BEFORE done(), NOT AFTER. Cancelling replaces the
+		// deadline's error with context.Canceled, which is a different fact -
+		// somebody stopped this run - and counting it as a timeout would blame
+		// the clock for a person pressing Ctrl-C.
+		//
+		// A probe that finished everything and only then ran out of time still
+		// increments this, and that is harmless: the verdict reads the counter
+		// only when NOTHING could be assessed.
+		expired := errors.Is(probeCtx.Err(), context.DeadlineExceeded)
 		if done != nil {
 			done()
 		}
-		if errors.Is(err, context.DeadlineExceeded) {
+		if expired || errors.Is(err, context.DeadlineExceeded) {
 			counted.timedOut++
 		}
 		if err != nil {
@@ -389,11 +406,22 @@ func verdict(findings []report.Finding, asked, trusting, unassessed, timedOut in
 			"%d of %d store(s) do not trust the presented chain", distrusting, asked), Findings: findings}
 	case unassessed == asked:
 		// WHICH OF THE TWO HAPPENED, RATHER THAN ONE ANSWER FOR BOTH - R-5.
-		// access_denied says "certdoctor was not allowed to read this", which is
-		// an accusation about the machine's permissions. A layer whose budget ran
-		// out was not refused anything, and sending somebody to look at file
-		// permissions for our own arithmetic is the shape ADR58 removed from L1.
-		reason := status.ReasonAccessDenied
+		// A layer whose budget ran out was not refused anything, and sending
+		// somebody to look at file permissions for our own arithmetic is the
+		// shape ADR58 removed from L1.
+		//
+		// AND THE OTHER OF THE TWO IS NO LONGER access_denied - ADR80, closing
+		// OBS90. That word says "certdoctor was not allowed to read this", and
+		// this branch said it on a machine where nobody had refused this program
+		// anything: measured 2026-09-03 in an alpine container with git and no
+		// /etc/gitconfig, where the one row said, correctly, that git names no
+		// backend so its bundle is compiled in. The row was true and the layer
+		// above it turned that into an accusation about permissions.
+		//
+		// undetermined is about the ANSWER; the other seven are about the
+		// ASKING. Nothing here produces access_denied any more, and the reason
+		// that is not a bug is written where the word is declared.
+		reason := status.ReasonUndetermined
 		if timedOut > 0 {
 			reason = status.ReasonTimeout
 		}

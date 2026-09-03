@@ -135,6 +135,41 @@ var sandboxAllowlist = map[string]bool{
 	"internal/adapter/pac/stopwatch.go": true,
 }
 
+// signalAllowlist is the FIFTH list, and the second-widest of the four narrow
+// ones - ADR84, owner's decision 2026-09-03.
+//
+// WHAT IT EXCUSES AND WHY EACH PIECE IS UNAVOIDABLE. A second interrupt has to
+// be noticed while the run keeps going, and os/signal delivers signals to a
+// CHANNEL and to nothing else - so a channel type is forced, and receiving from
+// it twice is the whole rule. The waiting has to happen beside the run rather
+// than instead of it, so a go statement is forced too. Three things, each
+// demanded by the standard library's shape rather than chosen.
+//
+// WHAT IT DOES NOT EXCUSE, WHICH IS THE POINT. No sync and no sync/atomic:
+// nothing is shared with the run, because the goroutine's only outcome is
+// os.Exit. No channel SEND: this file only receives, and the sender is the
+// runtime. No select: there is exactly one thing to wait for.
+//
+// WHY THE ENTRY IS A FILE OF ITS OWN AND NOT main.go, which is where the code
+// naturally sits. An allowlist entry takes the guard off that file for those
+// questions permanently, and main.go is the wiring file - it grows with every
+// port this program gains, and every future goroutine in it would pass without
+// a question. The stopwatch entry above is one file with one job for the same
+// reason, and that shape is what ADR77 was really deciding.
+//
+// MEASURED, so this list is not one line wider than it has to be: the OTHER half
+// of the same piece of work - stopping a broken pipe from killing the run -
+// needed no entry at all. The review proposed a channel with a goroutine
+// draining it; signal.Ignore does the same thing with neither, measured side by
+// side on 2026-09-03, and that file stays off every list here.
+var signalAllowlist = map[string]bool{
+	// The second-interrupt watcher. Without it, every interrupt after the first
+	// is delivered to a channel nobody reads and dropped, so a person whose run
+	// will not finish has no way out but kill - measured in golang:1.27-alpine,
+	// three interrupts and the process still running.
+	"cmd/certdoctor/interrupt.go": true,
+}
+
 // TestALockOnlyFileMayHoldALockAndNothingElse is the canary for the narrow
 // exemption, and without it that list is a hole nobody checks.
 //
@@ -264,7 +299,48 @@ func TestASandboxFileMayStartAGoroutineAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestEveryConcurrencyExemptionNamesAFileThatExists keeps the four lists from
+// TestASignalFileMayWatchAndNothingElse is the canary for the fifth exemption -
+// ADR84. Without it that list is a hole nobody checks.
+//
+// THE THREE IT EXCUSES ARE FORCED BY os/signal AND THE THREE IT DOES NOT ARE THE
+// POINT. A file that has to notice a signal needs a channel, a receive, and a
+// goroutine to wait in. It does not need to SEND into that channel - the runtime
+// is the sender - it does not need a select with one thing to wait for, and it
+// shares nothing with the run, so it needs no sync and no atomic.
+func TestASignalFileMayWatchAndNothingElse(t *testing.T) {
+	const planted = "internal/adapter/probe/planted.go"
+	signalAllowlist[planted] = true
+	defer delete(signalAllowlist, planted)
+
+	tr := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "concurrency_violation.go", planted)},
+	}
+	violations := checkConcurrencyContainment(tr)
+
+	var said string
+	for _, v := range violations {
+		said += v.Detail + "\n"
+	}
+	for _, excused := range []string{"go statement", "channel type", "channel receive"} {
+		if strings.Contains(said, excused) {
+			t.Errorf("a signal file was still reported for a %s, which is one of the three this list exists to permit.\nreported:\n%s",
+				excused, said)
+		}
+	}
+	for _, kept := range []string{
+		`import of "sync"`,
+		`import of "sync/atomic"`,
+		"channel send", "select statement",
+	} {
+		if !strings.Contains(said, kept) {
+			t.Errorf("a signal file got away with a %s, and the exemption covers watching alone.\nreported:\n%s",
+				kept, said)
+		}
+	}
+}
+
+// TestEveryConcurrencyExemptionNamesAFileThatExists keeps the five lists from
 // rotting.
 //
 // AN ENTRY POINTING AT A FILE NOBODY WROTE YET, OR AT ONE SINCE RENAMED, IS AN
@@ -292,6 +368,7 @@ func TestEveryConcurrencyExemptionNamesAFileThatExists(t *testing.T) {
 		{"lockOnlyAllowlist", lockOnlyAllowlist},
 		{"fanOutAllowlist", fanOutAllowlist},
 		{"sandboxAllowlist", sandboxAllowlist},
+		{"signalAllowlist", signalAllowlist},
 	} {
 		for entry := range list.entries {
 			if !present[entry] {
@@ -436,18 +513,30 @@ func checkConcurrencyContainment(tr tree) []Violation {
 				// keeps descending, so a channel INSIDE the goroutine is still
 				// reported - which is the difference between a narrow exemption
 				// and switching the guard off for a file.
-				if fanOutAllowlist[sf.rel] || sandboxAllowlist[sf.rel] {
+				if fanOutAllowlist[sf.rel] || sandboxAllowlist[sf.rel] || signalAllowlist[sf.rel] {
 					return true
 				}
 				report(node.Pos(), "go statement")
 			case *ast.SelectStmt:
 				report(node.Pos(), "select statement")
 			case *ast.SendStmt:
+				// NOT EXCUSED ON THE SIGNAL LIST EITHER, and that is the half of
+				// it worth checking: os/signal SENDS into the channel from the
+				// runtime, so a send written HERE would be somebody handing this
+				// program a signal it never received - ADR84.
 				report(node.Pos(), "channel send")
 			case *ast.ChanType:
+				// os/signal delivers to a channel and to nothing else, so a file
+				// that has to notice a signal cannot avoid naming one - ADR84.
+				if signalAllowlist[sf.rel] {
+					return true
+				}
 				report(node.Pos(), "channel type")
 			case *ast.UnaryExpr:
 				if node.Op == token.ARROW {
+					if signalAllowlist[sf.rel] {
+						return true
+					}
 					report(node.Pos(), "channel receive")
 				}
 			}

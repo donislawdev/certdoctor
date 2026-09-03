@@ -18,6 +18,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	"github.com/donislawdev/certdoctor/internal/app/run"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
+	"github.com/donislawdev/certdoctor/internal/core/dnsmsg"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/idna"
@@ -243,8 +244,33 @@ func answerMetaSwitch(o *options, env environment) (exitcode.Code, bool) {
 
 // complain writes the reason to the log channel and returns its code. It never
 // touches standard output.
+//
+// THE MESSAGE GOES THROUGH THE CREDENTIAL FLOOR, AND HERE RATHER THAN AT THE
+// FOUR PLACES THAT BUILD ONE - inviolable rule 17, which says credentials reach
+// neither the report nor the log whatever --redact was asked for. Measured
+// 2026-09-03 on the binary, before this line existed:
+//
+//	certdoctor: "https://bob:hunter2@example.com:99999" asks for port 99999...
+//	certdoctor: "ftp://bob:hunter2@x" has no http:// or https:// scheme...
+//	                                     ...for example "https://ftp://bob:hunter2@x"
+//	certdoctor: unexpected extra argument "https://bob:hunter2@b.example"...
+//
+// while the SAME RUN masked the same URL correctly in the report itself. One
+// path masked and the other did not.
+//
+// IT IS ONE PLACE BECAUSE THE ALTERNATIVE IS FOUR AND GROWING. A rule applied at
+// call sites is a rule the next fault forgets, and this one is written down as
+// inviolable. It also catches what no call site could: the parse error Go
+// itself returns embeds the URL a second time, so masking our own argument would
+// have left the password standing in the same sentence.
+//
+// Text rather than Target, and the difference decides whether this works. Target
+// masks a URL BY POSITION and answers Placeholder for anything it cannot parse -
+// which is most of a message. Text applies the credential floor to text of any
+// shape, finding user info wherever it sits, which is what a finished sentence
+// is.
 func complain(env environment, f *fault) exitcode.Code {
-	fmt.Fprintf(env.stderr, "%s: %s\n", toolName, f.message)
+	fmt.Fprintf(env.stderr, "%s: %s\n", toolName, redact.New(redact.Credentials).Text(f.message))
 	return f.code
 }
 
@@ -307,6 +333,20 @@ func readTarget(o *options) (wire *url.URL, typed *url.URL, f *fault) {
 		return nil, nil, usageFault("%q names no host. Give one like https://example.com", raw)
 	}
 
+	// A HOST THAT IS ONLY A PORT IS REFUSED HERE FOR THE SAME REASON THE PORT
+	// RANGE IS - ADR60, and the check above is not the same check. url.URL.Host
+	// carries the port, so "https://:8080" has a Host of ":8080", which is not
+	// empty, and a Hostname of "" which is. Measured on this binary: the empty
+	// name travelled into L1, every row it built carried no name at all, the
+	// finding contract refused them - correctly - and the layer was thrown away
+	// whole as "the layer broke its own contract". That sentence says THIS
+	// PROGRAM is defective about something a person mistyped. The same happens
+	// for "https://user@:80" and "http://:".
+	if parsed.Hostname() == "" {
+		return nil, nil, usageFault(
+			"%q has a port but no host name. Give one like https://example.com:8080", raw)
+	}
+
 	// A PORT OUTSIDE 1-65535 IS REFUSED HERE, WHERE IT IS STILL A TYPING MISTAKE.
 	//
 	// url.Parse accepts any run of digits after the colon, so ":99999" arrived
@@ -352,6 +392,26 @@ func readTarget(o *options) (wire *url.URL, typed *url.URL, f *fault) {
 	// came back from url.Parse at the top.
 	wire, err = wireForm(parsed)
 	if err != nil {
+		return nil, nil, usageFault("%q cannot be asked about: %v", raw, err)
+	}
+
+	// A NAME THAT CANNOT GO ON THE WIRE IS REFUSED HERE, WHERE IT IS STILL A
+	// TYPING MISTAKE - ADR60 again, and the rule is BORROWED rather than
+	// written: dnsmsg owns it, this asks. A copy here would be one rule in two
+	// places, which is the shape OBS50 has taken four times in this tree.
+	//
+	// It is asked about the WIRE spelling, because that is the string the
+	// resolving layer is handed and the one dnsmsg will encode - an IDN whose
+	// A-label runs over a length limit has to be caught by the same question.
+	//
+	// Measured on this binary: "https://a..b", "https://." and a name with a
+	// 70-byte label all produced L1 FAIL and exit 4 - a verdict about somebody's
+	// DNS for a name no resolver could have been asked about - and every row
+	// said this machine's own resolver "gave no answer ... a reply arrived and
+	// could not be read", about a query that never left and a reply that never
+	// came. That is inviolable rule 18 broken against our own run, and it names
+	// an innocent third party while doing it.
+	if err := dnsmsg.EncodableName(wire.Hostname()); err != nil {
 		return nil, nil, usageFault("%q cannot be asked about: %v", raw, err)
 	}
 	return wire, parsed, nil

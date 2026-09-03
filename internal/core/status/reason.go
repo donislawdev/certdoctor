@@ -16,6 +16,14 @@ const (
 	ReasonTimeout Reason = "timeout"
 	// ReasonAccessDenied - we were not allowed to read a store or a directory.
 	// A refusal is an answer about our permissions, not an answer about trust.
+	//
+	// NOTHING IN THIS PROGRAM PRODUCES IT TODAY, AND THAT IS WRITTEN HERE SO IT
+	// IS NOT TIDIED AWAY - ADR80, OBS98. Its one producer was the L5 verdict
+	// branch that said it about stores nobody had refused, and that branch now
+	// says undetermined. The word stays because the case is real and this
+	// program simply cannot recognise it yet: a probe would have to classify its
+	// own failure - errors.Is(err, fs.ErrPermission), never the message, which
+	// is inviolable rule 19 - and today no probe returns a failure at all.
 	ReasonAccessDenied Reason = "access_denied"
 	// ReasonProbeError - the probe itself broke, distinct from the target failing.
 	ReasonProbeError Reason = "probe_error"
@@ -51,6 +59,36 @@ const (
 	// transport_error on four rows and something different on the layer above
 	// them would reasonably assume the two describe different things.
 	ReasonTransportError Reason = "transport_error"
+	// ReasonUndetermined - the layer asked, and what came back does not settle
+	// the question it was asked.
+	//
+	// THE EIGHTH REASON, AND IT EXISTS BECAUSE THE OTHER SEVEN WOULD ALL HAVE
+	// BEEN A LIE - ADR80, closing OBS90. Measured 2026-09-03 in an alpine
+	// container with git installed and no /etc/gitconfig: every store L5 found
+	// came back unassessed, so the layer said access_denied - "certdoctor was
+	// not allowed to read this" - on a machine where nobody had refused this
+	// program anything. It had not timed out, nothing was unreadable, no output
+	// was unrecognised and nothing here broke; the honest sentence was that git
+	// names no backend, so which bundle it reads is compiled into it.
+	//
+	// IT IS ABOUT THE ANSWER, NOT ABOUT THE ASKING, and that is what separates
+	// it from the seven above. Every one of those says the question could not be
+	// PUT - the clock, the permissions, the wire, our own code. This one says it
+	// was put and answered, and the answer decides nothing.
+	//
+	// It is deliberately general rather than about trust stores. The same shape
+	// is waiting wherever this program reads somebody's configuration and finds
+	// it silent, and a reason named after L5 would be reinvented at the next
+	// layer that meets it.
+	//
+	// IT IS THE SAME WORD AS report.NoteUndetermined ON PURPOSE, and the
+	// argument is ADR39's, made there about transport_error. That note kind says
+	// "a field we could not establish, left empty rather than guessed", which is
+	// this same fact about a smaller thing. docs/18 asks for one name per
+	// concept, and a reader meeting the word twice is meeting one concept in two
+	// registers - two fields, never two vocabularies. Two different words for it
+	// would have been the thing to explain.
+	ReasonUndetermined Reason = "undetermined"
 )
 
 // AllReasons lists every reason exactly once.
@@ -62,6 +100,7 @@ var AllReasons = []Reason{
 	ReasonSkippedBudget,
 	ReasonNothingToCheck,
 	ReasonTransportError,
+	ReasonUndetermined,
 }
 
 // reasonDescriptions carries the English one-liner shown to the user. Keeping it
@@ -75,6 +114,7 @@ var reasonDescriptions = map[Reason]string{
 	ReasonSkippedBudget:  "skipped because the run exceeded its overall time budget",
 	ReasonNothingToCheck: "this layer ran and there was nothing on this machine for it to look at",
 	ReasonTransportError: "every attempt to ask failed on the wire rather than inside certdoctor",
+	ReasonUndetermined:   "this layer asked, and what came back does not settle the question",
 }
 
 // Valid reports whether r is one of the declared reasons.
