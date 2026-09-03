@@ -208,7 +208,15 @@ func TestOurOwnBudgetIsNeverTheChildsAnswer(t *testing.T) {
 // layers, so nothing above this would have noticed.
 func TestOutputHeldOpenByAGrandchildDoesNotOutlastTheBudget(t *testing.T) {
 	helper(t, "spawn")
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	// THE BUDGET IS LONG ON PURPOSE AND THE FIRST VERSION WAS NOT - measured on
+	// the CI Windows runner 2026-09-03, where it failed while passing on three
+	// machines here. With a 100 ms budget the child had to start, spawn a
+	// grandchild and exit inside 100 ms, which a loaded runner under coverage
+	// instrumentation does not manage: the deadline killed the child first,
+	// nothing ever held the pipe, and the run came back in a tenth of a second.
+	// A budget nothing reaches makes the child's own exit the event that starts
+	// waitDelay, which is the state this test is about.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	started := time.Now()
@@ -218,18 +226,15 @@ func TestOutputHeldOpenByAGrandchildDoesNotOutlastTheBudget(t *testing.T) {
 	if err == nil {
 		t.Fatalf("a run whose output was held open by an orphan came back as an answer after %v", elapsed)
 	}
-	// THE BOUND IS THE ASSERTION, NOT THE IDENTITY OF THE ERROR. Which of the two
-	// honest errors arrives depends on whether the child got to exit before the
-	// deadline, and the machine settles that differently under -race: measured
-	// 2026-09-03, an ordinary run ends in exec.ErrWaitDelay and an instrumented
-	// one in the killed child plus the context. Both are bounded and both name
-	// whose limit stopped the run, so asserting on one of them would make this
-	// test about how fast the machine is.
-	//
+	// The child exits at once, so what ends this run is waitDelay and nothing
+	// else - which makes the error deterministic on every machine.
+	if !errors.Is(err, exec.ErrWaitDelay) {
+		t.Errorf("output held open by an orphan came back as %v after %v", err, elapsed)
+	}
 	// The grandchild holds the pipe for up to thirty seconds. Anything near that
 	// is Wait sitting on an end-of-file that was never going to arrive.
-	if elapsed > 10*time.Second {
-		t.Errorf("Run took %v on a 100 ms budget", elapsed)
+	if elapsed > 8*time.Second {
+		t.Errorf("Run took %v, so nothing bounded the wait", elapsed)
 	}
 	// AND THE LOWER BOUND IS WHAT STOPS THIS TEST PASSING ON NOTHING - OBS56.
 	// Without it a run where the grandchild never started would look identical:
@@ -237,9 +242,6 @@ func TestOutputHeldOpenByAGrandchildDoesNotOutlastTheBudget(t *testing.T) {
 	// past a second can only happen because waitDelay was being served.
 	if elapsed < time.Second {
 		t.Errorf("Run came back in %v, so nothing held the pipe open and this test established nothing", elapsed)
-	}
-	if !errors.Is(err, exec.ErrWaitDelay) && !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("the error is %v, and neither limit that could have ended this run is named in it", err)
 	}
 	// NOTHING PARTIAL TRAVELS AS AN ANSWER. What arrived before the delay ran
 	// out is not the whole of what the child had to say, and a caller reading
