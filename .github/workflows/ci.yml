@@ -197,9 +197,30 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # THE PIN IS A MEASUREMENT AND NOT THE NEWEST NUMBER, and the version it
+      # replaced is named here because the failure was invisible from the
+      # owner's machine.
+      #
+      # v1.1.4 stood here until 2026-09-03 and PANICKED on this toolchain -
+      # "panic: unexpected expr: *ast.KeyValueExpr" raised inside the SSA
+      # builder of x/tools v0.29.0, which that release pins. Measured 3 runs out
+      # of 3 in golang:1.27-alpine and not once on Windows, so this job was red
+      # for a defect in the tool rather than for anything in this tree. That is
+      # the OBS87 family: a pinned analyser left behind by a new toolchain.
+      #
+      # v1.7.0 pins x/tools v0.49.0 and answers "No vulnerabilities found." in
+      # the same container AND on Windows - both measured 2026-09-03, before
+      # this line changed.
+      #
+      # BSD-3-Clause, read at source 2026-09-03 at
+      # https://raw.githubusercontent.com/golang/vuln/v1.7.0/LICENSE - published
+      # 2026-08-13 per proxy.golang.org/golang.org/x/vuln/@latest. This is
+      # inviolable rules 5 and 23 applied to a workflow pin, which is the one
+      # place a dependency reaches this project without passing the licence
+      # sieve in tools/expected-modules.txt.
       - name: govulncheck
         shell: bash
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
   # THE ONE PROBE THAT HAS TO BE PUBLIC, and it is worth saying why since every
   # other one lives outside this repository.
