@@ -24,6 +24,7 @@ package pac
 
 import (
 	"context"
+	"math"
 	"runtime"
 	"time"
 
@@ -91,6 +92,23 @@ func watch(ctx context.Context, vm *goja.Runtime, budget time.Duration, ceiling 
 	var base runtime.MemStats
 	runtime.ReadMemStats(&base)
 
+	// THE LIMIT IS WORKED OUT ONCE HERE AND SATURATES, BECAUSE THE OBVIOUS SUM
+	// WRAPS. Measured 2026-09-03: with a ceiling of math.MaxUint64 - the value
+	// somebody reaches for when they mean "do not limit this" - base.HeapAlloc +
+	// ceiling came back ONE BELOW base.HeapAlloc, so the comparison was true on
+	// the first tick and a PAC file that had done nothing at all was stopped for
+	// allocating. A ceiling set high has to mean loose. Turning it into its own
+	// opposite is the worst direction for a limit to fail in, and it failed
+	// silently: the answer looked exactly like a real memory_ceiling.
+	//
+	// Found by a probe rather than by a red run, because nothing in this program
+	// constructs a Sandbox yet - L2 arrives with P8-K3. Fixed before the first
+	// caller exists rather than after.
+	limit := base.HeapAlloc + ceiling
+	if limit < base.HeapAlloc {
+		limit = math.MaxUint64
+	}
+
 	go func() {
 		for ctx.Err() == nil {
 			if time.Now().After(deadline) {
@@ -99,7 +117,7 @@ func watch(ctx context.Context, vm *goja.Runtime, budget time.Duration, ceiling 
 			}
 			var current runtime.MemStats
 			runtime.ReadMemStats(&current)
-			if current.HeapAlloc > base.HeapAlloc+ceiling {
+			if current.HeapAlloc > limit {
 				vm.Interrupt(LimitMemory)
 				return
 			}

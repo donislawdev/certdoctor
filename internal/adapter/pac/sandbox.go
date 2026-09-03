@@ -31,6 +31,34 @@ type Sandbox struct {
 	Budget time.Duration
 
 	// Ceiling is how much heap the evaluation may add before it is stopped.
+	//
+	// IT IS A PROCESS FIGURE AND NOT AN EVALUATION FIGURE, AND A CALLER HAS TO
+	// KNOW THAT. The stopwatch subtracts a baseline taken when the evaluation
+	// starts, so it measures a DELTA rather than the absolute heap - but the
+	// delta still includes whatever every other goroutine allocated meanwhile.
+	// Measured 2026-09-03: the same PAC file under the same 128 MiB ceiling
+	// answered normally on its own and was stopped with memory_ceiling while
+	// another goroutine allocated. A PAC file can therefore be blamed for
+	// somebody else's allocation, which is the exact inversion of what this
+	// program is for.
+	//
+	// WHY IT IS NOT SIMPLY FIXED: Go publishes no per-goroutine allocation
+	// accounting. runtime/metrics does remove the stop-the-world cost of
+	// ReadMemStats, but /gc/heap/allocs:bytes is process-wide too AND monotonic,
+	// so somebody else's allocation would count for ever instead of momentarily.
+	// This is the same wall ADR75 hit when condition 3 had to be rewritten,
+	// reached from the other side.
+	//
+	// WHY IT IS KEPT ANYWAY, measured rather than assumed: with the ceiling
+	// effectively removed, testbed/pac/files/bomb.pac ran to the TIME budget
+	// instead - 351 ms and 513 MiB of cumulative allocation against 239 ms and
+	// 256 MiB with the ceiling on, inside a 512 MiB container. The ceiling buys
+	// a real bound on how far a hostile file gets before something stops it.
+	//
+	// WHAT A CALLER MUST DO ABOUT IT: do not evaluate a PAC file beside layers
+	// that allocate, and do not report memory_ceiling to a user as a fact about
+	// their file without that caveat. L2 arrives with P8-K3 and this is its
+	// problem to place.
 	Ceiling uint64
 
 	// MaxSource is the largest PAC file accepted, checked BEFORE the bytes reach
@@ -53,6 +81,32 @@ type Sandbox struct {
 // Outcome names what happened. A caller cannot accidentally treat a broken PAC
 // as a working one, because there is no error to forget to check.
 func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
+	// A PANIC FROM SOMEBODY ELSE'S ENGINE IS CAUGHT HERE AND NOWHERE ELSE -
+	// ADR67 applied one layer along. The orchestrator's recover runs on the
+	// goroutine that walks the layers, and probe S12 measured only that no panic
+	// escaped ITS inputs, which is a statement about those inputs rather than
+	// about goja. Without this, a panic under a PAC file would kill the process
+	// with no report at all and an exit code from outside the table.
+	//
+	// IT IS THE FIRST STATEMENT OF THIS FUNCTION AND THAT POSITION IS THE RULE,
+	// NOT TIDINESS. It used to stand three statements down, after goja.New,
+	// SetMaxCallStackSize and makeDeterministic, so a panic in any of those left
+	// through a promise that says NEVER. Measured 2026-09-03 while moving it:
+	// none of the three panics on any input tried - a negative MaxStack answers
+	// stack_limit, a zero one answers normally, and makeDeterministic never
+	// passes nil to SetRandSource because fixedRandom cannot return one. THE GAP
+	// WAS THEREFORE IN THE PROMISE RATHER THAN IN AN OBSERVED FAILURE, and that
+	// is the reason to close it: condition 5 is a sentence about every future
+	// input, and it cannot rest on nobody having found a trigger yet.
+	defer func() {
+		if cause := recover(); cause != nil {
+			result = corepac.Result{
+				Outcome: corepac.OutcomeMalformed,
+				Detail:  fmt.Sprintf("the PAC evaluator fell over inside this program: %v", cause),
+			}
+		}
+	}()
+
 	if len(source) > s.MaxSource {
 		return corepac.Result{
 			Outcome: corepac.OutcomeTooLarge,
@@ -64,21 +118,6 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 	vm := goja.New()
 	vm.SetMaxCallStackSize(s.MaxStack)
 	usedRandomness := s.makeDeterministic(vm)
-
-	// A PANIC FROM SOMEBODY ELSE'S ENGINE IS CAUGHT HERE AND NOWHERE ELSE -
-	// ADR67 applied one layer along. The orchestrator's recover runs on the
-	// goroutine that walks the layers, and probe S12 measured only that no panic
-	// escaped ITS inputs, which is a statement about those inputs rather than
-	// about goja. Without this, a panic under a PAC file would kill the process
-	// with no report at all and an exit code from outside the table.
-	defer func() {
-		if cause := recover(); cause != nil {
-			result = corepac.Result{
-				Outcome: corepac.OutcomeMalformed,
-				Detail:  fmt.Sprintf("the PAC evaluator fell over inside this program: %v", cause),
-			}
-		}
-	}()
 
 	if failure := s.inject(vm); failure != nil {
 		return corepac.Result{

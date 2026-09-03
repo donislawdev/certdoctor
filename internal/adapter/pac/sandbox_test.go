@@ -1,6 +1,7 @@
 package pac
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -145,4 +146,38 @@ func contains(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// TestACeilingSetHighMeansLooseRatherThanInstantlyTripped is arithmetic, and it
+// is a test rather than a comment because the failure it guards is SILENT and
+// INVERTED.
+//
+// The stopwatch compares the live heap against base + ceiling. That sum wraps,
+// so the loosest ceiling anybody can express - the value reached for when the
+// intent is "do not limit this" - used to land one BELOW the baseline and stop
+// the first evaluation that ticked. Measured 2026-09-03: HeapAlloc 202414760,
+// HeapAlloc + MaxUint64 = 202414759, and a PAC file that had done nothing came
+// back memory_ceiling in no time at all.
+//
+// Nothing in this program builds a Sandbox yet - L2 arrives with P8-K3 - so this
+// went in before the first caller rather than after. A limit that turns into its
+// own opposite is the worst direction for one to fail in, and this one failed
+// looking exactly like a real answer.
+func TestACeilingSetHighMeansLooseRatherThanInstantlyTripped(t *testing.T) {
+	loose := testSandbox()
+	loose.Ceiling = math.MaxUint64
+
+	result := loose.Evaluate("function FindProxyForURL(url, host) { return 'DIRECT'; }",
+		"https://example.com/", "example.com")
+
+	if result.Outcome == corepac.OutcomeMemoryCeiling {
+		t.Fatalf("a PAC file that allocated nothing was stopped for allocating, under the loosest ceiling "+
+			"this type can express: %s", result.Detail)
+	}
+	if result.Outcome != corepac.OutcomeAnswered {
+		t.Fatalf("outcome %q where an answer was expected: %s", result.Outcome, result.Detail)
+	}
+	if result.Raw != "DIRECT" {
+		t.Errorf("the file answered %q and should have answered DIRECT", result.Raw)
+	}
 }

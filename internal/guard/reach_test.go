@@ -164,6 +164,43 @@ var fileReachingCalls = map[string]map[string]bool{
 	},
 }
 
+// allowedPackage is the set of places this run may reach.
+const allowedPackage = "github.com/donislawdev/certdoctor/internal/core/allowed"
+
+// wideningAllowlist names the files allowed to ADD to that set.
+//
+// THE TWO REACH LISTS ABOVE ASK WHO MAY OPEN A CONNECTION. THIS ONE ASKS WHO MAY
+// DECIDE WHERE ONE IS ALLOWED TO GO, and until 2026-09-03 nothing asked it at
+// all. The rule was true and unguarded: Allow is declared once, on
+// *allowed.Targets, and called from one file, so a reader had to reconstruct the
+// invariant from where the calls happened to be.
+//
+// WHAT IT PROTECTS IS NOT A CRASH TODAY BUT ONE THAT CANNOT BE CAUGHT. The
+// entry point writes this map on the goroutine that walks the layers, between L1
+// and L3, and the eight fan-out goroutines of L3 and L4 only read it. Concurrent
+// reads of a map are safe, a read racing a write is a fatal error - not a panic,
+// so recover does not see it, and the run dies with no report and a code from
+// outside the table. That is the same failure ADR63 bought Freeze to avoid for
+// the system view, whose goroutines outlive the call that started them.
+//
+// IT GOES IN BEFORE THE CODE THAT WOULD BREAK IT, WHICH IS THE ONLY TIME A GUARD
+// IS CHEAP. P8-K2 introduces ReasonProxy and ReasonPACFile - two new reasons to
+// widen the set, arriving in a layer that has its own inputs and outputs. A
+// guard written afterwards arrives to find the rule already broken, and is then
+// a repair rather than a protection. The reach lists above could start at zero
+// for exactly this reason, and this one starts at one.
+//
+// AN ENTRY HERE IS NOT A FORMALITY. It means one more place that can decide
+// where this program is permitted to connect, which is the promise of inviolable
+// rule 16 read from the other end.
+var wideningAllowlist = map[string]bool{
+	// The entry point, and only the entry point. Every widening happens here,
+	// before L3 exists as a possibility - a layer that adds its own targets is a
+	// layer permitting itself, which would make the set a description of what
+	// happened rather than a rule about what may.
+	"cmd/certdoctor/cli.go": true,
+}
+
 // TestNothingOutsideTheAllowlistReachesTheNetwork is inviolable rule 16 turned
 // into something a machine can check.
 //
@@ -180,6 +217,18 @@ func TestNothingOutsideTheAllowlistReachesTheNetwork(t *testing.T) {
 func TestNothingOutsideTheAllowlistOpensAPath(t *testing.T) {
 	tr := mustLoadModule(t)
 	requireNoViolations(t, checkFileOpening(tr), "path opening outside the allowlist")
+}
+
+// TestNothingOutsideTheAllowlistWidensTheAllowedSet is the third question, and
+// it is about the rule rather than about the reaching.
+//
+// The two checks above ask who may open a connection. This one asks who may say
+// where one is permitted to go - and getting that wrong does not produce a
+// refusal a reader can see, it produces a set that quietly agrees with whatever
+// happened.
+func TestNothingOutsideTheAllowlistWidensTheAllowedSet(t *testing.T) {
+	tr := mustLoadModule(t)
+	requireNoViolations(t, checkWidening(tr), "the allowed set widened outside the allowlist")
 }
 
 // TestTheReachGuardsCanFail is the canary, and it carried the whole weight until
@@ -217,6 +266,15 @@ func TestTheReachGuardsCanFail(t *testing.T) {
 	// code: the file port's resolver is built on this exact call, and until
 	// 2026-08-05 this scanner could not see it.
 	requireViolation(t, violations, "filepath.EvalSymlinks")
+
+	// The widening guard, added 2026-09-03. Its canary matters more than the
+	// other two, not less: the list it consults has a single entry and the check
+	// would look exactly the same if the scanner had stopped reading files.
+	widening := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "widens_the_set.go", "internal/core/probe/planted.go")},
+	}
+	requireViolation(t, checkWidening(widening), "may not widen")
 }
 
 // TestAnAllowlistedFileMayReach is the other side of both rules. A guard that
@@ -239,6 +297,15 @@ func TestAnAllowlistedFileMayReach(t *testing.T) {
 		files:      []sourceFile{loadFixture(t, "opens_a_path.go", "internal/adapter/probe/planted.go")},
 	}
 	requireNoViolations(t, checkFileOpening(opening), "an allowlisted file opening a path")
+
+	wideningAllowlist["internal/adapter/probe/planted.go"] = true
+	defer delete(wideningAllowlist, "internal/adapter/probe/planted.go")
+
+	widening := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "widens_the_set.go", "internal/adapter/probe/planted.go")},
+	}
+	requireNoViolations(t, checkWidening(widening), "an allowlisted file widening the allowed set")
 }
 
 // TestTheReachAllowlistsNameFilesThatExist keeps both lists from rotting. A
@@ -250,13 +317,68 @@ func TestTheReachAllowlistsNameFilesThatExist(t *testing.T) {
 	for _, sf := range tr.files {
 		present[sf.rel] = true
 	}
-	for _, list := range []map[string]bool{dialAllowlist, fileReadAllowlist} {
+	for _, list := range []map[string]bool{dialAllowlist, fileReadAllowlist, wideningAllowlist} {
 		for rel := range list {
 			if !present[rel] {
 				t.Errorf("an allowlist names %s, which is not in the tree", rel)
 			}
 		}
 	}
+}
+
+// checkWidening reports every file outside the list that adds to the set of
+// places this run may reach.
+//
+// IT READS CALLS RATHER THAN IMPORTS, and unlike checkDialing that is forced
+// rather than chosen: internal/core/allowed is imported all over this program to
+// ASK the set whether an address is permitted, which is the read side and is
+// exactly what the rule wants everywhere. Only the write side is rare. An import
+// based check here would report every layer and cover nothing.
+//
+// The import is still consulted, as a narrowing rather than as the rule: Allow
+// is declared once in this module, on *allowed.Targets, so a call to something
+// named Allow in a file that never imports that package belongs to somebody
+// else's type and is not this guard's business.
+//
+// WHAT IT DOES NOT SEE, said here rather than discovered later: a widening
+// reached through a function value or an interface, where the name Allow never
+// appears at the call site. The entry point hands Wire an Authorise callback
+// doing exactly that, which is why cli.go is on the list and Wire is not - the
+// decision is still taken in the one allowed place, and this scanner would not
+// have caught it if it were not.
+func checkWidening(tr tree) []Violation {
+	var violations []Violation
+	for _, sf := range tr.files {
+		if sf.isTest || wideningAllowlist[sf.rel] {
+			continue
+		}
+		knowsTheSet := false
+		for _, imp := range importsOf(sf) {
+			if imp.path == allowedPackage {
+				knowsTheSet = true
+				break
+			}
+		}
+		if !knowsTheSet {
+			continue
+		}
+		ast.Inspect(sf.file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "Allow" {
+				return true
+			}
+			violations = append(violations, Violation{sf.rel, sf.fset.Position(call.Pos()).Line, fmt.Sprintf(
+				"%s may not widen the set of places this run may reach - the set is written on the goroutine that "+
+					"walks the layers and READ by the fan-out goroutines of L3 and L4, so a write from anywhere else "+
+					"is a fatal error recover cannot catch, and the run dies with no report at all", sf.rel)})
+			return true
+		})
+	}
+	return sortViolations(violations)
 }
 
 // checkDialing reports every file outside the list that declares an import able
