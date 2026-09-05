@@ -181,3 +181,73 @@ func TestACeilingSetHighMeansLooseRatherThanInstantlyTripped(t *testing.T) {
 		t.Errorf("the file answered %q and should have answered DIRECT", result.Raw)
 	}
 }
+
+// TestALooseCeilingAlsoHoldsForAFileTheStopwatchGETSTOWATCH is the test above
+// made independent of a race, and it exists because the one above turned out to
+// be decided by one.
+//
+// WHAT THE FULL MUTATION REGISTER MEASURED, 2026-09-05. The entry aimed at the
+// saturation - replacing "if limit < base.HeapAlloc" with a condition that never
+// fires - was caught 3 times out of 3 when run on its own, and SURVIVED in the
+// full run of 528 entries. Nothing about the code differed between those runs.
+// What differed was the machine: a full run keeps go build and go test busy, and
+// under that load the stopwatch goroutine does not get scheduled before a file
+// that answers immediately has already answered.
+//
+// WHY THAT MAKES THE TEST ABOVE INSUFFICIENT ON ITS OWN, and it is not that it
+// is wrong. Its sentence - a file that allocated nothing must not be stopped for
+// allocating - is true and worth pinning, so it stays untouched. But with the
+// saturation removed the limit wraps to base.HeapAlloc-1, so the FIRST heap read
+// trips it, and whether that read happens at all depends on the scheduler. A
+// guard whose verdict depends on machine load teaches rerunning rather than
+// looking - docs/22 section 2 says exactly that about flaky guards.
+//
+// WHAT THIS ONE CHANGES: the file RUNS for a while, so the stopwatch reads the
+// heap dozens of times while it does. Measured tick is one millisecond and the
+// budget here is two seconds, so a file taking tens of milliseconds leaves the
+// stopwatch about a hundred chances to fire and still finishes with a margin of
+// more than an order of magnitude. It is not a proof by construction - that
+// would need the arithmetic reachable on its own - but it moves the verdict off
+// a coin flip.
+func TestALooseCeilingAlsoHoldsForAFileTheStopwatchGetsToWatch(t *testing.T) {
+	loose := testSandbox()
+	loose.Ceiling = math.MaxUint64
+
+	// THE TIME BUDGET IS RAISED BECAUSE IT IS THE CONFOUNDING LIMIT HERE, not
+	// out of caution. This test asks about the MEMORY ceiling, and a file that
+	// runs long enough to be watched necessarily spends time doing it - so the
+	// two-second budget the other tests share would be a second reason for a
+	// verdict, and a failure could mean either. Caught by the race detector on
+	// the first run: under -race goja is roughly twelve times slower, the loop
+	// overran two seconds, and the outcome came back "time_limit" where the
+	// test is not asking about time at all.
+	loose.Budget = 20 * time.Second
+
+	// A COUNTING LOOP RATHER THAN AN ALLOCATING ONE, deliberately. With the
+	// saturation removed the limit trips on the first read whatever the heap
+	// holds, so allocating would add nothing but noise - and a file that
+	// allocates could trip a REAL ceiling on some other machine, which is a
+	// second reason for a verdict this test does not want.
+	//
+	// The count is chosen so the file runs for tens of milliseconds unraced and
+	// still finishes quickly under -race, which is the range where the stopwatch
+	// gets dozens to hundreds of reads either way.
+	const source = `function FindProxyForURL(url, host) {
+		var n = 0;
+		for (var i = 0; i < 300000; i++) { n = n + 1; }
+		return n === 300000 ? 'DIRECT' : 'PROXY counted.wrong:1';
+	}`
+
+	result := loose.Evaluate(source, "https://example.com/", "example.com")
+
+	if result.Outcome == corepac.OutcomeMemoryCeiling {
+		t.Fatalf("a file that only counted was stopped for allocating, under the loosest ceiling "+
+			"this type can express: %s", result.Detail)
+	}
+	if result.Outcome != corepac.OutcomeAnswered {
+		t.Fatalf("outcome %q where an answer was expected: %s", result.Outcome, result.Detail)
+	}
+	if result.Raw != "DIRECT" {
+		t.Errorf("the file answered %q and should have answered DIRECT", result.Raw)
+	}
+}

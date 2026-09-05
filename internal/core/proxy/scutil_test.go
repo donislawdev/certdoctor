@@ -145,6 +145,15 @@ func TestANestedDictionaryContributesNothing(t *testing.T) {
 	if _, ok := got.Scalar("Inner"); ok {
 		t.Error("the nested dictionary itself became a scalar")
 	}
+	// AND IT MUST NOT HAVE BECOME AN ARRAY EITHER, which this test did not ask
+	// until 2026-09-05. The name says a nested dictionary contributes NOTHING,
+	// and the four checks above cover only the scalar map - so the whole Arrays
+	// half of that sentence went unasserted. Measured by the mutation register:
+	// widening the "<array>" prefix check to accept any value turns every nested
+	// block into an empty array, and every assertion above still passed.
+	if _, ok := got.Array("Inner"); ok {
+		t.Error("the nested dictionary opened an array, so a block that carries no list became one")
+	}
 }
 
 func TestNothingAtAllComesApartWithoutComplaint(t *testing.T) {
