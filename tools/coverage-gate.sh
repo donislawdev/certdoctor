@@ -47,8 +47,22 @@ done < <(sed 's/#.*//' "$floors")
 # blaming the one file that was correct for the absence of the compiler. A check
 # that misidentifies its own failure sends the reader to the wrong place, which
 # is worse than a check that simply stops.
+# WHY THE FAILURE IS FILTERED AND NOT JUST TAILED, MEASURED 2026-09-05. This
+# used to print the last twenty lines and nothing else. On a red Windows run
+# those twenty lines were filled entirely by packages that PASSED - go test
+# prints them in package order, the failing one sorted early, and twenty
+# successful lines pushed it out of view. The gate reported that it could not
+# measure and then showed a screen of green, which sends the reader looking in
+# the wrong place. That is the same failure mode the comment above describes:
+# a check that misidentifies its own failure is worse than one that stops.
+#
+# The tail is kept as well, because a filter only finds what it knows to look
+# for and a build failure can arrive in a shape neither pattern matches.
 report="$(go test -cover -count=1 ./... 2>&1)" || {
   echo "COULD NOT MEASURE: go test did not finish."
+  echo "--- the packages that failed, and the assertions that failed in them:"
+  printf '%s\n' "$report" | grep -E '^(FAIL|ok +[^ ]+ +\[|--- FAIL|# )|_test\.go:|panic:|\[build failed\]' || echo "  (nothing matched the filter - read the tail below)"
+  echo "--- the last twenty lines, for anything the filter above did not catch:"
   printf '%s\n' "$report" | tail -20
   exit 1
 }
