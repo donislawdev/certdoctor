@@ -287,3 +287,89 @@ func TestTheDetailCountsRatherThanClaims(t *testing.T) {
 		t.Errorf("the detail line %q does not say how many variables were read", detail)
 	}
 }
+
+// TestProxyVariablesAreTheFourAddressesInBothSpellings pins what the derived
+// rule actually selects.
+//
+// THE LIST IS DERIVED FROM variables RATHER THAN WRITTEN OUT, so "every name is
+// declared" is true by construction and would be a test proving nothing. What
+// needs a test is the OPPOSITE direction: that the rule picks exactly these and
+// that a name arriving in variables later joins them only when it should.
+func TestProxyVariablesAreTheFourAddressesInBothSpellings(t *testing.T) {
+	want := []string{
+		"HTTP_PROXY", "http_proxy",
+		"HTTPS_PROXY", "https_proxy",
+		"ALL_PROXY", "all_proxy",
+		"NO_PROXY", "no_proxy",
+	}
+	got := ProxyVariables()
+	if len(got) != len(want) {
+		t.Fatalf("ProxyVariables selected %d names, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ProxyVariables position %d is %q, want %q - the order is report order", i, got[i], want[i])
+		}
+	}
+	declared := map[string]bool{}
+	for _, name := range variables {
+		declared[name] = true
+	}
+	for _, name := range got {
+		if !declared[name] {
+			t.Errorf("ProxyVariables selected %q, which this program does not declare it reads", name)
+		}
+	}
+}
+
+// TestAVariableWithProxyInItsNameIsNotAlwaysAProxyAddress holds the two
+// exclusions. NODE_USE_ENV_PROXY is a switch saying whether Node reads the
+// others, and JAVA_TOOL_OPTIONS may CARRY proxy properties inside its value -
+// treating either as an address would put a proxy in the report that nobody
+// configured.
+func TestAVariableWithProxyInItsNameIsNotAlwaysAProxyAddress(t *testing.T) {
+	for _, name := range []string{"NODE_USE_ENV_PROXY", "JAVA_TOOL_OPTIONS", "SSL_CERT_FILE", "container"} {
+		if carriesProxyAddress(name) {
+			t.Errorf("%q was selected as carrying a proxy address", name)
+		}
+	}
+	for _, name := range []string{"HTTP_PROXY", "no_proxy", "ALL_PROXY"} {
+		if !carriesProxyAddress(name) {
+			t.Errorf("%q was not selected, and it is one of the addresses L2 has to read", name)
+		}
+	}
+}
+
+// TestBothSpellingsOfEveryProxyVariableAreThere is the rule from the comment on
+// variables turned into a check. HTTP_PROXY and http_proxy are NOT two
+// spellings of one variable - curl honours the lower case one only for the http
+// proxy - so a subset holding one without the other would let a report claim a
+// machine has no proxy because it looked at the wrong case.
+func TestBothSpellingsOfEveryProxyVariableAreThere(t *testing.T) {
+	present := map[string]bool{}
+	for _, name := range ProxyVariables() {
+		present[name] = true
+	}
+	for _, name := range ProxyVariables() {
+		other := strings.ToUpper(name)
+		if name == other {
+			other = strings.ToLower(name)
+		}
+		if !present[other] {
+			t.Errorf("ProxyVariables names %q and not %q, and those are two variables rather than two spellings", name, other)
+		}
+	}
+}
+
+// TestProxyVariablesAreReturnedAsACopy keeps a caller in another package from
+// changing what L0 reports by appending to what it was handed.
+func TestProxyVariablesAreReturnedAsACopy(t *testing.T) {
+	first := ProxyVariables()
+	if len(first) == 0 {
+		t.Fatal("nothing to copy")
+	}
+	first[0] = "CHANGED"
+	if ProxyVariables()[0] == "CHANGED" {
+		t.Error("ProxyVariables handed back its own backing array, so a caller can rewrite the list L0 reads")
+	}
+}

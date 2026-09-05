@@ -1,5 +1,7 @@
 package machine
 
+import "strings"
+
 // variables is every environment variable L0 reads, in report order.
 //
 // EACH ONE CARRIES ITS SOURCE, AND THAT IS RULE 18, NOT DECORATION. Every line
@@ -210,4 +212,46 @@ var variables = []string{
 	// present says something. That asymmetry is exactly why this is a hint for
 	// L6 rather than an answer - D11.
 	"container",
+}
+
+// ProxyVariables returns the declared variables that carry a PROXY ADDRESS, in
+// the order L0 reports them.
+//
+// IT IS DERIVED AND NOT LISTED, AND THE FIRST DRAFT LISTED THEM. Writing the
+// eight names again put the same literals in the file twice, and the mutation
+// register works on TEXT rather than on intent: two existing entries aiming at
+// "`t`"http_proxy`",`n" immediately reported TRAFIEN 2 and stopped proving
+// anything. That is OBS50 committed while its own paragraph was being written -
+// the shape is not "one RULE in two places", it is "one STRING in two places",
+// and the second is easier to reach by accident. Fixed at the source rather than
+// by widening the anchors, which is what OBS50 itself prescribes.
+//
+// THE RULE: a name ending in _PROXY with exactly one underscore in it. That
+// catches both spellings of all four addresses and would catch FTP_PROXY on the
+// day somebody adds it, which is the behaviour we want from a derived list.
+//
+// WHAT IT DELIBERATELY LEAVES OUT, and both exclusions fall out of the rule
+// rather than being special cases. NODE_USE_ENV_PROXY ends in _PROXY and has
+// three underscores: it is a SWITCH saying whether Node reads the others at all,
+// which is a fact about a runtime rather than an address. JAVA_TOOL_OPTIONS does
+// not end in _PROXY at all, and is out for the opposite reason - it may CARRY
+// proxy properties inside its value, so it is read by a parser rather than by
+// name, and listing it here would invite somebody to treat its whole value as a
+// proxy URL.
+func ProxyVariables() []string {
+	out := make([]string, 0, len(variables))
+	for _, name := range variables {
+		if carriesProxyAddress(name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// carriesProxyAddress is the rule ProxyVariables applies. It is separate so that
+// a test can put a name to it and so that the exclusion above has somewhere to
+// be stated once.
+func carriesProxyAddress(name string) bool {
+	upper := strings.ToUpper(name)
+	return strings.HasSuffix(upper, "_PROXY") && strings.Count(upper, "_") == 1
 }

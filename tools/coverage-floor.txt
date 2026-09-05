@@ -112,3 +112,14 @@ github.com/donislawdev/certdoctor/internal/adapter/probe/curl 98
 # exercise it.
 github.com/donislawdev/certdoctor/internal/core/pac 93
 github.com/donislawdev/certdoctor/internal/adapter/pac 94
+
+# The proxy exception rules arrived 2026-09-05 with P8-K2.
+#
+# ONE HUNDRED IS THE MEASURED VALUE ROUNDED DOWN, THE SAME RULE AS EVERY LINE
+# ABOVE, AND IT IS A CLAIM ABOUT THE PACKAGE RATHER THAN A BOAST. internal/core/
+# proxy is text and address arithmetic with no build tag and no platform behind
+# it, so every branch in it can be reached by a table entry, and a branch that
+# cannot is a branch that decides nothing - which is what this gate exists to
+# find. It also means the number is identical on Linux, which is the half OBS100
+# showed was never true of the build-tagged package next door.
+github.com/donislawdev/certdoctor/internal/core/proxy 100
