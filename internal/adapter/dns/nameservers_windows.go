@@ -254,6 +254,13 @@ type fixedInfo struct {
 // WHY NOT golang.org/x/sys/windows, WHICH HAS NewLazySystemDLL. It is a
 // dependency, and inviolable rule 5 makes that a decision rather than a
 // convenience - for a function this file can write in fifteen lines.
+//
+// THERE IS A SECOND COPY OF THIS FUNCTION SINCE 2026-09-06, in
+// internal/adapter/proxyconf/proxyconf_windows.go, and a change to the rule here
+// belongs in both. The duplication is the owner's decision with the alternative
+// priced - sharing it costs two entries in the layer guard's intraLayerEdges -
+// and it is recorded as OBS116 with the condition for undoing it named: the
+// THIRD caller.
 func systemLibrary(name string) (*syscall.LazyDLL, error) {
 	get := syscall.NewLazyDLL("kernel32.dll").NewProc("GetSystemDirectoryW")
 	if err := get.Find(); err != nil {

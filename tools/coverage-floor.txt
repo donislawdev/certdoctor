@@ -123,3 +123,29 @@ github.com/donislawdev/certdoctor/internal/adapter/pac 94
 # find. It also means the number is identical on Linux, which is the half OBS100
 # showed was never true of the build-tagged package next door.
 github.com/donislawdev/certdoctor/internal/core/proxy 100
+
+# The platform transport for those rules arrived 2026-09-06 with the second half
+# of P8-K2, and its floor is the lowest in this file. THAT IS THE CONSEQUENCE OF
+# A DESIGN RATHER THAN A GAP IN THE TESTING, and it is written here rather than
+# left to be guessed at.
+#
+# internal/adapter/proxyconf calls somebody else's API and hands back strings.
+# Everything that is text - the exception list rules, the scutil dictionary, the
+# precedence between two spellings of one variable, every conversion of a
+# platform reading into a lens - lives next door in internal/core/proxy, where it
+# has no build tag, sits at 100 percent, and can be aimed at by the mutation
+# register. What is left here needs a real machine.
+#
+# WHICH PLATFORM IS THE LOWER ONE IS MEASURED, NOT ASSUMED - OBS100, which cost a
+# month of a floor that was true once. Measured 2026-09-06: Windows 84.5 percent
+# and Linux 100. Windows compiles proxyconf_windows.go, whose two API calls are
+# exercised against whatever this machine holds; Linux compiles a Read that
+# returns nothing and a reason, which is tested exactly. So the floor is the
+# Windows number rounded down, and Linux clears it with room to spare.
+#
+# WHAT NO NUMBER HERE COVERS, said plainly: proxyconf_darwin.go. It is one line
+# long, and it is one line long on purpose - every branch that line could get
+# wrong was moved into proxyconf.go, which every platform compiles and every
+# platform tests. The gate does not run on macOS at all (see ci.yml), so a floor
+# would not have caught it either way. This is the narrowed remainder of OBS107.
+github.com/donislawdev/certdoctor/internal/adapter/proxyconf 84
