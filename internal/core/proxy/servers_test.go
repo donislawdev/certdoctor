@@ -1,6 +1,10 @@
 package proxy
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestAProxyListIsCutOnSemicolonsOrWhitespace(t *testing.T) {
 	cases := []struct {
@@ -129,5 +133,78 @@ func TestADefaultEntryIsRecognisedAsOne(t *testing.T) {
 	}
 	if (Server{Protocol: "http", Address: "p"}).IsDefault() {
 		t.Error("an entry naming a protocol is being treated as the default for every other one")
+	}
+}
+
+// TestAPasswordInAProxyEntryNeverReachesTheServer is inviolable rule 17 made
+// structural rather than promised: the value is not removed from Address by
+// something downstream, it never gets in.
+//
+// THE LAST ASSERTION LOOKS AT THE WHOLE STRUCT AND NOT AT Address, which is the
+// half that would rot first. A field added later and quietly filled with the raw
+// entry would leave every Address assertion green.
+func TestAPasswordInAProxyEntryNeverReachesTheServer(t *testing.T) {
+	const secret = "hunter2"
+	cases := []struct {
+		name    string
+		entry   string
+		dropped bool
+		want    Server
+	}{
+		{
+			name:  "a user and a password",
+			entry: "http://bob:hunter2@p.corp:8080",
+			want:  Server{Scheme: "http", Address: "p.corp:8080", CarriedCredentials: true},
+		},
+		{
+			name:  "a user with no password is still a credential",
+			entry: "http://bob@p.corp:8080",
+			want:  Server{Scheme: "http", Address: "p.corp:8080", CarriedCredentials: true},
+		},
+		{
+			name:  "an empty userinfo carries nothing to hide",
+			entry: "http://@p.corp:8080",
+			want:  Server{Scheme: "http", Address: "p.corp:8080"},
+		},
+		{
+			name:  "an at sign in a path is not userinfo",
+			entry: "http://p.corp:8080/a@b",
+			want:  Server{Scheme: "http", Address: "p.corp:8080"},
+		},
+		{
+			name:  "a password holding an at sign is cut at the last one",
+			entry: "http://bob:hunter2@x@p.corp:8080",
+			want:  Server{Scheme: "http", Address: "p.corp:8080", CarriedCredentials: true},
+		},
+		{
+			name:    "credentials and no address name nobody",
+			entry:   "http://bob:hunter2@",
+			dropped: true,
+		},
+		{
+			name:  "an entry with a protocol keeps it",
+			entry: "https=http://bob:hunter2@p.corp:8080",
+			want:  Server{Protocol: "https", Scheme: "http", Address: "p.corp:8080", CarriedCredentials: true},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ParseServerList(c.entry)
+			if c.dropped {
+				if len(got) != 0 {
+					t.Fatalf("entry %q gave %+v, and it names no address at all", c.entry, got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("entry %q gave %d servers, want 1: %+v", c.entry, len(got), got)
+			}
+			if got[0] != c.want {
+				t.Errorf("entry %q gave %+v, want %+v", c.entry, got[0], c.want)
+			}
+			if strings.Contains(fmt.Sprintf("%+v", got[0]), secret) {
+				t.Errorf("entry %q left the password somewhere in %+v", c.entry, got[0])
+			}
+		})
 	}
 }

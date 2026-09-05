@@ -19,7 +19,29 @@ type Server struct {
 	Scheme string
 	// Address is host or host:port, as written, with the case of a name left
 	// alone so that the report shows what the machine holds.
+	//
+	// USERINFO IS NEVER IN HERE - see CarriedCredentials below.
 	Address string
+	// CarriedCredentials records that the entry named a user and a password and
+	// that this package dropped them. The name is the one report.Finding already
+	// uses for the same fact, because the glossary allows one name per concept.
+	//
+	// THE FACT IS HALF THE ANSWER TO "WHY DO I GET A 407" and it is the half
+	// that can be said without saying the secret. Vendors document the shape:
+	// Microsoft, HttpClient.DefaultProxy, read 2026-09-06 - the proxy URL "may
+	// optionally include a username and password for proxy authentication".
+	//
+	// WHY THE SPLIT HAPPENS HERE AND NOT ON THE ASSEMBLY PATH, WHICH IS WHERE
+	// ADR18 PUTS MASKING. report.EnvironmentVariable keeps the raw value and
+	// lets the orchestrator mask it, and that is right for a value whose only
+	// destiny is a report line. Address is not that: it is the field a later
+	// slice turns into a connection target and into an entry in the allowed set,
+	// so a secret left in it does not stay on the reporting path. Inviolable
+	// rule 17 says credentials never reach the report or the log whatever
+	// --redact says, and the cheapest way to keep a promise like that is to make
+	// it structural - the value is not dropped by a rule somewhere downstream,
+	// it never enters the struct.
+	CarriedCredentials bool
 }
 
 // IsDefault reports whether this entry applies to any protocol without one of
@@ -72,6 +94,13 @@ func ParseServerList(list string) []Server {
 // positional rather than a bare "is there an equals sign". A proxy written with
 // a query - "http://p.corp/?a=b" - would otherwise be read as a protocol named
 // "http://p.corp/?a" serving a proxy called "b".
+//
+// USERINFO IS CUT OFF AND ONLY THE FACT OF IT SURVIVES - inviolable rule 17 and
+// Server.CarriedCredentials. It is cut here rather than in the environment
+// parser alone, even though the Windows grammar above has no place for it,
+// because one rule in two places is the shape OBS50 has measured five times in
+// this tree. The order matters and is not free: a path is cut FIRST, so that
+// "http://p:8080/a@b" is the server p:8080 rather than a server called "b".
 func parseServer(entry string) (Server, bool) {
 	var s Server
 	rest := entry
@@ -86,6 +115,13 @@ func parseServer(entry string) (Server, bool) {
 	// A path or query has no meaning in this grammar; the list names servers.
 	if cut := strings.IndexAny(rest, "/?#"); cut >= 0 {
 		rest = rest[:cut]
+	}
+	// The LAST "@" separates userinfo from the host, because a host name cannot
+	// contain one and an unencoded password can. An empty userinfo carries no
+	// credential, so "@p:8080" is a badly written address and not a secret.
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
+		s.CarriedCredentials = at > 0
+		rest = rest[at+1:]
 	}
 	s.Address = rest
 	if s.Address == "" {

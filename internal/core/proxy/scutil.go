@@ -40,6 +40,44 @@ func (s SCUtil) Array(key string) ([]string, bool) {
 	return v, ok
 }
 
+// SCUtilPath and SCUtilArg are the command that produces the text ParseSCUtil
+// reads, and SourceSCUtil is how a report names it.
+//
+// THE PATH IS ABSOLUTE, which is ADR49's first narrowing rule: a bare name is
+// resolved by somebody else's PATH, so the thing that runs would be chosen by
+// configuration this program never read and cannot show.
+//
+// THEY LIVE IN THE CORE THOUGH ONLY A DARWIN FILE RUNS THE COMMAND, because the
+// alternative is the same path spelled in the adapter that runs it and in the
+// text that reports it - one STRING in two places, which is the shape OBS50 has
+// measured five times here and which disarms mutation entries by making them
+// match twice.
+const (
+	SCUtilPath   = "/usr/sbin/scutil"
+	SCUtilArg    = "--proxy"
+	SourceSCUtil = SCUtilPath + " " + SCUtilArg
+)
+
+// The keys LensFromSCUtil asks for.
+//
+// ONE OF THEM IS MEASURED AND THE REST ARE AN ASSESSMENT, and the difference is
+// not decoration. ExceptionsListKey came off a machine - see below. Every other
+// name here comes from Apple's documentation of the CFNetwork proxy dictionary
+// and has never been seen in output, because the only Mac this project has read
+// has no proxy configured and printed none of them. Until one with a proxy is
+// read they are an ASSESSMENT, not a source, and inviolable rule 18 says that
+// difference is written down rather than smoothed away.
+const (
+	httpEnableKey    = "HTTPEnable"
+	httpProxyKey     = "HTTPProxy"
+	httpPortKey      = "HTTPPort"
+	httpsEnableKey   = "HTTPSEnable"
+	httpsProxyKey    = "HTTPSProxy"
+	httpsPortKey     = "HTTPSPort"
+	autoConfigURLKey = "ProxyAutoConfigURLString"
+	autoDiscoveryKey = "ProxyAutoDiscoveryEnable"
+)
+
 // ExceptionsListKey is the key holding the macOS proxy exception list.
 //
 // MEASURED 2026-09-05: it is the key that exists on a Mac with no proxy
@@ -147,4 +185,75 @@ func ParseSCUtil(text string) SCUtil {
 		}
 	}
 	return out
+}
+
+// macProtocols pairs each protocol with the three keys macOS keeps it under.
+var macProtocols = []struct {
+	protocol  string
+	enableKey string
+	proxyKey  string
+	portKey   string
+}{
+	{"http", httpEnableKey, httpProxyKey, httpPortKey},
+	{"https", httpsEnableKey, httpsProxyKey, httpsPortKey},
+	// SOCKS and FTP have their own keys and are deliberately left out: this
+	// program diagnoses one https URL, so a SOCKS proxy row would be a fact it
+	// has nothing to say about. Adding one is a line of table, the day a probe
+	// needs it - the same "source AND consumer" rule ADR88 put on Rule.
+}
+
+// LensFromSCUtil turns a parsed scutil dictionary into what the macOS system
+// configuration says about proxying.
+//
+// A NAMED PROXY IS REPORTED UNLESS THE MACHINE EXPLICITLY SAYS IT IS OFF, and
+// the asymmetry is chosen rather than sloppy. Gating on Enable being 1 would
+// mean a key name this project has never seen decides whether a proxy appears at
+// all - so if Apple spells it differently than the documentation does, the report
+// would say "no proxy" on a machine where Safari and .NET use one. That is a
+// silent false negative in the one answer this tool exists to give. Treating an
+// explicit 0 as off costs nothing, because a key that is there is a key whose
+// name we read correctly.
+func LensFromSCUtil(out SCUtil) Lens {
+	lens := Lens{Stack: StackMacSystem, Source: SourceSCUtil, Read: true, Servers: []Server{}}
+
+	var notes []string
+	for _, entry := range macProtocols {
+		// An absent key and a key holding nothing both come back empty here, and
+		// they are the same answer: this protocol names no proxy. A second test
+		// for presence could not change that, which would make it a line no
+		// mutation could redden - OBS112.
+		host, _ := out.Scalar(entry.proxyKey)
+		if host == "" {
+			continue
+		}
+		if enabled, _ := out.Scalar(entry.enableKey); enabled == "0" {
+			notes = append(notes, entry.proxyKey+" names a proxy and "+entry.enableKey+
+				" is 0, so this machine holds one and does not use it")
+			continue
+		}
+		address := host
+		if port, _ := out.Scalar(entry.portKey); port != "" {
+			address = host + ":" + port
+		}
+		// The scheme is left empty because macOS does not say how the proxy
+		// itself is reached - only which protocol the entry is for.
+		lens.Servers = append(lens.Servers, Server{Protocol: entry.protocol, Address: address})
+	}
+
+	lens.Bypass, lens.BypassSet = out.ExceptionsList()
+	lens.Rule = RuleExceptionsList
+	// OBS111 read on the other platform: an address here is a fact of
+	// configuration and never a conclusion that the script is in use.
+	lens.PACURL, _ = out.Scalar(autoConfigURLKey)
+	switch discovery, _ := out.Scalar(autoDiscoveryKey); discovery {
+	case "1":
+		lens.AutoDetect = On
+	case "0":
+		lens.AutoDetect = Off
+		// Anything else, the absent key included, stays Unasked. The key name is
+		// an assessment, so "it was not in the output" and "this stack has no
+		// such setting" are the same amount of knowledge here.
+	}
+	lens.Detail = strings.Join(notes, "; ")
+	return lens
 }

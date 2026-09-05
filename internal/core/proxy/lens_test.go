@@ -200,6 +200,34 @@ func TestTheZeroLensWasNeverAsked(t *testing.T) {
 	}
 }
 
+// TestUnreadableLensLeavesNilRatherThanAnEmptyList holds the one thing the
+// helper exists to get right in three platform files at once.
+//
+// THE FIXTURE IS BUILT BY HAND ONE FUNCTION ABOVE AND NOT BY THIS CONSTRUCTOR,
+// which is deliberate and is OBS48: a test whose oracle is the function under
+// test agrees with it whatever it does. So this checks the constructor against
+// written-out expectations, and the Compare tests keep their own fixture.
+func TestUnreadableLensLeavesNilRatherThanAnEmptyList(t *testing.T) {
+	const why = "the registry refused"
+	got := UnreadableLens(StackWinINET, SourceIEProxyConfig, why)
+
+	if got.Read {
+		t.Error("a stack that could not be read is being reported as one that was")
+	}
+	if got.Servers != nil {
+		t.Errorf("Servers is %+v, and an empty list would say this stack answered and named nobody", got.Servers)
+	}
+	if got.Detail != why {
+		t.Errorf("detail is %q, want %q - a false Read without one is a defect on our side", got.Detail, why)
+	}
+	if got.Stack != StackWinINET || got.Source != SourceIEProxyConfig {
+		t.Errorf("a refused reading lost track of which stack and call it came from: %+v", got)
+	}
+	if got.BypassSet || got.Rule != "" || got.PACURL != "" || got.AutoDetect != Unasked {
+		t.Errorf("a stack nobody could read came back claiming something about itself: %+v", got)
+	}
+}
+
 func TestATristateSaysWhichOfTheTwoNegativesItMeans(t *testing.T) {
 	if Unasked.String() == Off.String() {
 		t.Error("an unasked question and a setting that is off print the same, and they are different facts")

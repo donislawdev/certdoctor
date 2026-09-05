@@ -94,6 +94,21 @@ type Lens struct {
 	AutoDetect Tristate
 }
 
+// UnreadableLens is the answer for a stack this machine would not let us read.
+//
+// IT EXISTS SO THAT THE SHAPE IS WRITTEN ONCE. Three platform readings can each
+// fail, and each of them assembling its own zero-ish Lens by hand is one rule in
+// three places - the measured shape of OBS50. The rule itself is one line and
+// worth stating: a failure fills Detail and leaves Servers NIL, because nil is
+// what tells Compare this stack said nothing rather than said "no proxy".
+//
+// A DETAIL IS DEMANDED RATHER THAN DEFAULTED. Lens.Read documents that false
+// without a Detail is a defect on our side, so a helper quietly inventing one
+// would hide exactly the case that sentence exists to expose.
+func UnreadableLens(stack Stack, source, detail string) Lens {
+	return Lens{Stack: stack, Source: source, Read: false, Detail: detail}
+}
+
 // Tristate is yes, no, or "this stack does not answer that question".
 //
 // A BOOLEAN WOULD HAVE TO PICK ONE OF THE TWO NEGATIVES, and they are not the
@@ -244,6 +259,12 @@ func Compare(lenses []Lens) (Divergence, bool) {
 // is still kept as the platform gave it - see Lens.Servers - because that is
 // what the platform will act on. This is only for asking whether two lenses say
 // the same thing.
+//
+// CarriedCredentials IS DELIBERATELY NOT PART OF IT. Two stacks naming the same
+// proxy, one of them with a user name in front of it, are pointing at the same
+// machine - and a report saying they conflict would send somebody looking for a
+// second proxy that does not exist. Authentication is a fact about the entry,
+// not a different destination.
 func fingerprint(servers []Server) string {
 	parts := make([]string, 0, len(servers))
 	for _, s := range servers {

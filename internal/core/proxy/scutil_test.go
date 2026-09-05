@@ -201,3 +201,110 @@ func TestABraceLineWithoutAKeyIsIgnored(t *testing.T) {
 		t.Error("a key inside an unnamed block became a top level setting")
 	}
 }
+
+// TestTheStockMacLensIsAMachineWithNoProxyAndABypassListAnyway is the measured
+// output turned into a lens, and it holds the fact that surprised this plan:
+// every Mac excuses .local names and link-local addresses before anybody touches
+// a setting, so an empty exception list in a report would be wrong.
+func TestTheStockMacLensIsAMachineWithNoProxyAndABypassListAnyway(t *testing.T) {
+	lens := LensFromSCUtil(ParseSCUtil(measuredOutput))
+
+	if !lens.Read {
+		t.Fatal("the command answered and the lens says the stack could not be read")
+	}
+	if lens.Stack != StackMacSystem || lens.Source != SourceSCUtil {
+		t.Errorf("the lens lost track of where it came from: %+v", lens)
+	}
+	if lens.NamesAProxy() {
+		t.Errorf("Servers is %+v on a Mac with no proxy configured", lens.Servers)
+	}
+	if lens.Servers == nil {
+		t.Error("Servers is nil, and nil is reserved for a stack that was not read")
+	}
+	if !lens.BypassSet || lens.Bypass != ExceptionsListDefault {
+		t.Errorf("bypass is %q (set %v), want the default list this machine printed", lens.Bypass, lens.BypassSet)
+	}
+	if lens.Rule != RuleExceptionsList {
+		t.Errorf("rule is %q, and this list means what macOS says it means", lens.Rule)
+	}
+	if lens.PACURL != "" {
+		t.Errorf("PACURL is %q on output that named no script", lens.PACURL)
+	}
+	if lens.AutoDetect != Unasked {
+		t.Errorf("AutoDetect is %v, and the key was not in the output at all", lens.AutoDetect)
+	}
+}
+
+func TestTheMacLensReadsAProxyPerProtocolWithItsPort(t *testing.T) {
+	lens := LensFromSCUtil(SCUtil{Scalars: map[string]string{
+		"HTTPEnable":               "1",
+		"HTTPProxy":                "p.corp",
+		"HTTPPort":                 "8080",
+		"HTTPSEnable":              "1",
+		"HTTPSProxy":               "s.corp",
+		"ProxyAutoConfigURLString": "http://wpad.corp/proxy.pac",
+		"ProxyAutoDiscoveryEnable": "1",
+	}})
+
+	got, ok := ServerFor(lens.Servers, "http")
+	if !ok || got.Address != "p.corp:8080" {
+		t.Errorf("http got %+v (found %v), want host and port joined", got, ok)
+	}
+	// macOS names the protocol an entry is FOR and never how the proxy itself is
+	// reached, so claiming a scheme would be inventing one.
+	if got.Scheme != "" {
+		t.Errorf("http entry claims scheme %q, and this output does not say", got.Scheme)
+	}
+	got, ok = ServerFor(lens.Servers, "https")
+	if !ok || got.Address != "s.corp" {
+		t.Errorf("https got %+v (found %v), want the host alone where no port was given", got, ok)
+	}
+	if lens.PACURL != "http://wpad.corp/proxy.pac" {
+		t.Errorf("PACURL is %q, want the script this machine names", lens.PACURL)
+	}
+	if lens.AutoDetect != On {
+		t.Errorf("AutoDetect is %v, and the discovery key says 1", lens.AutoDetect)
+	}
+}
+
+// TestAProxyTurnedOffIsNotReportedAndAKeyWeNeverSawDoesNotSilenceOne is the
+// asymmetry written at LensFromSCUtil, and it is the half worth a test: the
+// enable key names are an assessment, so an absent one must not be allowed to
+// decide that a machine has no proxy.
+func TestAProxyTurnedOffIsNotReportedAndAKeyWeNeverSawDoesNotSilenceOne(t *testing.T) {
+	off := LensFromSCUtil(SCUtil{Scalars: map[string]string{
+		"HTTPEnable": "0",
+		"HTTPProxy":  "p.corp",
+	}})
+	if off.NamesAProxy() {
+		t.Errorf("Servers is %+v, and this machine says the proxy is off", off.Servers)
+	}
+	if off.Detail == "" {
+		t.Error("a proxy is configured and switched off, and the lens says nothing about it")
+	}
+
+	noEnableKey := LensFromSCUtil(SCUtil{Scalars: map[string]string{"HTTPProxy": "p.corp"}})
+	if !noEnableKey.NamesAProxy() {
+		t.Error("a proxy went unreported because a key whose name this project has never measured was absent")
+	}
+
+	empty := LensFromSCUtil(SCUtil{Scalars: map[string]string{"HTTPProxy": ""}})
+	if empty.NamesAProxy() {
+		t.Errorf("Servers is %+v, and a key holding nothing names no proxy", empty.Servers)
+	}
+}
+
+func TestMacAutoDiscoveryOffIsNotTheSameAsAbsent(t *testing.T) {
+	off := LensFromSCUtil(SCUtil{Scalars: map[string]string{"ProxyAutoDiscoveryEnable": "0"}})
+	if off.AutoDetect != Off {
+		t.Errorf("AutoDetect is %v, and the machine printed the key with a 0 in it", off.AutoDetect)
+	}
+
+	absent := LensFromSCUtil(SCUtil{})
+	if absent.AutoDetect != Unasked {
+		t.Errorf("AutoDetect is %v, and nothing in the output answered that question", absent.AutoDetect)
+	}
+	if !absent.Read {
+		t.Error("an empty dictionary is still a dictionary the command handed over")
+	}
+}
