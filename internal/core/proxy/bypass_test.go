@@ -18,9 +18,9 @@ func ask(t *testing.T, r Rule, list string, target Target) bool {
 
 func host(name string) Target { return Target{Scheme: "https", Host: name, Port: "443"} }
 
-func TestTheRuleListIsClosedAtFive(t *testing.T) {
-	if len(AllRules) != 5 {
-		t.Fatalf("AllRules has %d entries and the vocabulary is five; a sixth reading needs a source, measured or read at the vendor", len(AllRules))
+func TestTheRuleListIsClosedAtSix(t *testing.T) {
+	if len(AllRules) != 6 {
+		t.Fatalf("AllRules has %d entries and the vocabulary is six. A seventh reading needs TWO things: a source, read at the vendor or measured here, AND a consumer among the thirteen probes", len(AllRules))
 	}
 	seen := map[Rule]bool{}
 	for _, r := range AllRules {
@@ -81,46 +81,59 @@ func TestAnAbsentHostIsRefused(t *testing.T) {
 // four ways, and no row contains a mistake by anybody.
 func TestOneListMeansDifferentThingsToDifferentRuntimes(t *testing.T) {
 	cases := []struct {
-		name                                                     string
-		list, target                                             string
-		noProxy, winINET, winHTTP, nonProxyHosts, exceptionsList bool
-		why                                                      string
+		name                                                          string
+		list, target                                                  string
+		curl, dotNet, winINET, winHTTP, nonProxyHosts, exceptionsList bool
+		why                                                           string
 	}{
 		{
 			name: "a wildcard on the right",
 			list: "aaa.*", target: "aaa.corp",
-			noProxy: false, winINET: true, winHTTP: false, nonProxyHosts: true, exceptionsList: true,
+			curl: false, dotNet: false, winINET: true, winHTTP: false, nonProxyHosts: true, exceptionsList: true,
 			why: "IE documents www.microsoft.* as working and WinHTTP names aaa.* as unsupported",
 		},
 		{
 			name: "a bare domain name",
 			list: "local.com", target: "www.local.com",
-			noProxy: true, winINET: false, winHTTP: false, nonProxyHosts: false, exceptionsList: false,
-			why: "curl matches a domain containing the host, every other rule matches the server named",
+			curl: true, dotNet: false, winINET: false, winHTTP: false, nonProxyHosts: false, exceptionsList: false,
+			why: "curl matches a domain containing the host, and .NET says outright that it does not",
 		},
 		{
 			name: "the local macro",
 			list: "<local>", target: "intranet",
-			noProxy: false, winINET: true, winHTTP: true, nonProxyHosts: false, exceptionsList: false,
+			curl: false, dotNet: false, winINET: true, winHTTP: true, nonProxyHosts: false, exceptionsList: false,
 			why: "<local> is a Windows macro and is an ordinary name everywhere else",
 		},
 		{
 			name: "a wildcard on the left",
 			list: "*.local.com", target: "www.local.com",
-			noProxy: false, winINET: true, winHTTP: true, nonProxyHosts: true, exceptionsList: true,
-			why: "the only wildcard position all four wildcard rules agree on",
+			curl: false, dotNet: false, winINET: true, winHTTP: true, nonProxyHosts: true, exceptionsList: true,
+			why: "the only wildcard position the four wildcard rules agree on, and .NET has no wildcard at all",
 		},
 		{
 			name: "an abbreviated network",
 			list: "169.254/16", target: "169.254.1.1",
-			noProxy: false, winINET: false, winHTTP: false, nonProxyHosts: false, exceptionsList: true,
+			curl: false, dotNet: false, winINET: false, winHTTP: false, nonProxyHosts: false, exceptionsList: true,
 			why: "the form every stock Mac ships in its own default, and the one curl's CIDR rule refuses",
+		},
+		{
+			name: "the value people use to turn proxying off",
+			list: "*", target: "anything.example",
+			curl: true, dotNet: false, winINET: true, winHTTP: true, nonProxyHosts: true, exceptionsList: true,
+			why: "asterisks are not supported for wildcards in .NET, so the one value that disables proxying everywhere else is a host name nobody has",
+		},
+		{
+			name: "a leading dot against the bare domain",
+			list: ".local.com", target: "local.com",
+			curl: true, dotNet: false, winINET: false, winHTTP: false, nonProxyHosts: false, exceptionsList: false,
+			why: "curl strips the leading dot and .NET keeps it, so the entry excuses the domain itself in one and only its subdomains in the other",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			want := map[Rule]bool{
-				RuleNoProxy:        c.noProxy,
+				RuleNoProxyCurl:    c.curl,
+				RuleNoProxyDotNet:  c.dotNet,
 				RuleWinINET:        c.winINET,
 				RuleWinHTTP:        c.winHTTP,
 				RuleNonProxyHosts:  c.nonProxyHosts,
@@ -158,7 +171,7 @@ func TestNoProxyMatchesADomainOrTheHostItself(t *testing.T) {
 		{",,", "a.com", false},
 	}
 	for _, c := range cases {
-		if got := ask(t, RuleNoProxy, c.list, host(c.target)); got != c.want {
+		if got := ask(t, RuleNoProxyCurl, c.list, host(c.target)); got != c.want {
 			t.Errorf("NO_PROXY %q against %q gave %v, want %v", c.list, c.target, got, c.want)
 		}
 	}
@@ -178,7 +191,7 @@ func TestNoProxyUnderstandsCIDR(t *testing.T) {
 		{"not/a/prefix", "192.168.1.1", false},
 	}
 	for _, c := range cases {
-		if got := ask(t, RuleNoProxy, c.list, host(c.target)); got != c.want {
+		if got := ask(t, RuleNoProxyCurl, c.list, host(c.target)); got != c.want {
 			t.Errorf("NO_PROXY %q against %q gave %v, want %v", c.list, c.target, got, c.want)
 		}
 	}
@@ -188,13 +201,13 @@ func TestNoProxyUnderstandsCIDR(t *testing.T) {
 // the undocumented one. curl says NO_PROXY may be set TO a single asterisk; it
 // says nothing about a star sitting beside real names.
 func TestALoneAsteriskIsTheWholeNoProxyValue(t *testing.T) {
-	if !ask(t, RuleNoProxy, "*", host("anything.example")) {
+	if !ask(t, RuleNoProxyCurl, "*", host("anything.example")) {
 		t.Error("a lone asterisk did not excuse every host")
 	}
-	if !ask(t, RuleNoProxy, "  *  ", host("anything.example")) {
+	if !ask(t, RuleNoProxyCurl, "  *  ", host("anything.example")) {
 		t.Error("a lone asterisk with spaces around it did not excuse every host")
 	}
-	if ask(t, RuleNoProxy, "a.com,*", host("b.com")) {
+	if ask(t, RuleNoProxyCurl, "a.com,*", host("b.com")) {
 		t.Error("an asterisk beside a real name excused an unrelated host, which no source documents")
 	}
 }
@@ -384,10 +397,10 @@ func TestAHostIsComparedInOneSpelling(t *testing.T) {
 		list   string
 		target string
 	}{
-		{"upper case host", RuleNoProxy, "local.com", "WWW.LOCAL.COM"},
-		{"upper case entry", RuleNoProxy, "LOCAL.COM", "www.local.com"},
-		{"trailing dot on the host", RuleNoProxy, "local.com", "www.local.com."},
-		{"trailing dot on the entry", RuleNoProxy, "local.com.", "www.local.com"},
+		{"upper case host", RuleNoProxyCurl, "local.com", "WWW.LOCAL.COM"},
+		{"upper case entry", RuleNoProxyCurl, "LOCAL.COM", "www.local.com"},
+		{"trailing dot on the host", RuleNoProxyCurl, "local.com", "www.local.com."},
+		{"trailing dot on the entry", RuleNoProxyCurl, "local.com.", "www.local.com"},
 		{"upper case under wininet", RuleWinINET, "*.LOCAL.COM", "WWW.local.com"},
 		{"upper case under winhttp", RuleWinHTTP, "*.LOCAL.COM", "WWW.local.com"},
 		{"upper case under java", RuleNonProxyHosts, "*.LOCAL.COM", "WWW.local.com"},
@@ -447,7 +460,7 @@ func TestTheMacDefaultBypassesLocalNamesAndLinkLocal(t *testing.T) {
 // default. Reading one under the other's rule turns a real bypass into a host
 // name nobody has.
 func TestAnAbbreviatedNetworkIsAMacFormAndNotACurlOne(t *testing.T) {
-	if ask(t, RuleNoProxy, "169.254/16", host("169.254.1.1")) {
+	if ask(t, RuleNoProxyCurl, "169.254/16", host("169.254.1.1")) {
 		t.Error("NO_PROXY accepted an abbreviated network, which curl does not document")
 	}
 	if !ask(t, RuleExceptionsList, "169.254/16", host("169.254.1.1")) {
@@ -455,7 +468,7 @@ func TestAnAbbreviatedNetworkIsAMacFormAndNotACurlOne(t *testing.T) {
 	}
 	// The full spelling has to work in both, or a Mac with a hand-written entry
 	// would answer differently from one with the shipped one.
-	if !ask(t, RuleNoProxy, "169.254.0.0/16", host("169.254.1.1")) {
+	if !ask(t, RuleNoProxyCurl, "169.254.0.0/16", host("169.254.1.1")) {
 		t.Error("NO_PROXY refused an ordinary CIDR block")
 	}
 	if !ask(t, RuleExceptionsList, "169.254.0.0/16", host("169.254.1.1")) {
@@ -488,5 +501,63 @@ func TestTheMacListSeparatorIsOursAndNotTheVendors(t *testing.T) {
 	}
 	if ask(t, RuleExceptionsList, "a.corp;b.corp", host("b.corp")) {
 		t.Error("a semicolon separated two entries, and this list does not have one")
+	}
+}
+
+// TestDotNetReadsTheLeadingDotTheOppositeWayFromCurl is Microsoft's own worked
+// example, kept as the vendor wrote it: ".example.com" matches www.example.com
+// but not example.com, and "example.com" does not match www.example.com.
+func TestDotNetReadsTheLeadingDotTheOppositeWayFromCurl(t *testing.T) {
+	cases := []struct {
+		list, target string
+		want         bool
+	}{
+		{".example.com", "www.example.com", true},
+		{".example.com", "example.com", false},
+		{"example.com", "www.example.com", false},
+		{"example.com", "example.com", true},
+		{"a.com,b.com", "b.com", true},
+		{" a.com , b.com ", "b.com", true},
+		{"", "a.com", false},
+		{".", "a.com", false},
+		// An entry that normalises to nothing. It excuses nobody either way -
+		// the defensive guard in the rule is named as not decisive - but the
+		// coverage gate asks whether anything ever EXECUTED that line, and this
+		// is the only input that does.
+		{"[]", "a.com", false},
+	}
+	for _, c := range cases {
+		if got := ask(t, RuleNoProxyDotNet, c.list, host(c.target)); got != c.want {
+			t.Errorf(".NET NO_PROXY %q against %q gave %v, want %v", c.list, c.target, got, c.want)
+		}
+	}
+	// The same four rows under curl's rule, to keep the disagreement visible in
+	// one place rather than only in the table above.
+	for _, c := range []struct {
+		list, target string
+		want         bool
+	}{
+		{".example.com", "example.com", true},
+		{"example.com", "www.example.com", true},
+	} {
+		if got := ask(t, RuleNoProxyCurl, c.list, host(c.target)); got != c.want {
+			t.Errorf("curl NO_PROXY %q against %q gave %v, want %v - the two readings have stopped disagreeing", c.list, c.target, got, c.want)
+		}
+	}
+}
+
+// TestDotNetHasNoWildcardAndNoNetwork holds the two things the vendor says it
+// does NOT support. Inventing either would make the report claim a bypass that
+// .NET does not perform.
+func TestDotNetHasNoWildcardAndNoNetwork(t *testing.T) {
+	for _, c := range []struct{ list, target string }{
+		{"*", "anything.example"},
+		{"*.example.com", "www.example.com"},
+		{"192.168.0.0/16", "192.168.1.1"},
+		{"169.254/16", "169.254.1.1"},
+	} {
+		if ask(t, RuleNoProxyDotNet, c.list, host(c.target)) {
+			t.Errorf(".NET NO_PROXY %q excused %q, and the vendor documents no such reading", c.list, c.target)
+		}
 	}
 }

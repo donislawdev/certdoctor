@@ -30,11 +30,13 @@ import "fmt"
 // Rule names one runtime family's way of reading a proxy exception list.
 //
 // THE LIST IS CLOSED, for the same reason the status vocabulary is: an open one
-// means the next person adds a fifth reading and the report starts claiming
-// things about a runtime nobody checked. A fifth entry arrives with a source
-// read at the vendor, or it does not arrive.
+// means the next person adds a reading and the report starts claiming things
+// about a runtime nobody checked. AN ENTRY NEEDS TWO THINGS AND NOT ONE: a
+// source, read at the vendor or measured here, AND a consumer among the thirteen
+// probes. Go has the first and not the second, so it is quoted at
+// RuleNoProxyCurl and is not a rule.
 //
-// THERE ARE FIVE, THE CARVING SAID THREE, AND EACH EXTRA ONE ARRIVED FROM A
+// THERE ARE SIX, THE CARVING SAID THREE, AND EACH EXTRA ONE ARRIVED FROM A
 // SOURCE RATHER THAN FROM A HUNCH. The fourth: the two Windows stacks were
 // expected to share a rule and do not. Measured against the vendor's own pages
 // on 2026-09-05, WinHTTP says a wildcard "must be the left-most character" and
@@ -47,10 +49,15 @@ import "fmt"
 // The fifth came from running scutil on a Mac the same day, and it is the only
 // one this project has that rests on its OWN measurement rather than on a
 // vendor's page - see bypassExceptionsList for what that buys and what it costs.
+//
+// The sixth is the same NO_PROXY variable the first one reads, read the way .NET
+// reads it. Two rules over one variable looks like a mistake until the vendor
+// pages are put side by side: NO_PROXY=* turns proxying off in curl and is a
+// host name nobody has in .NET.
 type Rule string
 
 const (
-	// RuleNoProxy is the NO_PROXY and no_proxy environment variable, as CURL
+	// RuleNoProxyCurl is the NO_PROXY and no_proxy environment variable, as CURL
 	// reads it - and only curl.
 	//
 	// THE NARROWING IS DELIBERATE AND IT COST ONE WORD IN THIS FILE. This
@@ -64,21 +71,42 @@ const (
 	// "bar.foo.com"; ".y.com" matches "x.y.com" but not "y.com"." curl strips
 	// the leading dot instead, so ".y.com" excuses "y.com" there and not here.
 	//
-	// .NET, HttpClient.DefaultProxy, read 2026-09-05 - "Asterisks are not
-	// supported for wildcards; use a leading dot in case you want to match a
-	// subdomain. NO_PROXY=example.com (without leading dot) will NOT match
-	// www.example.com." That is the strictest reading of the three, and Microsoft
-	// says outright it "might be revisited in the future to match other
-	// ecosystems better".
-	//
 	// SO ONE NO_PROXY=example.com MEANS THREE DIFFERENT THINGS on one machine.
-	// The two extra readings are NOT implemented yet and are not silently folded
-	// into this one - a sixth and seventh rule, each with the quotation above
-	// behind it, belong to the next piece of P8-K2. Until then this constant
-	// promises curl and nothing wider, because a rule claiming to speak for
-	// runtimes it was never checked against is exactly what inviolable rule 18
-	// exists to stop.
-	RuleNoProxy Rule = "no_proxy"
+	// .NET's reading is RuleNoProxyDotNet below. Go's is NOT implemented, and
+	// the reason is a rule of this project rather than an oversight: Go is not
+	// one of the thirteen probes, so a rule for it would be code nothing in this
+	// program could ever execute - the shape OBS98 names and the coverage gate
+	// exists to find. The quotation stays here so that the day a Go runtime
+	// becomes a probe, the source is already read.
+	//
+	// This constant therefore promises curl and nothing wider, because a rule
+	// claiming to speak for runtimes it was never checked against is exactly what
+	// inviolable rule 18 exists to stop.
+	RuleNoProxyCurl Rule = "no_proxy_curl"
+	// RuleNoProxyDotNet is the same variable read the way .NET reads it, which
+	// is the strictest of the three and disagrees with curl twice over.
+	//
+	// SOURCE: Microsoft, HttpClient.DefaultProxy, read 2026-09-05 - "NO_PROXY: a
+	// comma-separated list of hostnames that should be excluded from proxying.
+	// Asterisks are not supported for wildcards; use a leading dot in case you
+	// want to match a subdomain. Examples: NO_PROXY=.example.com (with leading
+	// dot) will match www.example.com, but will not match example.com.
+	// NO_PROXY=example.com (without leading dot) will not match www.example.com.
+	// This behavior might be revisited in the future to match other ecosystems
+	// better."
+	// https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpclient.defaultproxy
+	//
+	// THE VENDOR SAYING ITS OWN BEHAVIOUR MIGHT BE REVISITED IS WHY THIS IS A
+	// SEPARATE RULE AND NOT A TWEAK. Folding it into curl's would make the report
+	// silently wrong for .NET today, and folding curl's into it would make the
+	// report silently wrong for curl the day Microsoft changes its mind.
+	//
+	// TWO CONSEQUENCES WORTH A ROW IN A REPORT. A bare name excuses only itself,
+	// so NO_PROXY=corp.example leaves api.corp.example going through the proxy in
+	// .NET while curl sends it direct. And NO_PROXY=*, the one value people reach
+	// for to turn proxying off entirely, is not a wildcard here at all - it is a
+	// host name nobody has, so .NET keeps using the proxy.
+	RuleNoProxyDotNet Rule = "no_proxy_dotnet"
 	// RuleWinINET is the ProxyOverride list, which Internet Explorer settings
 	// hold and Edge, Chrome and .NET follow.
 	RuleWinINET Rule = "wininet"
@@ -94,7 +122,8 @@ const (
 )
 
 var ruleMeanings = map[Rule]string{
-	RuleNoProxy:        "the NO_PROXY environment variable, as curl reads it",
+	RuleNoProxyCurl:    "the NO_PROXY environment variable, as curl reads it",
+	RuleNoProxyDotNet:  "the NO_PROXY environment variable, as .NET reads it",
 	RuleWinINET:        "the Windows ProxyOverride list, as Internet Explorer settings hold it",
 	RuleWinHTTP:        "the bypass list in this machine's default WinHTTP configuration",
 	RuleNonProxyHosts:  "the JVM's http.nonProxyHosts property",
@@ -102,9 +131,9 @@ var ruleMeanings = map[Rule]string{
 }
 
 // AllRules lists every reading exactly once, in declaration order.
-var AllRules = []Rule{RuleNoProxy, RuleWinINET, RuleWinHTTP, RuleNonProxyHosts, RuleExceptionsList}
+var AllRules = []Rule{RuleNoProxyCurl, RuleNoProxyDotNet, RuleWinINET, RuleWinHTTP, RuleNonProxyHosts, RuleExceptionsList}
 
-// Valid reports whether r is one of the five.
+// Valid reports whether r is one of the six.
 func (r Rule) Valid() bool {
 	_, ok := ruleMeanings[r]
 	return ok

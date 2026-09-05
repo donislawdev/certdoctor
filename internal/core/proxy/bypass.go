@@ -16,11 +16,16 @@ import (
 func Bypasses(r Rule, list string, t Target) (bool, error) {
 	n := t.normalise()
 	switch r {
-	case RuleNoProxy:
+	case RuleNoProxyCurl:
 		if n.Host == "" {
 			return false, ErrNoTarget
 		}
-		return bypassNoProxy(list, n), nil
+		return bypassNoProxyCurl(list, n), nil
+	case RuleNoProxyDotNet:
+		if n.Host == "" {
+			return false, ErrNoTarget
+		}
+		return bypassNoProxyDotNet(list, n), nil
 	case RuleWinINET:
 		if n.Host == "" {
 			return false, ErrNoTarget
@@ -52,7 +57,7 @@ func Bypasses(r Rule, list string, t Target) (bool, error) {
 	}
 }
 
-// bypassNoProxy reads the list the way curl documents NO_PROXY.
+// bypassNoProxyCurl reads the list the way curl documents NO_PROXY.
 //
 // SOURCE: curl, docs/cmdline-opts/noproxy.md, read 2026-09-05 -
 // "Comma-separated list of hosts for which not to use a proxy"; "Each name in
@@ -74,7 +79,7 @@ func Bypasses(r Rule, list string, t Target) (bool, error) {
 // says "you can set NO_PROXY to be a single asterisk" and says nothing about a
 // star sitting in a list beside real names, so this reads the documented case
 // and leaves the undocumented one to match nothing.
-func bypassNoProxy(list string, t Target) bool {
+func bypassNoProxyCurl(list string, t Target) bool {
 	if strings.TrimSpace(list) == "*" {
 		return true
 	}
@@ -90,6 +95,52 @@ func bypassNoProxy(list string, t Target) bool {
 			continue
 		}
 		if t.Host == name || strings.HasSuffix(t.Host, "."+name) {
+			return true
+		}
+	}
+	return false
+}
+
+// bypassNoProxyDotNet reads the same variable the way .NET documents it, and
+// disagrees with curl in both directions.
+//
+// SOURCE: the quotation is at RuleNoProxyDotNet, read 2026-09-05 at Microsoft.
+//
+// THE LEADING DOT IS THE WHOLE RULE HERE AND IT IS THE OPPOSITE OF CURL'S. curl
+// strips it, so ".example.com" and "example.com" answer alike and both excuse
+// www.example.com. .NET keeps it: with the dot an entry matches SUBDOMAINS ONLY
+// and not the bare domain, and without the dot it matches the name ITSELF and no
+// subdomain. Two vendors, one variable, and no way to satisfy both with one
+// comparison.
+//
+// THERE IS NO WILDCARD AND NO NETWORK, and neither is an omission. The vendor
+// says asterisks are not supported, so an asterisk here is an ordinary character
+// in a host name nobody has - which is why NO_PROXY=* leaves .NET using the
+// proxy. Nothing in the page mentions CIDR either, so an entry with a slash gets
+// no special reading: this rule refuses to invent what its vendor did not write.
+func bypassNoProxyDotNet(list string, t Target) bool {
+	for _, entry := range splitList(list, ",") {
+		// An entry can normalise to nothing - "[]" unwraps to the empty string.
+		// THE GUARD IS DEFENSIVE AND NOT DECISIVE TODAY, and saying so is the
+		// point: an empty name has no leading dot, so it reaches the exact
+		// comparison and loses there anyway. It stays because the day the
+		// comparison below becomes any looser, an empty entry would start
+		// excusing every host on the machine - and it gets NO mutation entry,
+		// because an entry aimed at a line that cannot change an answer is a
+		// SKIP dressed up as proof. The first draft of this comment claimed the
+		// guard stopped a match under HasSuffix, which was untrue, and the
+		// mutation that survived is what found it.
+		name := lower(trimTrailingDot(unwrap(entry)))
+		if name == "" {
+			continue
+		}
+		if strings.HasPrefix(name, ".") {
+			if strings.HasSuffix(t.Host, name) {
+				return true
+			}
+			continue
+		}
+		if t.Host == name {
 			return true
 		}
 	}
@@ -129,7 +180,7 @@ func bypassNoProxy(list string, t Target) bool {
 // The settings box is labelled "Do not use proxy server for addresses beginning
 // with", and the same page tells a user who wants a whole domain to write
 // "*.domain.com" - so "local.com" excuses that host and not "www.local.com".
-// Under RuleNoProxy the identical entry excuses both, because curl documents the
+// Under RuleNoProxyCurl the identical entry excuses both, because curl documents the
 // opposite. Two runtimes, one string, two answers, and neither is misconfigured.
 //
 // AN EMPTY SCHEME LOSES TO A SCHEME-QUALIFIED ENTRY, deliberately. A caller that
@@ -266,7 +317,7 @@ func matchesEntry(host, entry string) bool {
 // where omitted trailing octets are zero, and the wildcard reading is the one
 // the measured default only makes sense under.
 //
-// THE ABBREVIATED FORM IS WHY THIS CANNOT BORROW RuleNoProxy, and the difference
+// THE ABBREVIATED FORM IS WHY THIS CANNOT BORROW RuleNoProxyCurl, and the difference
 // is not cosmetic. curl documents CIDR as "an appended slash and number of bits
 // to an IP ADDRESS", and netip.ParsePrefix refuses "169.254/16" outright - so
 // reading the macOS default under curl's rule would turn the link-local entry
