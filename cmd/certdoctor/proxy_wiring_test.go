@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/donislawdev/certdoctor/internal/core/proxy"
+
+	"github.com/donislawdev/certdoctor/internal/core/allowed"
 )
 
 // The composition L2 is handed, and it is the one seam OBS117 says can be
@@ -37,14 +39,14 @@ func proxyTarget(t *testing.T, raw string) *url.URL {
 // proxyconf.Read returns nothing at all: there is no one place every program on
 // that system reads. A run there still has to answer about the variables.
 func TestTheProxyInputAlwaysCarriesTheEnvironmentStack(t *testing.T) {
-	in := proxyInput(environment{
+	in := proxyInput(&options{}, environment{
 		lookupEnv: func(name string) (string, bool) {
 			if name == "https_proxy" {
 				return "http://proxy.example:8080", true
 			}
 			return "", false
 		},
-	}, proxyTarget(t, "https://api.example.com/"))
+	}, proxyTarget(t, "https://api.example.com/"), allowed.New())
 
 	lenses := in.Lenses(context.Background())
 	if len(lenses) != 1 {
@@ -63,7 +65,7 @@ func TestTheProxyInputAlwaysCarriesTheEnvironmentStack(t *testing.T) {
 // environment, rather than either of them owning both.
 func TestTheProxyInputAppendsWhateverThePlatformReads(t *testing.T) {
 	asked := 0
-	in := proxyInput(environment{
+	in := proxyInput(&options{}, environment{
 		lookupEnv: func(string) (string, bool) { return "", false },
 		systemProxy: func(context.Context) []proxy.Lens {
 			asked++
@@ -72,7 +74,7 @@ func TestTheProxyInputAppendsWhateverThePlatformReads(t *testing.T) {
 				{Stack: proxy.StackWinHTTP, Source: "test", Read: true, Servers: []proxy.Server{}},
 			}
 		},
-	}, proxyTarget(t, "https://api.example.com/"))
+	}, proxyTarget(t, "https://api.example.com/"), allowed.New())
 
 	lenses := in.Lenses(context.Background())
 	if asked != 1 {
@@ -90,9 +92,9 @@ func TestTheProxyInputAppendsWhateverThePlatformReads(t *testing.T) {
 // exception list rule is compared against it. url.Hostname strips the brackets
 // of an IPv6 literal and the port, which is what proxy.Target documents wanting.
 func TestTheProxyTargetGoesInAsItGoesOnTheWire(t *testing.T) {
-	in := proxyInput(environment{
+	in := proxyInput(&options{}, environment{
 		lookupEnv: func(string) (string, bool) { return "", false },
-	}, proxyTarget(t, "https://xn--bcher-kva.de:8443/path"))
+	}, proxyTarget(t, "https://xn--bcher-kva.de:8443/path"), allowed.New())
 
 	want := proxy.Target{Scheme: "https", Host: "xn--bcher-kva.de", Port: "8443"}
 	if in.Target != want {

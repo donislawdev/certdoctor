@@ -249,8 +249,14 @@ func TestAnAutomaticConfigurationScriptStopsTheLayerShortOfAnAnswer(t *testing.T
 	if result.Status != status.Unknown || result.Reason != status.ReasonUndetermined {
 		t.Errorf("a place naming only a script answered %s / %s, want unknown / undetermined", result.Status, result.Reason)
 	}
-	if !strings.Contains(result.Detail, "did not fetch") {
-		t.Errorf("the detail does not say the script was not fetched: %q", result.Detail)
+	// "DID NOT SETTLE" RATHER THAN "DID NOT FETCH", and the widening is the
+	// point rather than a loosening. Until this run could fetch a script there
+	// was one way to leave it open; there are now several - unreachable,
+	// unparseable, stopped by a ceiling, or answered by asking something this
+	// run had nobody to ask - and a sentence naming only the first would be
+	// wrong about the other four.
+	if !strings.Contains(result.Detail, "did not settle") {
+		t.Errorf("the detail does not say the script was left unsettled: %q", result.Detail)
 	}
 	row := findingOf(t, result, StackWinINET)
 	if row.PACURL != "http://wpad.example/proxy.pac" {
@@ -552,8 +558,14 @@ func TestEveryRowThisLayerProducesSurvivesTheContract(t *testing.T) {
 		Target: target,
 	})
 
-	if len(result.Findings) != 4 {
-		t.Fatalf("three places and one comparison produced %d finding(s)", len(result.Findings))
+	// Three places, one comparison, and the script the first place names. The
+	// script row is here BECAUSE the contract refuses more states on it than on
+	// any other body in this layer - a script nobody pointed at, one reported
+	// unreachable without a reason, one that was fetched and never says what
+	// running it came to - and this run reaches it with a nil Evaluate, which is
+	// the state that produces the second of those.
+	if len(result.Findings) != 5 {
+		t.Fatalf("three places, one comparison and one script produced %d finding(s)", len(result.Findings))
 	}
 	for _, finding := range result.Findings {
 		if broken := finding.Breach(); broken != "" {

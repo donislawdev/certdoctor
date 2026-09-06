@@ -57,8 +57,17 @@ type Sandbox struct {
 	//
 	// WHAT A CALLER MUST DO ABOUT IT: do not evaluate a PAC file beside layers
 	// that allocate, and do not report memory_ceiling to a user as a fact about
-	// their file without that caveat. L2 arrives with P8-K3 and this is its
-	// problem to place.
+	// their file without that caveat.
+	//
+	// L2 HAS NOW PLACED IT, AND THE PLACEMENT WAS MEASURED RATHER THAN ARGUED.
+	// Instrumented on 2026-09-06 at the point in the walk where that layer runs,
+	// on Windows and in a container, three runs each: four goroutines, and the
+	// heap moving by 96 to 160 BYTES across a 300 millisecond window. The
+	// neighbour noise this ceiling could mistake for a PAC file is six orders of
+	// magnitude below it. THAT IS A FACT ABOUT WHERE THE EVALUATION SITS, not
+	// about the ceiling: move it beside anything that allocates - a parallel
+	// walk, a layer running alongside - and the measurement is void with nothing
+	// to notice.
 	Ceiling uint64
 
 	// MaxSource is the largest PAC file accepted, checked BEFORE the bytes reach
@@ -119,11 +128,26 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 	vm.SetMaxCallStackSize(s.MaxStack)
 	usedRandomness := s.makeDeterministic(vm)
 
-	if failure := s.inject(vm); failure != nil {
+	unanswered, failure := s.inject(vm)
+	if failure != nil {
 		return corepac.Result{
 			Outcome: corepac.OutcomeMalformed,
 			Detail:  "the sandbox could not be built: " + failure.Error(),
 		}
+	}
+
+	// finish attaches what the file asked for and could not be told, to every
+	// path that got as far as running it.
+	//
+	// IT IS A WRAPPER RATHER THAN A SECOND defer BECAUSE THE FIRST ONE'S
+	// POSITION IS A RULE. The recover above has to be this function's first
+	// statement, and defers run last-registered-first, so a second defer added
+	// after it would run BEFORE the recover replaced the result and would be
+	// overwritten on the path that matters least. Three call sites are cheaper
+	// than moving a guard whose position is written down as load-bearing.
+	finish := func(result corepac.Result) corepac.Result {
+		result.Unanswered = unanswered()
+		return result
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -131,22 +155,27 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 	watch(ctx, vm, s.Budget, s.Ceiling)
 
 	if _, err := vm.RunString(source); err != nil {
-		return outcomeOf(err, "the PAC file could not be loaded")
+		return finish(outcomeOf(err, "the PAC file could not be loaded"))
 	}
 
 	entry, ok := goja.AssertFunction(vm.Get(Entry))
 	if !ok {
-		return corepac.Result{
+		// WRAPPED TOO, THOUGH NOTHING WAS ASKED YET. RunString has already run
+		// the file's top level, and a PAC file may legally call a helper there -
+		// caching dnsResolve into a variable is a real idiom. A path that
+		// dropped the list would report "no entry point" about a file that had
+		// already gone looking for a resolver.
+		return finish(corepac.Result{
 			Outcome: corepac.OutcomeMalformed,
 			Detail:  "the PAC file defines no " + Entry + " function, so there is nothing to ask",
-		}
+		})
 	}
 
 	answer, err := entry(goja.Undefined(), vm.ToValue(rawURL), vm.ToValue(host))
 	if err != nil {
-		return outcomeOf(err, "the PAC file failed while answering")
+		return finish(outcomeOf(err, "the PAC file failed while answering"))
 	}
-	answered := s.read(answer)
+	answered := finish(s.read(answer))
 	answered.UsedRandomness = usedRandomness()
 	return answered
 }

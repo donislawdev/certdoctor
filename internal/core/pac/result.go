@@ -95,6 +95,31 @@ type Result struct {
 	// and a verdict that did not know the difference would be saying more than
 	// it measured.
 	UsedRandomness bool
+
+	// Unanswered names the helpers the file called that this run had nothing
+	// behind, in the order the sandbox declares them.
+	//
+	// IT EXISTS BECAUSE THE PAC CONTRACT HAS NOWHERE TO PUT "NOBODY COULD BE
+	// ASKED". IsResolvable in this package says so at length: the specification
+	// gives that function one boolean, so a run with no resolver has to answer
+	// false - a known untruth the function cannot fix alone, and one whose
+	// honest report has to be made by the layer. The layer can only make it if
+	// something tells it the file went looking, and this field is that
+	// something.
+	//
+	// IT NAMES HELPERS RATHER THAN BEING A BOOLEAN so the sentence a reader gets
+	// says what the file wanted. "This script asked isInNet and this run has no
+	// resolver behind it" sends somebody somewhere; "the answer may be
+	// incomplete" sends them nowhere.
+	//
+	// IT OVERSTATES IN ONE CASE AND DOES SO IN THE SAFE DIRECTION. DNSResolve
+	// returns an IP literal unchanged and asks nobody, so a file calling
+	// dnsResolve("10.0.0.1") got a complete answer and is still listed here.
+	// Not listing it would mean repeating DNSResolve's own rule at the
+	// injection site - one rule in two places, the shape OBS50 measures - in
+	// order to turn an UNKNOWN into a PASS. Inviolable rule 15 says which of
+	// those two errors to prefer.
+	Unanswered []string
 }
 
 // Directive is one entry of a PAC file's answer.

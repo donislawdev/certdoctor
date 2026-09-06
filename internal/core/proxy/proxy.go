@@ -20,9 +20,12 @@
 // entry at all (OBS102). Rules belong here; only the transport that reads them
 // off a platform belongs in internal/adapter/proxyconf.
 //
-// WHAT IS DELIBERATELY NOT HERE. Fetching a PAC file, WPAD discovery, deciding
-// which proxy a run will actually use, and the layer that reports any of it.
-// Those need the network and a verdict, and they are P8-K3.
+// WHAT IS DELIBERATELY NOT HERE, AND THIS LIST HAS SHRUNK TWICE. The layer that
+// reports all of it lives here now, and so does the reading of what an automatic
+// configuration script answered - but the FETCHING and the ENGINE do not: they
+// arrive through a port, so this package still reaches no network and still runs
+// nobody else's code. WPAD discovery and asking a proxy for credentials are not
+// here either, and those are the two that remain.
 package proxy
 
 import "fmt"

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+
+	"github.com/donislawdev/certdoctor/internal/adapter/pac"
 )
 
 // Default budgets.
@@ -60,6 +62,12 @@ type options struct {
 	jsonAlias bool
 	out       string
 	redact    bool
+
+	pacURL string
+	// pacURLSet says --pac-url was written out on the command line, which the
+	// flag package cannot tell from its default. An address that arrived empty
+	// because a shell variable did not expand must not read as "no script".
+	pacURLSet bool
 
 	in      string
 	image   string
@@ -220,6 +228,11 @@ var switches = []switchDecl{
 		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.redact, "redact", false, "") },
 	},
 	{
+		name: "pac-url", arg: "<url>", group: "input",
+		summary: "also read this proxy auto-configuration script and say where it sends the target",
+		bind:    func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.pacURL, "pac-url", "", "") },
+	},
+	{
 		name: "in", arg: "<container>", group: "containers",
 		summary: "diagnose from inside a running container",
 		bind:    func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.in, "in", "", "") },
@@ -324,8 +337,11 @@ func parse(args []string) (*options, *fault) {
 	// default and an explicit --format terminal are the same string and mean
 	// different things next to --json.
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "format" {
+		switch f.Name {
+		case "format":
 			o.formatSet = true
+		case "pac-url":
+			o.pacURLSet = true
 		}
 	})
 
@@ -438,7 +454,7 @@ func (o *options) check() *fault {
 			"no URL was given. %s needs to know what to diagnose, for example: %s https://example.com",
 			toolName, toolName)
 	}
-	for _, rule := range []func() *fault{o.checkFormat, o.checkContainers, o.checkChannels, o.checkBudgets, o.checkOut} {
+	for _, rule := range []func() *fault{o.checkFormat, o.checkContainers, o.checkChannels, o.checkBudgets, o.checkOut, o.checkPACScript} {
 		if fault := rule(); fault != nil {
 			return fault
 		}
@@ -558,6 +574,36 @@ func (o *options) checkBudgets() *fault {
 			return configFault("%s is longer than a day. Give a value between 0 and %d, where 0 means no limit",
 				named.name, maxBudgetSeconds)
 		}
+	}
+	return nil
+}
+
+// checkPACScript refuses an address no script could be fetched from.
+//
+// IT IS REFUSED AT THE ENTRY POINT AND NOT REPORTED AS A FINDING - ADR60, whose
+// case was a port out of range. A value the user typed and this program cannot
+// use is a mistake in the asking, and dressing it up as a diagnosis about their
+// machine wastes the one channel that could have told them what to type
+// instead.
+//
+// IT ASKS THE FETCHER'S OWN RULE RATHER THAN A COPY. pac.Target is the function
+// that decides what the transport will dial and what the allowed set will hold,
+// so a second opinion here could accept an address the fetch would then refuse -
+// the shape OBS50 measures, met at the two ends of one run.
+func (o *options) checkPACScript() *fault {
+	if o.pacURL == "" {
+		// GIVEN AND EMPTY IS NOT THE SAME AS NOT GIVEN - inviolable rule 1, and
+		// the same answer --out gives to the same shape. The commonest way to
+		// reach this is a shell variable that did not expand, and a run that
+		// quietly examined no script would look exactly like one that was never
+		// asked to.
+		if o.pacURLSet {
+			return configFault("--pac-url was given no address. Leave it out to read only what this machine names")
+		}
+		return nil
+	}
+	if _, err := pac.Target(o.pacURL); err != nil {
+		return configFault("--pac-url was given an address certdoctor cannot fetch a script from: %v", err)
 	}
 	return nil
 }

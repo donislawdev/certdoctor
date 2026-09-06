@@ -164,7 +164,7 @@ import (
 // neither of which happens yet. A value in a published contract that nothing
 // can produce is a promise nobody keeps, which is the argument that kept
 // access_denied out of the code and keeps these two out of it for now.
-const SchemaVersion = "1.12"
+const SchemaVersion = "1.13"
 
 // JSON renders the machine readable report.
 //
@@ -253,6 +253,7 @@ type jsonFinding struct {
 	SigningAuthority    *jsonSigningAuthority    `json:"signing_authority"`
 	ProxyStack          *jsonProxyStack          `json:"proxy_stack"`
 	StackDivergence     *jsonStackDivergence     `json:"stack_divergence"`
+	PACScript           *jsonPACScript           `json:"pac_script"`
 }
 
 // jsonProxyStack is the seventh body: one PLACE this machine keeps proxy
@@ -283,6 +284,51 @@ type jsonProxyStack struct {
 	AutoDetect *bool `json:"auto_detect"`
 	// Never null. Our sentences about what this row does not settle.
 	Caveats []string `json:"caveats"`
+}
+
+// jsonPACScript is the ninth body: ONE automatic configuration script this run
+// resolved, and what it says about this target.
+//
+// THE UNIT IS THE SCRIPT RATHER THAN THE PLACE THAT NAMED IT. Two Windows
+// stacks routinely hold one AutoConfigURL, so a row per place would fetch it
+// twice and print two answers a file using Math.random is entitled to make
+// differ - and a script the user named on the command line would have no row at
+// all, because nobody keeps proxy configuration there.
+type jsonPACScript struct {
+	URL string `json:"url"`
+	// Never empty: a stack name, or the token for the command line. Several
+	// namers of one script are one row with both names, never two rows.
+	NamedBy []string `json:"named_by"`
+	Fetched bool     `json:"fetched"`
+	// Null when there is nothing to add. A script that was not fetched must
+	// carry one, which the core refuses to let through otherwise.
+	Detail *string `json:"detail"`
+	// Empty when nothing was evaluated. The closed list of outcomes lives in
+	// internal/core/pac beside the evaluator that produces them.
+	Outcome string `json:"outcome"`
+	// The answer verbatim, so a consumer can quote the file rather than our
+	// reading of it. WITHHELD under --redact rather than masked: it is somebody
+	// else's sentence holding a bare host:port, which no masking rule
+	// recognises as a machine.
+	Answer string `json:"answer"`
+	// Null when nothing was evaluated; empty for every outcome but an answer.
+	Directives []jsonPACDirective `json:"directives"`
+	// The first entry a client would follow, or null when the answer named none
+	// this program recognises.
+	Selected *jsonPACDirective `json:"selected"`
+	// Never null. Our sentences about what this row does not settle.
+	Caveats []string `json:"caveats"`
+}
+
+type jsonPACDirective struct {
+	// The keyword as the file spelled it, upper cased.
+	Kind string `json:"kind"`
+	// Empty for DIRECT, which names no endpoint.
+	Endpoint string `json:"endpoint"`
+	// An unrecognised keyword is carried rather than dropped - inviolable rule
+	// 15. Dropping one would let this document say a client goes direct when
+	// the file named something certdoctor failed to read.
+	Recognised bool `json:"recognised"`
 }
 
 type jsonProxyServer struct {
@@ -603,6 +649,7 @@ func findingsOf(row report.LayerResult) *[]jsonFinding {
 			TrustStore:          trustStoreOf(finding),
 			SigningAuthority:    signingAuthorityOf(finding),
 			ProxyStack:          proxyStackOf(finding),
+			PACScript:           pacScriptOf(finding),
 			StackDivergence:     stackDivergenceOf(finding),
 		})
 	}
@@ -638,6 +685,60 @@ func proxyStackOf(finding report.Finding) *jsonProxyStack {
 		// nothing to add, which is an answer, while a null would read as nobody
 		// having considered it.
 		Caveats: append([]string{}, stack.Caveats...),
+	}
+}
+
+// pacScriptOf carries a script row across.
+//
+// NIL STAYS NIL FOR THE DIRECTIVES, and here the pair is "nothing was
+// evaluated" against "it was evaluated and named no entry" - ADR20 one row
+// further along than the servers below. CAVEATS ARE NEVER NULL, for the reason
+// proxyStackOf gives.
+func pacScriptOf(finding report.Finding) *jsonPACScript {
+	if finding.PACScript == nil {
+		return nil
+	}
+	script := *finding.PACScript
+	return &jsonPACScript{
+		URL:        script.URL,
+		NamedBy:    append([]string{}, script.NamedBy...),
+		Fetched:    script.Fetched,
+		Detail:     optional(script.Detail),
+		Outcome:    script.Outcome,
+		Answer:     script.Answer,
+		Directives: pacDirectivesOf(script.Directives),
+		Selected:   pacDirectiveOrNil(script.Selected),
+		Caveats:    append([]string{}, script.Caveats...),
+	}
+}
+
+func pacDirectivesOf(directives []report.PACDirective) []jsonPACDirective {
+	if directives == nil {
+		return nil
+	}
+	out := make([]jsonPACDirective, 0, len(directives))
+	for _, directive := range directives {
+		out = append(out, pacDirectiveOf(directive))
+	}
+	return out
+}
+
+// pacDirectiveOrNil takes the pointer through a local, for the reason
+// proxyServerOrNil gives: a pointer into a value that lives elsewhere is a
+// pointer this document does not own.
+func pacDirectiveOrNil(directive *report.PACDirective) *jsonPACDirective {
+	if directive == nil {
+		return nil
+	}
+	converted := pacDirectiveOf(*directive)
+	return &converted
+}
+
+func pacDirectiveOf(directive report.PACDirective) jsonPACDirective {
+	return jsonPACDirective{
+		Kind:       directive.Kind,
+		Endpoint:   directive.Endpoint,
+		Recognised: directive.Recognised,
 	}
 }
 

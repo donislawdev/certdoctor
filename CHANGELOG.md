@@ -10,6 +10,20 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Added - certdoctor fetches the proxy auto-configuration script and tells you where it sends this URL
+
+- 🔴 **A PAC script is fetched, run in a sandbox, and reported: which entry it names for your URL, and every entry it listed.** This is the fault this product exists for. A proxy is configured on the machine, the environment says so, the system settings say so, and anybody reading either would tell you the request goes through it - and then the script sends that one name straight out. Nothing else tells you so.
+
+- 🔴 **`--pac-url <url>` asks about a script your machine does not name.** Only Windows keeps a script address where every program reads it, so on Linux and macOS there is nothing for this layer to find. Point the flag at an address somebody handed you and certdoctor answers the question you actually have: where does this file send this URL. A script named by the flag and one named by your machine are one row when they are the same file.
+
+- **A script that will not parse, times out, recurses past the stack, allocates past the ceiling or is larger than this run accepts gets `UNKNOWN` with a reason, never an exception and never a pass.** A file returning `null` is reported as no answer rather than as `DIRECT`: browsers treat those the same and route you silently, which is the behaviour this program exists to interrupt.
+
+- **The script's own answer is shown verbatim, and the entries it named are shown separately with a keyword this program does not recognise carried rather than dropped.** A directive quietly discarded would let a report say a client goes direct when the file actually named something certdoctor failed to read.
+
+- **The row says what it does not settle**: that the file decided with `Math.random`, so this is one of the answers a client could get rather than the only one; that it asked a question this run had nobody to ask; or that its address carried a password, which was dropped and not sent.
+
+- **certdoctor will not fetch a script over anything but `http` and `https`, and will not follow a redirect.** A `file:` address can be a UNC path on Windows, which is a connection to a host you never named; a redirect is a second address this run derived from nothing. Both are refused with a sentence saying so, rather than followed quietly.
+
 ### Added - certdoctor now reads every place your machine keeps proxy settings, and says where they disagree
 
 - 🔴 **The proxy layer reports one row per PLACE, not per program.** On Windows that is the current user's Internet Settings - which Edge, Chrome and .NET follow - and the machine's default WinHTTP configuration, which services follow. On every system it is also the proxy environment variables this process was started with. Several programs read one place and one program can read two, so a report organised by program would repeat itself and still miss the thing you came for.
@@ -28,7 +42,13 @@ Barely diagnosable yet, and there has been no release.
 
 - **The exit code is unchanged.** This layer previously said "not implemented", which was already `UNKNOWN`, so a run that ended `5 INCONCLUSIVE` still does.
 
-- **`--json` carries `schema_version` `1.12`**, with two new finding bodies - `proxy_stack` and `stack_divergence` - and nothing removed or renamed. If you branch on a class of divergence, read the key it arrived under: the document now holds two different closed lists that both contain `one_sided`, one about addresses for a name and one about places that hold proxy settings.
+- 🔴 **A machine pointing at a script is no longer stuck at `UNKNOWN` - the script is now read.** A machine with automatic proxy DETECTION on still is, and that half has not moved: certdoctor does not perform that discovery, so a proxy found that way would not appear here. Windows has that setting on by default, so on an ordinary Windows machine the row still says so.
+
+- **`UNKNOWN` carries one more reason: `limit_exceeded`**, for a ceiling certdoctor itself sets. It is deliberately not `timeout`: a script stopped for allocating did not run out of time, and one refused for its size was never started. Time keeps `timeout`; every other ceiling of ours is this.
+
+- **Under `--redact` a script's address becomes a pseudonym, the proxies it names become pseudonyms, and its verbatim answer is withheld entirely** - somebody else's sentence with a bare address inside it, which no masking rule can recognise. The entries are still listed with their addresses replaced, so what you act on survives.
+
+- **`--json` carries `schema_version` `1.13`**, with three new finding bodies - `proxy_stack`, `stack_divergence` and `pac_script` - and nothing removed or renamed. If you branch on a class of divergence, read the key it arrived under: the document now holds two different closed lists that both contain `one_sided`, one about addresses for a name and one about places that hold proxy settings.
 
 - **Under `--redact` the proxy address becomes a pseudonym like every other host name, and the exception list is withheld entirely.** Its entries are wildcards and suffixes, so no rule can recognise them as names to replace - withholding is the only honest option. Which runtimes skip the proxy for your target is still shown, because that is the part you act on.
 

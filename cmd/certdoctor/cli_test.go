@@ -23,6 +23,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
+	"github.com/donislawdev/certdoctor/internal/core/proxy"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	coretcp "github.com/donislawdev/certdoctor/internal/core/tcp"
@@ -281,7 +282,7 @@ func TestTheAllowedSetCarriesWhatWillActuallyBeDialled(t *testing.T) {
 		// The last one is not an address. Windows keeps this setting as free
 		// text, so somebody's registry can hold anything at all.
 		Known: []string{"192.0.2.53", "2001:db8::53", "not-an-address"},
-	})
+	}, "")
 
 	for _, resolver := range []string{"192.0.2.53", "2001:db8::53"} {
 		dialled, err := dns.Target(resolver)
@@ -318,7 +319,7 @@ func TestTheSetAlsoCarriesTheSpellingThePlatformWillUse(t *testing.T) {
 		t.Fatalf("an ordinary URL was refused: %v", fault.message)
 	}
 
-	targets := allowedTargets(parsed, dns.Nameservers{Known: []string{"2001:0DB8::1"}})
+	targets := allowedTargets(parsed, dns.Nameservers{Known: []string{"2001:0DB8::1"}}, "")
 
 	for _, spelling := range []string{"[2001:0DB8::1]:53", "[2001:db8::1]:53"} {
 		if reason, ok := targets.Permits(spelling); !ok {
@@ -345,14 +346,14 @@ func TestAMachineListingNoResolverStillHasOne(t *testing.T) {
 		t.Fatalf("an ordinary URL was refused: %v", fault.message)
 	}
 
-	empty := allowedTargets(parsed, dns.Nameservers{})
+	empty := allowedTargets(parsed, dns.Nameservers{}, "")
 	for _, fallback := range dns.PlatformFallbackResolvers() {
 		if _, ok := empty.Permits(fallback); !ok {
 			t.Errorf("this machine lists no resolver, the platform will ask %s, and the set refuses it", fallback)
 		}
 	}
 
-	listed := allowedTargets(parsed, dns.Nameservers{Known: []string{"192.0.2.53"}})
+	listed := allowedTargets(parsed, dns.Nameservers{Known: []string{"192.0.2.53"}}, "")
 	for _, fallback := range dns.PlatformFallbackResolvers() {
 		if _, ok := listed.Permits(fallback); ok {
 			t.Errorf("a machine with its own resolver had %s permitted as well, which widens the set for nothing", fallback)
@@ -469,6 +470,19 @@ func TestOnlyASuccessfulRunWritesToStandardOutput(t *testing.T) {
 		{"negative budget", []string{"https://example.com", "--timeout", "-1"}, exitcode.Config},
 		{"budget that is not a number of seconds", []string{"https://example.com", "--timeout", "NaN"}, exitcode.Config},
 		{"budget longer than a day", []string{"https://example.com", "--timeout", "1e300"}, exitcode.Config},
+		// A SCRIPT ADDRESS THIS PROGRAM CANNOT FETCH FROM IS REFUSED AT THE
+		// ENTRY POINT - ADR60, whose case was a port out of range. The costly
+		// one is the file URL: on Windows a file path may be a UNC path, so
+		// following one opens a connection to a host nobody named and the
+		// network guard cannot see it (docs/14 section 3a).
+		{"a script address that is a file", []string{"https://example.com", "--pac-url", "file:///etc/proxy.pac"}, exitcode.Config},
+		{"a script address with no scheme", []string{"https://example.com", "--pac-url", "pac.example/proxy.pac"}, exitcode.Config},
+		{"a script address with no host", []string{"https://example.com", "--pac-url", "http:///proxy.pac"}, exitcode.Config},
+		{"a script address asking for no port", []string{"https://example.com", "--pac-url", "http://pac.example:0/x.pac"}, exitcode.Config},
+		// GIVEN AND EMPTY, which is what a shell variable that did not expand
+		// looks like. A run that quietly read no script would be indistinguishable
+		// from one nobody asked to.
+		{"a script address given as nothing", []string{"https://example.com", "--pac-url", ""}, exitcode.Config},
 	}
 
 	for _, c := range cases {
@@ -1795,5 +1809,95 @@ func TestAResolverListCutToTheLimitSaysSoInTheReport(t *testing.T) {
 	})
 	if strings.Contains(quiet.stdout.String(), "names more resolvers than this run asked") {
 		t.Error("a run that trimmed nothing still carries the note about trimming")
+	}
+}
+
+// TestAScriptAddressTheUserNamedIsInTheAllowedSet is the fifth derivation
+// inviolable rule 16 permits, and the only one that arrives from the command
+// line. It goes in BEFORE the walk rather than being widened during it, because
+// the user typed it - the same footing as the target itself.
+func TestAScriptAddressTheUserNamedIsInTheAllowedSet(t *testing.T) {
+	parsed, err := url.Parse("https://example.com")
+	if err != nil {
+		t.Fatalf("the target would not parse: %v", err)
+	}
+
+	targets := allowedTargets(parsed, dns.Nameservers{}, "http://pac.example:8080/proxy.pac")
+
+	// THE SPELLING IS THE FETCHER'S OWN. Both sides go through pac.Target, so
+	// the string checked here and the string the transport dials cannot drift -
+	// and a drift would mean either a refusal on a working machine or a
+	// connection nothing checked.
+	reason, ok := targets.Permits("pac.example:8080")
+	if !ok {
+		t.Fatalf("the script address the user named is not in the set")
+	}
+	if reason != allowed.ReasonPACFile {
+		t.Errorf("the script address went in as %s, want the PAC file derivation", reason)
+	}
+}
+
+// TestNoScriptAddressWidensNothing is the other half. A run that was not asked
+// about a script must not have one more place it may reach.
+func TestNoScriptAddressWidensNothing(t *testing.T) {
+	parsed, err := url.Parse("https://example.com")
+	if err != nil {
+		t.Fatalf("the target would not parse: %v", err)
+	}
+
+	targets := allowedTargets(parsed, dns.Nameservers{}, "")
+	for _, address := range []string{"pac.example:8080", "pac.example:80"} {
+		if _, ok := targets.Permits(address); ok {
+			t.Errorf("a run with no script address may reach %s", address)
+		}
+	}
+}
+
+// TestTheEntryPointHandsTheScriptAddressToTheLayer is the wire itself: a flag
+// nothing reads is a flag that lies about what the run did.
+func TestTheEntryPointHandsTheScriptAddressToTheLayer(t *testing.T) {
+	parsed, err := url.Parse("https://example.com")
+	if err != nil {
+		t.Fatalf("the target would not parse: %v", err)
+	}
+
+	in := proxyInput(&options{pacURL: "http://pac.example/proxy.pac"}, environment{
+		lookupEnv: func(string) (string, bool) { return "", false },
+	}, parsed, allowed.New())
+
+	if in.ScriptURL != "http://pac.example/proxy.pac" {
+		t.Errorf("the layer was given %q as the script to read", in.ScriptURL)
+	}
+	if in.Evaluate != nil {
+		t.Error("a build with no evaluator seam handed the layer one anyway")
+	}
+}
+
+// TestTheEvaluatorSeamIsAskedWithTheTargetItMustAnswerAbout pins the two values
+// a PAC file is asked about. A script is asked "where does THIS url go", so an
+// evaluator built without them would answer about nothing.
+func TestTheEvaluatorSeamIsAskedWithTheTargetItMustAnswerAbout(t *testing.T) {
+	parsed, err := url.Parse("https://api.example.com:8443/deep/path?q=1")
+	if err != nil {
+		t.Fatalf("the target would not parse: %v", err)
+	}
+
+	var gotURL, gotHost string
+	in := proxyInput(&options{pacURL: "http://pac.example/proxy.pac"}, environment{
+		lookupEnv: func(string) (string, bool) { return "", false },
+		evaluateScript: func(_ *allowed.Targets, targetURL, targetHost string) proxy.Evaluate {
+			gotURL, gotHost = targetURL, targetHost
+			return func(context.Context, string) proxy.ScriptAnswer { return proxy.ScriptAnswer{} }
+		},
+	}, parsed, allowed.New())
+
+	if in.Evaluate == nil {
+		t.Fatal("the seam was supplied and the layer got no evaluator")
+	}
+	if gotURL != "https://api.example.com:8443/deep/path?q=1" {
+		t.Errorf("the evaluator was built for the URL %q, want the whole target", gotURL)
+	}
+	if gotHost != "api.example.com" {
+		t.Errorf("the evaluator was built for the host %q, want the host without its port", gotHost)
 	}
 }

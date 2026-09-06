@@ -350,6 +350,56 @@ var schema = object(map[string]node{
 				// parties.
 				"stacks": array(text()),
 			})),
+			// The ninth body: ONE automatic configuration script this run
+			// resolved. The unit is the SCRIPT and not the place that named it -
+			// two Windows stacks routinely hold one AutoConfigURL, and a row per
+			// place would fetch it twice and print two answers a file using
+			// Math.random is entitled to make differ.
+			"pac_script": nullable(object(map[string]node{
+				"url": text(),
+				// Never empty. A stack name, or the token for the command line
+				// when the user supplied the address: nobody keeps proxy
+				// configuration there, so it is not a stack and does not
+				// pretend to be one.
+				"named_by": array(text()),
+				"fetched":  boolean(),
+				// Null when there is nothing to add. A script that was NOT
+				// fetched must carry one - the core refuses a row that says a
+				// script was unreachable without saying why, because that is a
+				// defect of ours wearing a fact's clothes.
+				"detail": nullable(text()),
+				// Empty when nothing was evaluated. The closed list lives in
+				// internal/core/pac beside the evaluator, for the reason
+				// proxy_stack gives about stacks and rules.
+				"outcome": text(),
+				// The answer verbatim, so a consumer can quote the file rather
+				// than our reading of it. Withheld under --redact rather than
+				// masked: it is somebody else's sentence with a bare host:port
+				// inside, which no masking rule recognises as a machine.
+				"answer": text(),
+				// Null means nothing was evaluated; an empty array means it was
+				// evaluated and named no entry. ADR20, one row further along.
+				"directives": nullable(array(object(map[string]node{
+					"kind": text(),
+					// Empty for DIRECT, which names no endpoint.
+					"endpoint": text(),
+					// An unrecognised keyword is CARRIED and not dropped -
+					// inviolable rule 15. Dropping one would let this document
+					// say a client goes direct when the file named something
+					// certdoctor could not read.
+					"recognised": boolean(),
+				}))),
+				// The first entry a client would follow, or null when the
+				// answer named none this program recognises.
+				"selected": nullable(object(map[string]node{
+					"kind":       text(),
+					"endpoint":   text(),
+					"recognised": boolean(),
+				})),
+				// Never null. Our own sentences about what this row does not
+				// settle; an empty array says there is nothing to add.
+				"caveats": array(text()),
+			})),
 		}))),
 	})),
 	"notes": array(object(map[string]node{

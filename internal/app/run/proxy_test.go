@@ -243,3 +243,196 @@ func TestTheProxyLayerIsWiredToTheOneThatReadsThisMachine(t *testing.T) {
 		t.Errorf("one place produced %d row(s)", len(answer.Findings))
 	}
 }
+
+// The masking of the script body, which is the SECOND entry in this tree that
+// withholds a field outright rather than pseudonymising it - and it withholds
+// the same kind of thing the exception list is withheld for.
+
+// aScriptRow is the shape measured on the owner's machine 2026-09-06, running
+// testbed/pac/files/proxy.pac from a local server against a name it proxies.
+func aScriptRow() report.Finding {
+	selected := report.PACDirective{Kind: "PROXY", Endpoint: "proxy.corp.internal:8080", Recognised: true}
+	return report.Finding{
+		Kind:    report.FindingPACScript,
+		Summary: "the PAC script at http://wpad.corp.internal/proxy.pac sends https://api.example.com through a proxy of its own choosing",
+		Source:  report.SourceDetected,
+		PACScript: &report.PACScript{
+			URL:     "http://wpad.corp.internal/proxy.pac",
+			NamedBy: []string{"wininet", "winhttp"},
+			Fetched: true,
+			Outcome: "answered",
+			Answer:  "PROXY proxy.corp.internal:8080; DIRECT",
+			Directives: []report.PACDirective{
+				selected,
+				{Kind: "DIRECT", Recognised: true},
+			},
+			Selected: &selected,
+			Caveats:  []string{"this script chose with Math.random"},
+		},
+	}
+}
+
+func scriptFrom(t *testing.T, r report.Report) report.PACScript {
+	t.Helper()
+	row := rowFor(t, r, layer.Proxy)
+	if len(row.Findings) == 0 || row.Findings[0].PACScript == nil {
+		t.Fatal("the proxy row carries no script at all")
+	}
+	return *row.Findings[0].PACScript
+}
+
+// TestTheScriptAddressAndItsEndpointsAreMaskedByDifferentRules is ADR90 part 5
+// one row along, and the split is forced rather than chosen. The script's own
+// address is a URL, which is the one shape Text can find a host inside; the
+// endpoints it names are bare "host:port" arriving during the walk, which Text
+// cannot see at all and Authority can.
+func TestTheScriptAddressAndItsEndpointsAreMaskedByDifferentRules(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Proxy] = proxyLayerOf(aScriptRow())
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	script := scriptFrom(t, r)
+	if strings.Contains(script.URL, "wpad.corp.internal") {
+		t.Errorf("the script address survived masking: %q", script.URL)
+	}
+	if script.Selected == nil || strings.Contains(script.Selected.Endpoint, "proxy.corp.internal") {
+		t.Errorf("the chosen endpoint survived masking: %+v", script.Selected)
+	}
+	for _, directive := range script.Directives {
+		if strings.Contains(directive.Endpoint, "proxy.corp.internal") {
+			t.Errorf("an entry's endpoint survived masking: %+v", directive)
+		}
+	}
+	// THE KEYWORDS ARE LEFT ALONE. "PROXY" and "DIRECT" are words out of the PAC
+	// grammar and name nobody's machine, and masking them would make the document
+	// unreadable while protecting nothing.
+	if script.Directives[0].Kind != "PROXY" || script.Directives[1].Kind != "DIRECT" {
+		t.Errorf("the keywords were masked: %+v", script.Directives)
+	}
+}
+
+// TestTheVerbatimAnswerIsWithheldRatherThanMasked is the decision in this entry.
+// Answer exists so a report can quote the file rather than our reading of it,
+// and that is exactly what makes it unmaskable: somebody else's sentence with a
+// bare authority inside, which Text would leave standing in a document stamped
+// redacted - a leak wearing a stamp.
+func TestTheVerbatimAnswerIsWithheldRatherThanMasked(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Proxy] = proxyLayerOf(aScriptRow())
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	script := scriptFrom(t, r)
+	if script.Answer != redact.Placeholder {
+		t.Errorf("the verbatim answer is %q, want it withheld outright", script.Answer)
+	}
+	// AND NOTHING DIAGNOSTIC IS LOST, which is the second half of the argument:
+	// the entries survive with their endpoints pseudonymised, so a reader still
+	// learns that this URL goes through a proxy and which pseudonym it is.
+	if script.Selected == nil || script.Selected.Kind != "PROXY" {
+		t.Error("withholding the answer took the entries with it")
+	}
+}
+
+// TestAnUnmaskedRunLeavesTheScriptAlone is the other side. A rule that withheld
+// the answer whatever was asked would pass the test above and destroy the field.
+func TestAnUnmaskedRunLeavesTheScriptAlone(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Layers[layer.Proxy] = proxyLayerOf(aScriptRow())
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	script := scriptFrom(t, r)
+	if script.Answer != "PROXY proxy.corp.internal:8080; DIRECT" {
+		t.Errorf("an unmasked run withheld the answer: %q", script.Answer)
+	}
+	if script.URL != "http://wpad.corp.internal/proxy.pac" {
+		t.Errorf("an unmasked run changed the script address: %q", script.URL)
+	}
+}
+
+// TestAScriptNobodyFetchedIsStillMasked covers the row with no entries at all -
+// nil rather than empty - because a conversion that assumed a list would panic
+// on the commonest failure this layer has.
+func TestAScriptNobodyFetchedIsStillMasked(t *testing.T) {
+	finding := aScriptRow()
+	finding.PACScript = &report.PACScript{
+		URL:     "http://wpad.corp.internal/proxy.pac",
+		NamedBy: []string{"wininet"},
+		Detail:  "the automatic configuration script could not be fetched: the dial failed",
+	}
+
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Proxy] = proxyLayerOf(finding)
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	script := scriptFrom(t, r)
+	if strings.Contains(script.URL, "wpad.corp.internal") {
+		t.Errorf("the script address survived masking: %q", script.URL)
+	}
+	// NIL STAYS NIL - ADR20 - and here the pair is "nothing was evaluated"
+	// against "it was evaluated and named no entry".
+	if script.Directives != nil {
+		t.Errorf("a script nobody fetched came back with an entry list: %+v", script.Directives)
+	}
+	if script.Answer != "" {
+		t.Errorf("a script nobody fetched came back with an answer: %q", script.Answer)
+	}
+}
+
+// TestEveryPartOfTheProxyLayerIsMaskedInOneRun is the shape maskedBodies exists
+// for, checked with all three of this layer's bodies in one report: a kind that
+// travelled the assembly path untouched is the failure inviolable rule 17 is
+// about, and it would look exactly like working code.
+func TestEveryPartOfTheProxyLayerIsMaskedInOneRun(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Proxy] = func(context.Context) Answer {
+		return Answer{
+			Status: status.Warn,
+			Detail: "this machine names a proxy and this run did not establish the whole answer",
+			Findings: []report.Finding{
+				aProxyPlace(),
+				{
+					Kind:            report.FindingStackDivergence,
+					Summary:         "comparing 2 place(s) this machine keeps proxy settings in",
+					Source:          report.SourceDerived,
+					StackDivergence: &report.StackDivergence{Class: "one_sided", Stacks: []string{"wininet", "winhttp"}},
+				},
+				aScriptRow(),
+			},
+		}
+	}
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	row := rowFor(t, r, layer.Proxy)
+	if len(row.Findings) != 3 {
+		t.Fatalf("the layer produced %d row(s), want all three kinds", len(row.Findings))
+	}
+	for _, finding := range row.Findings {
+		if strings.Contains(finding.Summary, "corp.internal") {
+			t.Errorf("a summary carries an internal name: %q", finding.Summary)
+		}
+	}
+}

@@ -1047,9 +1047,155 @@ check_pac_route() {
 
   echo "    proxy log:  $seen${line:+  ->  $(echo "$line" | awk '{print $4, $6, $7}')}"
 
+  # --- W4: WHAT certdoctor MAKES OF THE SAME FILE ---
+  #
+  # THIS ROW LEFT THE "NOT ASSESSED HERE" LIST ON 2026-09-06. Until then nothing
+  # could ask it: only the Windows stacks carry an AutoConfigURL, proxyconf reads
+  # nothing at all on Linux, and this bench is Linux - so the layer could never
+  # learn about pac.proxy.test however well the server answered. --pac-url is
+  # what closed that, and closing it is the reason the flag exists.
+  #
+  # IT IS ASKED AFTER libproxy AND THE LOG, NOT INSTEAD OF THEM. Those two say
+  # what the PAC MEANS and where a request actually WENT; this one says what
+  # certdoctor REPORTS. A run where all three agree is the only one that proves
+  # anything, and the first two are not our code.
+  local pac_url want_status want_proxy want_source want_forbidden
+  pac_url="$(value "$file" pac_url)"
+  want_status="$(value "$file" l2_status)"
+  want_proxy="$(value "$file" l2_proxy)"
+  want_source="$(value "$file" l2_source)"
+  want_forbidden="$(value "$file" verdict_forbidden)"
+
+  local env_proxy doc said_status said_proxy said_source said_detail
+  env_proxy="$(value "$file" env_https_proxy)"
+  # The environment is set exactly as the file declares it, because the scenario
+  # is "a proxy IS configured AND the PAC overrides it". Without it the negative
+  # half would be trivially true.
+  doc="$(HTTPS_PROXY="$env_proxy" "$binary" "$target" --pac-url "$pac_url" --json 2>/dev/null)"
+
+  if [ -z "$doc" ]; then
+    say "certdoctor produced no document at all for this PAC"
+  else
+    said_status="$(echo "$doc" | jq -r '.layers[] | select(.id=="L2") | .status' 2>/dev/null)"
+    said_detail="$(echo "$doc" | jq -r '.layers[] | select(.id=="L2") | .detail' 2>/dev/null)"
+    # THE PROXY COMES OFF THE SCRIPT ROW AND NOT OFF A STACK, which is the whole
+    # point of these two scenarios: the stacks say one thing and the script
+    # decides another.
+    said_proxy="$(echo "$doc" | jq -r '[.layers[] | select(.id=="L2") | .findings[]?
+      | select(.pac_script != null and .pac_script.selected != null)
+      | .pac_script.selected.endpoint] | first // ""' 2>/dev/null)"
+    said_source=""
+    if [ -n "$(echo "$doc" | jq -r '[.layers[] | select(.id=="L2") | .findings[]?
+      | select(.pac_script != null and .pac_script.selected != null)] | first // ""' 2>/dev/null)" ]; then
+      said_source="pac"
+    fi
+    # DIRECT names no endpoint, and the expectation spells that "none".
+    [ -n "$said_proxy" ] || said_proxy="none"
+
+    [ "$said_status" = "$want_status" ] || say "L2 answered $said_status where the bench expects $want_status"
+    [ "$said_proxy" = "$want_proxy" ] || say "L2 names the proxy $said_proxy where the bench expects $want_proxy"
+    [ -z "$want_source" ] || [ "$said_source" = "$want_source" ] || say "L2 says the decision comes from ${said_source:-nothing} where the bench expects $want_source"
+
+    # THE FORBIDDEN SENTENCES ARE THE POINT OF proxy-pac-direct. A report saying
+    # "a proxy is configured" and stopping has told somebody the opposite of what
+    # is happening on their machine, so those words were written down before the
+    # layer that could get them wrong existed.
+    if [ -n "$want_forbidden" ]; then
+      local phrase
+      echo "$want_forbidden" | tr ',' '\n' | while IFS= read -r phrase; do
+        [ -n "$phrase" ] || continue
+        case "$said_detail" in
+          *"$phrase"*) echo "    DIFFERS: the verdict says \"$phrase\" about a URL this PAC decides" ;;
+        esac
+      done
+    fi
+
+    echo "    certdoctor: L2 $said_status, proxy $said_proxy from ${said_source:-the machine}"
+  fi
+
   if [ "$got_answer" = "$want_answer" ] && [ "$seen" = "$want_log" ]; then
     passed=$((passed + 1))
   fi
+}
+
+# check_pac_file asks certdoctor about a PAC file the bench serves and nothing
+# else - no proxy log, no second evaluator, because these two scenarios are not
+# about routing.
+#
+# THE HOSTILE ONE IS THE GUARD docs/24 MAKES MANDATORY FOR THIS SLICE, and this
+# is the only place it is asked over the WHOLE PATH: fetched over plain HTTP from
+# an address in the configuration, parsed, evaluated, refused. The unit test
+# exercises the evaluator; between the two there is room for a fault neither
+# alone would find.
+#
+# THE BROKEN ONE IS WHERE libproxy IS DELIBERATELY NOT THE ORACLE. Measured
+# 2026-09-02: it warns and answers direct://, which is a silent fallback - the
+# exact behaviour this product exists to interrupt. So the expectation file says
+# oracle_is_authoritative=no and this check does not ask it.
+check_pac_file() {
+  local name="$1"
+  local file="$expected/$name.txt"
+  local target pac_url want_status want_reason want_result must_not_say forbidden
+
+  target="$(value "$file" target)"
+  pac_url="$(value "$file" pac_url)"
+  want_status="$(value "$file" l2_status)"
+  want_reason="$(value "$file" l2_reason)"
+  want_result="$(value "$file" l2_pac_result)"
+  must_not_say="$(value "$file" l2_must_not_say)"
+
+  say() {
+    echo "    DIFFERS: $1"
+    failed=$((failed + 1))
+  }
+
+  echo "  pac scenario $name  ->  $pac_url"
+
+  local doc said_status said_reason said_answer
+  doc="$("$binary" "$target" --pac-url "$pac_url" --json 2>/dev/null)"
+  if [ -z "$doc" ]; then
+    say "certdoctor produced no document at all for this PAC"
+    return
+  fi
+
+  said_status="$(echo "$doc" | jq -r '.layers[] | select(.id=="L2") | .status' 2>/dev/null)"
+  said_reason="$(echo "$doc" | jq -r '.layers[] | select(.id=="L2") | .reason // ""' 2>/dev/null)"
+  said_answer="$(echo "$doc" | jq -r '[.layers[] | select(.id=="L2") | .findings[]?
+    | select(.pac_script != null) | .pac_script.answer] | first // ""' 2>/dev/null)"
+
+  [ -z "$want_status" ] || [ "$said_status" = "$want_status" ] || say "L2 answered $said_status where the bench expects $want_status"
+  [ -z "$want_reason" ] || [ "$said_reason" = "$want_reason" ] || say "L2 gave the reason ${said_reason:-none} where the bench expects $want_reason"
+  [ -z "$want_result" ] || [ "$said_answer" = "$want_result" ] || say "the script answered $said_answer where the bench expects $want_result"
+
+  # THE ONE ANSWER THAT MUST NEVER COME OUT OF A BROKEN PAC. It is what libproxy
+  # says, it is what most software does, and it would make certdoctor agree with
+  # the machine's own silence instead of breaking it.
+  if [ -n "$must_not_say" ]; then
+    case "$doc" in
+      *"\"kind\": \"$must_not_say\""*) say "the report names $must_not_say for a PAC that will not parse" ;;
+    esac
+  fi
+
+  # EVERY LEAK NAME THE HOSTILE FILE CAN RETURN. Each is a directive it produces
+  # only if the matching global was reachable, so any one of them in the document
+  # is the sandbox failing loudly - which is why that file answers instead of
+  # throwing.
+  local leaks phrase leaked=0
+  leaks="$(value "$file" leak_forbidden),$(value "$file" leak_forbidden_2)"
+  if [ "$leaks" != "," ]; then
+    for phrase in $(echo "$leaks" | tr ',' ' '); do
+      [ -n "$phrase" ] || continue
+      case "$doc" in
+        *"$phrase"*) say "the sandbox LEAKED: the script reported $phrase"; leaked=1 ;;
+      esac
+    done
+    if [ "$leaked" -eq 0 ]; then
+      echo "    sandbox:    no host object reached the script - $(echo "$leaks" | tr ',' ' ' | wc -w) probes, none found"
+    fi
+  fi
+
+  echo "    certdoctor: L2 $said_status${said_reason:+ $said_reason}${said_answer:+, script said \"$said_answer\"}"
+  passed=$((passed + 1))
 }
 
 if ! bench_serves_this_tree || ! bench_serves_the_complete_chain || ! bench_serves_the_interception_path || ! bench_serves_the_proxy_bench; then
@@ -1136,6 +1282,13 @@ check_pac_route proxy-pac-direct
 echo
 check_pac_route proxy-auth
 
+# THE TWO SCENARIOS THAT ARE NOT ABOUT ROUTING. One asks whether a file that will
+# not parse is reported rather than quietly routed; the other is the guard docs/24
+# makes mandatory for this slice, asked over the whole path rather than in a unit
+# test.
+check_pac_file pac-broken
+check_pac_file pac-hostile
+
 # 🔴 say() IS GLOBAL IN BASH EVEN WHEN IT IS DEFINED INSIDE A FUNCTION, and the
 # scenario immediately above carries a pending_decision - so it has just left
 # say() as the UNSETTLED variant, which counts a note instead of a failure.
@@ -1213,7 +1366,10 @@ for file in "$expected"/*.txt; do
   # network. The scenarios below still need a PAC file fetched and a proxy asked,
   # which is work that opens a connection.
   case "$(basename "$file" .txt)" in
-    proxy-env) continue ;;
+    # proxy-env LEFT ON 2026-09-06 with the layer. THE FOUR BELOW LEFT THE SAME
+    # DAY with --pac-url, which is what made the layer able to see a script on a
+    # machine that does not name one - and this bench is such a machine.
+    proxy-env | proxy-pac-via | proxy-pac-direct | pac-broken | pac-hostile) continue ;;
   esac
   if grep -qE '^l2_' "$file" 2>/dev/null; then
     if [ "$pending_l2" -eq 0 ]; then

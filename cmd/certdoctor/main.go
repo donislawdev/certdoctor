@@ -26,6 +26,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/adapter/handshake"
 	"github.com/donislawdev/certdoctor/internal/adapter/output"
+	"github.com/donislawdev/certdoctor/internal/adapter/pac"
 	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/curl"
@@ -190,6 +191,33 @@ func liveEnvironment() environment {
 				"curl": curl.Probe(guarded, probe.Run, paths, os.Getenv("CURL_CA_BUNDLE"), time.Now),
 			}
 		},
+		// L2's automatic configuration script: fetched over the network and then
+		// run inside the sandbox. It is the FIFTH place in this program that can
+		// open a connection, and it asks the SAME rule as the four below -
+		// dial.Permission, consumed rather than copied - so a fifth way to reach
+		// the network still did not bring a fifth answer to "may we".
+		//
+		// THE SANDBOX GETS NO PORTS AND THAT IS THE DECISION OF THIS SLICE, not
+		// an omission. Ports.Resolve would let a file this program did not write
+		// choose the names this machine asks its resolver about, which is a
+		// channel the network guard cannot see: the resolver is in the allowed
+		// set, so every query is permitted and only the QUESTIONS are somebody
+		// else's. It is also native Go called from JavaScript, which the
+		// sandbox's stopwatch provably cannot interrupt - measured, ADR78. Both
+		// belong to a slice of their own. Meanwhile pac.Result.Unanswered
+		// records that a file went looking, and L2 refuses to rest a verdict on
+		// an answer reached that way.
+		evaluateScript: func(targets *allowed.Targets, targetURL, targetHost string) proxy.Evaluate {
+			return pac.Resolver(
+				pac.Fetch(dial.Permission(targets, nil), pacSourceLimit),
+				pac.Sandbox{
+					Budget:    pacBudget,
+					Ceiling:   pacCeiling,
+					MaxSource: pacSourceLimit,
+					MaxStack:  pacStackLimit,
+				},
+				targetURL, targetHost)
+		},
 		// The real dialler, behind the guard. dns.Socket is the only function in
 		// this program that opens a connection, and it is never reached without
 		// dial.Guarded having checked the address against what this run derived.
@@ -220,6 +248,50 @@ func liveEnvironment() environment {
 		queryID: queryID,
 	}
 }
+
+// The four numbers the PAC sandbox runs under. Every one of them is a ceiling
+// certdoctor sets, so every one of them ends in limit_exceeded rather than in a
+// claim about somebody's file - which is the whole reason that reason exists.
+//
+// THE TIME BUDGET IS NOT DIVIDED OUT OF THE LAYER'S, and that is worth saying
+// because every other budget in this program is. A PAC file is somebody else's
+// code and the only thing standing between it and the run is this number; a
+// share of what happens to be left would make the same file answer on a quiet
+// machine and time out on a busy one, and the report would blame the file.
+//
+// 300ms IS THE VALUE P8-K1 MEASURED WITH: testbed/pac/files/runaway.pac, which
+// never returns, was stopped at 301ms against it, and the ordinary files answer
+// in single milliseconds.
+const pacBudget = 300 * time.Millisecond
+
+// pacCeiling is how much heap one evaluation may add before the stopwatch stops
+// it.
+//
+// IT IS A PROCESS FIGURE AND THE PLACEMENT IS WHAT MAKES IT SAFE - the caveat
+// pac.Sandbox.Ceiling names and hands to whoever calls it. Measured 2026-09-06
+// on Windows and in a container: at the point in the walk where L2 runs, this
+// process holds four goroutines and its heap moves by 96 to 160 BYTES over a
+// 300ms window. So the neighbour noise this ceiling could mistake for a PAC
+// file is six orders of magnitude below it. That measurement is a fact about
+// where this evaluation SITS: moving it beside anything that allocates - a
+// parallel walk, a layer running alongside - invalidates it and nothing here
+// would notice.
+//
+// 64 MiB IS WHAT PROBE S12 MEASURED THE OVERSHOOT AGAINST, and the overshoot is
+// a RANGE rather than a constant: 1.75x and 1.88x on two runs of one file. The
+// ceiling bounds what gets NOTICED, never what gets allocated.
+const pacCeiling = 64 << 20
+
+// pacSourceLimit is the largest script this run accepts, checked before the
+// bytes reach the parser - docs/14 section 2.3, because afterwards it is too
+// late. It is the resolver config number for the same reason ADR25 chose it:
+// real PAC files are kilobytes, so this caps memory rather than the parser.
+const pacSourceLimit = 1 << 20
+
+// pacStackLimit is a CONDITION and not tuning - ADR75. Measured 2026-09-02:
+// with goja's default, unbounded recursion was still running after ten seconds
+// on a 213 MiB heap; with this set the same file ends in 1 ms.
+const pacStackLimit = 2000
 
 // resolverConfigLimit is the 1 MB from ADR25, measured rather than chosen: the
 // real files are 172 to 526 bytes and the parser costs are linear, so this caps

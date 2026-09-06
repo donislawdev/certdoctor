@@ -18,12 +18,14 @@ import (
 // rests on how few such places there are. Each entry goes in together with the
 // code it covers, never ahead of it.
 //
-// THE ENTRIES ARE TWO LENSES OF L1 AND ONE LAYER BELOW IT, and nothing else:
-// the socket our own DNS queries go out of, the dialler net.Resolver is handed
-// for the system view, and the connection L3 opens per address. All three consult
-// the SAME refusal rule rather than three copies of it. A fourth entry means a
-// fourth way to start a connection, and it should be as hard to add as these
-// three were.
+// THE SENTENCE THAT USED TO DESCRIBE THIS LIST'S CONTENTS HAS BEEN REMOVED, AND
+// ITS REMOVAL IS THE POINT. It said "two lenses of L1 and one layer below it,
+// and nothing else", and it was already wrong when a fourth entry arrived - the
+// same failure the paragraph above warns about, committed one paragraph later.
+// What is worth saying instead does not go stale: EVERY ENTRY CONSULTS THE SAME
+// REFUSAL RULE rather than a copy of it, so a mutation entry aimed at that rule
+// aims at all of them; and each new entry is a new WAY to start a connection,
+// which should be as hard to add as the ones before it. Read the entries.
 //
 // THE GUARD WAS WRITTEN BEFORE THERE WAS ANYTHING TO CATCH, at P3a, and that is
 // why this list could start at zero. A guard written afterwards arrives to find
@@ -69,6 +71,28 @@ var dialAllowlist = map[string]bool{
 	// rule, tcp.Target for the spelling. A fourth entry here therefore adds a
 	// place that connects, not a fourth answer to "may we".
 	"internal/adapter/handshake/handshake.go": true,
+
+	// The request L2 makes for an automatic configuration script, added
+	// 2026-09-06 with the code it covers. IT IS THE FIRST ENTRY HERE THAT IS NOT
+	// ABOUT THE TARGET OR ABOUT ASKING SOMEBODY ABOUT THE TARGET, and that is
+	// what made it a separate decision rather than a fifth line: the four above
+	// reach a resolver, the target, or the target again, and this one reaches an
+	// address READ OUT OF THIS MACHINE'S CONFIGURATION. Rule 16 lists it as the
+	// fifth permitted derivation, so it is allowed - but it is the first place
+	// where what this program connects to was chosen by somebody other than the
+	// user, and the set is widened for it only from the entry point, which the
+	// widening guard below enforces.
+	//
+	// It borrows the rule rather than copying it, like the three before it:
+	// dial.Permission goes in front of the transport's own DialContext, so a
+	// mutation entry aimed at the refusal still aims at this caller too.
+	//
+	// IT IS ONE FILE AND NOT THE PACKAGE, deliberately, and here that matters
+	// more than anywhere else on this list: internal/adapter/pac also holds the
+	// engine that runs somebody else's JavaScript, and the sandbox's first
+	// condition is that it has no network. Listing the package would put the
+	// evaluator on the wrong side of that sentence.
+	"internal/adapter/pac/fetch.go": true,
 }
 
 // networkPackages are the standard library imports that can open a connection.

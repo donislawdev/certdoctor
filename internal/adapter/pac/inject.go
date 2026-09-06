@@ -66,18 +66,45 @@ func fixedRandom() (goja.RandSource, func() bool) {
 	return source, func() bool { return asked }
 }
 
-// inject puts the twelve helpers into vm and nothing else.
-func (s Sandbox) inject(vm *goja.Runtime) error {
+// inject puts the twelve helpers into vm and nothing else, and hands back the
+// list of those the file called with nothing behind them.
+//
+// FOUR OF THE TWELVE NEED THE WORLD AND THE OTHER EIGHT DO NOT, which is why
+// only four are wrapped. A run may legally supply no resolver - pac.Ports says
+// a nil port is legal and means "nobody can answer that" - but the PAC contract
+// has no way for isResolvable to say so, so the file gets a false and takes a
+// branch it would not take in a browser. Recording the call is what lets the
+// layer say the answer rests on a question this run could not ask.
+//
+// THE RULE LIVES IN ONE PLACE. noteUnanswered is told whether the port behind a
+// helper was supplied, rather than four sites each deciding it for themselves -
+// the shape OBS50 has measured six times in this tree.
+func (s Sandbox) inject(vm *goja.Runtime) (func() []string, error) {
+	unanswered := map[string]bool{}
+	noteUnanswered := func(name string, supplied bool) {
+		if !supplied {
+			unanswered[name] = true
+		}
+	}
+
 	helpers := map[string]any{
 		"isPlainHostName":     corepac.IsPlainHostName,
 		"dnsDomainIs":         corepac.DNSDomainIs,
 		"localHostOrDomainIs": corepac.LocalHostOrDomainIs,
 		"dnsDomainLevels":     corepac.DNSDomainLevels,
 		"shExpMatch":          corepac.ShExpMatch,
-		"isResolvable":        s.Ports.IsResolvable,
-		"isInNet":             s.Ports.IsInNet,
+		"isResolvable": func(host string) bool {
+			noteUnanswered("isResolvable", s.Ports.Resolve != nil)
+			return s.Ports.IsResolvable(host)
+		},
+
+		"isInNet": func(host, pattern, mask string) bool {
+			noteUnanswered("isInNet", s.Ports.Resolve != nil)
+			return s.Ports.IsInNet(host, pattern, mask)
+		},
 
 		"dnsResolve": func(host string) goja.Value {
+			noteUnanswered("dnsResolve", s.Ports.Resolve != nil)
 			address, ok := s.Ports.DNSResolve(host)
 			if !ok {
 				// The specification's own answer for a name that does not
@@ -89,6 +116,7 @@ func (s Sandbox) inject(vm *goja.Runtime) error {
 		},
 
 		"myIpAddress": func() string {
+			noteUnanswered("myIpAddress", s.Ports.LocalAddress != nil)
 			address, _ := s.Ports.MyIPAddress()
 			return address
 		},
@@ -104,13 +132,26 @@ func (s Sandbox) inject(vm *goja.Runtime) error {
 			// The two lists have come apart. Refusing to build the sandbox is
 			// the only safe direction: a PAC file calling a name that silently
 			// went missing would fail as though the FILE were wrong.
-			return errNoSuchHelper(name)
+			return nil, errNoSuchHelper(name)
 		}
 		if err := vm.Set(name, helper); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+
+	// THE ORDER IS helperNames' ORDER AND NOT THE ORDER THE FILE CALLED THEM.
+	// Two runs of one binary against one file have to produce one document -
+	// the determinism guard - and a map's range order is not stable even
+	// within a run.
+	return func() []string {
+		var called []string
+		for _, name := range helperNames {
+			if unanswered[name] {
+				called = append(called, name)
+			}
+		}
+		return called
+	}, nil
 }
 
 // timeHelper adapts one of the three variadic time helpers.

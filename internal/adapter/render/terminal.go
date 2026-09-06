@@ -496,8 +496,35 @@ func findingValue(finding report.Finding) string {
 		return handshakeValue(*finding.TLSHandshake)
 	case finding.ProxyStack != nil:
 		return proxyStackValue(*finding.ProxyStack)
+	case finding.PACScript != nil:
+		return pacScriptValue(*finding.PACScript)
 	}
 	return ""
+}
+
+// pacScriptValue is what a person needs from a script row beyond its summary:
+// where the script sends THIS URL.
+//
+// THE ENDPOINT IS HERE AND NOT IN THE SUMMARY, for the reason proxyStackValue
+// gives one function down: a summary is masked by a rule that cannot recognise
+// a bare "host:port" as a machine, and this body is masked by one that can, so
+// printing it from here prints the MASKED value.
+//
+// THE VERBATIM ANSWER IS NOT PRINTED. It is in the machine readable document,
+// where a reader who wants the file's own words can find them; on this page it
+// would be a second spelling of the line below, free to disagree with it under
+// --redact, where one is withheld and the other pseudonymised.
+//
+// A SCRIPT NOBODY COULD FETCH PRINTS NOTHING HERE and says so in its summary,
+// which is the line every surface renders without knowing the kind.
+func pacScriptValue(script report.PACScript) string {
+	if script.Selected == nil {
+		return ""
+	}
+	if script.Selected.Endpoint == "" {
+		return script.Selected.Kind
+	}
+	return script.Selected.Kind + " " + script.Selected.Endpoint
 }
 
 // proxyStackValue is what a person needs from a proxy row beyond its summary:

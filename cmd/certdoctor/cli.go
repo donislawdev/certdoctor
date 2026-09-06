@@ -14,6 +14,7 @@ import (
 
 	certdoctor "github.com/donislawdev/certdoctor"
 	"github.com/donislawdev/certdoctor/internal/adapter/dns"
+	"github.com/donislawdev/certdoctor/internal/adapter/pac"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	"github.com/donislawdev/certdoctor/internal/app/run"
@@ -94,6 +95,19 @@ type environment struct {
 	// answer. That call belongs inside L2's share of the budget, so the port is
 	// asked during the walk rather than before it.
 	systemProxy func(ctx context.Context) []proxy.Lens
+	// evaluateScript builds L2's way of resolving one automatic configuration
+	// script: fetching it, and running it inside the sandbox.
+	//
+	// IT TAKES THE ALLOWED SET for the reason exchange and connect take it - the
+	// set is built from what THIS run derived, and a fetcher holding a set
+	// assembled elsewhere is a guard checking something other than what is
+	// dialled. It takes the target as well, because a PAC file is asked about
+	// one URL and answers about that URL, and this seam is built before the
+	// walk while the answer is needed during it.
+	//
+	// A nil one is legal and L2 reports every script as unfetched with a
+	// sentence saying the gap is ours - never as a machine with no script.
+	evaluateScript func(targets *allowed.Targets, targetURL, targetHost string) proxy.Evaluate
 	// trustProbes are the L5 probes, built with a file port of their own because
 	// the files they read are a different size class from a resolver config.
 	trustProbes func() map[string]trust.Probe
@@ -182,13 +196,13 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 	// another name and the whole point of that switch.
 	redaction := redactionFor(o, parsed, found)
 	shown, removed := redaction.Target(typed.String())
-	targets := allowedTargets(parsed, found)
+	targets := allowedTargets(parsed, found, o.pacURL)
 
 	finished, walkFault := walk(ctx, o, env, targetReduction{target: shown, removed: removed}, redaction, found,
 		run.Wiring{
 			Environment: env.lookupEnv,
 			Resolution:  resolutionInput(o, env, parsed, found, foundErr, targets),
-			Proxy:       proxyInput(env, parsed),
+			Proxy:       proxyInput(o, env, parsed, targets),
 			Reach:       reachInput(o, env, parsed, targets),
 			Handshake:   handshakeInput(o, env, parsed, targets),
 			Trust:       trustInput(o, env),
@@ -535,7 +549,7 @@ func redactionFor(o *options, parsed *url.URL, found dns.Nameservers) *redact.Re
 // the narrower one, so every address dialled is certain to be in here, and the
 // difference between the two lists cannot turn into a refusal on a working
 // machine.
-func allowedTargets(parsed *url.URL, found dns.Nameservers) *allowed.Targets {
+func allowedTargets(parsed *url.URL, found dns.Nameservers, pacURL string) *allowed.Targets {
 	targets := allowed.New()
 	// The error is ignored on purpose and only here: Allow refuses an empty
 	// target, and readTarget has already refused a URL with no host.
@@ -561,6 +575,24 @@ func allowedTargets(parsed *url.URL, found dns.Nameservers) *allowed.Targets {
 		// raw form of a broken token is a place nobody will ever dial.
 		if raw := dns.RawTarget(resolver); raw != address {
 			_ = targets.Allow(raw, allowed.ReasonResolver)
+		}
+	}
+
+	// THE FIFTH DERIVATION RULE 16 PERMITS, AND THE ONLY ONE THAT ARRIVES FROM
+	// THE COMMAND LINE. A script address the user typed is on the same footing
+	// as the target itself - they asked about it - so it goes in here, before
+	// the walk, rather than being widened during it. A script address read off
+	// this MACHINE is a different question and is not here: that one is not
+	// resolved in this slice.
+	//
+	// THE ERROR IS DROPPED BECAUSE checkPACScript ALREADY REFUSED IT. An address
+	// pac.Target cannot spell is a usage error the run ended on, so by this line
+	// there is either no address or a good one - and both sides go through that
+	// same function, which is what keeps the string here identical to the one
+	// the transport will dial.
+	if pacURL != "" {
+		if script, err := pac.Target(pacURL); err == nil {
+			_ = targets.Allow(script, allowed.ReasonPACFile)
 		}
 	}
 
@@ -905,8 +937,14 @@ func deliver(o *options, env environment, document []byte) *fault {
 // read, so a build with no system reading at all still answers about the
 // variables - which is exactly the shape of Linux, where there is no second
 // stack to read.
-func proxyInput(env environment, parsed *url.URL) proxy.Input {
+func proxyInput(o *options, env environment, parsed *url.URL, targets *allowed.Targets) proxy.Input {
+	var evaluate proxy.Evaluate
+	if env.evaluateScript != nil {
+		evaluate = env.evaluateScript(targets, parsed.String(), parsed.Hostname())
+	}
 	return proxy.Input{
+		Evaluate:  evaluate,
+		ScriptURL: o.pacURL,
 		Lenses: func(ctx context.Context) []proxy.Lens {
 			lenses := []proxy.Lens{proxy.EnvironmentLens(env.lookupEnv, machine.ProxyVariables())}
 			if env.systemProxy == nil {

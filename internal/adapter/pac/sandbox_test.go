@@ -112,7 +112,7 @@ func TestOnlyTheTwelveHelpersAreExposed(t *testing.T) {
 	before := globalNames(t, goja.New())
 
 	injected := goja.New()
-	if err := (testSandbox()).inject(injected); err != nil {
+	if _, err := (testSandbox()).inject(injected); err != nil {
 		t.Fatalf("the sandbox could not be built: %v", err)
 	}
 	after := globalNames(t, injected)

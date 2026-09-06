@@ -597,6 +597,33 @@ var bodyFixtures = map[report.FindingKind]report.Finding{
 			Stacks: []string{"wininet", "winhttp"},
 		},
 	},
+	// THE FIXTURE IS A SCRIPT THAT ANSWERED, not the smallest valid row, and it
+	// is OBS43 applied the way the handshake fixture above applies it. An
+	// unfetched script has no directives, no selected entry and no answer - so a
+	// fixture built from one would satisfy this guard while leaving the nested
+	// array, its null, the selected pointer and the terminal renderer's line for
+	// it entirely unexecuted. Two directives rather than one, because the first
+	// RECOGNISED entry is what selection means and one entry cannot show an
+	// order being applied.
+	report.FindingPACScript: {
+		Kind:    report.FindingPACScript,
+		Summary: "the PAC script at http://wpad.example/proxy.pac sends https://api.example.com through a proxy of its own choosing",
+		Source:  report.SourceDetected,
+		PACScript: &report.PACScript{
+			URL:     "http://wpad.example/proxy.pac",
+			NamedBy: []string{"wininet", "winhttp"},
+			Fetched: true,
+			Outcome: "answered",
+			Answer:  "SOCKS5 socks.example:1080; PROXY proxy.example:8080; DIRECT",
+			Directives: []report.PACDirective{
+				{Kind: "SOCKS5", Endpoint: "socks.example:1080", Recognised: true},
+				{Kind: "PROXY", Endpoint: "proxy.example:8080", Recognised: true},
+				{Kind: "DIRECT", Recognised: true},
+			},
+			Selected: &report.PACDirective{Kind: "SOCKS5", Endpoint: "socks.example:1080", Recognised: true},
+			Caveats:  []string{},
+		},
+	},
 }
 
 // The two fingerprints the handshake fixture is built from. They are full length

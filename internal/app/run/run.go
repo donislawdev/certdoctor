@@ -269,6 +269,64 @@ var maskedBodies = map[report.FindingKind]func(*redact.Redaction, *report.Findin
 	report.FindingSigningAuthority:    maskSigningAuthority,
 	report.FindingProxyStack:          maskProxyStack,
 	report.FindingStackDivergence:     maskStackDivergence,
+	report.FindingPACScript:           maskPACScript,
+}
+
+// maskPACScript is the second entry that withholds a field outright rather than
+// masking it, and it withholds the same KIND of thing the first one does.
+//
+// THE SCRIPT'S ADDRESS GOES THROUGH Text BECAUSE IT IS A URL, which is the one
+// shape that rule can find a host inside. The endpoints a script names go
+// through Authority instead, because a PAC directive's "host:port" arrives bare
+// - the same split maskProxyStack makes between PACURL and a proxy entry, and
+// the same pseudonym map for both, so a proxy named by a script and a name from
+// L1 still read as one machine.
+//
+// THE VERBATIM ANSWER IS WITHHELD. Answer exists so a report can quote the file
+// rather than our reading of it, and that is exactly what makes it unmaskable:
+// it is somebody else's sentence with a bare authority inside it, so Text would
+// leave the address standing in a document stamped redacted - a leak wearing a
+// stamp, which is the phrase maskProxyStack uses about the exception list for
+// the same reason. Nothing diagnostic is lost, because Directives carries every
+// entry of that answer with its endpoint pseudonymised.
+//
+// THE CAVEATS ARE OUR OWN PROSE about somebody else's file and name nothing off
+// the machine, so they are left alone.
+func maskPACScript(r *redact.Redaction, finding *report.Finding) {
+	script := *finding.PACScript
+	script.URL = r.Text(script.URL)
+	script.Detail = r.Text(script.Detail)
+	script.Directives = maskDirectives(r, script.Directives)
+	if script.Selected != nil {
+		selected := maskDirective(r, *script.Selected)
+		script.Selected = &selected
+	}
+	if script.Answer != "" && r.Mode() == redact.Everything {
+		script.Answer = redact.Placeholder
+	}
+	finding.PACScript = &script
+}
+
+// maskDirectives copies before touching, for the reason maskServers gives. NIL
+// STAYS NIL: a script that was not fetched names no entries, and a script that
+// answered DIRECT names one - ADR20 again, one row further along.
+func maskDirectives(r *redact.Redaction, directives []report.PACDirective) []report.PACDirective {
+	if directives == nil {
+		return nil
+	}
+	masked := make([]report.PACDirective, 0, len(directives))
+	for _, directive := range directives {
+		masked = append(masked, maskDirective(r, directive))
+	}
+	return masked
+}
+
+// maskDirective pseudonymises the endpoint and leaves the rest. The keyword is
+// a word out of the PAC grammar - "PROXY", "DIRECT" - and Recognised is a
+// boolean this program set, so neither names anybody's machine.
+func maskDirective(r *redact.Redaction, directive report.PACDirective) report.PACDirective {
+	directive.Endpoint = r.Authority(directive.Endpoint)
+	return directive
 }
 
 // maskProxyStack is the entry with the widest split so far between what goes

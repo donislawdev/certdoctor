@@ -156,13 +156,33 @@ var intraLayerEdges = map[string][]string{
 	// and the alternative costs MORE declaration here, not less: a separate
 	// package would need this edge plus a second one to reach the rules.
 	//
-	// WHAT IS DELIBERATELY NOT HERE: internal/core/pac. L2 will evaluate an
-	// automatic configuration script, and the evaluator's result arrives through
-	// a port on this layer's own Input rather than by importing it - the seam L3,
-	// L4 and L5 all use, so no layer learns the shape of the one beside it.
+	// internal/core/pac WAS WRITTEN HERE AS "DELIBERATELY NOT PRESENT" AND THE
+	// PREDICTION DID NOT SURVIVE THE CASE IT WAS ABOUT. It stood here from the
+	// slice that built this layer, arguing that an evaluator's result should
+	// arrive through a port carrying this layer's own types, the way L3, L4 and
+	// L5 receive addresses and chains. The half of it that was right is kept:
+	// the FETCHING and the ENGINE are still behind a port, so nothing here
+	// imports internal/adapter/pac and this package still reaches no network and
+	// runs nobody's code.
+	//
+	// WHAT THE PREDICTION MISSED IS THAT internal/core/pac IS NOT A LAYER. It is
+	// a vocabulary and a set of rules for reading somebody else's format, which
+	// is what internal/core/dnsmsg is to L1 - and that edge is declared four
+	// entries down for exactly this reason. Those seams carry DATA between
+	// layers; this carries a CLOSED LIST, and a closed list is the one thing
+	// this tree has measured itself unable to hold in two places: seven outcome
+	// literals declared again here would put the same strings in two files, and
+	// the mutation register compares text, so an entry aimed at either becomes
+	// ambiguous and reports SKIP while looking like proof. That is OBS50, which
+	// this tree has now measured six times.
+	//
+	// SO THE EDGE IS ONE LINE AND THE ALTERNATIVE WAS A SECOND COPY OF A
+	// VOCABULARY. Declared rather than smoothed over: the sentence that used to
+	// stand here was a decision, and replacing it is one too.
 	"internal/core/proxy": {
 		"internal/core/report",
 		"internal/core/status",
+		"internal/core/pac",
 	},
 	// L5 needs the report contract to shape its evidence and the status
 	// vocabulary to grade it. It does NOT import internal/core/handshake: the

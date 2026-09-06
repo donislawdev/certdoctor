@@ -16,6 +16,7 @@ var helpGroups = []struct {
 	name  string
 	title string
 }{
+	{"input", "WHAT TO EXAMINE"},
 	{"output", "OUTPUT"},
 	{"containers", "CONTAINERS"},
 	{"channels", "CHANNELS"},

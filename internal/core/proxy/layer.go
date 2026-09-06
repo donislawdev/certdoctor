@@ -40,6 +40,35 @@ type Input struct {
 	// wire. Every exception list rule below is asked about THIS host, because a
 	// list is only ever an answer about one target.
 	Target Target
+	// Evaluate fetches one automatic configuration script and runs it against
+	// this run's target.
+	//
+	// IT IS A PORT FOR TWO REASONS AND THE SECOND IS THE BINDING ONE. Fetching
+	// reaches the network and running is this program's single deliberate
+	// exception to "we execute nobody else's code", so both live in an adapter
+	// this package may not import. And like Lenses, it is called INSIDE this
+	// layer's budget: a request started before the walk would spend time no
+	// layer is accountable for.
+	//
+	// A nil one is legal and is reported as ours: every script comes back
+	// unfetched with a sentence saying the gap is in certdoctor. That is the
+	// safe direction - a forgotten wire cannot make a machine look like it has
+	// no script.
+	Evaluate Evaluate
+	// ScriptURL is an address the USER named, and it is the only input to this
+	// layer that does not come off the machine.
+	//
+	// IT EXISTS BECAUSE THE MACHINE IS NOT ALWAYS ABLE TO NAME ONE. Only the
+	// Windows stacks carry an AutoConfigURL; a Linux machine has no place all
+	// its programs read, so a run there could never reach this half of the
+	// layer - and neither could the bench, which is Linux. It is also the
+	// question a helpdesk actually has: somebody is handed a script address and
+	// wants to know where it sends one URL.
+	//
+	// ITS ADDRESS IS IN THE ALLOWED SET BEFORE THE WALK STARTS, because the
+	// user typed it - the same footing as the target itself, and the one input
+	// here that needs no widening during the run.
+	ScriptURL string
 }
 
 // Result is what L2 established.
@@ -66,12 +95,13 @@ const (
 // variables set and without them has to come out the same everywhere else, and
 // the bench checks exactly that from outside.
 //
-// IT OPENS NO CONNECTION. Fetching an automatic configuration script, running
-// WPAD discovery and asking a proxy whether it wants credentials are all work
-// that reaches the network, and each of them widens the set of places this
-// program may connect to. They arrive with their own slices; until then this
-// layer says what the configuration SAYS and says out loud where that stops
-// short of an answer.
+// IT OPENS ONE CONNECTION AND ONLY ONE, AND THIS PARAGRAPH USED TO SAY IT
+// OPENED NONE. Fetching an automatic configuration script reaches the network,
+// so it widened the set of places this program may connect to and cost an entry
+// on the dial allowlist - both from the entry point, never from here. WPAD
+// discovery and asking a proxy whether it wants credentials still do not
+// happen, they arrive with their own slices, and this layer says out loud where
+// that leaves its answer short.
 func Ask(ctx context.Context, in Input) Result {
 	if in.Lenses == nil {
 		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: noLenses}
@@ -95,7 +125,16 @@ func Ask(ctx context.Context, in Input) Result {
 	if class, compared := Compare(lenses); compared {
 		findings = append(findings, divergenceFinding(class, lenses))
 	}
-	return gradeOf(lenses, findings)
+
+	// THE SCRIPTS COME AFTER THE PLACES AND THAT IS REPORT ORDER, not an
+	// implementation detail: a reader has to see what the machine holds before
+	// being told that a file overrides it. Resolving them needs the lenses
+	// anyway, because most script addresses are read off a stack.
+	scripts := resolveScripts(ctx, in, lenses)
+	for _, one := range scripts {
+		findings = append(findings, scriptFinding(one, in.Target))
+	}
+	return gradeOf(lenses, scripts, findings, in.Target)
 }
 
 // findingFor turns one lens into one row.
@@ -345,8 +384,8 @@ func divergenceFinding(class Divergence, lenses []Lens) report.Finding {
 // everything that could still name a proxy - a script it did not fetch, a
 // discovery it did not run - and where the answer is no, no arrangement of the
 // first question makes the layer's own question answered.
-func gradeOf(lenses []Lens, findings []report.Finding) Result {
-	var named, incomplete bool
+func gradeOf(lenses []Lens, scripts []script, findings []report.Finding, target Target) Result {
+	var named, discovery bool
 	var readable int
 	for _, lens := range lenses {
 		if !lens.Read {
@@ -354,8 +393,24 @@ func gradeOf(lenses []Lens, findings []report.Finding) Result {
 		}
 		readable++
 		named = named || lens.NamesAProxy()
-		incomplete = incomplete || lens.PACURL != "" || lens.AutoDetect == On
+		discovery = discovery || lens.AutoDetect == On
 	}
+
+	// A SCRIPT THIS RUN READ NO LONGER COUNTS AGAINST THE ANSWER, AND THAT IS
+	// THE BEHAVIOUR THIS SLICE CHANGES. Until it existed, an address pointing
+	// at a script was permanently unresolved, because nothing could fetch one -
+	// so a machine naming a script could never be told anything better than
+	// "and this run did not look". Discovery is still counted, because nothing
+	// here performs it yet.
+	var answered, open int
+	for _, one := range scripts {
+		if one.settled() {
+			answered++
+			continue
+		}
+		open++
+	}
+	incomplete := open > 0 || discovery
 
 	switch {
 	case readable == 0:
@@ -364,22 +419,28 @@ func gradeOf(lenses []Lens, findings []report.Finding) Result {
 			Detail: fmt.Sprintf("all %d of this machine's proxy configuration places refused to be read, "+
 				"so which proxy applies here was not established", len(lenses)),
 		}
-	case !named && !incomplete:
+	case !named && answered == 0 && !incomplete:
 		return Result{
 			Status: status.Unknown, Reason: status.ReasonNothingToCheck, Findings: findings,
 			Detail: "no place this machine keeps proxy settings in names a proxy, an automatic " +
 				"configuration script or automatic discovery, so there was no proxying to examine",
 		}
-	case !named:
+	case !named && answered == 0:
+		// THE REASON COMES OFF THE SCRIPT WHEN A SCRIPT IS WHAT BLOCKED THE
+		// ANSWER, and that is what the ninth and the first reasons are for. A
+		// file that will not parse is unrecognized_output - the word
+		// testbed/expected/pac-broken.txt fixed before this code existed - and
+		// one stopped by a ceiling of ours is limit_exceeded, never a timeout
+		// unless a clock is what ran out.
 		return Result{
-			Status: status.Unknown, Reason: status.ReasonUndetermined, Findings: findings,
-			Detail: "no place names a proxy directly, and " + unresolved(lenses) +
+			Status: status.Unknown, Reason: openReason(scripts), Findings: findings,
+			Detail: "no place names a proxy directly, and " + unresolved(scripts, discovery) +
 				" - so a proxy may still apply to this URL and this run did not establish which",
 		}
 	case incomplete:
 		return Result{
 			Status: status.Warn, Findings: findings,
-			Detail: "this machine names a proxy, and " + unresolved(lenses) +
+			Detail: whatIsKnown(answered, scripts, target) + ", and " + unresolved(scripts, discovery) +
 				" - so what is listed below may not be the whole answer",
 		}
 	}
@@ -394,8 +455,45 @@ func gradeOf(lenses []Lens, findings []report.Finding) Result {
 	}
 	return Result{
 		Status: status.Pass, Findings: findings,
-		Detail: agreementOf(readable, compared, class),
+		Detail: agreementOf(readable, compared, class, scripts, target),
 	}
+}
+
+// openReason is the word for the first thing this run could not settle.
+//
+// THE FIRST RATHER THAN A COMBINATION, and a layer carries one reason, so a
+// second script failing differently is a row of its own to read. The order is
+// report order, and the command line comes first there, so a script the user
+// asked about decides the word over one the machine merely mentions.
+func openReason(scripts []script) status.Reason {
+	for _, one := range scripts {
+		if !one.settled() {
+			return one.reason()
+		}
+	}
+	// Nothing open among the scripts means discovery is what is missing, and
+	// nothing has performed it - the question was never put rather than
+	// answered badly.
+	return status.ReasonUndetermined
+}
+
+// whatIsKnown is the first half of a WARN sentence: what this run DID settle.
+//
+// A SCRIPT'S ANSWER OUTRANKS A STACK'S LIST HERE, because it outranks it on the
+// machine. A report that led with "this machine names a proxy" while a script
+// sent this URL past it would be telling somebody the opposite of what happens
+// on their computer - the fault testbed/expected/proxy-pac-direct.txt calls the
+// reason this product exists.
+// IT TAKES NO "named" FLAG, AND THE FIRST DRAFT DID. The branch below is only
+// reached when a proxy was named OR a script answered, so the second arm implies
+// the first and the argument could not change an answer - an argument that
+// decides nothing, which is the shape OBS112 names, met in this slice's own new
+// code rather than in something old.
+func whatIsKnown(answered int, scripts []script, target Target) string {
+	if answered > 0 {
+		return "an automatic configuration script decides this URL: " + scriptOutcome(scripts, target)
+	}
+	return "this machine names a proxy"
 }
 
 // unresolved names what this run left open, rather than saying "incomplete".
@@ -403,24 +501,44 @@ func gradeOf(lenses []Lens, findings []report.Finding) Result {
 // IT NAMES THE THING AND NOT THE COUNT. "one place is incomplete" sends a reader
 // nowhere; "points at a script this run did not fetch" tells them what to look
 // at next and what a later version of this tool will do for them.
-func unresolved(lenses []Lens) string {
-	var script, discovery bool
-	for _, lens := range lenses {
-		if !lens.Read {
-			continue
-		}
-		script = script || lens.PACURL != ""
-		discovery = discovery || lens.AutoDetect == On
+func unresolved(scripts []script, discovery bool) string {
+	var open bool
+	for _, one := range scripts {
+		open = open || !one.settled()
 	}
 	switch {
-	case script && discovery:
-		return "this machine both points at an automatic configuration script and has automatic discovery on, " +
-			"neither of which this run followed"
-	case script:
-		return "this machine points at an automatic configuration script, which this run did not fetch"
+	case open && discovery:
+		return "this machine both points at an automatic configuration script this run did not settle and has " +
+			"automatic proxy discovery on, which this run did not perform"
+	case open:
+		return "this machine points at an automatic configuration script this run did not settle, " +
+			"and the row below says why"
 	default:
 		return "this machine has automatic proxy discovery on, which this run did not perform"
 	}
+}
+
+// scriptOutcome is what the first settled script said, in one clause.
+//
+// IT NAMES NO ENDPOINT, the masking rule summaryOfScript states: a verdict
+// crosses the assembly path through Redaction.Text, which cannot see a bare
+// "host:port". The address is in the row, which has a rule that can.
+func scriptOutcome(scripts []script, target Target) string {
+	for _, one := range scripts {
+		if !one.settled() {
+			continue
+		}
+		chosen, ok := firstRecognised(one.answer.Result.Directives)
+		switch {
+		case !ok:
+			return "it answered for " + describe(target) + " with nothing certdoctor recognises"
+		case chosen.Endpoint == "":
+			return "it sends " + describe(target) + " past every proxy this machine names"
+		default:
+			return "it sends " + describe(target) + " through a proxy of its own choosing, named in the row below"
+		}
+	}
+	return ""
 }
 
 // agreementOf is the sentence for a run that settled the question.
@@ -430,7 +548,14 @@ func unresolved(lenses []Lens) string {
 // that place and no answer at all about whether this machine is consistent, and
 // a sentence that did not distinguish the two would let a reader believe a
 // comparison happened.
-func agreementOf(readable int, compared bool, class Divergence) string {
+func agreementOf(readable int, compared bool, class Divergence, scripts []script, target Target) string {
+	// A SCRIPT THAT ANSWERED IS THE HEADLINE AND THE STACKS ARE THE BACKGROUND,
+	// because that is the order they decide in. Leading with "all places agree"
+	// on a machine whose script overrides them would be an accurate sentence
+	// about the wrong question.
+	if said := scriptOutcome(scripts, target); said != "" {
+		return "an automatic configuration script decides this URL: " + said
+	}
 	if !compared {
 		return fmt.Sprintf("this machine keeps proxy settings in %d readable place, so there was nothing to "+
 			"compare it against and it is the whole of what this machine says", readable)

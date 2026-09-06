@@ -102,6 +102,23 @@ const (
 	// not. A key called "divergence" would drop two vocabularies into one field
 	// name.
 	FindingStackDivergence FindingKind = "stack_divergence"
+
+	// FindingPACScript - one automatic configuration script this run resolved,
+	// and what it says about this target.
+	//
+	// THE UNIT IS THE SCRIPT AND NOT THE PLACE THAT NAMED IT, which is the same
+	// argument the row above makes one level along. Two stacks on one Windows
+	// machine routinely name the SAME AutoConfigURL, and a row per place would
+	// fetch it twice, run it twice and print two answers that a file calling
+	// Math.random is entitled to make differ. It is also the only shape in which
+	// a script the USER named on the command line has anywhere to go: nobody
+	// keeps proxy configuration there, so there is no stack to hang it on.
+	//
+	// AND THE ANSWER DEPENDS ON THE TARGET RATHER THAN ON THE PLACE. A PAC file
+	// is asked about one URL and answers about that URL; where its address was
+	// read from changes nothing about what it says. Fields whose value does not
+	// vary with a row's subject do not belong on that row.
+	FindingPACScript FindingKind = "pac_script"
 )
 
 // findingKindMeanings is the registry. The registry test refuses a kind that is
@@ -115,6 +132,7 @@ var findingKindMeanings = map[FindingKind]string{
 	FindingSigningAuthority:    "who signed the leaf, and how widely the trust stores on this machine hold that signer",
 	FindingProxyStack:          "one place this machine keeps proxy configuration, and what it says about this target",
 	FindingStackDivergence:     "how the proxy configuration stacks on this machine differ from one another",
+	FindingPACScript:           "one automatic configuration script this run resolved, and what it says about this target",
 }
 
 // AllFindingKinds lists every kind exactly once, in declaration order.
@@ -142,6 +160,7 @@ var AllFindingKinds = []FindingKind{
 	FindingSigningAuthority,
 	FindingProxyStack,
 	FindingStackDivergence,
+	FindingPACScript,
 }
 
 // ResolutionView says which of the two lenses an answer was seen through.
@@ -466,6 +485,8 @@ type Finding struct {
 	ProxyStack *ProxyStack
 	// StackDivergence is set when Kind is FindingStackDivergence.
 	StackDivergence *StackDivergence
+	// PACScript is set when Kind is FindingPACScript.
+	PACScript *PACScript
 }
 
 // ConnectOutcome is what happened when we tried to open one TCP connection.
@@ -1714,6 +1735,115 @@ func (d *StackDivergence) breach() string {
 	return ""
 }
 
+// PACDirective is one entry of a script's answer.
+//
+// THE VOCABULARY OF KEYWORDS IS NOT DECLARED HERE, for the reason ProxyStack
+// gives about stacks and rules: the closed list lives beside the code that
+// parses it, in internal/core/pac, and a second copy would be one string in two
+// places - the shape OBS50 measures.
+type PACDirective struct {
+	// Kind is the keyword as the file spelled it, upper cased.
+	Kind string
+	// Endpoint is the "host:port" that followed it, empty for DIRECT.
+	Endpoint string
+	// Recognised says whether this program knows the keyword.
+	//
+	// AN UNKNOWN KEYWORD IS CARRIED RATHER THAN DROPPED - inviolable rule 15. A
+	// directive quietly discarded would let a report say a client goes direct
+	// when the file named something we failed to read.
+	Recognised bool
+}
+
+// PACScript is the body of an automatic configuration script finding: one
+// script, and what it says about this target.
+//
+// THE OUTCOME IS A PLAIN STRING HERE, the same decision ProxyStack makes about
+// stacks and rules. The closed list of outcomes lives in internal/core/pac
+// beside the evaluator that produces them, and declaring the same seven
+// literals again in this package would buy nothing: this package cannot check
+// membership of a list it must not import.
+type PACScript struct {
+	// URL is the address the script was named at.
+	URL string
+	// NamedBy are the things that pointed at this script, in report order - a
+	// stack name, or the token for the command line.
+	//
+	// IT IS A LIST BECAUSE ONE SCRIPT HAS SEVERAL NAMERS. Two Windows stacks
+	// routinely hold one AutoConfigURL, and saying so once with both names is
+	// the answer; saying it twice would be two rows that can disagree.
+	NamedBy []string
+	// Fetched says whether the bytes were retrieved at all.
+	Fetched bool
+	// Detail is why it could not be fetched, or an extra sentence about what
+	// was. A script that was not fetched without one is refused below: that is
+	// a defect here rather than a fact about somebody's machine.
+	Detail string
+	// Outcome is what the evaluation made of the file, empty when nothing was
+	// evaluated.
+	Outcome string
+	// Answer is the string the file returned, kept verbatim so a report can
+	// quote the file rather than our reading of it.
+	//
+	// IT IS WITHHELD UNDER --redact RATHER THAN MASKED, and for the same reason
+	// ProxyStack.Bypass is: it is a sentence in somebody else's grammar holding
+	// a bare "host:port", which no masking rule recognises as a machine. The
+	// diagnostic content survives in Directives, whose endpoints go through the
+	// same pseudonym map as every other address in the document.
+	Answer string
+	// Directives are the entries the answer named, in the order it listed them.
+	// Empty for every outcome but an answer.
+	Directives []PACDirective
+	// Selected is the first entry a client would follow, or nil when the answer
+	// named none this program recognises.
+	Selected *PACDirective
+	// Caveats are our sentences about what this row does not settle. They are
+	// OUR prose about somebody else's file, never its text.
+	Caveats []string
+}
+
+// breach refuses the states that would make a script row say something nobody
+// established.
+//
+// THE COSTLY MISTAKE HERE IS A SCRIPT THAT WAS NEVER FETCHED COMING BACK
+// LOOKING LIKE ONE THAT WAS EVALUATED AND SAID NOTHING. Those two send a reader
+// to different places - a web server nobody can reach, against a file that
+// answers - so the prohibitions below are what keeps them apart.
+func (p *PACScript) breach() string {
+	if p.URL == "" {
+		return "carries what an automatic configuration script says without saying where the script was"
+	}
+	if len(p.NamedBy) == 0 {
+		return "carries an automatic configuration script that nothing on this machine and nobody pointed at"
+	}
+	for _, namer := range p.NamedBy {
+		if namer == "" {
+			return "counts an unnamed source among the things that pointed at this script"
+		}
+	}
+	if !p.Fetched {
+		if p.Detail == "" {
+			return "says an automatic configuration script could not be fetched and does not say why, " +
+				"which is a defect here rather than an answer about that machine"
+		}
+		if p.Outcome != "" || p.Answer != "" || len(p.Directives) > 0 || p.Selected != nil {
+			return "says an automatic configuration script could not be fetched and reports what it said"
+		}
+		return ""
+	}
+	if p.Outcome == "" {
+		return "reports an automatic configuration script that was fetched and never says what running it came to"
+	}
+	if p.Selected != nil && len(p.Directives) == 0 {
+		return "names the entry a client would follow while listing no entries at all"
+	}
+	for _, directive := range p.Directives {
+		if directive.Kind == "" {
+			return "lists an entry of a script's answer with no keyword, which is nothing anybody could act on"
+		}
+	}
+	return ""
+}
+
 var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingEnvironmentVariable: func(f Finding) bool { return f.EnvironmentVariable != nil },
 	FindingNameResolution:      func(f Finding) bool { return f.NameResolution != nil },
@@ -1723,6 +1853,7 @@ var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingSigningAuthority:    func(f Finding) bool { return f.SigningAuthority != nil },
 	FindingProxyStack:          func(f Finding) bool { return f.ProxyStack != nil },
 	FindingStackDivergence:     func(f Finding) bool { return f.StackDivergence != nil },
+	FindingPACScript:           func(f Finding) bool { return f.PACScript != nil },
 }
 
 // Breach names what is wrong with a finding, or returns the empty string for one
@@ -1792,6 +1923,8 @@ func (f Finding) bodyBreach() string {
 		return f.ProxyStack.breach()
 	case f.StackDivergence != nil:
 		return f.StackDivergence.breach()
+	case f.PACScript != nil:
+		return f.PACScript.breach()
 	}
 	return ""
 }

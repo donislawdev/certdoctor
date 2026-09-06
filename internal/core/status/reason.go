@@ -89,6 +89,29 @@ const (
 	// registers - two fields, never two vocabularies. Two different words for it
 	// would have been the thing to explain.
 	ReasonUndetermined Reason = "undetermined"
+	// ReasonLimitExceeded - a ceiling THIS PROGRAM sets stopped the work before
+	// it produced an answer.
+	//
+	// THE NINTH REASON, NAMED BY ADR80 AND DECLARED HERE WITH ITS FIRST
+	// PRODUCER. That record named it and deliberately left it out of this file:
+	// a value in a public contract that nothing can produce is a promise nobody
+	// keeps, which is the charge this register lays against access_denied
+	// (OBS98). L2 fetching and running an automatic configuration script is what
+	// produces it, so it arrives with that slice and not before.
+	//
+	// THE BOUNDARY WITH timeout IS WRITTEN DOWN AND BINDING - ADR80 part 3. TIME
+	// STAYS WITH timeout; every OTHER ceiling of ours comes here. A PAC file
+	// stopped for allocating past the sandbox's memory ceiling did not run out
+	// of time, and one refused for being larger than this run accepts was never
+	// started at all - reporting either as a timeout would send somebody to
+	// look at a clock.
+	//
+	// IT SAYS THE LIMIT IS OURS, AND THAT IS THE WHOLE OF IT. The sandbox's
+	// memory ceiling is a ceiling on what gets NOTICED rather than on what gets
+	// allocated - the overshoot was measured at 1.75x and 1.88x on two runs of
+	// one file - so a sentence built on this reason may say that this run
+	// stopped the file and may not say that the file is a bomb.
+	ReasonLimitExceeded Reason = "limit_exceeded"
 )
 
 // AllReasons lists every reason exactly once.
@@ -101,6 +124,7 @@ var AllReasons = []Reason{
 	ReasonNothingToCheck,
 	ReasonTransportError,
 	ReasonUndetermined,
+	ReasonLimitExceeded,
 }
 
 // reasonDescriptions carries the English one-liner shown to the user. Keeping it
@@ -115,6 +139,7 @@ var reasonDescriptions = map[Reason]string{
 	ReasonNothingToCheck: "this layer ran and there was nothing on this machine for it to look at",
 	ReasonTransportError: "every attempt to ask failed on the wire rather than inside certdoctor",
 	ReasonUndetermined:   "this layer asked, and what came back does not settle the question",
+	ReasonLimitExceeded:  "a ceiling certdoctor sets stopped this before it produced an answer",
 }
 
 // Valid reports whether r is one of the declared reasons.

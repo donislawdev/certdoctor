@@ -44,13 +44,20 @@ import "time"
 // port, and the answer is never a quiet false: a PAC file asking isResolvable
 // on a run with no resolver has not learned that the name does not resolve.
 //
-// THE PORTS ARE NOT WIRED TO ANYTHING IN P8-K1, AND THAT IS DELIBERATE RATHER
-// THAN UNFINISHED. Reaching a resolver from here would widen the set of places
-// this program may connect to, which is inviolable rule 16 and a load-bearing
-// change of its own; it belongs with the slice that reads the machine's proxy
-// configuration. Until then the sandbox has no network because there is nothing
-// behind these ports, which makes the mandatory guard true by construction
-// rather than by promise.
+// THE PORTS ARE STILL NOT WIRED TO ANYTHING, AND THE REASON IS NOW MEASURED
+// RATHER THAN PROVISIONAL. The slice that fetches and runs a script arrived and
+// left them alone: every PAC file on the bench calls only the helpers that need
+// no port, so nothing was bought by wiring them, and two things were avoided.
+// The first is a channel out of this machine whose question names come from
+// somebody else's file - the resolver is in the allowed set, so every query is
+// permitted and only the QUESTIONS are theirs, which the network guard cannot
+// see. The second is that these are native Go called from JavaScript, and the
+// sandbox's stopwatch does not interrupt native code.
+//
+// SO THE SANDBOX HAS NO NETWORK BECAUSE THERE IS NOTHING BEHIND THESE PORTS,
+// which makes the mandatory guard true by construction rather than by promise -
+// and the layer records which helpers a file called anyway, so an answer reached
+// without them cannot pass for a settled one.
 type Ports struct {
 	// Resolve turns a host name into its addresses, in the order the resolver
 	// gave them. An empty result means the name did not resolve; an error means
