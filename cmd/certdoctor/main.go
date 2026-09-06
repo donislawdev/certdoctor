@@ -31,11 +31,13 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/curl"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/git"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/java"
+	"github.com/donislawdev/certdoctor/internal/adapter/proxyconf"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
+	"github.com/donislawdev/certdoctor/internal/core/proxy"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
@@ -152,6 +154,22 @@ func liveEnvironment() environment {
 		nameservers: func() (dns.Nameservers, error) {
 			source, resolvePath := file.Live()
 			return dns.Enumerate(file.Guarded(source, resolvePath, resolverConfigLimit, nil))
+		},
+		// The places this platform keeps proxy configuration in. The command port
+		// is probe.Run, which is the ONE place in this program allowed to start
+		// somebody else's process - so scutil goes through the same four
+		// narrowing rules as keytool and curl, and execAllowlist stays at one
+		// entry.
+		//
+		// IT IS FILLED IN HERE AND NOT INSIDE proxyconf, which declares a port of
+		// primitives instead of importing probe: an adapter reaching sideways to
+		// another adapter would cost an entry on the layer guard's exception
+		// list for a type that fits on one line.
+		systemProxy: func(ctx context.Context) []proxy.Lens {
+			return proxyconf.Read(ctx, func(ctx context.Context, executable string, args ...string) (string, int, bool, error) {
+				out, err := probe.Run(ctx, executable, args...)
+				return out.Stdout, out.ExitCode, out.Truncated, err
+			})
 		},
 		// The L5 probes. git reads plain INI and a PEM bundle through the same
 		// guarded port everything else uses, so the refusal rule - including "this

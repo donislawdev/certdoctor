@@ -74,6 +74,34 @@ const (
 	// "interception" would therefore be an accusation printed on the ordinary
 	// case, which inviolable rule 21 calls harm rather than a defect.
 	FindingSigningAuthority FindingKind = "signing_authority"
+
+	// FindingProxyStack - what ONE place a machine keeps proxy configuration in
+	// says about proxying this target. The unit is the STACK and not the
+	// program, for the reason the glossary gives about proxy.Stack: several
+	// programs read one stack and one program reads two, so a report organised
+	// by program would repeat itself and still miss the case this layer exists
+	// for.
+	FindingProxyStack FindingKind = "proxy_stack"
+
+	// FindingStackDivergence - how the stacks on this machine differ from each
+	// other. Exactly one per run, and only when there were two stacks to
+	// compare.
+	//
+	// IT IS A KIND OF ITS OWN RATHER THAN A FIELD ON THE ROW ABOVE, and the
+	// reason is ADR65 made structural. A class is a sentence about a COMPARISON,
+	// so it belongs to no single stack - L1 could hang its class on the system
+	// view because two views make an obvious second party, and a set of stacks
+	// has no such party. Hanging it on one row would mean picking one, and the
+	// class would then disappear with that row. As a kind, its ABSENCE says
+	// "fewer than two stacks could be read", which is exactly the condition
+	// ADR65 wrote down.
+	//
+	// THE NAME CARRIES ITS SUBJECT ON PURPOSE. proxy.Divergence and
+	// report.Divergence are two closed lists that both hold one_sided, both
+	// rightly, because the shape of the question is the same and the subject is
+	// not. A key called "divergence" would drop two vocabularies into one field
+	// name.
+	FindingStackDivergence FindingKind = "stack_divergence"
 )
 
 // findingKindMeanings is the registry. The registry test refuses a kind that is
@@ -85,6 +113,8 @@ var findingKindMeanings = map[FindingKind]string{
 	FindingTLSHandshake:        "what one server presented when the connection to one address was upgraded to TLS",
 	FindingTrustStore:          "one trust store of one runtime instance, and what it makes of the presented chain",
 	FindingSigningAuthority:    "who signed the leaf, and how widely the trust stores on this machine hold that signer",
+	FindingProxyStack:          "one place this machine keeps proxy configuration, and what it says about this target",
+	FindingStackDivergence:     "how the proxy configuration stacks on this machine differ from one another",
 }
 
 // AllFindingKinds lists every kind exactly once, in declaration order.
@@ -110,6 +140,8 @@ var AllFindingKinds = []FindingKind{
 	FindingTLSHandshake,
 	FindingTrustStore,
 	FindingSigningAuthority,
+	FindingProxyStack,
+	FindingStackDivergence,
 }
 
 // ResolutionView says which of the two lenses an answer was seen through.
@@ -430,6 +462,10 @@ type Finding struct {
 	TrustStore *TrustStore
 	// SigningAuthority is set when Kind is FindingSigningAuthority.
 	SigningAuthority *SigningAuthority
+	// ProxyStack is set when Kind is FindingProxyStack.
+	ProxyStack *ProxyStack
+	// StackDivergence is set when Kind is FindingStackDivergence.
+	StackDivergence *StackDivergence
 }
 
 // ConnectOutcome is what happened when we tried to open one TCP connection.
@@ -1510,6 +1546,174 @@ func (a *SigningAuthority) accusation(summary string) string {
 	return ""
 }
 
+// ProxyServer is one proxy an entry of a configuration names.
+//
+// IT IS A SUMMARY FOR A READER AND NOT proxy.Server, although the two hold the
+// same four facts. This package may not import the one that reads a machine's
+// proxy configuration - the arrow runs the other way, as it does for every layer
+// - so the shape a report promises is declared here and filled in by the layer.
+type ProxyServer struct {
+	// Protocol is the protocol this entry applies to, or empty when the entry is
+	// the default for every protocol without one of its own.
+	Protocol string
+	// Scheme is how the proxy itself is reached, or empty when the entry did not
+	// say. It is not the same question as Protocol: an https request through a
+	// proxy spoken to over http is the ordinary CONNECT case.
+	Scheme string
+	// Address is host or host:port, as the machine holds it.
+	//
+	// USERINFO IS NEVER IN HERE. It is dropped where the entry is read rather
+	// than on the way to the report - ADR89 - because this field becomes a
+	// connection target, and a secret in it would leave the reporting path
+	// altogether.
+	Address string
+	// CarriedCredentials records that the entry named a user and a password and
+	// that they were dropped. It is half the answer to "why do I get a 407" and
+	// the half that can be said without saying the secret.
+	CarriedCredentials bool
+}
+
+// ProxyBypassRule is one runtime's reading of one exception list.
+//
+// ONE LIST, SEVERAL ANSWERS, AND THAT IS THE PRODUCT RATHER THAN A DETAIL. The
+// same NO_PROXY is read at least two ways by runtimes this program asks about,
+// so a row saying only "bypassed: yes" would be true for one of them and false
+// for another on the same machine.
+type ProxyBypassRule struct {
+	// Rule names the reading. The closed list of readings lives in
+	// internal/core/proxy beside the functions that implement them.
+	Rule string
+	// Bypasses says whether this target skips the proxy under that reading.
+	Bypasses bool
+}
+
+// ProxyStack is the body of a proxy configuration finding: one place, and what
+// it says about this target.
+//
+// THE VOCABULARIES ARE PLAIN STRINGS HERE AND THAT IS DELIBERATE. The closed
+// lists of stacks and of exception list rules live in internal/core/proxy, next
+// to the code that produces them and the sources that justify them. Declaring
+// the same literals a second time in this package is the measured shape of
+// OBS50 - the register compares TEXT, so one string in two places turns existing
+// entries into SKIPs - and it would buy nothing: this package cannot check
+// membership of a list it must not import.
+type ProxyStack struct {
+	// Stack says which place this was read from.
+	Stack string
+	// Read says whether the stack could be read at all.
+	Read bool
+	// Detail is why it could not be read, or an extra sentence about what was.
+	//
+	// NOT READ WITHOUT A DETAIL IS REFUSED. proxy.Lens says a failure without a
+	// reason is a defect on our side, and this is the same sentence enforced on
+	// the way out.
+	Detail string
+	// Servers are the proxies this stack names, in the order it named them.
+	// Nil means the stack was not read; empty means it was read and names none.
+	Servers []ProxyServer
+	// Selected is the entry that applies to this target, or nil when none does.
+	Selected *ProxyServer
+	// Bypass is the exception list exactly as the stack holds it.
+	Bypass string
+	// BypassSet says whether the stack held an exception list at all. An absent
+	// list and an empty one are different facts about a machine.
+	BypassSet bool
+	// BypassRules is how this target fares under each reading that applies to
+	// this stack. Nil when there was no list to read.
+	BypassRules []ProxyBypassRule
+	// PACURL is the address of an automatic configuration script, if the stack
+	// named one.
+	//
+	// ITS PRESENCE IS NOT PROOF THAT PAC IS IN USE - OBS111, measured. The
+	// caveat travels with it in Caveats rather than being left to the reader.
+	PACURL string
+	// AutoDetect says whether this place has WPAD discovery on.
+	//
+	// IT IS THE Tristate THIS PACKAGE ALREADY HAS, not a second three-valued
+	// type. NotDetermined here means the place does not answer that question at
+	// all - the WinHTTP structure has no such field, while the Internet Settings
+	// view has one that can be off - and reporting both as false would claim
+	// this program checked something it never asked about.
+	AutoDetect Tristate
+	// Caveats are the sentences this layer adds about what the row does not
+	// settle. They are OUR prose about somebody else's configuration, never
+	// their text.
+	Caveats []string
+}
+
+// breach refuses the states that would make a proxy row say something nobody
+// read.
+//
+// MOST OF IT IS PROHIBITIONS, the same shape the connection body has, and for
+// the same reason: a half filled row reads exactly like a measurement. The
+// costly mistake here is a stack that could not be read coming back looking like
+// a stack that named nothing, which is the one distinction proxy.Lens exists to
+// keep.
+func (p *ProxyStack) breach() string {
+	if p.Stack == "" {
+		return "carries what a proxy configuration says without saying which place said it"
+	}
+	if !p.Read {
+		if p.Detail == "" {
+			return "says a proxy configuration place could not be read and does not say why, " +
+				"which is a defect here rather than an answer about that machine"
+		}
+		if p.Servers != nil || p.Selected != nil || p.BypassSet || p.Bypass != "" ||
+			len(p.BypassRules) > 0 || p.PACURL != "" || p.AutoDetect != NotDetermined {
+			return "says a proxy configuration place could not be read and reports what it held"
+		}
+		return ""
+	}
+	if p.Selected != nil && len(p.Servers) == 0 {
+		return "names a proxy that applies to this target while listing none at all"
+	}
+	if !p.BypassSet && (p.Bypass != "" || len(p.BypassRules) > 0) {
+		return "reads an exception list that this place does not hold"
+	}
+	for _, server := range p.Servers {
+		if server.Address == "" {
+			return "lists a proxy with no address, which is nothing anybody could connect to"
+		}
+	}
+	for _, rule := range p.BypassRules {
+		if rule.Rule == "" {
+			return "reports whether this target skips the proxy without naming the reading it used"
+		}
+	}
+	return ""
+}
+
+// StackDivergence is the body of the one finding that compares stacks.
+type StackDivergence struct {
+	// Class is the comparison's answer. The closed list lives in
+	// internal/core/proxy for the reason ProxyStack gives about vocabularies.
+	Class string
+	// Stacks names the places that were compared, in report order.
+	Stacks []string
+}
+
+// breach refuses a comparison that had nothing to compare.
+//
+// TWO STACKS ARE THE CONDITION AND NOT A CONVENTION - ADR65, decided for the two
+// DNS views and binding here. One stack is not a machine whose places agree, and
+// a class produced from one would be a sentence about a difference nobody could
+// have seen.
+func (d *StackDivergence) breach() string {
+	if d.Class == "" {
+		return "compares this machine's proxy configuration places without saying how they came out"
+	}
+	if len(d.Stacks) < 2 {
+		return fmt.Sprintf("reports how proxy configuration places differ after reading %d of them, "+
+			"and a difference needs two", len(d.Stacks))
+	}
+	for _, stack := range d.Stacks {
+		if stack == "" {
+			return "counts an unnamed place among the proxy configuration places it compared"
+		}
+	}
+	return ""
+}
+
 var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingEnvironmentVariable: func(f Finding) bool { return f.EnvironmentVariable != nil },
 	FindingNameResolution:      func(f Finding) bool { return f.NameResolution != nil },
@@ -1517,6 +1721,8 @@ var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingTLSHandshake:        func(f Finding) bool { return f.TLSHandshake != nil },
 	FindingTrustStore:          func(f Finding) bool { return f.TrustStore != nil },
 	FindingSigningAuthority:    func(f Finding) bool { return f.SigningAuthority != nil },
+	FindingProxyStack:          func(f Finding) bool { return f.ProxyStack != nil },
+	FindingStackDivergence:     func(f Finding) bool { return f.StackDivergence != nil },
 }
 
 // Breach names what is wrong with a finding, or returns the empty string for one
@@ -1582,6 +1788,10 @@ func (f Finding) bodyBreach() string {
 		// one fact that makes an accusation safe to print lives in the body.
 		// Checking either alone would check nothing.
 		return f.SigningAuthority.breach(f.Summary)
+	case f.ProxyStack != nil:
+		return f.ProxyStack.breach()
+	case f.StackDivergence != nil:
+		return f.StackDivergence.breach()
 	}
 	return ""
 }

@@ -145,6 +145,25 @@ var intraLayerEdges = map[string][]string{
 		"internal/core/status",
 		"internal/core/fanout",
 	},
+	// L2 reads every place this machine keeps proxy configuration and grades what
+	// they add up to, so it needs the same two vocabularies as every other layer
+	// and nothing else. The arrow runs one way and cannot run back: neither
+	// report nor status knows a proxy exists.
+	//
+	// WHY THE LAYER LIVES IN THE PACKAGE THAT HOLDS THE RULES, rather than in one
+	// of its own. It is the shape L1 and L5 already have - resolve holds both the
+	// DNS rules and the layer, trust holds both the store rules and the layer -
+	// and the alternative costs MORE declaration here, not less: a separate
+	// package would need this edge plus a second one to reach the rules.
+	//
+	// WHAT IS DELIBERATELY NOT HERE: internal/core/pac. L2 will evaluate an
+	// automatic configuration script, and the evaluator's result arrives through
+	// a port on this layer's own Input rather than by importing it - the seam L3,
+	// L4 and L5 all use, so no layer learns the shape of the one beside it.
+	"internal/core/proxy": {
+		"internal/core/report",
+		"internal/core/status",
+	},
 	// L5 needs the report contract to shape its evidence and the status
 	// vocabulary to grade it. It does NOT import internal/core/handshake: the
 	// presented chain arrives through a port on Input, the same seam L4 uses for

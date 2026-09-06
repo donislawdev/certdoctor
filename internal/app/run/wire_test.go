@@ -71,8 +71,13 @@ func TestWiringPutsTheContextLayerInPlaceOfTheStub(t *testing.T) {
 var written = map[layer.ID]bool{
 	layer.Context:    true,
 	layer.Resolution: true,
-	layer.TCP:        true,
-	layer.TLS:        true,
+	// L2 joined on 2026-09-06 with P8-K3a. It reads this machine's proxy
+	// configuration and answers for itself, including when the port that would
+	// read it is missing - which is a defect reported as one rather than the
+	// stub.
+	layer.Proxy: true,
+	layer.TCP:   true,
+	layer.TLS:   true,
 	// L5 joined on 2026-08-18 with P7a. It answers for itself now, so asserting
 	// the stub for it would be asserting that a layer with code has none.
 	layer.TrustMatrix: true,

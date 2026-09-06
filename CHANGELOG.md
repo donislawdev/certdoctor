@@ -10,7 +10,30 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
-`certdoctor <url>` produces a whole report. Five of its eight diagnostic layers now say something about your machine - context, name resolution, TCP, TLS and the trust matrix - and the other three report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE`, or with `4 DIAGNOSIS` on something certdoctor can actually diagnose. What exists is the path a real answer travels, built before any answer, so that there is no point at which this program claims to have checked something it has not.
+### Added - certdoctor now reads every place your machine keeps proxy settings, and says where they disagree
+
+- 🔴 **The proxy layer reports one row per PLACE, not per program.** On Windows that is the current user's Internet Settings - which Edge, Chrome and .NET follow - and the machine's default WinHTTP configuration, which services follow. On every system it is also the proxy environment variables this process was started with. Several programs read one place and one program can read two, so a report organised by program would repeat itself and still miss the thing you came for.
+
+- 🔴 **It tells you when two of those places disagree, which is the case this layer exists for.** Measured on Windows: set a proxy in the Windows settings and Internet Settings returns it in full while the WinHTTP view still reports no proxy at all. Edge and .NET go through the proxy, a service goes direct, and nothing on that machine is misconfigured. That run now reports `WARN` and names the class of the disagreement.
+
+- 🔴 **One `NO_PROXY` gets more than one answer, because the runtimes on your machine read it differently.** curl excuses a host under a bare suffix; .NET documents that it does not - `NO_PROXY=example.com` will not match `www.example.com` there. The row shows each reading separately, so "is this host excluded from the proxy" is answered per runtime rather than once and wrongly.
+
+- **A proxy URL with a password in it is reported as carrying credentials, and the password is never shown** - with or without `--redact`, on any surface. That is not a new promise; it is that promise reaching a new field.
+
+- **A Windows exception list containing a URL rather than a server name gets a caveat quoting Microsoft**, who documents such an entry as invalidating the whole list. The list is still shown as your machine holds it, because that behaviour has not been measured here - but if your exceptions have quietly stopped working, this is the first place to look.
+
+### Changed - the proxy layer says `UNKNOWN` where it cannot see the whole picture, and says why
+
+- 🔴 **A machine with automatic proxy detection switched on gets `UNKNOWN`, not "no proxy".** Windows has that setting on by default, certdoctor does not yet perform the discovery, and a proxy found that way would not appear in this report. The row says exactly that. The same applies to a machine pointing at an automatic configuration script: naming a script is not proof anything uses it, and certdoctor does not yet fetch one.
+
+- **The exit code is unchanged.** This layer previously said "not implemented", which was already `UNKNOWN`, so a run that ended `5 INCONCLUSIVE` still does.
+
+- **`--json` carries `schema_version` `1.12`**, with two new finding bodies - `proxy_stack` and `stack_divergence` - and nothing removed or renamed. If you branch on a class of divergence, read the key it arrived under: the document now holds two different closed lists that both contain `one_sided`, one about addresses for a name and one about places that hold proxy settings.
+
+- **Under `--redact` the proxy address becomes a pseudonym like every other host name, and the exception list is withheld entirely.** Its entries are wildcards and suffixes, so no rule can recognise them as names to replace - withholding is the only honest option. Which runtimes skip the proxy for your target is still shown, because that is the part you act on.
+
+
+`certdoctor <url>` produces a whole report. Six of its eight diagnostic layers now say something about your machine - context, name resolution, proxy, TCP, TLS and the trust matrix - and the other two report `UNKNOWN` with a reason and the words "not implemented". The verdict counts them and the run ends with `5 INCONCLUSIVE`, or with `4 DIAGNOSIS` on something certdoctor can actually diagnose. What exists is the path a real answer travels, built before any answer, so that there is no point at which this program claims to have checked something it has not.
 
 ### Fixed - a report that survives a broken probe, a document that stops inventing, and a resolver list that matches your machine
 

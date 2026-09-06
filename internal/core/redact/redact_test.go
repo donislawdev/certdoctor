@@ -810,3 +810,58 @@ func TestPseudonymisingAHostIsNotReportedAsRemovingACredential(t *testing.T) {
 		t.Errorf("masking a host was reported as removing a credential: %q", masked)
 	}
 }
+
+// TestABareAuthorityIsPseudonymisedUnderTheStrongerMode is the rule Text cannot
+// carry, and the reason it needed a function of its own.
+//
+// A PROXY ENTRY IS A MACHINE BY THE GRAMMAR OF THE FIELD IT ARRIVED IN, which
+// the caller knows and this package cannot see: "proxy.corp.internal:8080" has
+// no scheme in front of it, so the URL rule never looks at it, and it was never
+// registered because it is read during the walk rather than before it.
+func TestABareAuthorityIsPseudonymisedUnderTheStrongerMode(t *testing.T) {
+	r := New(Everything)
+
+	masked := r.Authority("proxy.corp.internal:8080")
+	if strings.Contains(masked, "proxy.corp.internal") {
+		t.Errorf("a bare authority survived the mode whose purpose is not to leak: %q", masked)
+	}
+	if !strings.HasSuffix(masked, ":8080") {
+		t.Errorf("the port was taken as well as the name: %q", masked)
+	}
+}
+
+// THE SAME MACHINE READS AS THE SAME MACHINE, which is the promise the doc
+// comment on Redaction makes about the proxy in L2 and a name in L1. It needs
+// the same pseudonym map rather than a second marker.
+func TestAnAuthorityAndAURLShareOnePseudonym(t *testing.T) {
+	r := New(Everything, Host("proxy.corp.internal"))
+
+	fromURL := r.Text("https://proxy.corp.internal/x")
+	fromAuthority := r.Authority("proxy.corp.internal:8080")
+
+	name := strings.TrimSuffix(fromAuthority, ":8080")
+	if !strings.Contains(fromURL, name) {
+		t.Errorf("one machine got two pseudonyms: %q and %q", fromURL, fromAuthority)
+	}
+}
+
+// UNDER THE WEAKER MODE THE NAME STAYS AND THE CREDENTIAL FLOOR STILL RUNS. The
+// floor is not an option, which is inviolable rule 17.
+func TestAnAuthorityKeepsItsNameUnderTheCredentialFloor(t *testing.T) {
+	r := New(Credentials)
+
+	if got := r.Authority("proxy.corp.internal:8080"); got != "proxy.corp.internal:8080" {
+		t.Errorf("the weaker mode renamed a machine: %q", got)
+	}
+	if got := r.Authority("http://bob:hunter2@proxy.corp.internal:8080"); strings.Contains(got, "hunter2") {
+		t.Errorf("a credential survived the floor: %q", got)
+	}
+}
+
+// An empty authority is the ordinary answer for a place naming no proxy, and a
+// pseudonym for nothing would put a machine in a report that does not exist.
+func TestAnEmptyAuthorityStaysEmpty(t *testing.T) {
+	if got := New(Everything).Authority(""); got != "" {
+		t.Errorf("an absent address became %q", got)
+	}
+}

@@ -267,7 +267,83 @@ var maskedBodies = map[report.FindingKind]func(*redact.Redaction, *report.Findin
 	report.FindingTLSHandshake:        maskTLSHandshake,
 	report.FindingTrustStore:          maskTrustStore,
 	report.FindingSigningAuthority:    maskSigningAuthority,
+	report.FindingProxyStack:          maskProxyStack,
+	report.FindingStackDivergence:     maskStackDivergence,
 }
+
+// maskProxyStack is the entry with the widest split so far between what goes
+// through masking and what is withheld outright.
+//
+// THE PROXY IS INFRASTRUCTURE AND IS PSEUDONYMISED. ADR32 masks a RESOLVER's
+// address for exactly this reason - it is a machine somebody's network owns
+// rather than the answer the reader came for - and a proxy is the same kind of
+// thing. It goes through Authority rather than Text because it arrives with no
+// scheme in front of it, and through the same pseudonym map as everything else,
+// so a reader of a masked report can still see that the proxy here and a name in
+// L1 are one machine.
+//
+// THE EXCEPTION LIST IS WITHHELD RATHER THAN MASKED, AND THAT IS THE DECISION IN
+// THIS FUNCTION. Its entries are wildcards, suffixes and abbreviated networks -
+// "*.corp.internal", ".example.com", "169.254/16" - so there is no rule that
+// recognises them as machines the way a URL's host is recognised. Masking them
+// through Text would leave most of them untouched while the report says it is
+// redacted, which is worse than saying nothing: it is a leak wearing a stamp.
+// The diagnostic content survives, because BypassRules already carries the only
+// thing a reader acts on - whether THIS target skips the proxy, under each
+// runtime's reading of the list.
+//
+// THE CAVEATS ARE OUR OWN PROSE about somebody else's configuration and name
+// nothing off the machine, so they are left alone for the reason
+// maskSigningAuthority leaves the inspection body alone.
+func maskProxyStack(r *redact.Redaction, finding *report.Finding) {
+	stack := *finding.ProxyStack
+	stack.Detail = r.Text(stack.Detail)
+	stack.PACURL = r.Text(stack.PACURL)
+	stack.Servers = maskServers(r, stack.Servers)
+	if stack.Selected != nil {
+		selected := maskServer(r, *stack.Selected)
+		stack.Selected = &selected
+	}
+	if stack.Bypass != "" && r.Mode() == redact.Everything {
+		stack.Bypass = redact.Placeholder
+	}
+	finding.ProxyStack = &stack
+}
+
+// maskServers copies the list before touching it, for the reason maskEach gives:
+// masking in place would rewrite the layer's own evidence underneath it. NIL
+// STAYS NIL, because nil and empty are two different facts here - ADR20.
+func maskServers(r *redact.Redaction, servers []report.ProxyServer) []report.ProxyServer {
+	if servers == nil {
+		return nil
+	}
+	masked := make([]report.ProxyServer, 0, len(servers))
+	for _, server := range servers {
+		masked = append(masked, maskServer(r, server))
+	}
+	return masked
+}
+
+// maskServer pseudonymises the address and leaves the rest.
+//
+// Protocol and Scheme are words out of a URL grammar - "http", "https", "socks"
+// - and CarriedCredentials is a boolean this program set. None of the three
+// names anything on anybody's network.
+func maskServer(r *redact.Redaction, server report.ProxyServer) report.ProxyServer {
+	server.Address = r.Authority(server.Address)
+	return server
+}
+
+// maskStackDivergence is the second entry written in order to say that a body
+// needs nothing masked, and the reason maskTCPConnect gives applies unchanged: a
+// missing entry and a deliberate no-op look identical from outside.
+//
+// EVERY FIELD IN IT IS A WORD THIS PROGRAM CHOSE. The class comes from a closed
+// list declared in internal/core/proxy and the stack names come from another
+// one. Neither arrived from the machine being diagnosed, so there is nothing
+// here that masking could protect - and replacing our own vocabulary with a
+// pseudonym would take the sentence a reader pastes into a ticket.
+func maskStackDivergence(*redact.Redaction, *report.Finding) {}
 
 // maskSigningAuthority masks the borrowed names and leaves the evidence alone.
 //

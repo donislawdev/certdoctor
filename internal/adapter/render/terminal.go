@@ -494,8 +494,53 @@ func findingValue(finding report.Finding) string {
 		return connectValue(*finding.TCPConnect)
 	case finding.TLSHandshake != nil:
 		return handshakeValue(*finding.TLSHandshake)
+	case finding.ProxyStack != nil:
+		return proxyStackValue(*finding.ProxyStack)
 	}
 	return ""
+}
+
+// proxyStackValue is what a person needs from a proxy row beyond its summary:
+// whether this target skips the proxy, and under whose reading.
+//
+// THE ADDRESS IS HERE AND NOT IN THE SUMMARY, and that is the masking rule the
+// core states at summaryOf rather than a layout choice: a summary is masked by a
+// rule that cannot recognise a bare "host:port" as a machine, and this body is
+// masked by one that can. Printing it from here prints the MASKED value.
+//
+// THE READINGS ARE HERE TOO, because they are the fact somebody opened this tool
+// to find: ONE exception list gives DIFFERENT answers to different programs on
+// one machine, and no single line of prose can carry that.
+//
+// THE EXCEPTION LIST ITSELF IS NOT PRINTED. It is in the machine readable
+// document, where a reader who wants the entries can find them; on this page it
+// would be a column of somebody's internal host names, wide enough to push the
+// answer off the line.
+//
+// A CLASS OF DIVERGENCE IS NOT HERE EITHER, and that is not an omission: it is
+// a row of its own with a summary of its own, so printing it again beside every
+// stack would say one thing several times and let the copies disagree.
+func proxyStackValue(stack report.ProxyStack) string {
+	var parts []string
+	if stack.Selected != nil {
+		parts = append(parts, stack.Selected.Address)
+	}
+	for _, rule := range stack.BypassRules {
+		parts = append(parts, fmt.Sprintf("%s: %s", rule.Rule, bypassWord(rule.Bypasses)))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// bypassWord says which way the answer went, in words rather than as a boolean.
+//
+// "true" IN A COLUMN OF A REPORT IS AMBIGUOUS about which question it answers,
+// and this one is easy to read backwards: a list of exceptions matching means
+// the proxy is NOT used.
+func bypassWord(bypasses bool) string {
+	if bypasses {
+		return "direct"
+	}
+	return "via proxy"
 }
 
 // handshakeValue is what was negotiated, for a row where anything was.

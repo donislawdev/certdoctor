@@ -4,9 +4,14 @@
 # CONTRACT, NOT FROM ITS OUTPUT. Nothing below was read off a run.
 #
 # IT IS THE ONE PROXY SCENARIO WITH A READER TODAY, and that is why it is first.
-# L2 does not exist and will not until P8, but L0 has read HTTPS_PROXY,
-# https_proxy and NO_PROXY since P2 - internal/core/machine/variables.go - so
-# three claims can be settled now rather than deferred with the rest.
+# L0 has read HTTPS_PROXY, https_proxy and NO_PROXY since P2 -
+# internal/core/machine/variables.go - so three claims could be settled here
+# while the other proxy scenarios were still waiting for a layer.
+#
+# 🔴 THE FOURTH CLAIM WOKE UP ON 2026-09-06 WITH P8-K3a. L2 now reads every place
+# this machine keeps proxy configuration, so the l2_ keys at the bottom stopped
+# being deferred - without one of them being edited to fit what the code turned
+# out to do.
 #
 # 🔴 THE THIRD ONE HAS NEVER BEEN CHECKED AGAINST A RUNNING BINARY BEFORE.
 # Inviolable rule 17 says credentials never reach a report or a log whatever
@@ -73,11 +78,20 @@ secret_absent_2=benchuser
 # precisely the thing an outsider has no way to verify.
 env_changes_nothing=yes
 
-# --- L2: nothing reads these yet, and verify.sh says so out loud ---
+# --- L2: CHECKED SINCE 2026-09-06, and these keys are unchanged ---
 #
-# WRITTEN NOW, BEFORE THE LAYER, because that is the only order in which they are
-# an oracle rather than a transcript. When P8-K3 lands, the deferred list in
-# verify-inside.sh empties itself by these keys existing.
+# WRITTEN BEFORE THE LAYER, because that is the only order in which they are an
+# oracle rather than a transcript. P8-K3a landed the layer that reads a machine's
+# proxy configuration, and claim 4 of check_proxy_env now asks it these four
+# questions. NOT ONE VALUE BELOW WAS EDITED WHEN THE CODE ARRIVED, which is the
+# whole of what writing them first bought.
+#
+# 🔴 CLAIM 3 ABOVE NOW SKIPS L2, AND THAT IS RECORDED HERE AS WELL AS THERE.
+# That claim asks whether reading a variable REROUTED the diagnosis; this layer
+# exists to read those variables and report them, so its row differs between the
+# two runs by design - measured, UNKNOWN without them and PASS with them. The
+# other seven layers, the exit code and the proxy log still witness the claim,
+# and the log is the one witness that is not our own code.
 l2_status=PASS
 l2_proxy=172.28.0.128:3128
 l2_source=environment

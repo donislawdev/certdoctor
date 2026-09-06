@@ -382,7 +382,7 @@ func (r *Redaction) Text(s string) string {
 	if s == "" {
 		return s
 	}
-	if r.mode == Everything {
+	if r.masksNames() {
 		s = r.maskNames(s)
 	}
 	return maskCredentials(s)
@@ -401,6 +401,34 @@ func maskCredentials(s string) string {
 	s = maskSettings(s)
 	s = maskQuery(s)
 	return s
+}
+
+// Authority masks a bare "host" or "host:port" that arrived without a scheme in
+// front of it.
+//
+// WHY Text CANNOT DO THIS AND WHY THAT IS NOT AN OVERSIGHT. Under Everything,
+// Text pseudonymises the names it was told about and any host it finds INSIDE A
+// URL, because a bare word in somebody's stderr is far more often an ordinary
+// word than a machine. A proxy entry is the opposite case: "proxy.corp:8080" is
+// a machine by the grammar of the field it arrived in, and the caller is the
+// only one who knows that.
+//
+// IT EXISTS BECAUSE OF A PROMISE THIS PACKAGE ALREADY MADE. The paragraph on
+// Redaction says a masked report still has to show that the proxy in L2 and the
+// name in L1 are one machine - which needs the SAME pseudonym map, not a second
+// marker. Going through pseudonymFor is what keeps that true.
+//
+// THE PORT SURVIVES, for the reason splitPort gives: a port number is not a name
+// and identifies nobody, and it is half of what makes a proxy row diagnostic.
+func (r *Redaction) Authority(s string) string {
+	if s == "" {
+		return s
+	}
+	if r.masksNames() {
+		host, port := splitPort(s)
+		s = r.pseudonymFor(kindHost, host) + port
+	}
+	return maskCredentials(s)
 }
 
 // Target masks the URL the user asked about and reports whether anything was
@@ -560,6 +588,15 @@ func (r *Redaction) CarriedCredentials(s string) bool {
 
 // Mode says how much this redaction takes out.
 func (r *Redaction) Mode() Mode { return r.mode }
+
+// masksNames says whether this mode replaces names with pseudonyms.
+//
+// IT IS A FUNCTION AND NOT THE COMPARISON WRITTEN TWICE, and it became one the
+// day Authority was added. Two places asking "is this the stronger mode" is one
+// rule in two places - the shape OBS50 measures - and the register measures it
+// by TEXT rather than by meaning: the second copy turned an existing entry into
+// a SKIP, which reads as a drop of one in a summary and proves nothing.
+func (r *Redaction) masksNames() bool { return r.mode == Everything }
 
 func maskUserInfo(s string) string {
 	return userInfo.ReplaceAllString(s, "${1}"+Placeholder+"@")

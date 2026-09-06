@@ -6,6 +6,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
 	"github.com/donislawdev/certdoctor/internal/core/machine"
+	"github.com/donislawdev/certdoctor/internal/core/proxy"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
 	"github.com/donislawdev/certdoctor/internal/core/status"
@@ -33,6 +34,14 @@ type Wiring struct {
 	Environment machine.Lookup
 	// Resolution is everything L1 was given by the entry point.
 	Resolution resolve.Input
+	// Proxy is everything L2 was given.
+	//
+	// IT NEEDS NOTHING FROM THE LAYER ABOVE IT, which is why there is no seam
+	// here and why this field is complete when the entry point builds it. What a
+	// machine keeps in its proxy settings does not depend on what a name resolved
+	// to, so wiring one to the other would weld two layers together for no
+	// answer.
+	Proxy proxy.Input
 	// Reach is everything L3 was given, EXCEPT the addresses: those do not exist
 	// until L1 has run, and Wire supplies them below.
 	Reach tcp.Input
@@ -118,6 +127,17 @@ func Wire(w Wiring) Layers {
 			w.Authorise(resolved)
 		}
 		return answer
+	}
+
+	// L2 IS THE ONE WRITTEN LAYER WITH NO SEAM ON EITHER SIDE OF IT, and that is
+	// worth noticing rather than passing over. It reads this machine's own
+	// configuration, which nothing above it produces and nothing below it
+	// consumes: L3 connects to the addresses L1 found whether a proxy is
+	// configured or not, because reading a proxy variable must never change where
+	// this program connects - docs/14 section 3, checked from outside by the
+	// bench.
+	layers[layer.Proxy] = func(ctx context.Context) Answer {
+		return answerFromProxy(proxy.Ask(ctx, w.Proxy))
 	}
 
 	// THE SECOND SEAM, AND IT IS DELIBERATELY THE SAME SHAPE AS THE FIRST. L3
@@ -210,6 +230,11 @@ func answerFrom(result machine.Result) Answer {
 //
 // So the rule lives once, in answerOf, and both layers go through it.
 func answerFromResolution(result resolve.Result) Answer {
+	return answerOf(result.Status, result.Reason, result.Detail, result.Findings)
+}
+
+// answerFromProxy is the same boundary for L2.
+func answerFromProxy(result proxy.Result) Answer {
 	return answerOf(result.Status, result.Reason, result.Detail, result.Findings)
 }
 

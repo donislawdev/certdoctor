@@ -264,6 +264,92 @@ var schema = object(map[string]node{
 					"matched_attribute": text(),
 				})),
 			})),
+			// The seventh body: one PLACE this machine keeps proxy settings in.
+			// The unit is the place and not the program, because several
+			// programs read one place and one program reads two - a document
+			// organised by program would repeat itself and still miss the case
+			// this layer exists for.
+			"proxy_stack": nullable(object(map[string]node{
+				"stack": text(),
+				"read":  boolean(),
+				// Null when there is nothing to add. A false read WITHOUT one is
+				// refused by the core: a place that would not answer has to say
+				// why, or the row is a defect of ours wearing a fact's clothes.
+				"detail": nullable(text()),
+				// Null means this place was not read; an empty array means it was
+				// read and names no proxy - ADR20, and here that is the one
+				// distinction the whole layer exists to keep.
+				"servers": nullable(array(object(map[string]node{
+					// Empty when the entry is the default for every protocol
+					// without one of its own, which is a real state and not a
+					// gap.
+					"protocol": text(),
+					// Empty when the entry did not say. It is NOT the protocol
+					// above: an https request through a proxy spoken to over
+					// http is the ordinary CONNECT case.
+					"scheme":  text(),
+					"address": text(),
+					// Never the credential itself - ADR89. The fact that one was
+					// carried is half the answer to a 407 and the half that can
+					// be said out loud.
+					"carried_credentials": boolean(),
+				}))),
+				// Which entry applies to THIS target, or null when none does.
+				// A consumer branching on the proxy in use reads this rather
+				// than guessing from the list.
+				"selected": nullable(object(map[string]node{
+					"protocol":            text(),
+					"scheme":              text(),
+					"address":             text(),
+					"carried_credentials": boolean(),
+				})),
+				// The exception list as this place holds it, and bypass_set is
+				// what keeps "no list" apart from "a list excusing nothing".
+				// Under --redact the text is withheld outright rather than
+				// masked: its entries are wildcards and abbreviated networks, so
+				// a masking rule would leave most of them untouched while the
+				// document says it is redacted.
+				"bypass":     text(),
+				"bypass_set": boolean(),
+				// Null when there is no list. ONE LIST, SEVERAL ANSWERS: the
+				// same NO_PROXY is read differently by different runtimes, so a
+				// single boolean here would be true of one program on the
+				// machine and false of another.
+				"bypass_rules": nullable(array(object(map[string]node{
+					"rule":     text(),
+					"bypasses": boolean(),
+				}))),
+				// Empty when this place names no automatic configuration script.
+				// NAMING ONE IS NOT PROOF ANYTHING USES IT - measured, OBS111 -
+				// and the caveat travels in the array below rather than being
+				// left to the reader.
+				"pac_url": text(),
+				// NULL IS A THIRD ANSWER: this place has no such setting to
+				// report. The WinHTTP structure has no auto-detect field at all
+				// while the Internet Settings view has one that can be off, and
+				// reporting both as false would claim a question was asked that
+				// never was.
+				"auto_detect": nullable(boolean()),
+				// Never null. Our own sentences about what this row does not
+				// settle; an empty array says there is nothing to add.
+				"caveats": array(text()),
+			})),
+			// The eighth body, and at most one row per run carries it: how the
+			// places above differ from each other.
+			//
+			// THE KEY CARRIES ITS SUBJECT ON PURPOSE. proxy.Divergence and
+			// report.Divergence are two closed lists and both hold one_sided,
+			// both rightly - the shape of the question is the same and the
+			// subject is not. A key called "divergence" would put two
+			// vocabularies behind one name, and name_resolution above already
+			// holds the other one.
+			"stack_divergence": nullable(object(map[string]node{
+				"class": text(),
+				// Never fewer than two, which the core refuses: a class is a
+				// sentence about a comparison, and a comparison needs two
+				// parties.
+				"stacks": array(text()),
+			})),
 		}))),
 	})),
 	"notes": array(object(map[string]node{

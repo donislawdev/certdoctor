@@ -23,6 +23,8 @@ import (
 	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
 	"github.com/donislawdev/certdoctor/internal/core/idna"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
+	"github.com/donislawdev/certdoctor/internal/core/machine"
+	"github.com/donislawdev/certdoctor/internal/core/proxy"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
@@ -79,6 +81,19 @@ type environment struct {
 	// A nil one is legal and means this build has no way to look, which L1
 	// reports as unknown with a reason rather than as a machine with no DNS.
 	nameservers func() (dns.Nameservers, error)
+	// systemProxy reads the places THIS PLATFORM keeps proxy configuration in -
+	// the Internet Settings and WinHTTP views on Windows, scutil on macOS, and
+	// nothing at all on Linux, which has no such place.
+	//
+	// THE ENVIRONMENT STACK IS DELIBERATELY NOT BEHIND THIS SEAM. It is a stack
+	// like the others, but reading it needs no platform code: lookupEnv above is
+	// already the seam for that, and putting both behind one port would mean a
+	// test could not fix one without inventing the other.
+	//
+	// IT TAKES A CONTEXT BECAUSE ONE PLATFORM RUNS SOMEBODY ELSE'S PROCESS to
+	// answer. That call belongs inside L2's share of the budget, so the port is
+	// asked during the walk rather than before it.
+	systemProxy func(ctx context.Context) []proxy.Lens
 	// trustProbes are the L5 probes, built with a file port of their own because
 	// the files they read are a different size class from a resolver config.
 	trustProbes func() map[string]trust.Probe
@@ -173,6 +188,7 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 		run.Wiring{
 			Environment: env.lookupEnv,
 			Resolution:  resolutionInput(o, env, parsed, found, foundErr, targets),
+			Proxy:       proxyInput(env, parsed),
 			Reach:       reachInput(o, env, parsed, targets),
 			Handshake:   handshakeInput(o, env, parsed, targets),
 			Trust:       trustInput(o, env),
@@ -878,6 +894,38 @@ func deliver(o *options, env environment, document []byte) *fault {
 // A MISSING PORT PRODUCES AN EMPTY MAP RATHER THAN A PANIC, and L5 reports that
 // as "nothing was asked" - our own omission named as ours, never as a machine
 // with no runtimes on it.
+// proxyInput is everything L2 was given.
+//
+// THE TWO KINDS OF STACK ARE COMPOSED HERE AND NOT INSIDE EITHER OF THEM, which
+// is what internal/adapter/proxyconf says about itself: it answers about system
+// stacks only, because the environment needs no platform code and a package
+// pretending to own both would be reading one of them for no reason.
+//
+// A MISSING PLATFORM PORT IS NOT A MISSING LAYER. The environment stack is still
+// read, so a build with no system reading at all still answers about the
+// variables - which is exactly the shape of Linux, where there is no second
+// stack to read.
+func proxyInput(env environment, parsed *url.URL) proxy.Input {
+	return proxy.Input{
+		Lenses: func(ctx context.Context) []proxy.Lens {
+			lenses := []proxy.Lens{proxy.EnvironmentLens(env.lookupEnv, machine.ProxyVariables())}
+			if env.systemProxy == nil {
+				return lenses
+			}
+			return append(lenses, env.systemProxy(ctx)...)
+		},
+		// THE HOST GOES IN AS IT GOES ON THE WIRE, in punycode, because that is
+		// the spelling every exception list is compared against - curl documents
+		// international names in that list as requiring it, and ADR57 already
+		// made this program convert once, at the entry point.
+		Target: proxy.Target{
+			Scheme: parsed.Scheme,
+			Host:   parsed.Hostname(),
+			Port:   parsed.Port(),
+		},
+	}
+}
+
 func trustInput(o *options, env environment) trust.Input {
 	if env.trustProbes == nil {
 		return trust.Input{}

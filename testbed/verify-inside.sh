@@ -874,9 +874,22 @@ check_proxy_env() {
   # CLAIM 3: the environment changed nothing. Layer statuses and the exit code,
   # never timings - two runs differ in those by nature and comparing them would
   # make this flap.
+  #
+  # L2 IS EXCLUDED FROM THE COMPARISON FROM 2026-09-06, AND THE EXCLUSION IS THE
+  # POINT OF THE LAYER RATHER THAN A CONCESSION. This claim asks whether reading
+  # a proxy variable REROUTED the diagnosis. L2 exists to READ those variables
+  # and say what they hold, so its row differing between a run with them and a
+  # run without them is the product working - measured, UNKNOWN becomes WARN -
+  # and a check that forbade it would forbid the layer.
+  #
+  # WHAT STILL WITNESSES THE CLAIM, and it is three things rather than one: the
+  # OTHER SEVEN layers, which have no business noticing a proxy variable; the
+  # EXIT CODE, which is the whole run's answer; and the PROXY LOG above, which is
+  # the only one of the three that is not our own code. Dropping L2 costs the
+  # weakest of the witnesses.
   local base_shape shape
-  base_shape="$(echo "$base" | jq -c '[.layers[] | {id, status}]' 2>/dev/null)"
-  shape="$(echo "$doc" | jq -c '[.layers[] | {id, status}]' 2>/dev/null)"
+  base_shape="$(echo "$base" | jq -c '[.layers[] | select(.id!="L2") | {id, status}]' 2>/dev/null)"
+  shape="$(echo "$doc" | jq -c '[.layers[] | select(.id!="L2") | {id, status}]' 2>/dev/null)"
   if [ "$base_shape" != "$shape" ]; then
     say "setting the proxy variables CHANGED the layer statuses - $base_shape became $shape"
   fi
@@ -884,6 +897,35 @@ check_proxy_env() {
     say "setting the proxy variables changed the exit code from $base_code to $code"
   fi
 
+  # CLAIM 4: L2 SAYS WHAT THE VARIABLES HOLD. Written into this file before the
+  # layer existed and deferred ever since - the deferral was the point, because
+  # an expectation written after the code is a transcript rather than an oracle.
+  local l2_status l2_proxy l2_source l2_bypass
+  l2_status="$(value "$file" l2_status)"
+  l2_proxy="$(value "$file" l2_proxy)"
+  l2_source="$(value "$file" l2_source)"
+  l2_bypass="$(value "$file" l2_bypass_names)"
+
+  local said_status said_proxy said_stack said_bypass
+  said_status="$(echo "$doc" | jq -r '.layers[] | select(.id=="L2") | .status' 2>/dev/null)"
+  said_proxy="$(echo "$doc" | jq -r '[.layers[] | select(.id=="L2") | .findings[]?
+    | select(.proxy_stack != null and .proxy_stack.selected != null)
+    | .proxy_stack.selected.address] | first // ""' 2>/dev/null)"
+  said_stack="$(echo "$doc" | jq -r '[.layers[] | select(.id=="L2") | .findings[]?
+    | select(.proxy_stack != null and .proxy_stack.selected != null)
+    | .proxy_stack.stack] | first // ""' 2>/dev/null)"
+  said_bypass="$(echo "$doc" | jq -r '[.layers[] | select(.id=="L2") | .findings[]?
+    | select(.proxy_stack != null) | .proxy_stack.bypass] | join(" ")' 2>/dev/null)"
+
+  [ "$said_status" = "$l2_status" ] || say "L2 answered $said_status where the bench expects $l2_status"
+  [ "$said_proxy" = "$l2_proxy" ] || say "L2 names the proxy $said_proxy where the bench expects $l2_proxy"
+  [ "$said_stack" = "$l2_source" ] || say "L2 says the proxy comes from $said_stack where the bench expects $l2_source"
+  case "$said_bypass" in
+    *"$l2_bypass"*) ;;
+    *) say "L2 does not name $l2_bypass among the exceptions, and a proxy named without its exceptions is half an answer" ;;
+  esac
+
+  echo "    L2:         $said_status, $said_proxy from $said_stack, exceptions $said_bypass"
   echo "    certdoctor: exit $code with the variables, $base_code without | layers $shape"
   echo "    secret:     absent from both surfaces"
   echo "    proxy log:  $log_before lines before the run, $log_after after - nothing was sent through it"
@@ -1164,6 +1206,15 @@ fi
 pending_l2=0
 for file in "$expected"/*.txt; do
   [ -e "$file" ] || continue
+  # proxy-env LEFT THIS LIST ON 2026-09-06, and it is the first one to. Its L2
+  # keys are checked by claim 4 of check_proxy_env above, because everything they
+  # name - which place holds the proxy, which entry applies, what the exception
+  # list says - is read from this machine's own configuration and needs no
+  # network. The scenarios below still need a PAC file fetched and a proxy asked,
+  # which is work that opens a connection.
+  case "$(basename "$file" .txt)" in
+    proxy-env) continue ;;
+  esac
   if grep -qE '^l2_' "$file" 2>/dev/null; then
     if [ "$pending_l2" -eq 0 ]; then
       echo "testbed: NOT ASSESSED HERE - expectations about L2, which does not exist yet:"

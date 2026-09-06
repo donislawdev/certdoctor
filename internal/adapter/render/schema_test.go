@@ -563,6 +563,40 @@ var bodyFixtures = map[report.FindingKind]report.Finding{
 			Inspection: nil,
 		},
 	},
+	report.FindingProxyStack: {
+		Kind:    report.FindingProxyStack,
+		Summary: "the proxy environment variables this process was started with name proxy.example:8080 for https://api.example.com",
+		Source:  report.SourceDetected,
+		ProxyStack: &report.ProxyStack{
+			Stack: "environment",
+			Read:  true,
+			Servers: []report.ProxyServer{
+				{Protocol: "https", Scheme: "http", Address: "proxy.example:8080", CarriedCredentials: true},
+			},
+			Selected:  &report.ProxyServer{Protocol: "https", Scheme: "http", Address: "proxy.example:8080", CarriedCredentials: true},
+			Bypass:    "localhost,.internal.example",
+			BypassSet: true,
+			BypassRules: []report.ProxyBypassRule{
+				{Rule: "no_proxy_curl", Bypasses: false},
+				{Rule: "no_proxy_dotnet", Bypasses: false},
+			},
+			// THE FIXTURE CARRIES BOTH CAVEATS AND A PAC URL ON PURPOSE, because
+			// the row that is easiest to get wrong is the full one: an absent
+			// key here would pass the schema and never be noticed.
+			PACURL:     "http://wpad.example/proxy.pac",
+			AutoDetect: report.DeterminedTrue,
+			Caveats:    []string{"naming an automatic configuration script is not proof that anything uses it"},
+		},
+	},
+	report.FindingStackDivergence: {
+		Kind:    report.FindingStackDivergence,
+		Summary: "comparing 2 place(s) this machine keeps proxy settings in: one stack names a proxy and another names none",
+		Source:  report.SourceDerived,
+		StackDivergence: &report.StackDivergence{
+			Class:  "one_sided",
+			Stacks: []string{"wininet", "winhttp"},
+		},
+	},
 }
 
 // The two fingerprints the handshake fixture is built from. They are full length

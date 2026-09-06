@@ -141,7 +141,30 @@ import (
 // a machine on which nothing had been refused. access_denied is still declared
 // and nothing produces it today; the reason that is deliberate is written where
 // the word lives, in internal/core/status/reason.go.
-const SchemaVersion = "1.11"
+// 1.12 ADDS TWO BODIES AT ONCE - proxy_stack and stack_divergence - which is
+// L2 arriving. No removals and no changed meanings, so a MINOR by rule 2.
+//
+// TWO BODIES RATHER THAN ONE IS THE DECISION WORTH KNOWING ABOUT. A class of
+// divergence is a sentence about a COMPARISON, so it belongs to no single place
+// a machine keeps proxy settings in. L1 could hang its class on the system view
+// because two views make an obvious second party; a set of stacks has no such
+// party, and hanging it on one row would mean picking one - after which the
+// class would disappear with that row. As a kind of its own, its ABSENCE says
+// "fewer than two places could be read", which is exactly the rule ADR65 wrote.
+//
+// THE KEY THAT CARRIES ITS SUBJECT, AND WHY. This document now holds TWO closed
+// vocabularies that both contain one_sided, and both are right: name_resolution
+// .divergence compares SETS OF ADDRESSES for one name, stack_divergence.class
+// compares PLACES a machine keeps proxy settings in. A consumer branching on
+// either must read the key it came under and never the value alone.
+//
+// WHAT THIS VERSION DELIBERATELY DOES NOT ADD. The reason vocabulary is
+// untouched at eight: credentials_required and limit_exceeded are named in
+// ADR80 and belong to a proxy this run asks and a script this run evaluates,
+// neither of which happens yet. A value in a published contract that nothing
+// can produce is a promise nobody keeps, which is the argument that kept
+// access_denied out of the code and keeps these two out of it for now.
+const SchemaVersion = "1.12"
 
 // JSON renders the machine readable report.
 //
@@ -228,6 +251,66 @@ type jsonFinding struct {
 	TLSHandshake        *jsonTLSHandshake        `json:"tls_handshake"`
 	TrustStore          *jsonTrustStore          `json:"trust_store"`
 	SigningAuthority    *jsonSigningAuthority    `json:"signing_authority"`
+	ProxyStack          *jsonProxyStack          `json:"proxy_stack"`
+	StackDivergence     *jsonStackDivergence     `json:"stack_divergence"`
+}
+
+// jsonProxyStack is the seventh body: one PLACE this machine keeps proxy
+// settings in, and what it says about this target.
+type jsonProxyStack struct {
+	Stack string `json:"stack"`
+	Read  bool   `json:"read"`
+	// Null when there is nothing to add. A place that would not answer must
+	// carry one, which the core refuses to let through otherwise.
+	Detail *string `json:"detail"`
+	// Null means this place was not read; an empty array means it was read and
+	// names no proxy. Those two are the pair this whole layer exists to keep
+	// apart, so the difference is in the document rather than left to charity.
+	Servers []jsonProxyServer `json:"servers"`
+	// Which entry applies to this target, or null when none does.
+	Selected *jsonProxyServer `json:"selected"`
+	// The list as the place holds it. Withheld under --redact rather than
+	// masked - its entries are wildcards and abbreviated networks, and a rule
+	// that recognised them as machines does not exist.
+	Bypass    string `json:"bypass"`
+	BypassSet bool   `json:"bypass_set"`
+	// Null when there is no list to read.
+	BypassRules []jsonProxyBypassRule `json:"bypass_rules"`
+	// Empty when this place names no automatic configuration script. Naming one
+	// is a fact of configuration and never proof that anything uses it.
+	PACURL string `json:"pac_url"`
+	// NULL IS A THIRD ANSWER: this place does not have that setting at all.
+	AutoDetect *bool `json:"auto_detect"`
+	// Never null. Our sentences about what this row does not settle.
+	Caveats []string `json:"caveats"`
+}
+
+type jsonProxyServer struct {
+	// Empty when the entry is the default for every protocol without one of its
+	// own, which is a state rather than a gap.
+	Protocol string `json:"protocol"`
+	// Empty when the entry did not say. Not the same question as Protocol.
+	Scheme  string `json:"scheme"`
+	Address string `json:"address"`
+	// Never the credential - only that one was there and was dropped.
+	CarriedCredentials bool `json:"carried_credentials"`
+}
+
+type jsonProxyBypassRule struct {
+	Rule     string `json:"rule"`
+	Bypasses bool   `json:"bypasses"`
+}
+
+// jsonStackDivergence is the eighth body, and at most one row per run carries
+// it.
+//
+// THE KEY CARRIES ITS SUBJECT. Two closed lists in this program both hold
+// one_sided and both do so rightly, so the one about places is named for places
+// - name_resolution above already holds the one about addresses.
+type jsonStackDivergence struct {
+	Class string `json:"class"`
+	// Never fewer than two: a class is a sentence about a comparison.
+	Stacks []string `json:"stacks"`
 }
 
 type jsonNameResolution struct {
@@ -519,9 +602,94 @@ func findingsOf(row report.LayerResult) *[]jsonFinding {
 			TLSHandshake:        tlsHandshakeOf(finding),
 			TrustStore:          trustStoreOf(finding),
 			SigningAuthority:    signingAuthorityOf(finding),
+			ProxyStack:          proxyStackOf(finding),
+			StackDivergence:     stackDivergenceOf(finding),
 		})
 	}
 	return &found
+}
+
+// proxyStackOf encodes the proxy configuration body.
+//
+// NIL AND EMPTY ARE CARRIED ACROSS RATHER THAN NORMALISED, for the servers and
+// for the exception list readings alike. A place that was not read names nothing
+// and a place that was read may name nothing, and a conversion producing an
+// empty array for both would erase the one distinction this layer is for.
+//
+// CAVEATS ARE NEVER NULL. An empty array says there is nothing to add, which is
+// an answer; a null would read as "nobody considered it".
+func proxyStackOf(finding report.Finding) *jsonProxyStack {
+	if finding.ProxyStack == nil {
+		return nil
+	}
+	stack := *finding.ProxyStack
+	return &jsonProxyStack{
+		Stack:       stack.Stack,
+		Read:        stack.Read,
+		Detail:      optional(stack.Detail),
+		Servers:     proxyServersOf(stack.Servers),
+		Selected:    proxyServerOrNil(stack.Selected),
+		Bypass:      stack.Bypass,
+		BypassSet:   stack.BypassSet,
+		BypassRules: proxyBypassRulesOf(stack.BypassRules),
+		PACURL:      stack.PACURL,
+		AutoDetect:  tristate(stack.AutoDetect),
+		// COPIED AND NEVER ALIASED, and never null: an empty array says there is
+		// nothing to add, which is an answer, while a null would read as nobody
+		// having considered it.
+		Caveats: append([]string{}, stack.Caveats...),
+	}
+}
+
+func proxyServersOf(servers []report.ProxyServer) []jsonProxyServer {
+	if servers == nil {
+		return nil
+	}
+	out := make([]jsonProxyServer, 0, len(servers))
+	for _, server := range servers {
+		out = append(out, proxyServerOf(server))
+	}
+	return out
+}
+
+// proxyServerOrNil takes the pointer through a local, for the reason the
+// handshake body gives: a pointer into a value that lives elsewhere is a pointer
+// this document does not own.
+func proxyServerOrNil(server *report.ProxyServer) *jsonProxyServer {
+	if server == nil {
+		return nil
+	}
+	encoded := proxyServerOf(*server)
+	return &encoded
+}
+
+func proxyServerOf(server report.ProxyServer) jsonProxyServer {
+	return jsonProxyServer{
+		Protocol:           server.Protocol,
+		Scheme:             server.Scheme,
+		Address:            server.Address,
+		CarriedCredentials: server.CarriedCredentials,
+	}
+}
+
+func proxyBypassRulesOf(rules []report.ProxyBypassRule) []jsonProxyBypassRule {
+	if rules == nil {
+		return nil
+	}
+	out := make([]jsonProxyBypassRule, 0, len(rules))
+	for _, rule := range rules {
+		out = append(out, jsonProxyBypassRule{Rule: rule.Rule, Bypasses: rule.Bypasses})
+	}
+	return out
+}
+
+// stackDivergenceOf encodes the comparison body.
+func stackDivergenceOf(finding report.Finding) *jsonStackDivergence {
+	if finding.StackDivergence == nil {
+		return nil
+	}
+	compared := *finding.StackDivergence
+	return &jsonStackDivergence{Class: compared.Class, Stacks: append([]string{}, compared.Stacks...)}
 }
 
 // tcpConnectOf encodes the connection body.
