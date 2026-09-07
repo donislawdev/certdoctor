@@ -75,8 +75,28 @@ echo "acceptance: $passed passed, $failed failed, $skipped skipped"
 # A suite that ran nothing is not a suite that passed. This is the same failure
 # the mutation register found in a byte-comparison guard: two empty results
 # compare equal, and the check reports success having established nothing.
+#
+# AND THE WHOLE OUTPUT GOES OUT WITH IT, MEASURED 2026-09-06 - OBS120, OBS125.
+# The grep above prints only the shapes a RUN produces: === RUN, --- PASS, a
+# line from a .go file. A package that does not COMPILE produces none of them,
+# so this branch used to print one sentence, and that sentence named the build
+# tag and the run pattern - neither of which was the cause. Measured: a helper
+# whose name collided with one in the tagged file left the ordinary
+# "go test ./cmd/certdoctor/" GREEN, because that run does not compile the
+# tagged file at all, and lit four blocking checks of which this was one. Every
+# one of them described its own symptom and not one named the redeclaration.
+#
+# A FILTER IS A BET THAT SOMEBODY GUESSED THE SHAPE OF THE FAILURE FIRST, and
+# OBS17 is the standing note that this bet is not won. So on this path there is
+# no filter at all.
 if [ "$passed" -eq 0 ] && [ "$failed" -eq 0 ]; then
-  echo "acceptance: NOTHING RAN. That is a failure, not a pass - check the build tag and the run pattern."
+  echo "--- everything go test said, unfiltered:"
+  printf '%s\n' "$output"
+  echo
+  echo "acceptance: NOTHING RAN. That is a failure, not a pass."
+  echo "  This suite compiles behind a build tag, so a package that will not COMPILE"
+  echo "  looks from here exactly like a run pattern that matched nothing. Read the"
+  echo "  lines above before reaching for the tag or the pattern."
   exit 1
 fi
 

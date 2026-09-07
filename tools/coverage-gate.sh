@@ -56,13 +56,62 @@ done < <(sed 's/#.*//' "$floors")
 # the wrong place. That is the same failure mode the comment above describes:
 # a check that misidentifies its own failure is worse than one that stops.
 #
+# AND WHY A FILTER WAS STILL NOT ENOUGH, MEASURED 2026-09-06 - OBS125. The
+# filter looks for shapes it already knows: FAIL, --- FAIL, a panic, a line
+# from a _test.go file. A package can fail in none of them - a harness giving
+# up before any test runs, a TestMain exiting, a build failing after the
+# compiler has finished printing - and then the only thing this gate says is
+# the package's NAME. That happened: internal/adapter/probe came back red, the
+# whole record was twenty-six lines, and not one of them said what went wrong.
+# A filter is a bet that the failure has a shape somebody thought of first, and
+# OBS17 is the standing note that this is not a bet that gets won.
+#
+# SO THE SECOND SECTION PRINTS A PACKAGE'S OWN OUTPUT IN FULL, AND ASKS PER
+# PACKAGE. OBS125 named the narrower condition - "when no --- FAIL was found
+# anywhere in the run" - and that condition has a hole: one package failing
+# with a named test would hide a second one failing without. Asking it per
+# package closes the hole and costs nothing on an ordinary red run, because a
+# package that DID name a failing test prints nothing here.
+#
+# IT NEVER RE-RUNS ANYTHING, AND THAT IS THE OTHER HALF OF OBS125. The package
+# that failed there passes on its own in 2.2 seconds, so a gate that reran it
+# would report green and call the matter closed - retrying instead of looking.
+# Everything printed comes out of the record this run already captured.
+#
 # The tail is kept as well, because a filter only finds what it knows to look
-# for and a build failure can arrive in a shape neither pattern matches.
+# for and a build failure can arrive in a shape none of these patterns matches.
 report="$(go test -cover -count=1 ./... 2>&1)" || {
   echo "COULD NOT MEASURE: go test did not finish."
   echo "--- the packages that failed, and the assertions that failed in them:"
-  printf '%s\n' "$report" | grep -E '^(FAIL|ok +[^ ]+ +\[|--- FAIL|# )|_test\.go:|panic:|\[build failed\]' || echo "  (nothing matched the filter - read the tail below)"
-  echo "--- the last twenty lines, for anything the filter above did not catch:"
+  printf '%s\n' "$report" | grep -E '^(FAIL|ok +[^ ]+ +\[|--- FAIL|# )|_test\.go:|panic:|\[build failed\]' || echo "  (nothing matched the filter - read on)"
+
+  # A PACKAGE'S OWN OUTPUT IS EVERYTHING SINCE THE PREVIOUS PACKAGE FINISHED,
+  # up to and including its FAIL line. go test writes exactly one terminal line
+  # per package - "ok", "?" or "FAIL" - so those are the boundaries, and nothing
+  # else about the format has to be understood or kept up to date.
+  #
+  # A BARE "FAIL" LINE IS NOT A BOUNDARY. go test prints one just before the
+  # package's own FAIL line, so it belongs INSIDE the block, and requiring a
+  # second field is what keeps it there.
+  silent="$(printf '%s\n' "$report" | awk '
+    $1 == "ok" || $1 == "?" { n = 0; named = 0; next }
+    $1 == "FAIL" && NF >= 2 {
+      if (!named) {
+        print "  === " $2 " failed without naming a test, so all of its output follows:"
+        for (i = 1; i <= n; i++) { print "      " buf[i] }
+        print "      " $0
+      }
+      n = 0; named = 0; next
+    }
+    $1 == "---" && $2 == "FAIL:" { named = 1 }
+    { n = n + 1; buf[n] = $0 }
+  ')"
+  if [ -n "$silent" ]; then
+    echo "--- and in full, every package that failed while naming no test at all:"
+    printf '%s\n' "$silent"
+  fi
+
+  echo "--- the last twenty lines, for anything neither section above caught:"
   printf '%s\n' "$report" | tail -20
   exit 1
 }
