@@ -105,9 +105,17 @@ type environment struct {
 	// one URL and answers about that URL, and this seam is built before the
 	// walk while the answer is needed during it.
 	//
+	// IT TAKES THE RESOLVERS TOO, AND THEY ARE THE ONES L1 ASKS RATHER THAN A
+	// LIST OF ITS OWN. A PAC file may call dnsResolve, isResolvable or isInNet,
+	// and answering those needs somewhere to ask. Handing over ToAsk means one
+	// document cannot hold two different notions of which resolvers this machine
+	// uses - the trimming, the ordering and the platform fallbacks are decided
+	// once, where L1 decides them, and this seam consumes that answer rather than
+	// working out a second one.
+	//
 	// A nil one is legal and L2 reports every script as unfetched with a
 	// sentence saying the gap is ours - never as a machine with no script.
-	evaluateScript func(targets *allowed.Targets, targetURL, targetHost string) proxy.Evaluate
+	evaluateScript func(targets *allowed.Targets, resolvers []string, targetURL, targetHost string) proxy.Evaluate
 	// challengeProxy builds L2's way of asking one proxy whether it wants
 	// credentials.
 	//
@@ -214,7 +222,7 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 		run.Wiring{
 			Environment: env.lookupEnv,
 			Resolution:  resolutionInput(o, env, parsed, found, foundErr, targets),
-			Proxy:       proxyInput(o, env, parsed, targets),
+			Proxy:       proxyInput(o, env, parsed, targets, found),
 			Reach:       reachInput(o, env, parsed, targets),
 			Handshake:   handshakeInput(o, env, parsed, targets),
 			Trust:       trustInput(o, env),
@@ -999,10 +1007,11 @@ func deliver(o *options, env environment, document []byte) *fault {
 // read, so a build with no system reading at all still answers about the
 // variables - which is exactly the shape of Linux, where there is no second
 // stack to read.
-func proxyInput(o *options, env environment, parsed *url.URL, targets *allowed.Targets) proxy.Input {
+func proxyInput(o *options, env environment, parsed *url.URL, targets *allowed.Targets,
+	found dns.Nameservers) proxy.Input {
 	var evaluate proxy.Evaluate
 	if env.evaluateScript != nil {
-		evaluate = env.evaluateScript(targets, parsed.String(), parsed.Hostname())
+		evaluate = env.evaluateScript(targets, found.ToAsk, parsed.String(), parsed.Hostname())
 	}
 	var challenge proxy.ChallengeAsk
 	if env.challengeProxy != nil {

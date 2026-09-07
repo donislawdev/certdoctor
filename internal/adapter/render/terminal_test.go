@@ -358,6 +358,85 @@ func TestALayerThatLookedAndFoundNothingSaysSoAndOneThatNeverLookedDoesNot(t *te
 	}
 }
 
+// These three use the pageWith helper remediation_test.go already declares -
+// one report, one layer's findings replaced, rendered. A second copy of it here
+// is the shape OBS50 has measured six times in this tree.
+
+// TestThePageSaysWhichNamesAScriptSentToAResolver is OBS129's rule applied to the
+// field that exists because of it. The allowed set is a list of PLACES and a
+// resolver is on it, so a query somebody else's PAC file provokes is permitted by
+// construction and no guard reports it - printing the names is the only way the
+// person running this on their own machine learns their script sent names out.
+func TestThePageSaysWhichNamesAScriptSentToAResolver(t *testing.T) {
+	page := pageWith(t, report.Finding{
+		Kind:      report.FindingPACScript,
+		Summary:   "the PAC script at http://wpad.corp/proxy.pac answered",
+		Source:    report.SourceDetected,
+		PACScript: &report.PACScript{URL: "http://wpad.corp/proxy.pac", Fetched: true, Asked: []string{"one.corp", "two.corp"}},
+	})
+
+	if !strings.Contains(page, "asked a resolver about 2 name(s)") {
+		t.Errorf("the page does not say how many names left this machine:\n%s", page)
+	}
+	for _, name := range []string{"one.corp", "two.corp"} {
+		if !strings.Contains(page, name) {
+			t.Errorf("the page does not name %q, so the channel is invisible here:\n%s", name, page)
+		}
+	}
+}
+
+// TestAScriptThatAskedNothingGetsNoBlockAtAll keeps a heading over an empty list
+// off the page. The difference between a script that ran and asked nothing and
+// one that never ran is real and is kept - in the document a program reads, where
+// null and an empty array can say it. On a page for a person, a heading with
+// nothing under it is a line asking to be interpreted.
+func TestAScriptThatAskedNothingGetsNoBlockAtAll(t *testing.T) {
+	for _, asked := range [][]string{nil, {}} {
+		page := pageWith(t, report.Finding{
+			Kind:      report.FindingPACScript,
+			Summary:   "the PAC script at http://wpad.corp/proxy.pac answered",
+			Source:    report.SourceDetected,
+			PACScript: &report.PACScript{URL: "http://wpad.corp/proxy.pac", Fetched: true, Asked: asked},
+		})
+		if strings.Contains(page, "asked a resolver about") {
+			t.Errorf("a script that asked about nothing still got a heading:\n%s", page)
+		}
+	}
+}
+
+// TestThePageSaysWhatARowDoesNotSettle is the gap running the binary found: three
+// bodies assemble our own sentences about the limits of what they measured, every
+// one reached the machine readable document, and a person at a terminal saw none.
+// A row that prints an answer while the layer refuses to rest a verdict on it has
+// to say why, or the verdict looks arbitrary.
+func TestThePageSaysWhatARowDoesNotSettle(t *testing.T) {
+	const caveat = "this script asked about more distinct names than one evaluation may resolve"
+
+	for _, one := range []struct {
+		name    string
+		finding report.Finding
+	}{
+		{"pac script", report.Finding{
+			Kind: report.FindingPACScript, Summary: "a script answered", Source: report.SourceDetected,
+			PACScript: &report.PACScript{URL: "http://wpad.corp/p.pac", Fetched: true, Caveats: []string{caveat}},
+		}},
+		{"proxy stack", report.Finding{
+			Kind: report.FindingProxyStack, Summary: "a stack names a proxy", Source: report.SourceDetected,
+			ProxyStack: &report.ProxyStack{Caveats: []string{caveat}},
+		}},
+		{"proxy challenge", report.Finding{
+			Kind: report.FindingProxyChallenge, Summary: "a proxy was asked", Source: report.SourceDetected,
+			ProxyChallenge: &report.ProxyChallenge{Caveats: []string{caveat}},
+		}},
+	} {
+		t.Run(one.name, func(t *testing.T) {
+			if page := pageWith(t, one.finding); !strings.Contains(page, caveat) {
+				t.Errorf("the page drops what this row does not settle:\n%s", page)
+			}
+		})
+	}
+}
+
 // TestAReportWithNoNotesStillSaysSo covers the degenerate input. An empty
 // section that simply disappears reads as a question nobody asked, and "nothing
 // was skipped" is a claim worth seeing.

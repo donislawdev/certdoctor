@@ -80,6 +80,32 @@ type Sandbox struct {
 	// goja's default, unbounded recursion was still running after ten seconds
 	// with a 213 MiB heap; with the limit set the same file ends in 1 ms.
 	MaxStack int
+
+	// MaxLookups is how many DISTINCT hosts one evaluation may send to a
+	// resolver. It does nothing when Ports.Resolve is nil, because then nothing
+	// is asked at all.
+	//
+	// IT IS THE ONE BOUND THE STOPWATCH CANNOT PROVIDE, and probe S16 measured
+	// which half is missing rather than assuming both were. Three runs of three
+	// on 2026-09-07: a native call already running is NOT interrupted - ADR78
+	// again - but the next one is stopped from starting, so a slow resolver
+	// overruns Budget by exactly one query. Time is held. In the same 300
+	// millisecond budget, however, a file got 214 to 222 questions away at one
+	// millisecond each and 629 837 to 645 003 when they were free. Every one of
+	// those is a name somebody else chose, sent to a resolver the allowed set
+	// already permits, so no guard in this program sees the channel. This
+	// number is what bounds it.
+	//
+	// IT COUNTS NAMES AND NOT CALLS BECAUSE THE EVALUATION CACHES. A file
+	// testing one host against ten subnets calls isInNet ten times about one
+	// name; nine of those never leave this machine, so counting calls would
+	// refuse an honest file for traffic it did not generate.
+	//
+	// A ZERO REFUSES EVERY LOOKUP, which follows this type's rule that an unset
+	// field is useless rather than unbounded. A caller that wires a resolver and
+	// forgets this number gets a run that says it could not ask, not one that
+	// asks without limit.
+	MaxLookups int
 }
 
 // Evaluate runs source and asks it which proxy to use for rawURL on host.
@@ -128,7 +154,7 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 	vm.SetMaxCallStackSize(s.MaxStack)
 	usedRandomness := s.makeDeterministic(vm)
 
-	unanswered, failure := s.inject(vm)
+	record, failure := s.inject(vm)
 	if failure != nil {
 		return corepac.Result{
 			Outcome: corepac.OutcomeMalformed,
@@ -146,7 +172,10 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 	// overwritten on the path that matters least. Three call sites are cheaper
 	// than moving a guard whose position is written down as load-bearing.
 	finish := func(result corepac.Result) corepac.Result {
-		result.Unanswered = unanswered()
+		seen := record()
+		result.Unanswered = seen.unanswered
+		result.Asked = seen.asked
+		result.LookupsExhausted = seen.exhausted
 		return result
 	}
 

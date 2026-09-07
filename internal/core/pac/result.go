@@ -120,6 +120,47 @@ type Result struct {
 	// order to turn an UNKNOWN into a PASS. Inviolable rule 15 says which of
 	// those two errors to prefer.
 	Unanswered []string
+
+	// Asked names every distinct host the file sent to a resolver, in the order
+	// it first asked about each.
+	//
+	// IT IS EVIDENCE OF A CHANNEL THIS PROGRAM CANNOT OTHERWISE SHOW. The
+	// allowed set is a list of PLACES, and the resolver is on it, so every query
+	// a PAC file provokes is permitted by construction - what a hostile file
+	// chooses is not the destination but the QUESTION, and questions are the
+	// payload. The network guard cannot see that, because nothing about it is a
+	// connection to somewhere new. Printing what was asked is the only way this
+	// report can be honest about it, and it is why wiring the resolver was made
+	// conditional on this field existing rather than done on its own.
+	//
+	// IT IS DISTINCT NAMES AND NOT A CALL LOG. A file testing one host against
+	// ten subnets calls isInNet ten times about one name, and a row repeating
+	// that name ten times would read as ten questions. The evaluation resolves
+	// each name once and answers the rest from what it already has, so this
+	// list is exactly the set of names that left this machine.
+	Asked []string
+
+	// LookupsExhausted says the file asked about more distinct names than one
+	// evaluation is allowed, so the ones past the limit were answered as though
+	// nobody could be asked.
+	//
+	// WHY A LIMIT EXISTS AT ALL, AND WHY IT COUNTS NAMES RATHER THAN TIME.
+	// Probe S16 measured this engine on 2026-09-07, three runs of three: the
+	// stopwatch does not interrupt a native call already running, but it does
+	// stop the next one from starting - so a slow resolver overruns the budget
+	// by exactly one query and no more. Time is therefore already held. The
+	// count is not: in the same 300 millisecond budget a file got 214 to 222
+	// questions through at one millisecond each, and 629 837 to 645 003 when
+	// they cost nothing. Nothing but a limit on names bounds that.
+	//
+	// IT IS SEPARATE FROM Unanswered BECAUSE THE SENTENCE IS DIFFERENT. That
+	// field means this run had no resolver at all; this one means it had one and
+	// the file spent its allowance. Folding them together would make the layer
+	// tell somebody their machine has no resolver when it has one, which is a
+	// false statement about their machine rather than about their PAC file. Both
+	// stop the answer from settling, and for the same underlying reason: the
+	// file took a branch a browser would not.
+	LookupsExhausted bool
 }
 
 // Directive is one entry of a PAC file's answer.

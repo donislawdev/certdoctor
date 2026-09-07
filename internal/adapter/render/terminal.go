@@ -294,6 +294,79 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 		writeChain(b, finding)
 		writeFix(b, finding)
 		writeAuthority(b, finding)
+		writeCaveats(b, finding)
+		writeAsked(b, finding)
+	}
+}
+
+// writeCaveats prints what a row does not settle, under the row.
+//
+// IT EXISTS BECAUSE THREE BODIES CARRIED THESE AND THIS PAGE SHOWED NONE OF
+// THEM. proxy_stack, pac_script and proxy_challenge each assemble a list of our
+// own sentences about the limits of what they measured, every one of them
+// reached the machine readable document, and a person at a terminal saw none.
+// Found by running the binary: a PAC row printed an answer, the layer refused to
+// rest a verdict on it because the file had spent its resolver allowance, and
+// the only place saying so was the JSON. That is OBS129's shape - a field no
+// surface renders is a field that does not exist - and it is worse here than
+// where OBS129 found it, because these sentences are the REASON a verdict came
+// out the way it did.
+//
+// THE PREFIX IS THE ONE ALREADY IN USE. writeAuthority and writeFix have printed
+// their single caveat as "note:" since they existed, so a reader who has seen
+// one of those recognises this without learning a second convention.
+//
+// EVERY CAVEAT IS OURS, NOT THE MACHINE'S - the three bodies say so where they
+// declare the field - so nothing here is somebody else's text. It still goes
+// through visible, because the rule on this page is that borrowed strings are
+// escaped and deciding case by case is how one gets missed.
+func writeCaveats(b *strings.Builder, finding report.Finding) {
+	var caveats []string
+	switch {
+	case finding.PACScript != nil:
+		caveats = finding.PACScript.Caveats
+	case finding.ProxyStack != nil:
+		caveats = finding.ProxyStack.Caveats
+	case finding.ProxyChallenge != nil:
+		caveats = finding.ProxyChallenge.Caveats
+	}
+	for _, caveat := range caveats {
+		writeTrimmed(b, fmt.Sprintf("        note: %s", visible(caveat)))
+	}
+}
+
+// writeAsked prints the names a PAC file sent to a resolver, underneath the row
+// for that script.
+//
+// IT IS ON THIS PAGE AND NOT ONLY IN THE MACHINE READABLE DOCUMENT, which is the
+// opposite of the decision proxyStackValue records about an exception list three
+// hundred lines down - and the difference is what the two fields are FOR. An
+// exception list is configuration the reader can go and look at; these names are
+// evidence of something they cannot see any other way. The allowed set is a list
+// of PLACES and a resolver is on it, so every query somebody else's file provokes
+// is permitted by construction and no guard in this program reports it. If this
+// page does not say what was asked, the person running certdoctor on their own
+// machine never learns their PAC file sent names out of it.
+//
+// IT IS BOUNDED BY CONSTRUCTION RATHER THAN BY A LIMIT HERE. The sandbox allows
+// one evaluation a fixed number of DISTINCT names, so this block cannot become
+// the wall of host names that argument was about.
+//
+// NOTHING IS PRINTED WHEN NOTHING WAS ASKED, and that includes a script that ran
+// and asked about nothing. The distinction between that and a script that never
+// ran is real and is kept - it is in the document a program reads, where null and
+// an empty array can say it. On a page for a person, a heading over no names
+// would be a line asking to be interpreted.
+//
+// EVERY NAME GOES THROUGH visible: it comes out of somebody else's file, which
+// makes it the last string that should reach a terminal unescaped.
+func writeAsked(b *strings.Builder, finding report.Finding) {
+	if finding.PACScript == nil || len(finding.PACScript.Asked) == 0 {
+		return
+	}
+	writeTrimmed(b, fmt.Sprintf("        asked a resolver about %d name(s):", len(finding.PACScript.Asked)))
+	for _, name := range finding.PACScript.Asked {
+		writeTrimmed(b, fmt.Sprintf("          %s", visible(name)))
 	}
 }
 

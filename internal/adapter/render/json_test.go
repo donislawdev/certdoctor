@@ -99,3 +99,42 @@ func TestOrdinaryTextIsNotRewrittenOnTheWayIntoTheDocument(t *testing.T) {
 		t.Errorf("a consumer decodes %q and the machine held %q", decoded.Layers[0].Detail, detail)
 	}
 }
+
+// TestTheDocumentKeepsNullApartFromAnEmptyListOfAskedNames is ADR20 on the field
+// that carries the evidence of a channel nothing else in this program reports.
+//
+// The two states are different claims about the same run. Null says the script
+// never ran, so nobody looked; an empty array says it ran and asked about
+// nothing, which is a measurement. A renderer that flattened one into the other
+// would take the difference away on the only surface a program reads.
+func TestTheDocumentKeepsNullApartFromAnEmptyListOfAskedNames(t *testing.T) {
+	for _, one := range []struct {
+		name  string
+		asked []string
+		want  string
+	}{
+		{"never ran", nil, `"asked":null`},
+		{"ran and asked nothing", []string{}, `"asked":[]`},
+	} {
+		t.Run(one.name, func(t *testing.T) {
+			r := report.Report{
+				Tool: report.Tool{Name: "certdoctor", Version: "0"},
+				Layers: []report.LayerResult{{ID: "L2", Findings: []report.Finding{{
+					Kind:      report.FindingPACScript,
+					Summary:   "a script",
+					Source:    report.SourceDetected,
+					PACScript: &report.PACScript{URL: "http://wpad.corp/p.pac", Fetched: true, Asked: one.asked},
+				}}}},
+			}
+
+			document, err := Encode(r)
+			if err != nil {
+				t.Fatalf("the report could not be encoded: %v", err)
+			}
+			compact := strings.ReplaceAll(strings.ReplaceAll(string(document), " ", ""), "\n", "")
+			if !strings.Contains(compact, one.want) {
+				t.Errorf("a script that %s produced a document without %s", one.name, one.want)
+			}
+		})
+	}
+}

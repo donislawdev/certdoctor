@@ -281,6 +281,92 @@ func scriptFrom(t *testing.T, r report.Report) report.PACScript {
 	return *row.Findings[0].PACScript
 }
 
+// TestTheNamesAScriptAskedAboutArePseudonymisedRatherThanWithheld is the OTHER
+// half of the split above, and it goes the opposite way from the answer beside
+// it. An answer is somebody else's sentence with a bare host:port buried in its
+// grammar, which no rule here can find; these are bare host names one per entry,
+// which is exactly what Authority handles. So the internal names do not travel
+// and the thing the field exists for - how many names left this machine - does.
+func TestTheNamesAScriptAskedAboutArePseudonymisedRatherThanWithheld(t *testing.T) {
+	row := aScriptRow()
+	// The last of the three is also the endpoint the script selected, which is
+	// what makes this test say something a simpler one could not: ONE machine
+	// has to come out as ONE pseudonym wherever the document mentions it.
+	row.PACScript.Asked = []string{"one.corp.internal", "two.corp.internal", "proxy.corp.internal"}
+
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Proxy] = proxyLayerOf(row)
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	script := scriptFrom(t, r)
+	if len(script.Asked) != 3 {
+		t.Fatalf("masking changed how many names were asked about: %v", script.Asked)
+	}
+	for _, name := range script.Asked {
+		if strings.Contains(name, "corp.internal") {
+			t.Errorf("a name the script asked about survived masking: %q", name)
+		}
+	}
+	if script.Selected == nil {
+		t.Fatal("the selected directive went missing")
+	}
+	// The endpoint carries a port and the asked name does not, so the pseudonym
+	// is compared against the host half rather than the whole string.
+	endpoint, _, found := strings.Cut(script.Selected.Endpoint, ":")
+	if !found {
+		t.Fatalf("the masked endpoint %q carries no port to split off", script.Selected.Endpoint)
+	}
+	if script.Asked[2] != endpoint {
+		t.Errorf("one machine came out as two pseudonyms: asked about %q, connected to %q",
+			script.Asked[2], endpoint)
+	}
+}
+
+// TestAScriptThatNeverRanAskedNothingAndAScriptThatRanQuietlySaysSo keeps ADR20
+// alive through masking. Null means nobody looked and an empty array means we
+// looked and there was nothing, and a masking pass that turned one into the
+// other would erase the difference on the surface that reports it.
+func TestAScriptThatNeverRanAskedNothingAndAScriptThatRanQuietlySaysSo(t *testing.T) {
+	cases := []struct {
+		name  string
+		asked []string
+		want  string
+	}{
+		{"never ran", nil, "nil"},
+		{"ran and asked nothing", []string{}, "empty"},
+	}
+
+	for _, one := range cases {
+		t.Run(one.name, func(t *testing.T) {
+			row := aScriptRow()
+			row.PACScript.Asked = one.asked
+
+			o := baseOptions(newClock())
+			o.Redaction = redact.New(redact.Everything)
+			o.Layers[layer.Proxy] = proxyLayerOf(row)
+
+			r, err := Execute(context.Background(), o)
+			if err != nil {
+				t.Fatalf("the run failed: %v", err)
+			}
+
+			got := "empty"
+			if scriptFrom(t, r).Asked == nil {
+				got = "nil"
+			}
+			if got != one.want {
+				t.Errorf("masking turned %s into %s, which says something different about whether anybody looked",
+					one.want, got)
+			}
+		})
+	}
+}
+
 // TestTheScriptAddressAndItsEndpointsAreMaskedByDifferentRules is ADR90 part 5
 // one row along, and the split is forced rather than chosen. The script's own
 // address is a URL, which is the one shape Text can find a host inside; the

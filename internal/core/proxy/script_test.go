@@ -344,6 +344,45 @@ func TestAnAnswerRestingOnAQuestionNobodyCouldAnswerIsNotSettled(t *testing.T) {
 	}
 }
 
+// TestAnAnswerThatSpentTheResolverAllowanceIsNotSettled is the same untruth as
+// the test above reached from the other side, and it is the reason the two
+// fields are separate rather than one boolean.
+//
+// A run with a resolver still stops answering once the file has asked about more
+// distinct names than one evaluation may - the bound probe S16 showed the
+// stopwatch does not provide, because it holds time and not count. From the PAC
+// file's point of view those names simply did not resolve, so it takes a branch a
+// browser would not, and an answer reached that way settles nothing.
+//
+// THE SENTENCE HAS TO BE THE OTHER ONE. Folding this into Unanswered would tell
+// somebody their machine has no resolver when it has one and their script spent
+// its allowance - a false statement about their machine rather than about their
+// file, which is the direction this program is built not to go.
+func TestAnAnswerThatSpentTheResolverAllowanceIsNotSettled(t *testing.T) {
+	answer := answeredWith("PROXY proxy.example:8080")
+	answer.Result.LookupsExhausted = true
+
+	result := askLayer(t, Input{
+		Lenses:    lensesOf(silentLens(StackEnvironment)),
+		Target:    target,
+		Evaluate:  answering(nil, answer),
+		ScriptURL: "http://pac.example/proxy.pac",
+	})
+
+	if result.Status != status.Unknown || result.Reason != status.ReasonUndetermined {
+		t.Errorf("an answer reached past the resolver allowance came back as %s / %s", result.Status, result.Reason)
+	}
+	row := scriptRowOf(t, result)
+	if !hasScriptCaveat(row, "more distinct names than one evaluation may resolve") {
+		t.Errorf("the row does not say the allowance was spent: %v", row.Caveats)
+	}
+	for _, caveat := range row.Caveats {
+		if strings.Contains(caveat, "this run had nothing behind those") {
+			t.Errorf("a machine WITH a resolver was told it has none: %q", caveat)
+		}
+	}
+}
+
 // TestARandomisedAnswerIsOneOfTheAnswersRatherThanTheAnswer keeps the report
 // from overstating itself. The sandbox pins the random source so two runs of one
 // binary agree, which is what the determinism guard needs - and it makes this

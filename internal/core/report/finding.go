@@ -1816,6 +1816,24 @@ type PACScript struct {
 	// Selected is the first entry a client would follow, or nil when the answer
 	// named none this program recognises.
 	Selected *PACDirective
+	// Asked names every distinct host this script sent to a resolver while it
+	// decided, in the order it first asked about each. It is nil for a script
+	// that never ran and empty for one that ran without asking anything.
+	//
+	// IT IS HERE BECAUSE NOTHING ELSE IN THIS DOCUMENT CAN SHOW IT. Inviolable
+	// rule 16 is a list of PLACES, and a resolver is on it, so every query a PAC
+	// file provokes is already permitted - what somebody else's file chooses is
+	// the QUESTION, and a question carries whatever they put in it. No guard in
+	// this program sees that, because nothing about it is a connection somewhere
+	// new. Printing the names is what makes the channel visible, and wiring the
+	// resolver was made conditional on this field existing.
+	//
+	// IT IS MASKED RATHER THAN WITHHELD UNDER --redact, unlike Answer one field
+	// up. These are bare host names, which is exactly the shape the pseudonym
+	// map handles, so a reader still learns HOW MANY names left the machine and
+	// whether one repeats - while the internal names themselves do not travel
+	// into a ticket.
+	Asked []string
 	// Caveats are our sentences about what this row does not settle. They are
 	// OUR prose about somebody else's file, never its text.
 	Caveats []string

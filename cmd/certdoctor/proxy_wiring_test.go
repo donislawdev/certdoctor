@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/dns"
 	"github.com/donislawdev/certdoctor/internal/core/proxy"
 
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
@@ -46,7 +47,7 @@ func TestTheProxyInputAlwaysCarriesTheEnvironmentStack(t *testing.T) {
 			}
 			return "", false
 		},
-	}, proxyTarget(t, "https://api.example.com/"), allowed.New())
+	}, proxyTarget(t, "https://api.example.com/"), allowed.New(), dns.Nameservers{})
 
 	lenses := in.Lenses(context.Background())
 	if len(lenses) != 1 {
@@ -74,7 +75,7 @@ func TestTheProxyInputAppendsWhateverThePlatformReads(t *testing.T) {
 				{Stack: proxy.StackWinHTTP, Source: "test", Read: true, Servers: []proxy.Server{}},
 			}
 		},
-	}, proxyTarget(t, "https://api.example.com/"), allowed.New())
+	}, proxyTarget(t, "https://api.example.com/"), allowed.New(), dns.Nameservers{})
 
 	lenses := in.Lenses(context.Background())
 	if asked != 1 {
@@ -94,7 +95,7 @@ func TestTheProxyInputAppendsWhateverThePlatformReads(t *testing.T) {
 func TestTheProxyTargetGoesInAsItGoesOnTheWire(t *testing.T) {
 	in := proxyInput(&options{}, environment{
 		lookupEnv: func(string) (string, bool) { return "", false },
-	}, proxyTarget(t, "https://xn--bcher-kva.de:8443/path"), allowed.New())
+	}, proxyTarget(t, "https://xn--bcher-kva.de:8443/path"), allowed.New(), dns.Nameservers{})
 
 	want := proxy.Target{Scheme: "https", Host: "xn--bcher-kva.de", Port: "8443"}
 	if in.Target != want {

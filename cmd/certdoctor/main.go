@@ -39,6 +39,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	corehandshake "github.com/donislawdev/certdoctor/internal/core/handshake"
+	corepac "github.com/donislawdev/certdoctor/internal/core/pac"
 	"github.com/donislawdev/certdoctor/internal/core/proxy"
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -198,24 +199,70 @@ func liveEnvironment() environment {
 		// dial.Permission, consumed rather than copied - so a fifth way to reach
 		// the network still did not bring a fifth answer to "may we".
 		//
-		// THE SANDBOX GETS NO PORTS AND THAT IS THE DECISION OF THIS SLICE, not
-		// an omission. Ports.Resolve would let a file this program did not write
-		// choose the names this machine asks its resolver about, which is a
-		// channel the network guard cannot see: the resolver is in the allowed
-		// set, so every query is permitted and only the QUESTIONS are somebody
-		// else's. It is also native Go called from JavaScript, which the
-		// sandbox's stopwatch provably cannot interrupt - measured, ADR78. Both
-		// belong to a slice of their own. Meanwhile pac.Result.Unanswered
-		// records that a file went looking, and L2 refuses to rest a verdict on
-		// an answer reached that way.
-		evaluateScript: func(targets *allowed.Targets, targetURL, targetHost string) proxy.Evaluate {
+		// THE SANDBOX NOW HAS A RESOLVER BEHIND ITS THREE ADDRESS HELPERS, and
+		// this comment used to say the opposite. It said the ports were left
+		// empty deliberately, for two reasons that were both true and only one
+		// of which has been answered by a bound.
+		//
+		// THE FIRST WAS TIME AND IT TURNED OUT TO BE HELD ALREADY. Probe S16
+		// measured this engine on 2026-09-07, three runs of three: the stopwatch
+		// does not interrupt a native call that is already running - ADR78 again
+		// - but it does stop the next one from starting. A file calling into a
+		// slow resolver ten times overran a 50ms budget by ONE call rather than
+		// ten. So pacLookupBudget below is the whole overshoot.
+		//
+		// THE SECOND WAS THE CHANNEL AND IT IS ANSWERED BY EVIDENCE, NOT BY A
+		// GUARD. The allowed set is a list of PLACES and a resolver is on it, so
+		// every query somebody else's file provokes is permitted by construction
+		// and nothing here can refuse it - what the file chooses is the QUESTION.
+		// The same probe measured how much that is worth to an attacker: in one
+		// 300ms budget a file got 214 to 222 questions away at a millisecond
+		// each. pacMaxLookups bounds that, and pac_script.asked prints what was
+		// asked, so the channel is visible in the report rather than invisible
+		// everywhere.
+		//
+		// IT IS THE FIFTH PLACE IN THIS PROGRAM THAT CAN OPEN A CONNECTION and
+		// it is STILL the fifth, which is the point of building the resolver out
+		// of dns.Exchange: the queries go through the same dial.Permission as the
+		// fetch beside them, so a PAC file gained a way to choose questions and
+		// gained no way to choose a destination.
+		evaluateScript: func(targets *allowed.Targets, resolvers []string, targetURL, targetHost string) proxy.Evaluate {
+			permitted := dial.Permission(targets, nil)
 			return pac.Resolver(
-				pac.Fetch(dial.Permission(targets, nil), pacSourceLimit),
+				pac.Fetch(permitted, pacSourceLimit),
 				pac.Sandbox{
-					Budget:    pacBudget,
-					Ceiling:   pacCeiling,
-					MaxSource: pacSourceLimit,
-					MaxStack:  pacStackLimit,
+					Ports: corepac.Ports{
+						// THE SAME PAIR L1 IS BUILT FROM: dial.Guarded around
+						// dns.Socket, so a query provoked by somebody else's PAC
+						// file is checked against the allowed set before a packet
+						// exists - exactly as L1's own queries are. The fetch
+						// beside this one takes dial.Permission instead because
+						// it dials through net/http and only needs the rule.
+						Resolve: dns.Lookup(
+							dns.Exchange(dial.Guarded(dns.Socket, targets, nil)),
+							resolvers, queryID, pacLookupBudget),
+						// LocalAddress STAYS NIL AND myIpAddress STAYS
+						// UNANSWERED. Learning which address this machine would
+						// use means opening a socket, which needs a reason from
+						// the closed list in internal/core/allowed, and that is a
+						// question of its own rather than a line in this one.
+						//
+						// Now STAYS NIL TOO, WHICH IS NOT THIS SLICE'S DOING AND
+						// IS WORSE THAN IT LOOKS. Nothing has ever wired it, so
+						// weekdayRange, dateRange and timeRange come back "not
+						// understood" and timeHelper throws - and the message it
+						// throws says certdoctor does not understand this form of
+						// the call. That sentence blames a file which is very
+						// likely correct for a port this build never filled.
+						// Filling it is one line and it is a CHANGE IN WHAT THIS
+						// PROGRAM REPORTS, so it is asked for on its own rather
+						// than carried in on the back of the resolver.
+					},
+					Budget:     pacEvaluationBudget,
+					Ceiling:    pacCeiling,
+					MaxSource:  pacSourceLimit,
+					MaxStack:   pacStackLimit,
+					MaxLookups: pacMaxLookups,
 				},
 				targetURL, targetHost)
 		},
@@ -278,6 +325,14 @@ func liveEnvironment() environment {
 // 300ms IS THE VALUE P8-K1 MEASURED WITH: testbed/pac/files/runaway.pac, which
 // never returns, was stopped at 301ms against it, and the ordinary files answer
 // in single milliseconds.
+//
+// IT IS NO LONGER THE FIGURE THE STOPWATCH IS GIVEN, AND THE MEASUREMENT ABOVE
+// DESCRIBES A BUILD WITH NOTHING BEHIND dnsResolve. This is now the share of the
+// wall clock meant for the script's own work; what is enforced is
+// pacEvaluationBudget, which adds the allowance for asking a resolver on top.
+// The reason is written there: the stopwatch cannot tell computing from waiting,
+// so leaving it at this number made an honest file that resolves two names time
+// out and be told it ran too long.
 const pacBudget = 300 * time.Millisecond
 
 // pacCeiling is how much heap one evaluation may add before the stopwatch stops
@@ -308,6 +363,87 @@ const pacSourceLimit = 1 << 20
 // with goja's default, unbounded recursion was still running after ten seconds
 // on a 213 MiB heap; with this set the same file ends in 1 ms.
 const pacStackLimit = 2000
+
+// pacMaxLookups is how many DISTINCT names one PAC evaluation may send to a
+// resolver.
+//
+// IT IS THE ONLY THING BOUNDING A CHANNEL NO GUARD IN THIS PROGRAM SEES. The
+// allowed set answers "may we connect there" and a resolver is on it, so a query
+// a PAC file provokes is permitted whatever the file asked about - the
+// destination is ours and the QUESTION is theirs. Probe S16 measured what that
+// is worth without a limit, three runs of three on 2026-09-07: inside one 300ms
+// budget a file got 214 to 222 questions away at a millisecond each, and 629 837
+// to 645 003 when they cost nothing.
+//
+// FOUR IS CHOSEN AGAINST WHAT AN HONEST FILE NEEDS, and the evaluation caches,
+// so this counts names rather than calls. A corporate PAC resolves the host it
+// was asked about and then tests that ONE address against however many subnets
+// it likes - ten isInNet calls, one name. Files that name others do so in ones
+// and twos. Four leaves room for that and takes fifty-odd of every fifty-four
+// questions off the channel.
+//
+// IT IS ALSO BOUNDED FROM THE OTHER SIDE by pacEvaluationBudget below: every
+// name allowed here has to be PAID FOR in wall clock the stopwatch will spend,
+// so raising this number lengthens how long a runaway file runs before anything
+// stops it. The two constants are chosen together and neither means anything
+// alone.
+//
+// IT IS NOT A SECURITY BOUNDARY AND SAYING SO IS THE POINT. Eight names still
+// carry a few hundred bytes to whoever runs the authoritative server for them.
+// What the limit buys is proportion; what makes the channel answerable is that
+// the names are printed - pac_script.asked - so the report shows it instead of
+// this program pretending to have closed it.
+const pacMaxLookups = 4
+
+// pacLookupBudget is the wall clock ONE name gets, across every resolver and
+// both record types.
+//
+// IT IS THE ENTIRE AMOUNT pacBudget CAN BE OVERRUN BY, which is why it is held
+// here rather than per query. Probe S16, three runs of three on 2026-09-07: the
+// sandbox stopwatch does not interrupt a native call already running - ADR78 -
+// but it does stop the next one from starting, so a file that called into a
+// 200ms resolver ten times against a 50ms budget made exactly ONE such call and
+// finished in 200ms rather than two seconds. A per-query deadline would have let
+// one name cost resolvers times types times that number while still looking
+// bounded.
+//
+// 100ms IS SIZED ON L1'S OWN MEASUREMENTS rather than picked: this machine
+// resolves through its configured resolvers in 26 to 27ms, so this allows three
+// sequential attempts before giving up on a name.
+const pacLookupBudget = 100 * time.Millisecond
+
+// pacEvaluationBudget is the wall clock the sandbox stopwatch actually enforces.
+//
+// IT IS A SUM AND IT HAS TO BE, WHICH WAS FOUND BY RUNNING THE BINARY RATHER
+// THAN BY A TEST. pacBudget was sized for a script that computes and does no
+// I/O. The stopwatch measures WALL CLOCK and cannot tell computing from waiting
+// on a resolver, so once dnsResolve had something behind it, time spent asking
+// came out of the file's own allowance. Measured on 2026-09-07 against a PAC
+// file asking about two names that do not resolve: the evaluation was stopped
+// with outcome "timeout" and the row said the file ran past the time this run
+// allows - blaming somebody's correct PAC file for a budget of ours. The whole
+// test suite was green while it did so.
+//
+// SO THE ALLOWANCE FOR ASKING IS ADDED RATHER THAN TAKEN. A file may be asked
+// about pacMaxLookups names, each may cost pacLookupBudget, and the stopwatch is
+// given that much on top of what the script itself gets.
+//
+// WHAT IT COSTS, SAID PLAINLY: a runaway file now runs for this total rather
+// than for pacBudget before anything stops it - 700ms rather than 300ms. That is
+// the direction inviolable rule 15 points. Stopping an honest file early
+// produces a confident wrong sentence about somebody else's configuration;
+// letting a hostile one spin four hundred milliseconds longer costs four hundred
+// milliseconds and still ends in a bounded refusal.
+//
+// WHAT WAS NOT DONE, AND WHY IT IS NOT SIMPLY BETTER. The tight version of this
+// is a deadline that moves - the stopwatch extending itself by however long was
+// actually spent inside a lookup - which would give the script its 300ms and the
+// asking no more than it used. It needs a figure written by the evaluating
+// goroutine and read by the stopwatch, which is shared mutable state between two
+// goroutines, which is an entry on sandboxAllowlist. ADR77 grants that list the
+// go statement and nothing else - not sync, not sync/atomic - so this is a
+// question for the owner rather than a refactor.
+const pacEvaluationBudget = pacBudget + pacMaxLookups*pacLookupBudget
 
 // resolverConfigLimit is the 1 MB from ADR25, measured rather than chosen: the
 // real files are 172 to 526 bytes and the parser costs are linear, so this caps

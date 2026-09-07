@@ -396,6 +396,18 @@ var schema = object(map[string]node{
 					"endpoint":   text(),
 					"recognised": boolean(),
 				})),
+				// Every distinct host this script sent to a resolver, in the
+				// order it first asked about each. Null means the script never
+				// ran, so nobody looked; an empty array means it ran and asked
+				// about nothing. ADR20 again, and the difference is the whole
+				// value of the field - "this file asked about no names" is a
+				// measurement, "this file never ran" is not.
+				//
+				// MASKED under --redact rather than withheld, unlike answer
+				// above: these are bare host names, which is the shape the
+				// pseudonym map is for, so a reader keeps the count and any
+				// repetition without the internal names travelling anywhere.
+				"asked": nullable(array(text())),
 				// Never null. Our own sentences about what this row does not
 				// settle; an empty array says there is nothing to add.
 				"caveats": array(text()),

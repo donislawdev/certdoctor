@@ -1864,7 +1864,7 @@ func TestTheEntryPointHandsTheScriptAddressToTheLayer(t *testing.T) {
 
 	in := proxyInput(&options{pacURL: "http://pac.example/proxy.pac"}, environment{
 		lookupEnv: func(string) (string, bool) { return "", false },
-	}, parsed, allowed.New())
+	}, parsed, allowed.New(), dns.Nameservers{})
 
 	if in.ScriptURL != "http://pac.example/proxy.pac" {
 		t.Errorf("the layer was given %q as the script to read", in.ScriptURL)
@@ -1886,11 +1886,11 @@ func TestTheEvaluatorSeamIsAskedWithTheTargetItMustAnswerAbout(t *testing.T) {
 	var gotURL, gotHost string
 	in := proxyInput(&options{pacURL: "http://pac.example/proxy.pac"}, environment{
 		lookupEnv: func(string) (string, bool) { return "", false },
-		evaluateScript: func(_ *allowed.Targets, targetURL, targetHost string) proxy.Evaluate {
+		evaluateScript: func(_ *allowed.Targets, _ []string, targetURL, targetHost string) proxy.Evaluate {
 			gotURL, gotHost = targetURL, targetHost
 			return func(context.Context, string) proxy.ScriptAnswer { return proxy.ScriptAnswer{} }
 		},
-	}, parsed, allowed.New())
+	}, parsed, allowed.New(), dns.Nameservers{})
 
 	if in.Evaluate == nil {
 		t.Fatal("the seam was supplied and the layer got no evaluator")
@@ -1925,7 +1925,7 @@ func TestTheChallengeSeamIsBuiltWithTheSetItWillBeCheckedAgainst(t *testing.T) {
 				return proxy.ChallengeAnswer{}
 			}
 		},
-	}, parsed, targets)
+	}, parsed, targets, dns.Nameservers{})
 
 	if in.Challenge == nil {
 		t.Fatal("the seam was supplied and the layer got no way to ask a proxy")
@@ -1949,7 +1949,7 @@ func TestABuildWithNoChallengeSeamHandsTheLayerNone(t *testing.T) {
 
 	in := proxyInput(&options{}, environment{
 		lookupEnv: func(string) (string, bool) { return "", false },
-	}, parsed, allowed.New())
+	}, parsed, allowed.New(), dns.Nameservers{})
 
 	if in.Challenge != nil {
 		t.Error("a build with no challenge seam handed the layer one anyway")

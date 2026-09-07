@@ -351,7 +351,33 @@ func maskPACScript(r *redact.Redaction, finding *report.Finding) {
 	if script.Answer != "" && r.Mode() == redact.Everything {
 		script.Answer = redact.Placeholder
 	}
+	script.Asked = maskAskedNames(r, script.Asked)
 	finding.PACScript = &script
+}
+
+// maskAskedNames pseudonymises the hosts a PAC file sent to a resolver.
+//
+// THESE ARE MASKED AND NOT WITHHELD, WHICH IS THE OPPOSITE OF WHAT HAPPENS TO
+// Answer THREE LINES UP, and the difference is what the field holds. An answer
+// is somebody else's sentence with a bare host:port buried in its grammar, which
+// no rule here recognises as a machine. These are bare host names one per entry,
+// which is precisely the shape Authority handles - so the pseudonym map can do
+// its job, and a reader keeps what the field is FOR: how many names left this
+// machine, and whether one of them repeats.
+//
+// NIL STAYS NIL, empty stays empty. ADR20 governs this field the same way it
+// governs the directives beside it: a script that never ran asked nothing
+// because nobody looked, and that is not the same document as a script that ran
+// and asked about nothing.
+func maskAskedNames(r *redact.Redaction, names []string) []string {
+	if names == nil {
+		return nil
+	}
+	masked := make([]string, 0, len(names))
+	for _, name := range names {
+		masked = append(masked, r.Authority(name))
+	}
+	return masked
 }
 
 // maskDirectives copies before touching, for the reason maskServers gives. NIL

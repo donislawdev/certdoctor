@@ -158,13 +158,46 @@ import (
 // compares PLACES a machine keeps proxy settings in. A consumer branching on
 // either must read the key it came under and never the value alone.
 //
-// WHAT THIS VERSION DELIBERATELY DOES NOT ADD. The reason vocabulary is
-// untouched at eight: credentials_required and limit_exceeded are named in
-// ADR80 and belong to a proxy this run asks and a script this run evaluates,
-// neither of which happens yet. A value in a published contract that nothing
-// can produce is a promise nobody keeps, which is the argument that kept
-// access_denied out of the code and keeps these two out of it for now.
-const SchemaVersion = "1.14"
+// 1.13 ADDS THE pac_script BODY AND A NINTH reason: limit_exceeded - ADR91,
+// which is the slice that fetched and ran a script. A MINOR by rule 2.
+//
+// THE ROW IS ABOUT THE SCRIPT AND NOT ABOUT THE PLACE THAT NAMED IT, which is
+// the same argument as the two bodies above, one level along: two Windows stacks
+// routinely hold one AutoConfigURL, so a row per place would fetch one file
+// twice, run it twice, and print two answers that a file calling Math.random is
+// entitled to make differ. A consumer reading named_by gets both namers on the
+// one row instead.
+//
+// 1.14 ADDS THE proxy_challenge BODY AND A TENTH reason: credentials_required -
+// ADR92, which is the slice that asks a proxy whether it wants a login. A MINOR
+// by rule 2, and it closes the vocabulary ADR80 named: all ten now have a
+// producer except access_denied, whose deliberate absence still lives in
+// internal/core/status/reason.go.
+//
+// THE ROW IS PER ENDPOINT, and only a 407 settles anything. Measured on the
+// bench before the code existed: a CONNECT to a port outside SSL_ports comes
+// back 403 from a proxy that wants no credentials at all, and an allowed CONNECT
+// came back 503 when the origin was unreachable. Anything but 407 leaves the
+// verdict untouched and earns a caveat.
+//
+// 1.15 ADDS ONE MEMBER TO pac_script: asked. A MINOR by rule 2 - no removals, no
+// changed meanings, and a consumer that ignores it reads 1.14 documents and 1.15
+// documents identically.
+//
+// IT ARRIVES BECAUSE THE RESOLVER BEHIND A PAC FILE DID. Until this version
+// dnsResolve, isResolvable and isInNet had nothing behind them - ADR91 part 1
+// left them that way on purpose, because the allowed set is a list of PLACES and
+// a resolver is on it, so every query somebody else's file provokes is permitted
+// by construction and no guard sees the QUESTIONS. This field is the answer to
+// that: the names are printed, so the channel is evidenced rather than invisible.
+// Wiring the resolver was made conditional on the field existing.
+//
+// WHAT A CONSUMER THAT ALREADY SHIPPED SHOULD KNOW. Rows that used to carry a
+// caveat saying a script called isInNet with nothing behind it will stop
+// carrying it on machines with a resolver, and such a script can now settle a
+// verdict where before it never could. A new caveat takes its place when a file
+// asks about more distinct names than one evaluation may resolve.
+const SchemaVersion = "1.15"
 
 // JSON renders the machine readable report.
 //
@@ -317,6 +350,12 @@ type jsonPACScript struct {
 	// The first entry a client would follow, or null when the answer named none
 	// this program recognises.
 	Selected *jsonPACDirective `json:"selected"`
+	// Every distinct host this script sent to a resolver while it decided, in
+	// the order it first asked about each. Null when the script never ran, empty
+	// when it ran and asked about nothing. MASKED under --redact rather than
+	// withheld: these are bare host names, so the pseudonym map handles them and
+	// a reader keeps the count and any repetition.
+	Asked []string `json:"asked"`
 	// Never null. Our sentences about what this row does not settle.
 	Caveats []string `json:"caveats"`
 }
@@ -764,8 +803,20 @@ func pacScriptOf(finding report.Finding) *jsonPACScript {
 		Answer:     script.Answer,
 		Directives: pacDirectivesOf(script.Directives),
 		Selected:   pacDirectiveOrNil(script.Selected),
+		Asked:      askedNamesOf(script.Asked),
 		Caveats:    append([]string{}, script.Caveats...),
 	}
+}
+
+// askedNamesOf carries the resolver questions across, KEEPING NULL APART FROM
+// EMPTY - ADR20. A script that never ran asked nothing because nobody looked; a
+// script that ran and asked nothing is a measurement, and an array is how this
+// document says one was taken.
+func askedNamesOf(names []string) []string {
+	if names == nil {
+		return nil
+	}
+	return append([]string{}, names...)
 }
 
 // proxyChallengeOf carries a challenge row across.

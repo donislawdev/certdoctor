@@ -57,17 +57,27 @@ type script struct {
 
 // settled says whether this script produced an answer a verdict may rest on.
 //
-// THREE THINGS HAVE TO HOLD AND THE THIRD IS THE ONE THAT IS EASY TO FORGET.
+// FOUR THINGS HAVE TO HOLD AND THE LAST TWO ARE THE ONES EASY TO FORGET.
 // The bytes arrived, the file answered - and it did not decide by asking
 // something this run had nobody to ask. A PAC file calling isInNet on a run
 // with no resolver behind it gets a false, because the PAC contract has no way
 // to say "nobody could be asked", and it then takes a branch a browser would
 // not take. Counting that as settled would let this program report a route it
 // worked out from a known untruth.
+//
+// THE FOURTH IS THE SAME UNTRUTH REACHED FROM THE OTHER SIDE. A run that HAS a
+// resolver still stops answering once the file has asked about more distinct
+// names than one evaluation may - the bound probe S16 showed the stopwatch does
+// not provide. From the file's point of view those names simply did not resolve,
+// which is the identical false, so it earns the identical refusal. It is kept
+// separate from Unanswered because the sentence a reader gets is different:
+// one says this machine has no resolver, the other says it has one and the
+// script spent its allowance.
 func (s script) settled() bool {
 	return s.answer.Fetched &&
 		s.answer.Result.Outcome == pac.OutcomeAnswered &&
-		len(s.answer.Result.Unanswered) == 0
+		len(s.answer.Result.Unanswered) == 0 &&
+		!s.answer.Result.LookupsExhausted
 }
 
 // scriptReasons maps what the evaluator saw onto the layer's vocabulary.
@@ -266,6 +276,11 @@ func scriptFinding(s script, target Target) report.Finding {
 		if chosen, ok := firstRecognised(s.answer.Result.Directives); ok {
 			body.Selected = &chosen
 		}
+		// COPIED RATHER THAN ALIASED, AND NON-NIL EVEN WHEN EMPTY. A script that
+		// ran and asked about nothing is a measurement - ADR20's difference
+		// between "nobody looked" and "we looked and there was nothing" - and it
+		// is only expressible here, inside the branch where the file ran at all.
+		body.Asked = append([]string{}, s.answer.Result.Asked...)
 	}
 	body.Caveats = caveatsOfScript(s, body)
 
@@ -336,6 +351,18 @@ func caveatsOfScript(s script, body report.PACScript) []string {
 			"this script called %s, and this run had nothing behind those, so it was answered as though "+
 				"the names did not resolve and its answer may not be the one a browser would get",
 			strings.Join(s.answer.Result.Unanswered, ", ")))
+	}
+	if s.answer.Result.LookupsExhausted {
+		// THE SENTENCE DOES NOT NAME THE LIMIT, and that is deliberate rather
+		// than vague. The number is a property of how this binary was wired, not
+		// of somebody's machine or their file, and quoting it here would put a
+		// tuning constant into a report as though the reader could act on it.
+		// What they can act on is the shape: their script asks about more names
+		// than a single evaluation resolves.
+		caveats = append(caveats,
+			"this script asked about more distinct names than one evaluation may resolve, so the ones past "+
+				"that point were answered as though they did not resolve, and its answer may not be the "+
+				"one a browser would get")
 	}
 	if s.answer.Result.UsedRandomness {
 		// The sandbox pins the random source so two runs of one binary agree.
