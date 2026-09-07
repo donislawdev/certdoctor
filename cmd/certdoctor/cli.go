@@ -108,6 +108,18 @@ type environment struct {
 	// A nil one is legal and L2 reports every script as unfetched with a
 	// sentence saying the gap is ours - never as a machine with no script.
 	evaluateScript func(targets *allowed.Targets, targetURL, targetHost string) proxy.Evaluate
+	// challengeProxy builds L2's way of asking one proxy whether it wants
+	// credentials.
+	//
+	// IT TAKES THE ALLOWED SET for the reason every port beside it does, and here
+	// the timing is the whole difference: the set it is handed is WIDENED during
+	// the walk, between L2's reading and L2's asking, so this closure has to hold
+	// the set itself rather than a copy of what was in it when the wiring was
+	// built.
+	//
+	// A nil one is legal and L2 reports every endpoint as unasked with a sentence
+	// saying the gap is ours - never as a proxy that let this run through.
+	challengeProxy func(targets *allowed.Targets, perEndpoint time.Duration) proxy.ChallengeAsk
 	// trustProbes are the L5 probes, built with a file port of their own because
 	// the files they read are a different size class from a resolver config.
 	trustProbes func() map[string]trust.Probe
@@ -207,6 +219,12 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 			Handshake:   handshakeInput(o, env, parsed, targets),
 			Trust:       trustInput(o, env),
 			Authorise:   authoriser(parsed, targets),
+			// THE TWO PROXY WIDENINGS ARE SEPARATE CLOSURES BECAUSE THEY ARE
+			// SEPARATE DERIVATIONS - inviolable rule 16 lists a PAC address and
+			// a proxy as two of its five, and the set records which one let each
+			// entry in. One closure serving both would have to guess.
+			AuthoriseScripts: scriptAuthoriser(targets),
+			AuthoriseProxies: proxyAuthoriser(targets),
 		})
 	if walkFault != nil {
 		return complain(env, walkFault)
@@ -734,6 +752,50 @@ func authoriser(parsed *url.URL, targets *allowed.Targets) func([]string) {
 	}
 }
 
+// scriptAuthoriser widens the allowed set by the automatic configuration scripts
+// this machine names - the fifth of the five derivations rule 16 permits, met
+// from the side the entry point cannot see before the walk.
+//
+// THE ONE THE USER TYPED IS ALREADY IN, put there by allowedTargets before any
+// layer ran, because a script somebody asked about stands on the same footing as
+// the target itself. This closure is for the other kind: an AutoConfigURL read
+// out of a Windows stack, which nothing can know until L2 has read that stack.
+//
+// AN ADDRESS THAT WILL NOT PARSE IS LEFT OUT rather than swallowed, exactly as
+// authoriser leaves out an address that is not one. Both sides go through
+// pac.Target, so the string in the set is the string the transport will dial -
+// two spellings would mean either a refusal on a machine where everything works
+// or a fetch nothing checked.
+func scriptAuthoriser(targets *allowed.Targets) func([]string) {
+	return func(scripts []string) {
+		for _, script := range scripts {
+			dialable, err := pac.Target(script)
+			if err != nil {
+				continue
+			}
+			_ = targets.Allow(dialable, allowed.ReasonPACFile)
+		}
+	}
+}
+
+// proxyAuthoriser widens the allowed set by the proxies this URL goes through -
+// the fourth of the five derivations rule 16 permits, and the second that cannot
+// be known before the run starts.
+//
+// NO PORT IS JOINED HERE AND THAT IS THE DIFFERENCE FROM authoriser. An address
+// a name resolved to has no port until this program supplies one, so that join
+// belongs where the question was read. A proxy arrives from a configuration or
+// from a script already carrying its own, and L2 has already settled what to do
+// with an entry that carries none - it declines to ask it, and says so in a row,
+// rather than guessing a port the vendors do not agree on.
+func proxyAuthoriser(targets *allowed.Targets) func([]string) {
+	return func(endpoints []string) {
+		for _, endpoint := range endpoints {
+			_ = targets.Allow(endpoint, allowed.ReasonProxy)
+		}
+	}
+}
+
 // portOf is the port this run will try, from the URL or from its scheme.
 //
 // A URL WITHOUT A PORT IS THE ORDINARY CASE and the scheme is what decides it.
@@ -942,8 +1004,17 @@ func proxyInput(o *options, env environment, parsed *url.URL, targets *allowed.T
 	if env.evaluateScript != nil {
 		evaluate = env.evaluateScript(targets, parsed.String(), parsed.Hostname())
 	}
+	var challenge proxy.ChallengeAsk
+	if env.challengeProxy != nil {
+		// THE PER-ADDRESS CAP AND NOT THE LAYER'S WHOLE BUDGET, the same share
+		// L3, L4 and the L5 probes are given. One proxy that accepts a
+		// connection and never answers must not be able to spend everything the
+		// layer had left for the ones after it.
+		challenge = env.challengeProxy(targets, budget(o.probeTimeout))
+	}
 	return proxy.Input{
 		Evaluate:  evaluate,
+		Challenge: challenge,
 		ScriptURL: o.pacURL,
 		Lenses: func(ctx context.Context) []proxy.Lens {
 			lenses := []proxy.Lens{proxy.EnvironmentLens(env.lookupEnv, machine.ProxyVariables())}

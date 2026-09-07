@@ -69,6 +69,17 @@ type Input struct {
 	// user typed it - the same footing as the target itself, and the one input
 	// here that needs no widening during the run.
 	ScriptURL string
+	// Challenge asks one proxy whether it wants credentials.
+	//
+	// IT IS A PORT FOR THE REASON Evaluate IS ONE: the exchange reaches the
+	// network, so it lives in an adapter this package may not import, and it is
+	// called INSIDE this layer's budget rather than before the walk.
+	//
+	// A nil one is legal and is reported as ours: every endpoint comes back
+	// unasked with a sentence saying the gap is in certdoctor. That is the safe
+	// direction - a forgotten wire cannot make a proxy look as though it let
+	// this run through.
+	Challenge ChallengeAsk
 }
 
 // Result is what L2 established.
@@ -77,6 +88,15 @@ type Result struct {
 	Reason   status.Reason
 	Detail   string
 	Findings []report.Finding
+	// Endpoints are the proxies this run concluded would be used for this
+	// target, deduplicated and in report order.
+	//
+	// IT IS NOT A FINDING AND THAT IS THE POINT OF IT. The orchestrator reads
+	// this list to widen the set of places this program may connect to, before
+	// asking the second half of this layer to speak to any of them - so the
+	// widening happens where every other widening in this program happens, and
+	// never inside the layer that benefits from it.
+	Endpoints []Endpoint
 }
 
 // Sentences for the cases where the layer establishes nothing.
@@ -84,10 +104,68 @@ const (
 	noLenses = "no way to read this machine's proxy configuration was supplied, so no place was asked"
 	noPlaces = "the reading of this machine's proxy configuration came back naming no place at all, " +
 		"and this program always asks at least about its own environment"
+	noReading = "this layer was asked for its answer before this machine's proxy configuration had been " +
+		"read at all, which is a gap in certdoctor rather than anything about this machine"
 )
 
-// Ask reads every place this machine keeps proxy configuration and says what
-// each of them makes of this target.
+// Reading is what this machine's proxy configuration says, before anything has
+// been asked of the network.
+//
+// IT EXISTS SO THAT THE ORCHESTRATOR HAS SOMEWHERE TO STAND BETWEEN READING AND
+// REACHING. Both halves of what this layer connects to - the address of a script
+// this machine names, and the proxies that reading arrives at - are learned
+// DURING the walk and cannot be in the allowed set before it. Somebody has to
+// put them there, and inviolable rule 16 says who: the entry point, through the
+// orchestrator, never the layer itself.
+//
+// ONLY Scripts IS EXPORTED, and the rest is deliberately not. What the caller
+// needs is the list of addresses it must authorise; the lenses and the script
+// entries behind them are this package's own working, and a caller holding them
+// would be a second place able to decide what this layer looked at.
+type Reading struct {
+	// Scripts are the addresses of the automatic configuration scripts this run
+	// will ask about, deduplicated, in report order, with any credential
+	// already cut off where it was read.
+	Scripts []string
+
+	lenses  []Lens
+	scripts []script
+	failure string
+}
+
+// Read asks every place this machine keeps proxy configuration what it holds,
+// and names the scripts that reading points at. It reaches nothing.
+//
+// IT IS THE FIRST OF THIS LAYER'S THREE STEPS AND THE ONLY ONE THAT TOUCHES NO
+// NETWORK, which is what makes it the right thing to call before the allowed set
+// has been widened by anything this walk discovered.
+func Read(ctx context.Context, in Input) Reading {
+	if in.Lenses == nil {
+		return Reading{failure: noLenses}
+	}
+	lenses := in.Lenses(ctx)
+	if len(lenses) == 0 {
+		return Reading{failure: noPlaces}
+	}
+	scripts := scriptsNamed(in, lenses)
+	return Reading{Scripts: addresses(scripts), lenses: lenses, scripts: scripts}
+}
+
+// whyNothingWasRead names the gap, in this program's words.
+//
+// A Reading NOBODY PRODUCED IS OUR DEFECT AND SAYS SO. The zero value can only
+// arrive here by way of a caller that skipped Read, and reporting that as a
+// machine whose configuration could not be read would put our own wiring fault
+// into the report as a fact about somebody's computer.
+func whyNothingWasRead(reading Reading) string {
+	if reading.failure != "" {
+		return reading.failure
+	}
+	return noReading
+}
+
+// Ask says what every place this machine keeps proxy configuration makes of this
+// target, and asks whatever automatic configuration scripts it named.
 //
 // IT REPORTS AND IT DOES NOT REROUTE, which is docs/14 section 3 turned into
 // behaviour: proxy variables are diagnostic INPUT, so nothing this layer reads
@@ -95,21 +173,17 @@ const (
 // variables set and without them has to come out the same everywhere else, and
 // the bench checks exactly that from outside.
 //
-// IT OPENS ONE CONNECTION AND ONLY ONE, AND THIS PARAGRAPH USED TO SAY IT
-// OPENED NONE. Fetching an automatic configuration script reaches the network,
-// so it widened the set of places this program may connect to and cost an entry
-// on the dial allowlist - both from the entry point, never from here. WPAD
-// discovery and asking a proxy whether it wants credentials still do not
-// happen, they arrive with their own slices, and this layer says out loud where
-// that leaves its answer short.
-func Ask(ctx context.Context, in Input) Result {
-	if in.Lenses == nil {
-		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: noLenses}
+// IT TAKES A Reading RATHER THAN DOING THE READING, AND THAT IS THE SEAM THIS
+// SLICE ADDED. Between Read and here, the orchestrator authorises the script
+// addresses this machine named; between here and Challenge, it authorises the
+// proxies this answer arrived at. WPAD discovery still does not happen, it
+// arrives with its own slice, and this layer says out loud where that leaves its
+// answer short.
+func Ask(ctx context.Context, in Input, reading Reading) Result {
+	if len(reading.lenses) == 0 {
+		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: whyNothingWasRead(reading)}
 	}
-	lenses := in.Lenses(ctx)
-	if len(lenses) == 0 {
-		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: noPlaces}
-	}
+	lenses := reading.lenses
 
 	// THE TARGET IS PASSED ON AS IT ARRIVED, AND THE FIRST DRAFT NORMALISED IT
 	// HERE. Bypasses does that itself, on every one of its six readings, so a
@@ -130,11 +204,13 @@ func Ask(ctx context.Context, in Input) Result {
 	// implementation detail: a reader has to see what the machine holds before
 	// being told that a file overrides it. Resolving them needs the lenses
 	// anyway, because most script addresses are read off a stack.
-	scripts := resolveScripts(ctx, in, lenses)
+	scripts := askScripts(ctx, in.Evaluate, reading.scripts)
 	for _, one := range scripts {
 		findings = append(findings, scriptFinding(one, in.Target))
 	}
-	return gradeOf(lenses, scripts, findings, in.Target)
+	result := gradeOf(lenses, scripts, findings, in.Target)
+	result.Endpoints = endpointsOf(lenses, scripts, in.Target)
+	return result
 }
 
 // findingFor turns one lens into one row.

@@ -40,9 +40,16 @@ func silentLens(stack Stack) Lens {
 // for one exception list rule. Two helpers with one name in one package is the
 // shape OBS50 measures, and it fails here as a compile error rather than as a
 // disarmed mutation entry.
+// IT WALKS THE WHOLE LAYER, all three steps, because that is what a caller of
+// this package does and a test that stopped at Ask would leave the second seam
+// unexercised. What it deliberately does NOT do is widen anything between the
+// steps: the allowed set belongs to the entry point, so the tests that care
+// about the order of the seams live beside the orchestrator, and these care
+// about what the layer says.
 func askLayer(t *testing.T, in Input) Result {
 	t.Helper()
-	return Ask(context.Background(), in)
+	ctx := context.Background()
+	return Challenge(ctx, in, Ask(ctx, in, Read(ctx, in)))
 }
 
 // findingOf returns the row for one place, and fails when there is none - a test

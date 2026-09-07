@@ -436,3 +436,323 @@ func TestEveryPartOfTheProxyLayerIsMaskedInOneRun(t *testing.T) {
 		}
 	}
 }
+
+// The masking of the challenge body, which is the THIRD entry in this tree that
+// withholds a field outright rather than pseudonymising it - and it withholds
+// the same kind of thing the exception list and the verbatim answer are withheld
+// for: free prose somebody else typed.
+
+// aChallengeRow is the shape probe S15 measured on the bench 2026-09-07, with
+// the bench's names swapped for the internal ones this file masks against.
+func aChallengeRow() report.Finding {
+	return report.Finding{
+		Kind:    report.FindingProxyChallenge,
+		Summary: "a proxy https://api.example.com goes through demands credentials before it will pass a request",
+		Source:  report.SourceDetected,
+		ProxyChallenge: &report.ProxyChallenge{
+			Endpoint: "proxy.corp.internal:8080",
+			NamedBy:  []string{"wininet", "pac"},
+			Asked:    true,
+			Query:    "connect",
+			Status:   407,
+			Schemes: []report.ProxyAuthScheme{
+				{Scheme: "Basic", Realm: "Acme Holdings head office"},
+				{Scheme: "Negotiate"},
+			},
+			CarriedCredentials: true,
+			Caveats:            []string{"the configuration naming this proxy carries a credential"},
+		},
+	}
+}
+
+func challengeFrom(t *testing.T, r report.Report) report.ProxyChallenge {
+	t.Helper()
+	row := rowFor(t, r, layer.Proxy)
+	if len(row.Findings) == 0 || row.Findings[0].ProxyChallenge == nil {
+		t.Fatal("the proxy row carries no challenge at all")
+	}
+	return *row.Findings[0].ProxyChallenge
+}
+
+// TestTheProxyThatWasAskedIsPseudonymisedByTheSameMapAsEverythingElse. A proxy
+// this row asked, a proxy a stack named and a name from L1 are one machine, and
+// a document in which they read as three would send somebody looking for
+// infrastructure that does not exist.
+func TestTheProxyThatWasAskedIsPseudonymisedByTheSameMapAsEverythingElse(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Proxy] = proxyLayerOf(aChallengeRow())
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	challenge := challengeFrom(t, r)
+	if strings.Contains(challenge.Endpoint, "corp.internal") {
+		t.Errorf("the endpoint survived masking: %q", challenge.Endpoint)
+	}
+	if challenge.Endpoint == "" {
+		t.Error("masking removed the endpoint rather than replacing it, so the row names no proxy at all")
+	}
+}
+
+// TestTheRealmIsWithheldAndTheSchemeIsNot is the decision in this entry. A
+// scheme name is a token from the IANA registry, so printing it satisfies
+// inviolable rule 19; a realm is free text an administrator typed, routinely a
+// company name, and no masking rule recognises prose as a machine - so Text
+// would leave it standing in a document stamped redacted.
+func TestTheRealmIsWithheldAndTheSchemeIsNot(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Proxy] = proxyLayerOf(aChallengeRow())
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	challenge := challengeFrom(t, r)
+	if len(challenge.Schemes) != 2 {
+		t.Fatalf("masking changed the number of schemes to %d", len(challenge.Schemes))
+	}
+	if challenge.Schemes[0].Realm != redact.Placeholder {
+		t.Errorf("the realm is %q, want it withheld outright", challenge.Schemes[0].Realm)
+	}
+	// AND NOTHING ACTIONABLE IS LOST, which is the second half of the argument:
+	// the scheme is what says what to do next, and it survives whole.
+	if challenge.Schemes[0].Scheme != "Basic" || challenge.Schemes[1].Scheme != "Negotiate" {
+		t.Errorf("withholding the realm took the schemes with it: %+v", challenge.Schemes)
+	}
+	// A scheme that named no realm must not gain a placeholder, which would say
+	// something was withheld where nothing was there.
+	if challenge.Schemes[1].Realm != "" {
+		t.Errorf("a scheme with no realm gained one: %q", challenge.Schemes[1].Realm)
+	}
+}
+
+// TestAnUnmaskedRunLeavesTheChallengeAlone is the other side. A rule that
+// withheld the realm whatever was asked would pass the test above and destroy
+// the field.
+func TestAnUnmaskedRunLeavesTheChallengeAlone(t *testing.T) {
+	o := baseOptions(newClock())
+	o.Layers[layer.Proxy] = proxyLayerOf(aChallengeRow())
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	challenge := challengeFrom(t, r)
+	if len(challenge.Schemes) != 2 || challenge.Schemes[0].Realm != "Acme Holdings head office" {
+		t.Errorf("an unmasked run withheld the realm: %+v", challenge.Schemes)
+	}
+	if challenge.Endpoint != "proxy.corp.internal:8080" {
+		t.Errorf("an unmasked run changed the endpoint: %q", challenge.Endpoint)
+	}
+}
+
+// TestAProxyNobodyAskedIsStillMasked covers the row with no schemes at all - nil
+// rather than empty - because a conversion that assumed a list would panic on
+// the commonest state this half of the layer has.
+func TestAProxyNobodyAskedIsStillMasked(t *testing.T) {
+	finding := aChallengeRow()
+	finding.ProxyChallenge = &report.ProxyChallenge{
+		Endpoint: "socks.corp.internal:1080",
+		NamedBy:  []string{"environment"},
+		Detail:   "this entry names a SOCKS proxy, and certdoctor asks this question over HTTP",
+	}
+
+	o := baseOptions(newClock())
+	o.Redaction = redact.New(redact.Everything)
+	o.Layers[layer.Proxy] = proxyLayerOf(finding)
+
+	r, err := Execute(context.Background(), o)
+	if err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+
+	challenge := challengeFrom(t, r)
+	if strings.Contains(challenge.Endpoint, "corp.internal") {
+		t.Errorf("the endpoint survived masking: %q", challenge.Endpoint)
+	}
+	// NIL STAYS NIL. An empty list would say a proxy was asked and offered
+	// nothing, which is a different fact from not having been asked at all.
+	if challenge.Schemes != nil {
+		t.Errorf("a proxy nobody asked gained a list of schemes: %+v", challenge.Schemes)
+	}
+}
+
+// The two seams inside L2, which are the whole shape of P8-K3c. Everything this
+// layer reaches is learned DURING the walk, so the allowed set has to be widened
+// twice in the middle of it - and by the orchestrator, never by the layer. These
+// tests pin the ORDER, because the rule is not "the callback is called" but "the
+// callback is called before the thing it authorises happens".
+
+// TestAScriptIsAuthorisedBeforeAnythingFetchesIt closes the gap this slice found
+// by reading rather than by measuring: until now the entry point could only
+// authorise a script address the USER typed, so an AutoConfigURL read off a
+// Windows stack was fetched with nothing having authorised it - and the row said
+// only that the bytes never arrived.
+func TestAScriptIsAuthorisedBeforeAnythingFetchesIt(t *testing.T) {
+	var events []string
+	layers := Wire(Wiring{
+		Environment: envOf(nil),
+		Proxy: proxy.Input{
+			Lenses: func(context.Context) []proxy.Lens {
+				events = append(events, "read")
+				return []proxy.Lens{{
+					Stack: proxy.StackWinINET, Source: "test", Read: true,
+					Servers: []proxy.Server{}, PACURL: "http://wpad.example/proxy.pac",
+				}}
+			},
+			Evaluate: func(context.Context, string) proxy.ScriptAnswer {
+				events = append(events, "fetch")
+				return proxy.ScriptAnswer{Detail: "not fetched here"}
+			},
+			Target: proxy.Target{Scheme: "https", Host: "api.example.com", Port: "443"},
+		},
+		AuthoriseScripts: func(scripts []string) {
+			events = append(events, "authorise "+strings.Join(scripts, ","))
+		},
+	})
+
+	layers[layer.Proxy](context.Background())
+
+	want := []string{"read", "authorise http://wpad.example/proxy.pac", "fetch"}
+	if strings.Join(events, " | ") != strings.Join(want, " | ") {
+		t.Errorf("the walk went %v, want %v", events, want)
+	}
+}
+
+// TestTheProxiesAreAuthorisedBeforeAnyOfThemIsAsked is the second seam. A layer
+// that widened the set for itself would make that set a description of what
+// happened rather than a rule about what may.
+func TestTheProxiesAreAuthorisedBeforeAnyOfThemIsAsked(t *testing.T) {
+	var events []string
+	layers := Wire(Wiring{
+		Environment: envOf(nil),
+		Proxy: proxy.Input{
+			Lenses: func(context.Context) []proxy.Lens {
+				return []proxy.Lens{{
+					Stack: proxy.StackEnvironment, Source: "test", Read: true,
+					Servers: []proxy.Server{{Address: "proxy.example:8080"}},
+				}}
+			},
+			Challenge: func(_ context.Context, request proxy.ChallengeRequest) proxy.ChallengeAnswer {
+				events = append(events, "ask "+request.Endpoint)
+				return proxy.ChallengeAnswer{Asked: true, Status: 407}
+			},
+			Target: proxy.Target{Scheme: "https", Host: "api.example.com", Port: "443"},
+		},
+		AuthoriseProxies: func(endpoints []string) {
+			events = append(events, "authorise "+strings.Join(endpoints, ","))
+		},
+	})
+
+	answer := layers[layer.Proxy](context.Background())
+
+	want := []string{"authorise proxy.example:8080", "ask proxy.example:8080"}
+	if strings.Join(events, " | ") != strings.Join(want, " | ") {
+		t.Errorf("the walk went %v, want %v", events, want)
+	}
+	if answer.Reason != status.ReasonCredentialsRequired {
+		t.Errorf("the wired layer answered %s / %s, want the tenth reason", answer.Status, answer.Reason)
+	}
+}
+
+// TestAnAnswerThisRunRefusesAuthorisesNothing is the K4 rule met at a second
+// place - inviolable rule 16, and here it decides twice over: which proxies
+// exist, and which of them get asked a question. A layer the run has just called
+// unusable must not be the one deciding where the run may dial.
+func TestAnAnswerThisRunRefusesAuthorisesNothing(t *testing.T) {
+	var events []string
+	layers := Wire(Wiring{
+		Environment: envOf(nil),
+		Proxy: proxy.Input{
+			Lenses: func(context.Context) []proxy.Lens {
+				// A place that could not be read and does not say why, which the
+				// report contract refuses - so the whole answer is thrown away.
+				return []proxy.Lens{{Stack: proxy.StackWinINET, Source: "test", Read: false}}
+			},
+			Challenge: func(_ context.Context, request proxy.ChallengeRequest) proxy.ChallengeAnswer {
+				events = append(events, "ask "+request.Endpoint)
+				return proxy.ChallengeAnswer{Asked: true, Status: 407}
+			},
+			Target: proxy.Target{Scheme: "https", Host: "api.example.com", Port: "443"},
+		},
+		AuthoriseProxies: func(endpoints []string) {
+			events = append(events, "authorise "+strings.Join(endpoints, ","))
+		},
+	})
+
+	answer := layers[layer.Proxy](context.Background())
+
+	if contractBreach(answer) == "" {
+		t.Fatal("the answer this test needs to be refused was accepted, so nothing below is being checked")
+	}
+	if len(events) != 0 {
+		t.Errorf("an answer this run refuses still decided where it may reach: %v", events)
+	}
+}
+
+// TestOnlyWhatWillBeAskedIsAuthorised. Widening the set for an endpoint nothing
+// was ever going to contact is permission this program gained for nothing, and
+// the promise of inviolable rule 16 is measured in how little of it there is.
+func TestOnlyWhatWillBeAskedIsAuthorised(t *testing.T) {
+	var authorised []string
+	layers := Wire(Wiring{
+		Environment: envOf(nil),
+		Proxy: proxy.Input{
+			Lenses: func(context.Context) []proxy.Lens {
+				return []proxy.Lens{{
+					Stack: proxy.StackEnvironment, Source: "test", Read: true,
+					Servers: []proxy.Server{{Scheme: "socks5", Address: "socks.example:1080"}},
+				}}
+			},
+			Challenge: func(context.Context, proxy.ChallengeRequest) proxy.ChallengeAnswer {
+				t.Error("a SOCKS proxy was asked an HTTP question")
+				return proxy.ChallengeAnswer{}
+			},
+			Target: proxy.Target{Scheme: "https", Host: "api.example.com", Port: "443"},
+		},
+		AuthoriseProxies: func(endpoints []string) { authorised = append(authorised, endpoints...) },
+	})
+
+	layers[layer.Proxy](context.Background())
+
+	if len(authorised) != 0 {
+		t.Errorf("the run gained permission to reach %v, which nothing was going to ask", authorised)
+	}
+}
+
+// TestAWalkWithNoAuthorisersStillAnswers pins the direction a forgotten wire has
+// to fail in. A nil callback must not stop the layer reporting what this machine
+// holds; it only means nothing new is authorised, so what needs reaching is
+// refused and says so.
+func TestAWalkWithNoAuthorisersStillAnswers(t *testing.T) {
+	layers := Wire(Wiring{
+		Environment: envOf(nil),
+		Proxy: proxy.Input{
+			Lenses: func(context.Context) []proxy.Lens {
+				return []proxy.Lens{{
+					Stack: proxy.StackEnvironment, Source: "test", Read: true,
+					Servers: []proxy.Server{{Address: "proxy.example:8080"}},
+				}}
+			},
+			Target: proxy.Target{Scheme: "https", Host: "api.example.com", Port: "443"},
+		},
+	})
+
+	answer := layers[layer.Proxy](context.Background())
+
+	if broken := contractBreach(answer); broken != "" {
+		t.Fatalf("a walk with no authorisers produced an answer this run refuses: %s", broken)
+	}
+	if len(answer.Findings) != 2 {
+		t.Fatalf("wanted a place and a challenge row, got %d", len(answer.Findings))
+	}
+	if answer.Findings[1].ProxyChallenge == nil || answer.Findings[1].ProxyChallenge.Asked {
+		t.Error("a run with no way to ask claims a proxy was asked")
+	}
+}

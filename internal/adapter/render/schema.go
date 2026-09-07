@@ -400,6 +400,48 @@ var schema = object(map[string]node{
 				// settle; an empty array says there is nothing to add.
 				"caveats": array(text()),
 			})),
+			// The tenth body: ONE proxy endpoint this run asked whether it
+			// wants credentials. The unit is the ENDPOINT and not the place
+			// that named it, for the third time in this arc - two Windows
+			// stacks and a script routinely arrive at one host:port, and a row
+			// per namer would open the same connection three times.
+			"proxy_challenge": nullable(object(map[string]node{
+				// The address as it was dialled, which is the address that
+				// went into the allowed set. Two spellings would mean either a
+				// refusal on a working machine or a connection nothing checked.
+				"endpoint": text(),
+				// Never empty. Stack names, and the token for a script.
+				"named_by": array(text()),
+				"asked":    boolean(),
+				// Null when there is nothing to add. An endpoint that was NOT
+				// asked must carry one - the core refuses a row that says
+				// certdoctor declined and does not say why.
+				"detail": nullable(text()),
+				// Empty when nothing was asked. The shape of the question
+				// decides what the answer means: probe S15 measured a CONNECT
+				// to a non-SSL port being refused by a proxy wanting no
+				// credentials at all.
+				"query": text(),
+				// Zero when nothing was asked. THE CODE AND NOT THE PROXY'S
+				// SENTENCE - inviolable rule 19; a status line is routinely
+				// localised and the number is not.
+				"status": number(),
+				// Empty when the proxy offered none. A scheme name is an IANA
+				// token, so it is printed; a realm is free text an
+				// administrator typed, so it is WITHHELD under --redact rather
+				// than masked, for the reason answer and bypass are.
+				"schemes": array(object(map[string]node{
+					"scheme": text(),
+					"realm":  text(),
+				})),
+				// That the entry naming this endpoint held a credential, which
+				// was cut off where it was read and NOT sent. It is what stops
+				// this row accusing a machine that has one.
+				"carried_credentials": boolean(),
+				// Never null. Our own sentences about what this row does not
+				// settle; an empty array says there is nothing to add.
+				"caveats": array(text()),
+			})),
 		}))),
 	})),
 	"notes": array(object(map[string]node{

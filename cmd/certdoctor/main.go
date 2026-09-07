@@ -32,6 +32,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/curl"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/git"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/java"
+	"github.com/donislawdev/certdoctor/internal/adapter/proxyauth"
 	"github.com/donislawdev/certdoctor/internal/adapter/proxyconf"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
@@ -217,6 +218,21 @@ func liveEnvironment() environment {
 					MaxStack:  pacStackLimit,
 				},
 				targetURL, targetHost)
+		},
+		// L2's question to a proxy, and the SIXTH place in this program that can
+		// open a connection. It asks the SAME rule as the five below -
+		// dial.Permission, consumed rather than copied - so a sixth way to reach
+		// the network still did not bring a sixth answer to "may we".
+		//
+		// THE SET IS HELD AND NOT READ HERE, and this is the one port where that
+		// distinction bites. Everything else on this list is handed a set that is
+		// complete before the walk or widened between two layers; this one is
+		// asked AFTER the orchestrator has widened the set from L2's own reading,
+		// inside the same layer. dial.Permission closes over the set rather than
+		// over its contents, so the entries added during the walk are the ones
+		// this call is checked against.
+		challengeProxy: func(targets *allowed.Targets, perEndpoint time.Duration) proxy.ChallengeAsk {
+			return proxyauth.Ask(dial.Permission(targets, nil), perEndpoint)
 		},
 		// The real dialler, behind the guard. dns.Socket is the only function in
 		// this program that opens a connection, and it is never reached without

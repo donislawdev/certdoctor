@@ -270,6 +270,53 @@ var maskedBodies = map[report.FindingKind]func(*redact.Redaction, *report.Findin
 	report.FindingProxyStack:          maskProxyStack,
 	report.FindingStackDivergence:     maskStackDivergence,
 	report.FindingPACScript:           maskPACScript,
+	report.FindingProxyChallenge:      maskProxyChallenge,
+}
+
+// maskProxyChallenge is the THIRD entry that withholds a field outright, and the
+// field it withholds is the same kind of thing as the other two: somebody else's
+// free prose.
+//
+// THE ENDPOINT GOES THROUGH Authority BECAUSE IT IS A BARE "host:port", the same
+// split maskProxyStack and maskPACScript make - and through the same pseudonym
+// map, so a proxy this row asked, a proxy a stack named and a name from L1 all
+// read as one machine rather than three.
+//
+// THE REALM IS WITHHELD AND THE SCHEME IS NOT, and that is the whole of this
+// function's judgement. A scheme name is a token from the IANA registry -
+// Basic, Digest, Negotiate, NTLM - so it is an identifier, and inviolable rule
+// 19 is satisfied by printing it. A realm is free text an administrator typed
+// into somebody else's proxy: routinely a company name, a site or a department,
+// and no masking rule recognises prose as a machine, so Text would leave most of
+// it standing in a document stamped redacted - a leak wearing a stamp.
+//
+// NOTHING HERE HAS TO MASK A CREDENTIAL, and that is not luck. CarriedCredentials
+// is a boolean, and the value it is about was cut off where the address was read
+// - ADR89 - so it never entered the structure this function is handed.
+//
+// THE CAVEATS ARE OUR OWN PROSE about somebody else's proxy and name nothing off
+// the machine, so they are left alone.
+func maskProxyChallenge(r *redact.Redaction, finding *report.Finding) {
+	challenge := *finding.ProxyChallenge
+	challenge.Endpoint = r.Authority(challenge.Endpoint)
+	challenge.Detail = r.Text(challenge.Detail)
+	challenge.Schemes = maskAuthSchemes(r, challenge.Schemes)
+	finding.ProxyChallenge = &challenge
+}
+
+// maskAuthSchemes copies before touching, for the reason maskServers gives.
+func maskAuthSchemes(r *redact.Redaction, schemes []report.ProxyAuthScheme) []report.ProxyAuthScheme {
+	if schemes == nil {
+		return nil
+	}
+	masked := make([]report.ProxyAuthScheme, 0, len(schemes))
+	for _, scheme := range schemes {
+		if scheme.Realm != "" && r.Mode() == redact.Everything {
+			scheme.Realm = redact.Placeholder
+		}
+		masked = append(masked, scheme)
+	}
+	return masked
 }
 
 // maskPACScript is the second entry that withholds a field outright rather than

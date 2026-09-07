@@ -498,8 +498,38 @@ func findingValue(finding report.Finding) string {
 		return proxyStackValue(*finding.ProxyStack)
 	case finding.PACScript != nil:
 		return pacScriptValue(*finding.PACScript)
+	case finding.ProxyChallenge != nil:
+		return proxyChallengeValue(*finding.ProxyChallenge)
 	}
 	return ""
+}
+
+// proxyChallengeValue is what a person needs from a challenge row beyond its
+// summary: which proxy answered, and how it offered to be told who is asking.
+//
+// THE ENDPOINT IS HERE AND NOT IN THE SUMMARY, the masking rule the core states
+// at summaryOfChallenge: a summary is masked by a rule that cannot recognise a
+// bare "host:port" as a machine, and this body is masked by one that can.
+//
+// THE REALM IS NOT PRINTED. It is in the machine readable document, where it is
+// withheld under --redact; on this page it would be a line of somebody else's
+// prose, free to be a company name and free to be in a language this page is
+// not. The scheme is the part that says what to do next, and it is a registered
+// token rather than free text.
+//
+// THE STATUS CODE IS NOT PRINTED EITHER WHEN IT IS THE ONE THAT MATTERS. A 407
+// already has a sentence of its own in the summary, and repeating the number
+// beside it would say one thing twice; every other code has no sentence, so
+// there the number IS the answer and the summary carries it.
+func proxyChallengeValue(challenge report.ProxyChallenge) string {
+	if !challenge.Asked {
+		return challenge.Endpoint
+	}
+	parts := []string{challenge.Endpoint}
+	for _, scheme := range challenge.Schemes {
+		parts = append(parts, scheme.Scheme)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // pacScriptValue is what a person needs from a script row beyond its summary:

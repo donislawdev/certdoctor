@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/dns"
+	"github.com/donislawdev/certdoctor/internal/adapter/pac"
 	"github.com/donislawdev/certdoctor/internal/adapter/privilege"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/allowed"
@@ -1899,5 +1900,125 @@ func TestTheEvaluatorSeamIsAskedWithTheTargetItMustAnswerAbout(t *testing.T) {
 	}
 	if gotHost != "api.example.com" {
 		t.Errorf("the evaluator was built for the host %q, want the host without its port", gotHost)
+	}
+}
+
+// TestTheChallengeSeamIsBuiltWithTheSetItWillBeCheckedAgainst is the one port in
+// this program that is asked AFTER the allowed set has grown, and the difference
+// matters: the closure has to hold the SET, not a copy of what was in it when
+// the wiring was built, or a proxy authorised mid-walk would be refused by a rule
+// reading a stale list.
+func TestTheChallengeSeamIsBuiltWithTheSetItWillBeCheckedAgainst(t *testing.T) {
+	parsed, err := url.Parse("https://example.com")
+	if err != nil {
+		t.Fatalf("the target would not parse: %v", err)
+	}
+
+	targets := allowed.New()
+	var got *allowed.Targets
+	var perEndpoint time.Duration
+	in := proxyInput(&options{probeTimeout: 3}, environment{
+		lookupEnv: func(string) (string, bool) { return "", false },
+		challengeProxy: func(set *allowed.Targets, budget time.Duration) proxy.ChallengeAsk {
+			got, perEndpoint = set, budget
+			return func(context.Context, proxy.ChallengeRequest) proxy.ChallengeAnswer {
+				return proxy.ChallengeAnswer{}
+			}
+		},
+	}, parsed, targets)
+
+	if in.Challenge == nil {
+		t.Fatal("the seam was supplied and the layer got no way to ask a proxy")
+	}
+	if got != targets {
+		t.Error("the seam was built with a set other than the one this run widens")
+	}
+	if perEndpoint != 3*time.Second {
+		t.Errorf("the seam was given %s per endpoint, want the per-address cap", perEndpoint)
+	}
+}
+
+// TestABuildWithNoChallengeSeamHandsTheLayerNone pins the direction a missing
+// wire has to fail in: the layer then reports every endpoint as unasked with a
+// sentence saying the gap is ours, never as a proxy that let this run through.
+func TestABuildWithNoChallengeSeamHandsTheLayerNone(t *testing.T) {
+	parsed, err := url.Parse("https://example.com")
+	if err != nil {
+		t.Fatalf("the target would not parse: %v", err)
+	}
+
+	in := proxyInput(&options{}, environment{
+		lookupEnv: func(string) (string, bool) { return "", false },
+	}, parsed, allowed.New())
+
+	if in.Challenge != nil {
+		t.Error("a build with no challenge seam handed the layer one anyway")
+	}
+}
+
+// TestAScriptThisMachineNamesIsAuthorisedWithItsOwnReason is the fifth derivation
+// of inviolable rule 16, met from the side the entry point cannot see before the
+// walk. Until this slice only a script the USER typed could be authorised, so an
+// AutoConfigURL read off a Windows stack was fetched and refused by this
+// program's own rule - and the row said only that the bytes never arrived.
+func TestAScriptThisMachineNamesIsAuthorisedWithItsOwnReason(t *testing.T) {
+	targets := allowed.New()
+	scriptAuthoriser(targets)([]string{"http://wpad.example/proxy.pac"})
+
+	reason, permitted := targets.Permits("wpad.example:80")
+	if !permitted {
+		t.Fatal("a script this machine names was not authorised, so fetching it would be refused")
+	}
+	if reason != allowed.ReasonPACFile {
+		t.Errorf("the script went in as %q, want the reason for a PAC address", reason)
+	}
+}
+
+// TestAScriptAddressNothingCouldFetchIsLeftOut rather than swallowed, exactly as
+// authoriser leaves out an address that will not parse. Nothing can dial it, so
+// leaving it out changes nothing about what this run can reach - and the row for
+// it still says the script was not fetched.
+func TestAScriptAddressNothingCouldFetchIsLeftOut(t *testing.T) {
+	targets := allowed.New()
+	scriptAuthoriser(targets)([]string{"file://C:/scripts/proxy.pac", "not an address at all", ""})
+
+	if entries := targets.List(); len(entries) != 0 {
+		t.Errorf("an address nothing could fetch was authorised anyway: %+v", entries)
+	}
+}
+
+// TestTheSpellingInTheSetIsTheSpellingTheTransportWillDial. Two spellings of one
+// address mean either a refusal on a machine where everything works or a fetch
+// nothing checked, which is why both sides go through pac.Target.
+func TestTheSpellingInTheSetIsTheSpellingTheTransportWillDial(t *testing.T) {
+	targets := allowed.New()
+	scriptAuthoriser(targets)([]string{"https://wpad.example/proxy.pac"})
+
+	dialled, err := pac.Target("https://wpad.example/proxy.pac")
+	if err != nil {
+		t.Fatalf("the address the transport would dial could not be worked out: %v", err)
+	}
+	if _, permitted := targets.Permits(dialled); !permitted {
+		t.Errorf("the set holds a different spelling from the one %q will be dialled as", dialled)
+	}
+}
+
+// TestAProxyGoesIntoTheSetExactlyAsTheLayerSpelledIt. No port is joined here and
+// that is the difference from authoriser: a proxy arrives from a configuration
+// or from a script already carrying its own, and the layer has already decided
+// what to do with an entry that carries none.
+func TestAProxyGoesIntoTheSetExactlyAsTheLayerSpelledIt(t *testing.T) {
+	targets := allowed.New()
+	proxyAuthoriser(targets)([]string{"proxy.example:8080", "[2001:db8::1]:3128"})
+
+	for _, endpoint := range []string{"proxy.example:8080", "[2001:db8::1]:3128"} {
+		reason, permitted := targets.Permits(endpoint)
+		if !permitted {
+			t.Errorf("%q was not authorised, so asking it would be refused", endpoint)
+			continue
+		}
+		if reason != allowed.ReasonProxy {
+			t.Errorf("%q went in as %q, want the reason for a proxy", endpoint, reason)
+		}
 	}
 }

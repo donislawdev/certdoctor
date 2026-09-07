@@ -119,6 +119,22 @@ const (
 	// read from changes nothing about what it says. Fields whose value does not
 	// vary with a row's subject do not belong on that row.
 	FindingPACScript FindingKind = "pac_script"
+
+	// FindingProxyChallenge - what ONE proxy endpoint answered when this run
+	// asked it whether it wants credentials, or why it was not asked.
+	//
+	// THE UNIT IS THE ENDPOINT AND NOT THE PLACE THAT NAMED IT, for the third
+	// time in this arc and for the reason the two rows above give. Two Windows
+	// stacks and a script routinely arrive at the SAME "host:port", and a row
+	// per namer would open the same connection three times and print three
+	// answers a proxy under load is entitled to make differ.
+	//
+	// A ROW EXISTS EVEN WHEN NOTHING WAS ASKED, which is inviolable rule 1 and
+	// not thoroughness. An endpoint this run declined to ask - a SOCKS proxy, an
+	// address with no port, one every reading of the exception list sends this
+	// target past - is a place a reader may still be wondering about, and a
+	// silent omission reads as "certdoctor checked and found nothing wrong".
+	FindingProxyChallenge FindingKind = "proxy_challenge"
 )
 
 // findingKindMeanings is the registry. The registry test refuses a kind that is
@@ -133,6 +149,7 @@ var findingKindMeanings = map[FindingKind]string{
 	FindingProxyStack:          "one place this machine keeps proxy configuration, and what it says about this target",
 	FindingStackDivergence:     "how the proxy configuration stacks on this machine differ from one another",
 	FindingPACScript:           "one automatic configuration script this run resolved, and what it says about this target",
+	FindingProxyChallenge:      "one proxy endpoint this run asked whether it wants credentials, or why it was not asked",
 }
 
 // AllFindingKinds lists every kind exactly once, in declaration order.
@@ -161,6 +178,7 @@ var AllFindingKinds = []FindingKind{
 	FindingProxyStack,
 	FindingStackDivergence,
 	FindingPACScript,
+	FindingProxyChallenge,
 }
 
 // ResolutionView says which of the two lenses an answer was seen through.
@@ -487,6 +505,8 @@ type Finding struct {
 	StackDivergence *StackDivergence
 	// PACScript is set when Kind is FindingPACScript.
 	PACScript *PACScript
+	// ProxyChallenge is set when Kind is FindingProxyChallenge.
+	ProxyChallenge *ProxyChallenge
 }
 
 // ConnectOutcome is what happened when we tried to open one TCP connection.
@@ -1844,6 +1864,137 @@ func (p *PACScript) breach() string {
 	return ""
 }
 
+// ProxyAuthScheme is one way a proxy offered to be told who is asking.
+//
+// THE TWO HALVES ARE TREATED DIFFERENTLY UNDER --redact AND THAT IS THE WHOLE
+// REASON THEY ARE TWO FIELDS. A scheme name is a token from the IANA HTTP
+// Authentication Scheme Registry - Basic, Digest, Negotiate, NTLM - so it is an
+// identifier and inviolable rule 19 is satisfied by printing it. A realm is free
+// text an administrator typed into somebody else's proxy: it is routinely a
+// company name, a site name or a department, and it is exactly the sort of
+// string --redact exists to keep out of a document somebody forwards.
+type ProxyAuthScheme struct {
+	// Scheme is the authentication scheme token, as the proxy spelled it.
+	Scheme string
+	// Realm is the realm the proxy named, empty when it named none.
+	//
+	// IT IS WITHHELD UNDER --redact RATHER THAN MASKED, the third field in this
+	// contract so treated after ProxyStack.Bypass and PACScript.Answer, and for
+	// the same reason: no masking rule recognises free prose as a machine, so
+	// pseudonymising it would leave most of it standing in a document stamped
+	// redacted. The diagnostic content is in Scheme, which survives whole.
+	Realm string
+}
+
+// ProxyChallenge is the body of a proxy challenge finding: one endpoint, and
+// what it said when this run asked whether it wants credentials.
+//
+// NO CREDENTIALS ARE EVER SENT AND THE TYPE HAS NOWHERE TO PUT ANY. Inviolable
+// rule 17 says they never reach the report or the log whatever --redact says,
+// and ADR89 already made that structural one field earlier by cutting userinfo
+// where a proxy address is READ. This row is the other end of the same promise:
+// the question it asks is what happens to a machine that offers nothing, which
+// is the machine whose build is failing.
+type ProxyChallenge struct {
+	// Endpoint is the "host:port" that was asked, or would have been.
+	//
+	// IT IS THE STRING THAT WENT INTO THE ALLOWED SET AND INTO THE DIALLER,
+	// unchanged. Two spellings of one address mean either a refusal on a machine
+	// where everything works or a connection nothing checked, which is the
+	// failure tcp.Target and pac.Target exist to prevent one layer along.
+	Endpoint string
+	// NamedBy are the things that pointed at this endpoint, in report order - a
+	// stack name, or the token for an automatic configuration script.
+	//
+	// IT IS A LIST BECAUSE ONE ENDPOINT HAS SEVERAL NAMERS, the same fact
+	// PACScript.NamedBy carries about scripts. Two Windows stacks and a script
+	// routinely arrive at one proxy, and saying so once with all three names is
+	// the answer; saying it three times would be three rows that can disagree.
+	NamedBy []string
+	// Asked says whether the exchange happened at all.
+	Asked bool
+	// Detail is why it did not, or an extra sentence about what did. An endpoint
+	// that was not asked without one is refused below: that is a defect here
+	// rather than a fact about somebody's machine.
+	Detail string
+	// Query says which shape the question took, empty when nothing was asked.
+	//
+	// IT IS IN THE ROW BECAUSE THE SHAPE DECIDES THE ANSWER - probe S15,
+	// measured 2026-09-07. A CONNECT to a port outside a proxy's SSL_ports comes
+	// back refused by a proxy that wants no credentials at all, so a reader who
+	// cannot see which question was asked cannot tell that answer from a real
+	// one.
+	Query string
+	// Status is the HTTP status code the proxy answered with, 0 when nothing was
+	// asked.
+	//
+	// THE CODE AND NOT THE PROXY'S SENTENCE - inviolable rule 19. A status line
+	// is somebody else's text and is routinely localised; the number means the
+	// same thing everywhere.
+	Status int
+	// Schemes are the ways the proxy offered to be told who is asking, from its
+	// Proxy-Authenticate headers. Empty when it offered none.
+	Schemes []ProxyAuthScheme
+	// CarriedCredentials records that the configuration entry naming this
+	// endpoint held a user and a password, which were dropped where they were
+	// read and were NOT sent here.
+	//
+	// IT IS THE FIELD THAT STOPS THIS ROW ACCUSING A WORKING MACHINE. A proxy
+	// URL may legally carry credentials - Microsoft documents it for
+	// HttpClient.DefaultProxy - and this run cuts them at the point of reading,
+	// so a machine whose password works still meets a 407 here. Without this
+	// fact the row would report "credentials required" about a machine that has
+	// them.
+	CarriedCredentials bool
+	// Caveats are our sentences about what this row does not settle. They are
+	// OUR prose about somebody else's proxy, never its text.
+	Caveats []string
+}
+
+// breach refuses the states that would make a challenge row say something
+// nobody established.
+//
+// THE COSTLY MISTAKE HERE IS A ROW THAT WAS NEVER ASKED COMING BACK LOOKING
+// LIKE ONE THAT WAS ANSWERED. "certdoctor did not ask this proxy" and "this
+// proxy let the request through" send a reader to opposite places, so the
+// prohibitions below are what keeps them apart.
+func (p *ProxyChallenge) breach() string {
+	if p.Endpoint == "" {
+		return "carries what a proxy answered without saying which proxy answered it"
+	}
+	if len(p.NamedBy) == 0 {
+		return "carries a proxy endpoint that nothing on this machine and no script pointed at"
+	}
+	for _, namer := range p.NamedBy {
+		if namer == "" {
+			return "counts an unnamed source among the things that pointed at this proxy"
+		}
+	}
+	if !p.Asked {
+		if p.Detail == "" {
+			return "says a proxy was not asked and does not say why, which is a defect here rather than " +
+				"an answer about that machine"
+		}
+		if p.Query != "" || p.Status != 0 || len(p.Schemes) > 0 {
+			return "says a proxy was not asked and reports what it answered"
+		}
+		return ""
+	}
+	if p.Query == "" {
+		return "reports what a proxy answered without saying which question it was asked, and the " +
+			"question decides what the answer means"
+	}
+	if p.Status == 0 {
+		return "says a proxy was asked and never says what it answered"
+	}
+	for _, scheme := range p.Schemes {
+		if scheme.Scheme == "" {
+			return "lists a way of authenticating with no scheme name, which is nothing anybody could act on"
+		}
+	}
+	return ""
+}
+
 var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingEnvironmentVariable: func(f Finding) bool { return f.EnvironmentVariable != nil },
 	FindingNameResolution:      func(f Finding) bool { return f.NameResolution != nil },
@@ -1854,6 +2005,7 @@ var findingBodies = map[FindingKind]func(Finding) bool{
 	FindingProxyStack:          func(f Finding) bool { return f.ProxyStack != nil },
 	FindingStackDivergence:     func(f Finding) bool { return f.StackDivergence != nil },
 	FindingPACScript:           func(f Finding) bool { return f.PACScript != nil },
+	FindingProxyChallenge:      func(f Finding) bool { return f.ProxyChallenge != nil },
 }
 
 // Breach names what is wrong with a finding, or returns the empty string for one
@@ -1925,6 +2077,8 @@ func (f Finding) bodyBreach() string {
 		return f.StackDivergence.breach()
 	case f.PACScript != nil:
 		return f.PACScript.breach()
+	case f.ProxyChallenge != nil:
+		return f.ProxyChallenge.breach()
 	}
 	return ""
 }

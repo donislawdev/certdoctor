@@ -108,8 +108,15 @@ func (s script) reason() status.Reason {
 	return status.ReasonUndetermined
 }
 
-// resolveScripts finds every script this run should ask about, asks once each,
-// and hands back one entry per SCRIPT rather than per namer.
+// scriptsNamed finds every script this run should ask about, one entry per
+// SCRIPT rather than per namer, WITHOUT asking any of them.
+//
+// THE ASKING IS A SEPARATE FUNCTION AND THE SEAM BETWEEN THEM IS LOAD BEARING.
+// Fetching a script opens a connection, and an address read off THIS MACHINE is
+// not in the allowed set until somebody puts it there - which may not be this
+// layer, because a layer that widens the set for itself makes that set a
+// description of what happened rather than a rule about what may. So this half
+// runs, the orchestrator authorises what it named, and askScripts runs after.
 //
 // THE DEDUPLICATION IS NOT TIDINESS. Two Windows stacks routinely hold the same
 // AutoConfigURL, so a pass per stack would fetch one file twice, run it twice,
@@ -120,7 +127,7 @@ func (s script) reason() status.Reason {
 // THE COMMAND LINE COMES FIRST because the user asking about a specific script
 // is the strongest statement of intent in the run, and report order is the
 // order a reader meets things in.
-func resolveScripts(ctx context.Context, in Input, lenses []Lens) []script {
+func scriptsNamed(in Input, lenses []Lens) []script {
 	var scripts []script
 	position := map[string]int{}
 
@@ -155,8 +162,28 @@ func resolveScripts(ctx context.Context, in Input, lenses []Lens) []script {
 		}
 	}
 
+	return scripts
+}
+
+// addresses names the scripts this run will ask about, in report order.
+//
+// IT IS THE LIST THE ORCHESTRATOR WIDENS THE ALLOWED SET BY, and it exists as a
+// function of its own so that "which scripts will be fetched" is answered once,
+// beside the code that fetches them. A second reading of it in the wiring could
+// drift, and the direction it would drift in is a script this run then fetches
+// without anything having authorised the address.
+func addresses(scripts []script) []string {
+	var out []string
+	for _, one := range scripts {
+		out = append(out, one.url)
+	}
+	return out
+}
+
+// askScripts puts every named script to the port, in the order they were named.
+func askScripts(ctx context.Context, evaluate Evaluate, scripts []script) []script {
 	for at := range scripts {
-		scripts[at].answer = askScript(ctx, in.Evaluate, scripts[at].url)
+		scripts[at].answer = askScript(ctx, evaluate, scripts[at].url)
 	}
 	return scripts
 }

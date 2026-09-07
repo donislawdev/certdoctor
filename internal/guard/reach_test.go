@@ -93,6 +93,33 @@ var dialAllowlist = map[string]bool{
 	// condition is that it has no network. Listing the package would put the
 	// evaluator on the wrong side of that sentence.
 	"internal/adapter/pac/fetch.go": true,
+
+	// The question L2 puts to a proxy, added 2026-09-07 with the code it covers.
+	// IT IS THE FIRST ENTRY HERE THAT SPEAKS TO A MACHINE IN ORDER TO LEARN
+	// SOMETHING ABOUT THAT MACHINE ITSELF, and that is what made it a separate
+	// decision rather than a sixth line. The five above reach a resolver, the
+	// target, the target again, or the place a configuration file is kept; this
+	// one asks a proxy a question whose whole answer is about the proxy. Rule 16
+	// lists it as the fourth permitted derivation, so it is allowed - and like
+	// the script fetch it reaches an address chosen by somebody other than the
+	// user, so the set is widened for it only from the entry point.
+	//
+	// IT IS WIDENED LATER THAN ANY OTHER ENTRY ON THIS LIST, which is worth
+	// knowing before touching it. Every address here but this one is in the set
+	// before the layer that dials it starts; a proxy is learned in the middle of
+	// L2's own work, so the orchestrator widens the set BETWEEN the two halves of
+	// that layer. The rule that stays true is the one that matters: the widening
+	// still happens in the entry point's closure and never in the layer.
+	//
+	// It borrows the rule rather than copying it, like the four before it:
+	// dial.Permission goes in front of the dialler, so a mutation entry aimed at
+	// the refusal still aims at this caller too.
+	//
+	// IT IS ONE FILE AND NOT THE PACKAGE, deliberately, and the package holds
+	// nothing else today - which is the point of naming the file rather than the
+	// directory. A second way to open a connection cannot appear beside this one
+	// without turning this test red.
+	"internal/adapter/proxyauth/challenge.go": true,
 }
 
 // networkPackages are the standard library imports that can open a connection.

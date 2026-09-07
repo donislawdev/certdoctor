@@ -112,6 +112,31 @@ const (
 	// one file - so a sentence built on this reason may say that this run
 	// stopped the file and may not say that the file is a bomb.
 	ReasonLimitExceeded Reason = "limit_exceeded"
+	// ReasonCredentialsRequired - the proxy this URL goes through will not pass a
+	// request until it is told who is asking, and this run has nothing to tell it.
+	//
+	// THE TENTH REASON, NAMED BY ADR80 AND DECLARED HERE WITH ITS FIRST PRODUCER,
+	// which is the rule the ninth arrived under and the charge this register lays
+	// against access_denied (OBS98). L2 asking a proxy is what produces it, so it
+	// arrives with that slice and not before.
+	//
+	// IT IS UNKNOWN AND NOT FAIL, AND THAT IS INVIOLABLE RULE 15 READ CAREFULLY -
+	// testbed/expected/proxy-auth.txt fixed the word before this code existed. A
+	// proxy asking who you are is neither a broken proxy nor a broken machine; it
+	// is a machine that has not been told. This program knows the proxy applies
+	// and knows it will challenge. It does NOT know whether credentials exist
+	// somewhere it cannot see - a keyring, a domain login, a config file it does
+	// not read - so it must not pronounce on the outcome.
+	//
+	// ONLY A 407 PRODUCES IT, AND THAT IS A MEASUREMENT RATHER THAN CAUTION -
+	// probe S15, 2026-09-07, against the bench's squid. A CONNECT to a port that
+	// is not in SSL_ports comes back 403 from a proxy that wants no credentials
+	// at all, and a CONNECT the proxy ALLOWED came back 503 when the origin was
+	// out of reach. From the client's side all three look like "no tunnel" and
+	// they mean three different things, so everything that is not a 407 is
+	// undetermined instead. Answering otherwise would accuse a working proxy and
+	// a working machine, which is inviolable rule 21 met from the proxy's side.
+	ReasonCredentialsRequired Reason = "credentials_required"
 )
 
 // AllReasons lists every reason exactly once.
@@ -125,6 +150,7 @@ var AllReasons = []Reason{
 	ReasonTransportError,
 	ReasonUndetermined,
 	ReasonLimitExceeded,
+	ReasonCredentialsRequired,
 }
 
 // reasonDescriptions carries the English one-liner shown to the user. Keeping it
@@ -140,6 +166,8 @@ var reasonDescriptions = map[Reason]string{
 	ReasonTransportError: "every attempt to ask failed on the wire rather than inside certdoctor",
 	ReasonUndetermined:   "this layer asked, and what came back does not settle the question",
 	ReasonLimitExceeded:  "a ceiling certdoctor sets stopped this before it produced an answer",
+
+	ReasonCredentialsRequired: "the proxy this URL goes through demands credentials, and this run has none to offer",
 }
 
 // Valid reports whether r is one of the declared reasons.

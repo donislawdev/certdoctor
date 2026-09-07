@@ -149,3 +149,27 @@ github.com/donislawdev/certdoctor/internal/core/proxy 100
 # platform tests. The gate does not run on macOS at all (see ci.yml), so a floor
 # would not have caught it either way. This is the narrowed remainder of OBS107.
 github.com/donislawdev/certdoctor/internal/adapter/proxyconf 84
+
+# Asking a proxy whether it wants credentials arrived 2026-09-07 with P8-K3c.
+#
+# THE PACKAGE IS ONE FILE AND IT IS ON THE DIAL ALLOWLIST, which is why its tests
+# drive a real listener rather than a seam: what this adapter has to get right is
+# the shape of the bytes it puts on a wire and the way it reads the ones that
+# come back, and neither of those is observable from in front of net. That also
+# makes the number honest without a machine in a particular state - a loopback
+# listener answering fixed bytes reaches every branch that decides anything.
+#
+# WHAT THE REMAINDER IS, said plainly rather than left to be guessed at. Two
+# statements are not reached and both are error paths that need the operating
+# system to fail in a specific way: a write that fails on a socket the proxy
+# accepted, and a dial error that is not a *net.OpError. Chasing either would
+# mean a test that passes or fails depending on whose kernel it runs on, which is
+# the opposite of what this gate is for.
+#
+# WHICH PLATFORM IS THE LOWER ONE WAS ASKED RATHER THAN ASSUMED - OBS100, the note
+# that cost a month of a floor which had been true once. Measured 2026-09-07:
+# Windows 97.1 percent, and this gate clears the same floor inside the
+# golang:1.27-alpine container. There is no build tag in this package, so both
+# platforms compile the same single file and the two numbers have no reason to
+# diverge. The floor is the Windows measurement rounded down.
+github.com/donislawdev/certdoctor/internal/adapter/proxyauth 97

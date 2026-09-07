@@ -624,6 +624,34 @@ var bodyFixtures = map[report.FindingKind]report.Finding{
 			Caveats:  []string{},
 		},
 	},
+	// A proxy that ASKED FOR CREDENTIALS and named two ways of supplying them,
+	// which is the row this kind exists for and the one every field is exercised
+	// by. Two namers, because one endpoint reached from a stack and from a
+	// script is the ordinary shape and a single namer would leave the merge
+	// unexecuted. Two schemes, because a proxy offering Negotiate beside Basic
+	// is what a domain joined network looks like - and the second carries no
+	// realm, which is the state a fixture with one scheme could not show.
+	report.FindingProxyChallenge: {
+		Kind:    report.FindingProxyChallenge,
+		Summary: "a proxy https://api.example.com goes through demands credentials before it will pass a request",
+		Source:  report.SourceDetected,
+		ProxyChallenge: &report.ProxyChallenge{
+			Endpoint: "proxy.example:8080",
+			NamedBy:  []string{"wininet", "pac"},
+			Asked:    true,
+			Query:    "connect",
+			Status:   407,
+			Schemes: []report.ProxyAuthScheme{
+				{Scheme: "Basic", Realm: "corporate proxy"},
+				{Scheme: "Negotiate"},
+			},
+			CarriedCredentials: true,
+			Caveats: []string{
+				"the configuration naming this proxy carries a credential, which certdoctor cut off " +
+					"where it read it and did not send",
+			},
+		},
+	},
 }
 
 // The two fingerprints the handshake fixture is built from. They are full length

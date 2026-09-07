@@ -164,7 +164,7 @@ import (
 // neither of which happens yet. A value in a published contract that nothing
 // can produce is a promise nobody keeps, which is the argument that kept
 // access_denied out of the code and keeps these two out of it for now.
-const SchemaVersion = "1.13"
+const SchemaVersion = "1.14"
 
 // JSON renders the machine readable report.
 //
@@ -254,6 +254,7 @@ type jsonFinding struct {
 	ProxyStack          *jsonProxyStack          `json:"proxy_stack"`
 	StackDivergence     *jsonStackDivergence     `json:"stack_divergence"`
 	PACScript           *jsonPACScript           `json:"pac_script"`
+	ProxyChallenge      *jsonProxyChallenge      `json:"proxy_challenge"`
 }
 
 // jsonProxyStack is the seventh body: one PLACE this machine keeps proxy
@@ -318,6 +319,60 @@ type jsonPACScript struct {
 	Selected *jsonPACDirective `json:"selected"`
 	// Never null. Our sentences about what this row does not settle.
 	Caveats []string `json:"caveats"`
+}
+
+// jsonProxyChallenge is the tenth body: ONE proxy endpoint this run asked
+// whether it wants credentials, or declined to ask.
+//
+// THE UNIT IS THE ENDPOINT RATHER THAN THE PLACE THAT NAMED IT, the same
+// argument jsonPACScript makes about scripts, one level along: two Windows
+// stacks and a script routinely arrive at one host:port, and a row per namer
+// would open that connection three times and print three answers a proxy under
+// load is entitled to make differ.
+//
+// NO CREDENTIALS ARE IN HERE AND THERE IS NOWHERE TO PUT ANY. Inviolable rule
+// 17 says they never reach this document whatever --redact says, and the
+// question this row records is what happens to a machine that offers none.
+type jsonProxyChallenge struct {
+	// The address as it was dialled, which is the address that went into the
+	// allowed set. Masked under --redact through the same pseudonym map as every
+	// other address in this document.
+	Endpoint string `json:"endpoint"`
+	// Never empty: stack names, and the token for an automatic configuration
+	// script. Several namers of one endpoint are one row with all their names.
+	NamedBy []string `json:"named_by"`
+	Asked   bool     `json:"asked"`
+	// Null when there is nothing to add. An endpoint that was not asked must
+	// carry one, which the core refuses to let through otherwise.
+	Detail *string `json:"detail"`
+	// Empty when nothing was asked. WHICH QUESTION WAS PUT DECIDES WHAT THE
+	// ANSWER MEANS - probe S15 measured a CONNECT to a non-SSL port being
+	// refused by a proxy that wants no credentials at all, so a consumer that
+	// cannot see the shape cannot tell that refusal from a real one.
+	Query string `json:"query"`
+	// Zero when nothing was asked. THE CODE AND NOT THE PROXY'S SENTENCE -
+	// inviolable rule 19.
+	Status int `json:"status"`
+	// Empty when the proxy offered none.
+	Schemes []jsonProxyAuthScheme `json:"schemes"`
+	// That the configuration naming this endpoint held a credential, which was
+	// cut off where it was read and NOT sent here. It is what stops this row
+	// accusing a machine that has one.
+	CarriedCredentials bool `json:"carried_credentials"`
+	// Never null. Our sentences about what this row does not settle.
+	Caveats []string `json:"caveats"`
+}
+
+// jsonProxyAuthScheme is one way a proxy offered to be told who is asking.
+//
+// THE TWO FIELDS ARE TREATED DIFFERENTLY UNDER --redact AND THAT IS WHY THEY
+// ARE TWO. A scheme name is a token from the IANA registry, so it is an
+// identifier and is printed; a realm is free text an administrator typed into
+// somebody else's proxy, so it is WITHHELD rather than masked - the third field
+// in this document so treated, after bypass and answer, and for the same reason.
+type jsonProxyAuthScheme struct {
+	Scheme string `json:"scheme"`
+	Realm  string `json:"realm"`
 }
 
 type jsonPACDirective struct {
@@ -650,6 +705,7 @@ func findingsOf(row report.LayerResult) *[]jsonFinding {
 			SigningAuthority:    signingAuthorityOf(finding),
 			ProxyStack:          proxyStackOf(finding),
 			PACScript:           pacScriptOf(finding),
+			ProxyChallenge:      proxyChallengeOf(finding),
 			StackDivergence:     stackDivergenceOf(finding),
 		})
 	}
@@ -710,6 +766,37 @@ func pacScriptOf(finding report.Finding) *jsonPACScript {
 		Selected:   pacDirectiveOrNil(script.Selected),
 		Caveats:    append([]string{}, script.Caveats...),
 	}
+}
+
+// proxyChallengeOf carries a challenge row across.
+//
+// CAVEATS AND SCHEMES ARE NEVER NULL, for the reason proxyStackOf gives about
+// caveats: an empty array says "there is nothing to add", which is an answer,
+// and a null would say the question was never asked.
+func proxyChallengeOf(finding report.Finding) *jsonProxyChallenge {
+	if finding.ProxyChallenge == nil {
+		return nil
+	}
+	challenge := *finding.ProxyChallenge
+	return &jsonProxyChallenge{
+		Endpoint:           challenge.Endpoint,
+		NamedBy:            append([]string{}, challenge.NamedBy...),
+		Asked:              challenge.Asked,
+		Detail:             optional(challenge.Detail),
+		Query:              challenge.Query,
+		Status:             challenge.Status,
+		Schemes:            proxyAuthSchemesOf(challenge.Schemes),
+		CarriedCredentials: challenge.CarriedCredentials,
+		Caveats:            append([]string{}, challenge.Caveats...),
+	}
+}
+
+func proxyAuthSchemesOf(schemes []report.ProxyAuthScheme) []jsonProxyAuthScheme {
+	out := make([]jsonProxyAuthScheme, 0, len(schemes))
+	for _, scheme := range schemes {
+		out = append(out, jsonProxyAuthScheme{Scheme: scheme.Scheme, Realm: scheme.Realm})
+	}
+	return out
 }
 
 func pacDirectivesOf(directives []report.PACDirective) []jsonPACDirective {

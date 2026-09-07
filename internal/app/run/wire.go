@@ -70,6 +70,31 @@ type Wiring struct {
 	// address and says which rule refused it. That is the safe direction: a
 	// forgotten wire cannot widen what this program may reach.
 	Authorise func([]string)
+	// AuthoriseScripts is told the automatic configuration scripts L2 found this
+	// machine naming, before any of them is fetched.
+	//
+	// IT IS A SECOND CALLBACK RATHER THAN A SECOND USE OF THE ONE ABOVE because
+	// the two widen the set for different reasons, and inviolable rule 16 lists
+	// those reasons separately - a script address is the fifth derivation and an
+	// address a name resolved to is the third. The set records which reason let
+	// each entry in, and one callback serving both would have to guess.
+	//
+	// A nil one is legal and means no script this MACHINE names is authorised, so
+	// fetching one is refused and the row says the bytes never arrived. That is
+	// the safe direction: a forgotten wire cannot widen what this program may
+	// reach.
+	AuthoriseScripts func([]string)
+	// AuthoriseProxies is told the proxies L2 concluded this URL would go
+	// through, before any of them is asked whether it wants credentials.
+	//
+	// IT IS TOLD ONLY WHAT WILL ACTUALLY BE ASKED. proxy.Result.Dialable leaves
+	// out the endpoints the layer declined - a SOCKS proxy, an address with no
+	// port - so this program does not gain permission to reach an address nothing
+	// was ever going to contact.
+	//
+	// A nil one is legal and means nothing is authorised, so every endpoint comes
+	// back unasked with a sentence saying so.
+	AuthoriseProxies func([]string)
 }
 
 // Wire returns the behaviour of all eight layers: the ones that are written
@@ -129,15 +154,54 @@ func Wire(w Wiring) Layers {
 		return answer
 	}
 
-	// L2 IS THE ONE WRITTEN LAYER WITH NO SEAM ON EITHER SIDE OF IT, and that is
-	// worth noticing rather than passing over. It reads this machine's own
-	// configuration, which nothing above it produces and nothing below it
-	// consumes: L3 connects to the addresses L1 found whether a proxy is
-	// configured or not, because reading a proxy variable must never change where
-	// this program connects - docs/14 section 3, checked from outside by the
-	// bench.
+	// L2 HAS NO SEAM WITH THE LAYERS AROUND IT AND TWO INSIDE ITSELF, which is
+	// worth stopping on because no other layer here is shaped that way. Nothing
+	// above it produces what it reads and nothing below it consumes what it
+	// finds: L3 connects to the addresses L1 found whether a proxy is configured
+	// or not, because reading a proxy variable must never change where this
+	// program connects - docs/14 section 3, checked from outside by the bench.
+	//
+	// THE TWO SEAMS INSIDE IT ARE BOTH THERE FOR ONE REASON: SOMEBODY HAS TO
+	// WIDEN THE ALLOWED SET, AND IT MAY NOT BE THE LAYER. Everything this layer
+	// reaches is learned DURING the walk - the address of a script this machine
+	// names, and the proxies its reading arrives at - so neither can be in the
+	// set before it starts. A layer that added its own targets would be a layer
+	// permitting itself, and the set would become a description of what happened
+	// rather than a rule about what may. So the reading happens, this function
+	// authorises what it named, the answer is formed, and only then is anything
+	// asked of a proxy.
+	//
+	// THE WIDENING SCANNER CANNOT SEE EITHER CALL, AND THAT IS SAID HERE RATHER
+	// THAN LEFT TO BE DISCOVERED. It reads calls to Allow, and both of these are
+	// function values the entry point built - the same blind spot its own comment
+	// names about Authorise. So this is a rule kept by argument, and the argument
+	// is in the paragraph above it.
 	layers[layer.Proxy] = func(ctx context.Context) Answer {
-		return answerFromProxy(proxy.Ask(ctx, w.Proxy))
+		reading := proxy.Read(ctx, w.Proxy)
+		// AUTHORISED BEFORE THE FETCH AND NOT AFTER IT, which is the whole
+		// reason Read exists apart from Ask. Until this slice, a script address
+		// read off THIS MACHINE was fetched without ever being added to the
+		// allowed set: the entry point could only add one the user typed, so on
+		// a Windows machine holding an AutoConfigURL the fetch was refused by
+		// this program's own rule and the row said only that the bytes never
+		// arrived. Rule 16 lists a PAC address among the five things this run
+		// may derive, and this is where the machine's own now gets derived.
+		if w.AuthoriseScripts != nil {
+			w.AuthoriseScripts(reading.Scripts)
+		}
+		result := proxy.Ask(ctx, w.Proxy, reading)
+		answer := answerFromProxy(result)
+		// THE SAME GATE AS L1, FOR THE SAME REASON - inviolable rule 16. An
+		// answer the orchestrator is about to throw away must not decide where
+		// this run may dial, and here it would decide it twice over: which
+		// proxies exist, and which of them get asked a question.
+		if contractBreach(answer) != "" {
+			return answer
+		}
+		if w.AuthoriseProxies != nil {
+			w.AuthoriseProxies(result.Dialable())
+		}
+		return answerFromProxy(proxy.Challenge(ctx, w.Proxy, result))
 	}
 
 	// THE SECOND SEAM, AND IT IS DELIBERATELY THE SAME SHAPE AS THE FIRST. L3

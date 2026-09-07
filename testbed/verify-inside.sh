@@ -822,23 +822,46 @@ check_proxy_env() {
   # Comparing layer statuses shows the run came out the same. It does not show
   # that nothing was SENT to the proxy along the way - a request that went
   # through it and succeeded would leave the statuses untouched. So the log is
-  # snapshotted around the run: if certdoctor obeyed the variable, squid wrote a
-  # line, and the count moved.
+  # snapshotted around the run, and this is inviolable rule 16 with a witness
+  # that is not our code: the target set is enforced by a guard inside the
+  # program, and a guard inside the program is exactly what an outsider cannot
+  # check.
   #
-  # This is inviolable rule 16 with a witness that is not our code. The target
-  # set is enforced by a guard inside the program, and a guard inside the program
-  # is exactly what an outsider cannot check.
-  local log_before log_after
+  # THE CLAIM WAS NARROWED ON 2026-09-07 AND THE OLD ONE WOULD NOW BE FALSE -
+  # OBS127. It read "the log did not grow at all", which stopped being true the
+  # moment L2 began ASKING a proxy whether it wants credentials: that question
+  # is a real request and squid writes a real line for it. Reading that line as
+  # "certdoctor obeyed the variable" would fail this bench for the feature
+  # working.
+  #
+  # WHAT REPLACES IT IS NOT WEAKER, AND THAT IS THE POINT OF WRITING IT THIS WAY.
+  # The log must grow by EXACTLY the number of questions the run SAYS it asked -
+  # one line per proxy_challenge row that reports asked. A run that routed its
+  # diagnosis through the proxy would add lines beyond the ones it admits to, and
+  # a run that asked nothing must still move the count by nothing. So the witness
+  # is now "certdoctor's own account of what it sent agrees with somebody else's
+  # record of what arrived", which is a stronger sentence than the one it
+  # replaces.
+  #
+  # THE HUMAN RUN IS OUTSIDE THE BRACKET DELIBERATELY. Two runs inside it would
+  # double the count and make the arithmetic depend on how many surfaces this
+  # check happens to render.
+  local log_before log_after grew admitted
   log_before="$(wc -l < /proxylog/access.log 2>/dev/null || echo 0)"
 
   doc="$(HTTPS_PROXY="$proxy_var" NO_PROXY="$noproxy_var" "$binary" "$target" --json 2>/dev/null)"
   code=$?
-  human="$(HTTPS_PROXY="$proxy_var" NO_PROXY="$noproxy_var" "$binary" "$target" --no-color 2>/dev/null)"
 
   log_after="$(wc -l < /proxylog/access.log 2>/dev/null || echo 0)"
-  if [ "$log_before" != "$log_after" ]; then
-    say "the proxy log GREW during a run with the variables set - certdoctor sent something through it"
+  grew=$((log_after - log_before))
+  admitted="$(echo "$doc" | jq '[.layers[] | select(.id=="L2") | .findings[]?
+    | select(.proxy_challenge != null and .proxy_challenge.asked == true)] | length' 2>/dev/null)"
+  [ -n "$admitted" ] || admitted=0
+  if [ "$grew" != "$admitted" ]; then
+    say "the proxy log grew by $grew line(s) while the run admits to asking $admitted question(s) - certdoctor sent something it does not report"
   fi
+
+  human="$(HTTPS_PROXY="$proxy_var" NO_PROXY="$noproxy_var" "$binary" "$target" --no-color 2>/dev/null)"
 
   if [ -z "$doc" ]; then
     say "certdoctor produced no document at all with the proxy variables set"
@@ -928,7 +951,7 @@ check_proxy_env() {
   echo "    L2:         $said_status, $said_proxy from $said_stack, exceptions $said_bypass"
   echo "    certdoctor: exit $code with the variables, $base_code without | layers $shape"
   echo "    secret:     absent from both surfaces"
-  echo "    proxy log:  $log_before lines before the run, $log_after after - nothing was sent through it"
+  echo "    proxy log:  grew by $grew line(s), and the run admits to asking $admitted question(s)"
 
   if [ "$base_shape" = "$shape" ]; then
     passed=$((passed + 1))
@@ -1060,11 +1083,21 @@ check_pac_route() {
   # certdoctor REPORTS. A run where all three agree is the only one that proves
   # anything, and the first two are not our code.
   local pac_url want_status want_proxy want_source want_forbidden
+  local want_reason want_reason_forbidden want_auth
   pac_url="$(value "$file" pac_url)"
   want_status="$(value "$file" l2_status)"
   want_proxy="$(value "$file" l2_proxy)"
   want_source="$(value "$file" l2_source)"
   want_forbidden="$(value "$file" verdict_forbidden)"
+  # THE THREE KEYS THAT LEFT THE "NOT ASSESSED HERE" LIST ON 2026-09-07, and they
+  # are the last three in this bench that were written before the code and had
+  # never been read. proxy-auth.txt named credentials_required as the tenth
+  # UNKNOWN reason while it deliberately did not exist yet; P8-K3c is the slice
+  # that can produce it. The other two scenarios name none of these keys, and an
+  # empty expectation is skipped rather than compared against nothing.
+  want_reason="$(value "$file" l2_reason)"
+  want_reason_forbidden="$(value "$file" l2_reason_forbidden)"
+  want_auth="$(value "$file" l2_auth_required)"
 
   local env_proxy doc said_status said_proxy said_source said_detail
   env_proxy="$(value "$file" env_https_proxy)"
@@ -1095,6 +1128,37 @@ check_pac_route() {
     [ "$said_status" = "$want_status" ] || say "L2 answered $said_status where the bench expects $want_status"
     [ "$said_proxy" = "$want_proxy" ] || say "L2 names the proxy $said_proxy where the bench expects $want_proxy"
     [ -z "$want_source" ] || [ "$said_source" = "$want_source" ] || say "L2 says the decision comes from ${said_source:-nothing} where the bench expects $want_source"
+
+    # THE REASON, WHICH IS WHAT THIS SCENARIO WAS ALWAYS FOR. A proxy asking who
+    # you are is neither a broken proxy nor a broken machine, so the word has to
+    # be UNKNOWN with a reason of its own - and it must never be access_denied,
+    # which ADR70 and ADR80 each removed from a place it did not belong.
+    local said_reason said_auth said_asked
+    said_reason="$(echo "$doc" | jq -r '.layers[] | select(.id=="L2") | .reason // ""' 2>/dev/null)"
+    if [ -n "$want_reason" ] && [ "$said_reason" != "$want_reason" ]; then
+      say "L2 gives the reason ${said_reason:-none} where the bench expects $want_reason"
+    fi
+    if [ -n "$want_reason_forbidden" ] && [ "$said_reason" = "$want_reason_forbidden" ]; then
+      say "L2 gives the reason $said_reason, which this scenario forbids outright"
+    fi
+
+    # THE PROXY WAS ACTUALLY ASKED, which is the half no status can show. A run
+    # reporting credentials_required without a row saying it put the question
+    # would have concluded it from the configuration rather than from the proxy.
+    if [ -n "$want_auth" ]; then
+      said_asked="$(echo "$doc" | jq -r '[.layers[] | select(.id=="L2") | .findings[]?
+        | select(.proxy_challenge != null and .proxy_challenge.asked == true and .proxy_challenge.status == 407)
+        | .proxy_challenge.endpoint] | first // ""' 2>/dev/null)"
+      said_auth=no
+      [ -z "$said_asked" ] || said_auth=yes
+      if [ "$said_auth" != "$want_auth" ]; then
+        say "L2 says a credential is required: $said_auth, where the bench expects $want_auth"
+      fi
+      if [ "$want_auth" = yes ] && [ -n "$said_asked" ] && [ "$said_asked" != "$want_proxy" ]; then
+        say "L2 asked $said_asked for credentials where the bench expects $want_proxy"
+      fi
+      echo "    challenge:  a 407 from ${said_asked:-nobody}"
+    fi
 
     # THE FORBIDDEN SENTENCES ARE THE POINT OF proxy-pac-direct. A report saying
     # "a proxy is configured" and stopping has told somebody the opposite of what
@@ -1366,10 +1430,17 @@ for file in "$expected"/*.txt; do
   # network. The scenarios below still need a PAC file fetched and a proxy asked,
   # which is work that opens a connection.
   case "$(basename "$file" .txt)" in
-    # proxy-env LEFT ON 2026-09-06 with the layer. THE FOUR BELOW LEFT THE SAME
-    # DAY with --pac-url, which is what made the layer able to see a script on a
-    # machine that does not name one - and this bench is such a machine.
-    proxy-env | proxy-pac-via | proxy-pac-direct | pac-broken | pac-hostile) continue ;;
+    # proxy-env LEFT ON 2026-09-06 with the layer. THE FOUR AFTER IT LEFT THE
+    # SAME DAY with --pac-url, which is what made the layer able to see a script
+    # on a machine that does not name one - and this bench is such a machine.
+    #
+    # proxy-auth LEFT ON 2026-09-07 WITH P8-K3c, AND IT IS THE LAST ONE. Its keys
+    # needed a proxy to be ASKED rather than only read, which is the work that
+    # slice added - so this list has now emptied itself exactly as the paragraph
+    # above said it would. THE BLOCK STAYS: it is self-building, so the next
+    # scenario written before its reader exists lands on it without anybody
+    # having to remember this file.
+    proxy-env | proxy-pac-via | proxy-pac-direct | pac-broken | pac-hostile | proxy-auth) continue ;;
   esac
   if grep -qE '^l2_' "$file" 2>/dev/null; then
     if [ "$pending_l2" -eq 0 ]; then
