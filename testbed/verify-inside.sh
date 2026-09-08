@@ -1196,6 +1196,14 @@ check_pac_route() {
 # 2026-09-02: it warns and answers direct://, which is a silent fallback - the
 # exact behaviour this product exists to interrupt. So the expectation file says
 # oracle_is_authoritative=no and this check does not ask it.
+#
+# IT GREW A SECOND OPINION AND A LIST OF NAMES ON 2026-09-07, WITH P8-K3e. Three
+# scenarios arrived that route on what DNS says rather than on how a name is
+# spelled, and for those libproxy IS the oracle and has to be asked - the same
+# discipline check_pac_route applies, without the client and the proxy log, which
+# proxy-pac-via already holds. A file naming pac_expect is asked live; a file
+# naming oracle_libproxy_says instead has its answer PRINTED and not compared,
+# which is how a scenario says the two engines are answering different questions.
 check_pac_file() {
   local name="$1"
   local file="$expected/$name.txt"
@@ -1214,6 +1222,32 @@ check_pac_file() {
   }
 
   echo "  pac scenario $name  ->  $pac_url"
+
+  # THE SECOND OPINION COMES FIRST, exactly as it does in check_pac_route: it
+  # says what the PAC MEANS, and it has not been told anything about what
+  # certdoctor is going to say. When it disagrees with the expectation the first
+  # suspect is the PAC file or our reading of it, not the product.
+  local want_oracle got_oracle recorded
+  want_oracle="$(value "$file" pac_expect)"
+  recorded="$(value "$file" oracle_libproxy_says)"
+  if [ -n "$want_oracle" ]; then
+    got_oracle="$(oracle_answer "$name")"
+    if [ -z "$got_oracle" ]; then
+      echo "    NOT CHECKED: there was no second opinion this run - libproxy was not available."
+      echo "        The rest of this scenario still runs, but nothing independent read this PAC."
+      notes=$((notes + 1))
+    else
+      echo "    libproxy says: $(value "$file" pac_host) -> $got_oracle"
+      [ "$got_oracle" = "$want_oracle" ] || say "libproxy reads this PAC as $got_oracle, and expected/ says $want_oracle"
+    fi
+  elif [ -n "$recorded" ]; then
+    # 🔴 PRINTED RATHER THAN COMPARED, AND THE FILE SAYS WHY. For lookups.pac the
+    # two engines are not disagreeing - libproxy has no allowance of its own, so
+    # it answers the question "what does this file mean" while certdoctor answers
+    # "what may this run rest a verdict on". Comparing them would fail this bench
+    # for the product working.
+    echo "    libproxy says: $recorded - recorded, NOT compared (oracle_is_authoritative=$(value "$file" oracle_is_authoritative))"
+  fi
 
   local doc said_status said_reason said_answer
   doc="$("$binary" "$target" --pac-url "$pac_url" --json 2>/dev/null)"
@@ -1255,6 +1289,66 @@ check_pac_file() {
     done
     if [ "$leaked" -eq 0 ]; then
       echo "    sandbox:    no host object reached the script - $(echo "$leaks" | tr ',' ' ' | wc -w) probes, none found"
+    fi
+  fi
+
+  # --- THE NAMES THAT LEFT THIS MACHINE - P8-K3e ---
+  #
+  # 🔴 THIS IS THE ONE THING NO OTHER WITNESS ON THIS BENCH CAN SEE. libproxy
+  # says what the file MEANS and the proxy log says where a request WENT, and
+  # neither of them can say which names a script sent to a resolver while it
+  # decided. ADR93 part 4 says that channel is invisible to every guard in the
+  # program by construction - the resolver is in the allowed set, so a hostile
+  # file chooses not a destination but a QUESTION - and that printing it is the
+  # only honest answer. So this is where the printing is checked.
+  #
+  # AN EMPTY LIST AND A MISSING ONE ARE BOTH REPORTED AS "(none)" HERE, which is
+  # coarser than the document is - ADR20 keeps null and [] apart and the JSON
+  # renderer honours it. The distinction is exercised by the unit tests; what a
+  # bench can add is that the names are the RIGHT ones, in the right order, on a
+  # real network.
+  local want_asked want_asked_max want_caveat said_asked said_asked_n
+  want_asked="$(value "$file" l2_asked)"
+  want_asked_max="$(value "$file" l2_asked_fewer_than)"
+  want_caveat="$(value "$file" l2_caveat_says)"
+
+  if [ -n "$want_asked" ] || [ -n "$want_asked_max" ]; then
+    said_asked="$(echo "$doc" | jq -r '[.layers[] | select(.id=="L2") | .findings[]?
+      | select(.pac_script != null) | .pac_script.asked] | first
+      | if . == null then "(none)" else join(",") end' 2>/dev/null)"
+    said_asked_n="$(echo "$doc" | jq -r '[.layers[] | select(.id=="L2") | .findings[]?
+      | select(.pac_script != null) | .pac_script.asked] | first
+      | if . == null then 0 else length end' 2>/dev/null)"
+    [ -n "$said_asked_n" ] || said_asked_n=0
+    echo "    asked:      ${said_asked:-(none)}"
+  fi
+
+  # THE EXACT LIST, ORDER INCLUDED. The order is the order of FIRST asking, so a
+  # name appearing twice in the file and once here is the cache doing what ADR93
+  # part 3 calls part of the ceiling rather than an optimisation.
+  if [ -n "$want_asked" ] && [ "$said_asked" != "$want_asked" ]; then
+    say "the script asked a resolver about ${said_asked:-(none)} where the bench expects $want_asked"
+  fi
+
+  # THE BOUND, AND IT NAMES THE FILE'S NUMBER RATHER THAN OURS. Zero fails it as
+  # surely as six does: a run that asked about nothing has not exercised a
+  # ceiling, it has exercised a missing resolver, and those are the two states
+  # this whole slice exists to keep apart.
+  if [ -n "$want_asked_max" ]; then
+    if [ "$said_asked_n" -ge "$want_asked_max" ]; then
+      say "the script got $said_asked_n name(s) resolved where the bench expects fewer than $want_asked_max"
+    elif [ "$said_asked_n" -eq 0 ]; then
+      say "the script got no name resolved at all, which is a missing resolver rather than a spent allowance"
+    fi
+  fi
+
+  # THE SENTENCE THAT MAKES THE VERDICT READABLE. Without it an UNKNOWN looks
+  # arbitrary, which is the fault OBS133 found on the terminal in this same
+  # slice - and a caveat reaching only the JSON was how it hid.
+  if [ -n "$want_caveat" ]; then
+    if ! echo "$doc" | jq -e --arg p "$want_caveat" '[.layers[] | select(.id=="L2") | .findings[]?
+      | select(.pac_script != null) | .pac_script.caveats[]?] | any(contains($p))' >/dev/null 2>&1; then
+      say "no caveat on the script row says \"$want_caveat\", so the verdict above has no stated reason"
     fi
   fi
 
@@ -1351,7 +1445,59 @@ check_pac_route proxy-auth
 # makes mandatory for this slice, asked over the whole path rather than in a unit
 # test.
 check_pac_file pac-broken
+echo
 check_pac_file pac-hostile
+echo
+
+# THE THREE SCENARIOS THAT ARE ABOUT THE RESOLVER BEHIND THE HELPERS - P8-K3e,
+# and the gap OBS134 named the day that slice closed.
+#
+# 🔴 EVERY OTHER PAC FILE ON THIS BENCH DECIDES BY TEXT ALONE, which is the
+# measurement ADR91 rested on and the reason the resolver could be left unwired
+# for a whole slice. It also meant this bench could not tell a run WITH a
+# resolver from a run without one, so ADR93 shipped checked by unit tests and by
+# the owner's own machine and by no independent witness at all.
+#
+# THE FIRST TWO ARE A PAIR AND ONLY MEAN ANYTHING AS ONE. Same file, same rule,
+# two names from one zone that differ in nothing a PAC file can read as text -
+# so an answer that differs between them was caused by an address.
+#
+# 🔴 THEY RUN AFTER check_proxy_env BECAUSE THAT CHECK BRACKETS ITS OWN RUN WITH
+# A LINE COUNT OF THE PROXY LOG, AND ONE OF THESE THREE DOES MOVE THAT COUNT.
+# The first draft of this comment claimed they add nothing, which was written
+# from "they drive no client" and was FALSE - measured 2026-09-08, one run each:
+#
+#   resolve.pac via   log grew by 1    challenge rows 1, of which asked 1
+#   resolve.pac gw    log grew by 0    challenge rows 0
+#   lookups.pac       log grew by 0    challenge rows 0
+#
+# They drive no client of their own - the routing witness is proxy-pac-via's and
+# is not repeated here. But certdoctor's own run asks a proxy it was told about
+# whether it wants credentials, which since P8-K3c is a real request that squid
+# writes a real line for, so the scenario whose script names a proxy adds exactly
+# one. The other two name none: gw takes the DIRECT branch, and lookups did not
+# settle, so there is no endpoint to ask about.
+#
+# THE ORDERING IS THEREFORE LOAD BEARING RATHER THAN TIDY. Run before
+# check_proxy_env these would sit inside somebody else's arithmetic - and that
+# arithmetic is the witness OBS127 narrowed on purpose, so breaking it would cost
+# a claim rather than a line of output.
+check_pac_file pac-resolve-via
+echo
+check_pac_file pac-resolve-gw
+echo
+check_pac_file pac-lookups
+echo
+
+# THE SCENARIO THAT ASKS THE CALENDAR - P8-K3f, and the same gap one helper
+# family along.
+#
+# 🔴 THE DAY BEFORE THIS WENT IN, THIS FILE WOULD HAVE BEEN CALLED BROKEN.
+# Ports.Now was never wired in production, so the three time helpers threw and
+# the layer graded a legal file malformed with the reason it keeps for one that
+# will not parse. No PAC file on this bench asked the clock, so nothing here
+# could see it - which is exactly what OBS134 said about the resolver.
+check_pac_file pac-clock
 
 # 🔴 say() IS GLOBAL IN BASH EVEN WHEN IT IS DEFINED INSIDE A FUNCTION, and the
 # scenario immediately above carries a pending_decision - so it has just left
@@ -1440,7 +1586,14 @@ for file in "$expected"/*.txt; do
     # above said it would. THE BLOCK STAYS: it is self-building, so the next
     # scenario written before its reader exists lands on it without anybody
     # having to remember this file.
+    #
+    # THE THREE ADDED ON 2026-09-07 WITH P8-K3e WERE NEVER ON THIS LIST, and
+    # that is worth one line rather than none: they are the first expectations on
+    # this bench written for a reader that already existed. Every scenario above
+    # them was written before its layer and waited here; these were written the
+    # day after ADR93, to check something that had shipped without a witness.
     proxy-env | proxy-pac-via | proxy-pac-direct | pac-broken | pac-hostile | proxy-auth) continue ;;
+    pac-resolve-via | pac-resolve-gw | pac-lookups | pac-clock) continue ;;
   esac
   if grep -qE '^l2_' "$file" 2>/dev/null; then
     if [ "$pending_l2" -eq 0 ]; then

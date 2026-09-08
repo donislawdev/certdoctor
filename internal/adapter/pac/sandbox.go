@@ -152,7 +152,7 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 
 	vm := goja.New()
 	vm.SetMaxCallStackSize(s.MaxStack)
-	usedRandomness := s.makeDeterministic(vm)
+	usedRandomness, readClock := s.makeDeterministic(vm)
 
 	record, failure := s.inject(vm)
 	if failure != nil {
@@ -176,6 +176,10 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 		result.Unanswered = seen.unanswered
 		result.Asked = seen.asked
 		result.LookupsExhausted = seen.exhausted
+		// EITHER ROUTE COUNTS. seen.usedClock is our three helpers taking the
+		// pinned instant; readClock is the file calling Date itself. The caveat
+		// is about the ANSWER having a date on it, not about which door was used.
+		result.UsedClock = seen.usedClock || readClock()
 		return result
 	}
 

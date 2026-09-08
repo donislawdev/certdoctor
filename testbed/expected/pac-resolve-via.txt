@@ -1,0 +1,62 @@
+# The name whose ADDRESS sends it through the proxy - slice P8-K3e, and the
+# first half of the witness OBS134 said this bench did not have.
+#
+# DERIVED FROM pac/files/resolve.pac BY READING IT, before any evaluator was
+# pointed at it. The file asks about gw.proxy.test whatever host arrives, then
+# tests the host's address against 172.28.0.90 with a /32 mask, then asks for
+# that same address a second time through a different helper. via.proxy.test is
+# 172.28.0.90 in dns/proxy.test.zone, so all three tests pass and the file
+# returns the open proxy.
+#
+# 🔴 THIS FILE AND pac-resolve-gw.txt ONLY MEAN ANYTHING AS A PAIR, the same way
+# proxy-pac-via and proxy-pac-direct do - and the variable is a different one.
+# There the two names differed in what the PAC SAID about them. Here they differ
+# in NOTHING a PAC file can read as text: same zone, same shape, same server,
+# same file, same rule. The only thing left is the address, so an answer that
+# differs between them is caused by a resolver having been asked.
+#
+# WHAT THIS PAIR DOES NOT REPEAT, said rather than quietly duplicated: it does
+# not drive a client or watch the proxy log. proxy-pac-via already holds that
+# row and holds it with a unique token, and a second client run through the same
+# proxy would put lines into a log whose growth another scenario counts. What is
+# new here is the resolver and the list of names that left this machine.
+
+target=http://via.proxy.test/
+
+# --- W1: the independent evaluator, and this time it needs a resolver too ---
+#
+# 🔴 THE ORACLE ASKS THE SAME DNS SERVER THE RUN ASKS, AND UNTIL THIS SLICE THAT
+# WAS NOT TRUE. oracle-pac.sh runs in a container of its own with its own
+# resolver, because the bench answers NXDOMAIN for everything it does not own
+# and no package could be installed there. That cost nothing while every PAC
+# file on this bench decided by text alone - which is exactly what ADR91
+# measured and why it could leave the resolver unwired. A file that asks DNS
+# would have had the oracle and the run reading two different worlds, and the
+# difference would have looked like a difference in PAC semantics.
+#
+# So the oracle now installs its package first and switches its resolver to the
+# bench afterwards, and says so out loud if the switch does not take. Measured
+# 2026-09-07, probe S17: libproxy then answers 172.28.0.90 for this name and
+# 172.28.0.128 for the other one, which is what the zone file says.
+pac_url=http://pac.proxy.test/pac/resolve.pac
+pac_host=via.proxy.test
+pac_expect=http://172.28.0.128:3128
+
+# --- L2 ---
+#
+# PASS is derived from the layer's own rules rather than assumed. The script was
+# fetched, it answered, no helper went unanswered and no allowance was spent, so
+# it is settled: one script answered, nothing is open, nothing on Linux reports
+# automatic discovery, and one readable lens naming nothing cannot produce a
+# divergence class. That is the last branch in gradeOf.
+l2_status=PASS
+l2_pac_result=PROXY 172.28.0.128:3128
+
+# 🔴 THE LIST IS THE POINT OF THIS SCENARIO. Two names, in the order the file
+# first asked about each, and via.proxy.test appears ONCE although two helpers
+# wanted its address - ADR93 part 3 puts a cache in front of the resolver and
+# calls it part of the ceiling rather than an optimisation, and this is where
+# that shows. gw.proxy.test is first because the file asks about it before it
+# looks at the host, which is also what makes this list the FILE's choice rather
+# than an echo of the target.
+l2_asked=gw.proxy.test,via.proxy.test

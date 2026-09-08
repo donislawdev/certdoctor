@@ -957,14 +957,34 @@ func renderReport(o *options, env environment, finished report.Report) ([]byte, 
 		return document, nil
 	}
 
-	terminal := render.Terminal{}
-	// Colour and glyphs are for a person at a console. A report going into a
-	// file gets neither, whatever the console behind this process can do.
-	if o.out == "-" {
-		capability := env.capability(o.noColor)
-		terminal = render.Terminal{Color: capability.Color, Glyph: capability.Glyph}
+	// THE PAGE FORMATS PICK A RENDERER AND THEN SHARE ONE CALL, rather than each
+	// getting a block with a return of its own. The sentence a run gives when a
+	// renderer fails is one sentence, so it belongs in one place - and the first
+	// draft of the markdown arm had already grown a second copy of it, which is
+	// the shape this tree keeps measuring: one rule written twice drifts, and
+	// the drift is invisible because both halves look right.
+	//
+	// MARKDOWN TAKES NO OPTIONS AND ASKS THE ENVIRONMENT NOTHING. That document
+	// is read by whatever the person pastes it into, and none of that is
+	// knowable from here, so there is no colour to decide and no glyph set to
+	// detect - which also makes it the same bytes wherever it is sent, and the
+	// terminal format deliberately is not.
+	var page interface {
+		Render(io.Writer, report.Report) error
+	} = render.Markdown{}
+
+	if o.format != "md" {
+		terminal := render.Terminal{}
+		// Colour and glyphs are for a person at a console. A report going into a
+		// file gets neither, whatever the console behind this process can do.
+		if o.out == "-" {
+			capability := env.capability(o.noColor)
+			terminal = render.Terminal{Color: capability.Color, Glyph: capability.Glyph}
+		}
+		page = terminal
 	}
-	if err := terminal.Render(&buffer, finished); err != nil {
+
+	if err := page.Render(&buffer, finished); err != nil {
 		return nil, &fault{exitcode.Runtime, fmt.Sprintf("the report could not be rendered: %v", err)}
 	}
 	return buffer.Bytes(), nil

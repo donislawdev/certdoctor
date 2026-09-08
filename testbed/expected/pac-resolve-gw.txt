@@ -1,0 +1,47 @@
+# The name whose ADDRESS keeps it off the proxy - slice P8-K3e, the negative
+# half of the pair pac-resolve-via.txt opens.
+#
+# DERIVED FROM pac/files/resolve.pac BY READING IT. The file asks about
+# gw.proxy.test whatever host arrives, then tests the host's address against
+# 172.28.0.90 with a /32 mask. gw.proxy.test is 172.28.0.128 in
+# dns/proxy.test.zone, so the mask does not match and the file returns DIRECT
+# without ever reaching the third test.
+#
+# 🔴 NO TEXT RULE IN THAT FILE COULD TELL THESE TWO NAMES APART. Both end in
+# .proxy.test, neither is a plain host name, both are served by the same DNS
+# server out of the same zone, and both are put to the same rule. The answers
+# differ, so something asked a resolver - which is the whole claim P8-K3e makes
+# and the one thing this bench could not check before OBS134 was written.
+#
+# THE TARGET IS NOT REACHABLE ON PORT 80 AND THAT IS NOT A BENCH FAULT.
+# 172.28.0.128 is squid, which listens on 3128 and 3129. The layers below L2 will
+# say so and this scenario does not read them: what is being asked here is what
+# the PAC file decides about a name, which needs no server behind it.
+
+target=http://gw.proxy.test/
+
+# --- W1: the independent evaluator ---
+#
+# It reads the same bytes through the same resolver - see pac-resolve-via.txt for
+# why that arrangement had to change in this slice. libproxy prints direct://
+# where it finds no proxy, and the expectation is written in its vocabulary so
+# that nothing has to be translated before it is compared.
+pac_url=http://pac.proxy.test/pac/resolve.pac
+pac_host=gw.proxy.test
+pac_expect=direct://
+
+# --- L2 ---
+#
+# The same last branch of gradeOf as the positive half: the script was fetched,
+# it answered, every helper it called had something behind it and no allowance
+# was spent. DIRECT is a settled answer, not an absence of one.
+l2_status=PASS
+l2_pac_result=DIRECT
+
+# 🔴 ONE NAME FOR TWO CALLS, AND THAT IS THE CACHE FROM THE OTHER SIDE. Here the
+# name the file always asks about and the host it was given are the SAME name, so
+# isResolvable and isInNet both want gw.proxy.test - and one question is what
+# must leave this machine. The positive half witnesses the cache across two
+# helpers about the target; this one witnesses it across two helpers that arrived
+# at one name by different routes.
+l2_asked=gw.proxy.test

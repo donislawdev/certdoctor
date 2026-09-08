@@ -25,6 +25,22 @@
 # LATER. On a PAC that will not parse, libproxy warns and then answers direct://.
 # That silent fallback is the opposite of this product's contract. Files that
 # record it say oracle_is_authoritative=no, and this script never compares those.
+#
+# 🔴 IT INSTALLS FIRST AND SWITCHES ITS RESOLVER TO THE BENCH SECOND - added
+# 2026-09-07 with P8-K3e, and until then this script did not need a resolver at
+# all. Every PAC file on this bench decided by text alone, which is the
+# measurement ADR91 rested on when it left pac.Ports.Resolve unwired. ADR93 wired
+# it, and resolve.pac and lookups.pac now route on what DNS says - so an oracle
+# asking Docker's resolver while the run asks the bench would read a DIFFERENT
+# WORLD, and the difference would look like a difference in PAC semantics rather
+# than in whose resolver answered.
+#
+# The two orders cannot be swapped: the package comes from the internet, and the
+# bench answers NXDOMAIN for everything it does not own. So the package is
+# fetched with the resolver this container started with, and only then is the
+# file rewritten. Measured 2026-09-07, probe S17: the write goes through, musl
+# reads the file per lookup so no restart is needed, and curl still reaches the
+# PAC server afterwards.
 set -o pipefail
 
 expected=/w/expected
@@ -46,6 +62,29 @@ if ! apk add -q libproxy-bin 2>&1; then
   exit 0
 fi
 echo "oracle: $(apk info -e libproxy-bin) - $(command -v proxy)"
+
+# THE SWITCH, AND IT IS CHECKED RATHER THAN ASSUMED. gw.proxy.test exists only in
+# the bench's zone file - verify.sh hands this container an /etc/hosts entry for
+# pac.proxy.test and for nothing else - so resolving it is proof that the queries
+# are now going to the bench and not to the resolver this container started with.
+#
+# 🔴 A FAILED SWITCH STOPS THE ORACLE RATHER THAN DEGRADING IT, and that is the
+# one place this script is allowed to be conservative. It cannot tell which of
+# the questions below depend on DNS, because it does not read the PAC files - so
+# a run where the switch did not take would mix answers from two worlds and
+# nothing downstream could separate them. A missing witness is reported as
+# missing and costs the run some coverage. A witness answering about a different
+# world costs the run its meaning.
+printf 'nameserver 172.28.0.53\n' > /etc/resolv.conf 2>/dev/null
+if getent hosts gw.proxy.test >/dev/null 2>&1; then
+  echo "oracle: resolver switched to the bench - gw.proxy.test resolves here now"
+else
+  echo "oracle: the resolver could NOT be switched to the bench, so every answer below"
+  echo "oracle: would be about a different world than the run's. There is NO second"
+  echo "oracle: opinion this run - verify-inside.sh will say so."
+  echo "unavailable=the oracle's resolver could not be pointed at the bench" >> "$out"
+  exit 0
+fi
 
 # THE LIST BUILDS ITSELF FROM THE EXPECTATIONS. Any file naming a pac_url and a
 # pac_host contributes one question. So a scenario added later cannot be

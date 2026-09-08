@@ -247,16 +247,31 @@ func liveEnvironment() environment {
 						// the closed list in internal/core/allowed, and that is a
 						// question of its own rather than a line in this one.
 						//
-						// Now STAYS NIL TOO, WHICH IS NOT THIS SLICE'S DOING AND
-						// IS WORSE THAN IT LOOKS. Nothing has ever wired it, so
-						// weekdayRange, dateRange and timeRange come back "not
-						// understood" and timeHelper throws - and the message it
-						// throws says certdoctor does not understand this form of
-						// the call. That sentence blames a file which is very
-						// likely correct for a port this build never filled.
-						// Filling it is one line and it is a CHANGE IN WHAT THIS
-						// PROGRAM REPORTS, so it is asked for on its own rather
-						// than carried in on the back of the resolver.
+						// Now IS WIRED, AND WHAT IT REPLACED WAS MEASURED
+						// RATHER THAN READ. Until 2026-09-08 this was nil, so
+						// weekdayRange, dateRange and timeRange came back "not
+						// understood", timeHelper threw, and the layer graded the
+						// whole thing OutcomeMalformed with the reason it keeps
+						// for a file that will not parse. Measured against the
+						// binary on a PAC file whose only sin was
+						// weekdayRange("MON","FRI"): L2 UNKNOWN
+						// unrecognized_output, and a sentence on both surfaces
+						// saying the PAC file failed. A legal file, called broken,
+						// in this product's own vocabulary for somebody else's
+						// mistake - inviolable rule 15 pointed one way only.
+						//
+						// THE SAME RUN MEASURED THE ASYMMETRY THAT SETTLED IT: a
+						// file calling new Date() was answered correctly all
+						// along, because goja's default time source is the real
+						// clock. The sandbox was not withholding the clock at
+						// all - it was withholding it from our own twelve
+						// helpers while the file's own JavaScript read it freely.
+						//
+						// The instant is pinned per evaluation and the report
+						// carries a caveat saying the answer has a date on it -
+						// pac.Sandbox.pinnedClock and pac.Result.UsedClock each
+						// say why in full.
+						Now: time.Now,
 					},
 					Budget:     pacEvaluationBudget,
 					Ceiling:    pacCeiling,

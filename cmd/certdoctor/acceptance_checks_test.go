@@ -1190,3 +1190,89 @@ func TestTheShippedBinaryOffersNoCommandWhereNothingIsBroken(t *testing.T) {
 			"advice invented for a machine with nothing wrong with it")
 	}
 }
+
+// TestTheShippedBinaryWritesAMarkdownReportWithNoTerminalDressing is the
+// question no in-process test of this renderer can answer.
+//
+// EVERY TEST OF Markdown HANDS IT A REPORT AND READS THE STRING BACK. That says
+// the renderer is right and says nothing about the binary: the format has to be
+// selected by a flag whose declaration carries a "built" bit, dispatched by a
+// function that used to have two branches, and delivered down the same pipe the
+// terminal uses. Three findings in this project came from exactly that gap.
+//
+// THE COLOUR CHECK IS THE HALF WORTH THE MOST. The terminal renderer decides on
+// colour from what is behind standard output, and this one takes no options at
+// all - so a dispatch that fell through to the terminal, or a markdown renderer
+// that had grown a capability question, would show up here as an escape sequence
+// in a document somebody is about to paste into a ticket.
+func TestTheShippedBinaryWritesAMarkdownReportWithNoTerminalDressing(t *testing.T) {
+	r := runProgram(t, aTarget, "--format", "md")
+	if r.code != exitcode.Inconclusive.Int() {
+		t.Fatalf("the run ended with %d: %s", r.code, r.stderr)
+	}
+	if strings.Contains(r.stdout, "\x1b") {
+		t.Errorf("the markdown report carries a terminal escape sequence")
+	}
+
+	// The shape a reader expects, and the three headings this document is
+	// organised by. A page that lost one of them would still be markdown.
+	for _, want := range []string{"# certdoctor", "## Verdict", "## Layers", "## Notes"} {
+		if !strings.Contains(r.stdout, want) {
+			t.Errorf("the markdown report has no %q", want)
+		}
+	}
+
+	// Every declared layer, exactly once, the same claim the JSON check above
+	// makes: a missing row is a silence, and silence reads as "nothing found".
+	for _, id := range layer.All {
+		if strings.Count(r.stdout, "| "+id.String()+" |") != 1 {
+			t.Errorf("the layer overview does not carry exactly one row for %s", id)
+		}
+	}
+}
+
+// TestTheShippedBinaryDeliversAMarkdownReportToAFileAndNotAlsoToThePipe covers
+// the delivery half, which is a different code path from the rendering one.
+//
+// THE FIRST DRAFT OF THIS TEST COMPARED THE TWO OUTPUTS BYTE FOR BYTE and was
+// wrong in a way worth recording: two runs against a live target MEASURE
+// different things - resolver timings, connection timings - so it was comparing
+// the network to itself and calling the difference a renderer defect. The claim
+// it was reaching for is real but belongs elsewhere: Markdown has no fields, so
+// it cannot depend on where its output goes, and that is guaranteed by the type
+// rather than by a run.
+//
+// WHAT IS LEFT IS WHAT ONLY A REAL BINARY CAN SAY: the file is written, it holds
+// a document rather than a fragment, it carries no terminal dressing, and the
+// pipe stays EMPTY. A report delivered to both places would be read twice by
+// anything downstream, and the run that wrote it would look identical to one
+// that did not.
+func TestTheShippedBinaryDeliversAMarkdownReportToAFileAndNotAlsoToThePipe(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.md")
+	r := runProgram(t, aTarget, "--format", "md", "--out", path)
+	if r.code != exitcode.Inconclusive.Int() {
+		t.Fatalf("the run ended with %d: %s", r.code, r.stderr)
+	}
+	if r.stdout != "" {
+		t.Errorf("the report went to a file AND to standard output:\n%s", r.stdout)
+	}
+
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading the report back: %v", err)
+	}
+	document := string(onDisk)
+	if strings.Contains(document, "\x1b") {
+		t.Errorf("the markdown report on disk carries a terminal escape sequence")
+	}
+	for _, want := range []string{"# certdoctor", "## Verdict", "## Layers", "## Notes"} {
+		if !strings.Contains(document, want) {
+			t.Errorf("the report on disk has no %q", want)
+		}
+	}
+	for _, id := range layer.All {
+		if strings.Count(document, "| "+id.String()+" |") != 1 {
+			t.Errorf("the report on disk does not carry exactly one row for %s", id)
+		}
+	}
+}

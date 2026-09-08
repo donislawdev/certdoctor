@@ -1,0 +1,72 @@
+# The PAC file that asks about more distinct names than one evaluation may
+# resolve - slice P8-K3e, the second half of the witness OBS134 asked for.
+#
+# DERIVED FROM pac/files/lookups.pac BY READING IT. It calls isResolvable on six
+# names, every one of which is in dns/proxy.test.zone, and returns the proxy only
+# if all six resolve. A run that resolves fewer than six gets DIRECT out of it -
+# and nothing about those names explains why, because the bench answers for all
+# of them.
+#
+# 🔴 THE ANSWER THIS FILE PRODUCES IS TRUE AND THE VERDICT RESTING ON IT WOULD
+# NOT BE, WHICH IS THE WHOLE SCENARIO. The names past the allowance are handed to
+# the file as though they did not resolve, because the PAC contract has one
+# boolean for isResolvable and no way to say "nobody could be asked". The file
+# then takes a branch a browser would not take. certdoctor records the answer and
+# refuses to rest a verdict on it - ADR93 part 5 - which is inviolable rule 15
+# met from an unusual direction: the failure to report is OURS rather than the
+# machine's, and it is still not allowed to become a PASS.
+#
+# DIRECT IS RECORDED HERE RATHER THAN FORBIDDEN, WHICH IS THE OPPOSITE OF
+# pac-broken.txt AND THE DIFFERENCE IS WORTH THE SENTENCE. There, DIRECT was a
+# silent fallback invented for a file that would not parse, so the word is
+# banned outright. Here the file really did return it, so quoting it is honest
+# reporting - what must not happen is the layer treating it as an answer about
+# this machine.
+
+target=http://via.proxy.test/
+pac_url=http://pac.proxy.test/pac/lookups.pac
+
+# --- W1: recorded, NOT asked, and libproxy is deliberately not the oracle ---
+#
+# 🔴 IT IS NOT WRONG HERE - IT IS ANSWERING A DIFFERENT QUESTION, and that is
+# rarer than a disagreement and worth writing down. Measured 2026-09-07, libproxy
+# 0.5.12 reading these same bytes through this same bench resolver: it has no
+# allowance of its own, resolves all six names and returns the proxy. That is the
+# true reading of this file and what a browser would do.
+#
+# certdoctor answers differently ON PURPOSE, so comparing the two would fail this
+# bench for the product working. There is no pac_host key in this file, which is
+# what keeps oracle-pac.sh from asking the question live - the same arrangement
+# pac-hostile.txt uses and for the same reason.
+oracle_libproxy_says=http://172.28.0.128:3128
+oracle_is_authoritative=no
+
+# --- L2 ---
+#
+# Derived from the layer's rules. The script did not settle, so nothing was
+# answered and one script is open, no lens names a proxy, and the reason comes
+# off the script itself: its outcome is "answered", which scriptReasons has no
+# entry for on purpose, and a miss there is undetermined. Never limit_exceeded -
+# ADR80 part 3 keeps that word for a file this run refused to finish, and this
+# file finished.
+l2_status=UNKNOWN
+l2_reason=undetermined
+l2_pac_result=DIRECT
+
+# 🔴 THE ASSERTION NAMES THIS FILE'S NUMBER AND NOT OURS, AND THAT IS DELIBERATE
+# RATHER THAN VAGUE. The file asks about six names, so the claim is that fewer
+# than six left this machine - a statement of the rule that stays true whatever
+# the allowance is wired to. Writing the allowance in here would put a tuning
+# constant into a bench, and the caveat certdoctor prints deliberately does not
+# quote it either, for the same reason: it is a property of how this binary was
+# built rather than of anybody's machine or of their file.
+#
+# IF SOMEBODY RAISES THE ALLOWANCE ABOVE SIX THIS SCENARIO GOES RED, and that is
+# correct rather than brittle. At that point the file resolves everything, the
+# script settles, and this stops being a scenario about a ceiling at all.
+l2_asked_fewer_than=6
+
+# The sentence the reader gets instead of a route. It must be there, because
+# without it the UNKNOWN above looks arbitrary - which is the fault OBS133 found
+# on the terminal in this same slice.
+l2_caveat_says=more distinct names than one evaluation may resolve

@@ -1,0 +1,55 @@
+# The PAC file that decides by the calendar - slice P8-K3f, and the witness that
+# a legal file is no longer called broken.
+#
+# DERIVED FROM pac/files/clock.pac BY READING IT. weekdayRange("SUN","SAT")
+# spans the week and timeRange(0,24) spans the day, so both are true whenever
+# this bench is run and the file reaches its last line. The expectation is
+# therefore a constant, which is the only kind a scenario about the clock may
+# have - one that had to be recomputed would be a scenario that fails one day a
+# week and teaches everybody to ignore it.
+#
+# 🔴 WHAT THIS WOULD HAVE SAID THE DAY BEFORE. Measured 2026-09-08 against the
+# binary, before Ports.Now was wired: a file whose only sin was
+# weekdayRange("MON","FRI") came back L2 UNKNOWN unrecognized_output, outcome
+# malformed, with a sentence on both surfaces saying the PAC file failed - the
+# vocabulary this product keeps for a file that will not parse, spent on a legal
+# one. Nothing on this bench could see it, because no PAC file here asked the
+# clock. That is OBS134's gap one helper family along, and this file closes it.
+
+target=http://via.proxy.test/
+
+# --- W1: the independent evaluator ---
+#
+# libproxy implements these two helpers as well, so it is a live oracle here and
+# not a recorded one - measured 2026-09-08, it answers the proxy through the same
+# bench resolver this run uses. Two independent implementations of the same
+# specification reaching the same branch of the same file.
+pac_url=http://pac.proxy.test/pac/clock.pac
+pac_host=via.proxy.test
+pac_expect=http://172.28.0.128:3128
+
+# --- L2 ---
+#
+# PASS rather than a refusal, and the difference is the point. A clock this run
+# really has is NOT a question nobody could be asked: the answer is genuine for
+# the moment it was taken. Grading it UNKNOWN would tell somebody their machine
+# could not work something out when it worked it out exactly - which is the
+# opposite error to the one this slice fixed, and just as wrong.
+l2_status=PASS
+l2_pac_result=PROXY 172.28.0.128:3128
+
+# 🔴 AND THE ANSWER CARRIES ITS DATE. A file routing office hours through a proxy
+# and evenings direct gives one answer at nine in the morning and another at nine
+# at night, and both are correct - so the row says which moment it took. Without
+# this sentence the report would be claiming more than it measured, which is the
+# same overstatement the Math.random caveat exists to prevent.
+l2_caveat_says=what day or time it is
+
+# --- what this scenario does NOT establish ---
+#
+# It does not check WHICH answer the clock produced, because both ranges are
+# always true. A scenario that pinned a weekday would need a bench clock, and
+# this bench has none - the run reads the machine it is on. What is checked here
+# is that the helpers answered at all, that the answer settles the layer, and
+# that the report says the answer has a date on it. Which day it was is the
+# unit tests' question and they hold a fixed clock to ask it.

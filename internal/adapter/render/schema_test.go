@@ -621,7 +621,12 @@ var bodyFixtures = map[report.FindingKind]report.Finding{
 				{Kind: "DIRECT", Recognised: true},
 			},
 			Selected: &report.PACDirective{Kind: "SOCKS5", Endpoint: "socks.example:1080", Recognised: true},
-			Caveats:  []string{},
+			// THE NAMES THE FILE SENT TO A RESOLVER, ADDED 2026-09-08 WITH THE
+			// PARITY GUARD. Empty here until then, which meant no surface was
+			// ever asked whether it prints them - and this is the one channel in
+			// the program no guard can see, so the printing IS the answer to it.
+			Asked:   []string{"intranet.example", "api.example.com"},
+			Caveats: []string{},
 		},
 	},
 	// A proxy that ASKED FOR CREDENTIALS and named two ways of supplying them,

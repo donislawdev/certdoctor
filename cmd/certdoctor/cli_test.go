@@ -463,7 +463,7 @@ func TestOnlyASuccessfulRunWritesToStandardOutput(t *testing.T) {
 		{"unknown switch", []string{"https://example.com", "--nope"}, exitcode.Usage},
 		{"target without a scheme", []string{"example.com"}, exitcode.Usage},
 		{"two targets", []string{"https://a.example", "https://b.example"}, exitcode.Usage},
-		{"format not built", []string{"https://example.com", "--format", "md"}, exitcode.Config},
+		{"format not built", []string{"https://example.com", "--format", "html"}, exitcode.Config},
 		{"contradictory formats", []string{"https://example.com", "--json", "--format", "html"}, exitcode.Config},
 		{"compare with nothing to compare", []string{"https://example.com", "--compare", "host,container"}, exitcode.Config},
 		{"two places to run", []string{"https://example.com", "--in", "c", "--image", "i"}, exitcode.Config},
@@ -2019,6 +2019,49 @@ func TestAProxyGoesIntoTheSetExactlyAsTheLayerSpelledIt(t *testing.T) {
 		}
 		if reason != allowed.ReasonProxy {
 			t.Errorf("%q went in as %q, want the reason for a proxy", endpoint, reason)
+		}
+	}
+}
+
+// TestTheMarkdownFormatIsDispatchedAndAsksTheEnvironmentNothing covers the
+// branch that selects the second document surface, in process.
+//
+// THE ACCEPTANCE SUITE DRIVES THE REAL BINARY THROUGH THIS SAME PATH, and that
+// is the check worth more - but it runs behind a build tag, so the branch it
+// exercises counts as unexecuted everywhere else. A dispatch arm nobody
+// executes in the ordinary run is exactly the shape the coverage gate exists to
+// notice, and it noticed this one.
+//
+// WHAT IT ADDS BEYOND THE ACCEPTANCE CHECK is the environment question. The
+// terminal renderer asks what is behind standard output before deciding on
+// colour; this one must not, and here the environment is a stub that would
+// answer differently from a real console. A dispatch that fell through to the
+// terminal would show up as an escape sequence.
+func TestTheMarkdownFormatIsDispatchedAndAsksTheEnvironmentNothing(t *testing.T) {
+	h := invoke("https://example.com", "--format", "md")
+	if h.code != exitcode.Inconclusive {
+		t.Fatalf("ended with %s (%d): %s", h.code.Name(), h.code.Int(), h.stderr.String())
+	}
+
+	page := h.stdout.String()
+	if !strings.HasPrefix(page, "# certdoctor ") {
+		t.Errorf("the format was selected and the document does not begin as markdown:\n%.120s", page)
+	}
+	for _, want := range []string{"## Verdict", "## Layers", "## Notes"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the markdown report has no %q", want)
+		}
+	}
+	if strings.Contains(page, "\x1b") {
+		t.Errorf("the markdown report carries a terminal escape sequence")
+	}
+
+	// AND EVERY DECLARED LAYER, EXACTLY ONCE. A missing row is a silence, and a
+	// reader takes silence for "nothing found" - the same claim the JSON path
+	// makes about its own document.
+	for _, id := range layer.All {
+		if strings.Count(page, "| "+id.String()+" |") != 1 {
+			t.Errorf("the layer overview does not carry exactly one row for %s", id)
 		}
 	}
 }

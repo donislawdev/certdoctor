@@ -403,6 +403,35 @@ func TestARandomisedAnswerIsOneOfTheAnswersRatherThanTheAnswer(t *testing.T) {
 	}
 }
 
+// TestAClockedAnswerCarriesItsDateAndStillSettlesTheLayer holds both halves of
+// what UsedClock is for, and the second half is the one easy to get wrong.
+//
+// A file routing office hours through a proxy gives one answer at nine in the
+// morning and another at nine at night, and both are correct - so the report
+// says which moment it took. But it is NOT a refusal: a clock this run really
+// has is not a question nobody could be asked, which is the line between this
+// and Unanswered. Grading it UNKNOWN would tell somebody their machine could
+// not work something out, when it worked it out exactly.
+func TestAClockedAnswerCarriesItsDateAndStillSettlesTheLayer(t *testing.T) {
+	answer := answeredWith("PROXY proxy.example:8080")
+	answer.Result.UsedClock = true
+
+	result := askLayer(t, Input{
+		Lenses:    lensesOf(silentLens(StackEnvironment)),
+		Target:    target,
+		Evaluate:  answering(nil, answer),
+		ScriptURL: "http://pac.example/proxy.pac",
+	})
+
+	if !hasScriptCaveat(scriptRowOf(t, result), "what day or time it is") {
+		t.Errorf("a clocked answer carries no caveat: %v", scriptRowOf(t, result).Caveats)
+	}
+	if result.Status == status.Unknown {
+		t.Errorf("a clocked answer was refused as %s / %s - the clock was read, not missing",
+			result.Status, result.Reason)
+	}
+}
+
 // TestAScriptNobodyCouldFetchSaysSoAndSaysWhy keeps two facts apart that send a
 // reader to different places: a web server nobody can reach, and a file that
 // answers badly.

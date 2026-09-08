@@ -247,3 +247,94 @@ func TestTheSandboxRefusesToBuildWithAHelperMissing(t *testing.T) {
 		t.Errorf("the reason does not say the sandbox failed to build: %q", result.Detail)
 	}
 }
+
+func TestTheThreeTimeHelpersAnswerRatherThanAccusingTheFile(t *testing.T) {
+	// Until 2026-09-08 Ports.Now was nil in production while every test wired
+	// it, so this package measured a rule the shipped binary did not follow.
+	// Measured against the binary on a file whose only sin was
+	// weekdayRange("MON","FRI"): OutcomeMalformed, L2 UNKNOWN
+	// unrecognized_output, and a sentence saying the PAC file failed - the
+	// vocabulary this product keeps for a file that will not parse, spent on a
+	// legal one.
+	//
+	// EACH RANGE BELOW IS TRUE ON EVERY DAY AND AT EVERY HOUR on purpose, so
+	// this test asserts that the helper ANSWERED rather than what the answer
+	// was. A range that depended on the calendar would be a test that fails one
+	// day a week.
+	for _, c := range []struct{ name, body string }{
+		{"weekdayRange", `if (weekdayRange("SUN", "SAT")) { return "PROXY p.test:1"; } return "DIRECT";`},
+		{"dateRange", `if (dateRange(1, 31)) { return "PROXY p.test:1"; } return "DIRECT";`},
+		{"timeRange", `if (timeRange(0, 24)) { return "PROXY p.test:1"; } return "DIRECT";`},
+	} {
+		result := answer(t, c.body)
+		if result.Outcome != corepac.OutcomeAnswered {
+			t.Errorf("%s: outcome %s (%s), want an answer - a legal file must not be called broken",
+				c.name, result.Outcome, result.Detail)
+			continue
+		}
+		if result.Raw != "PROXY p.test:1" {
+			t.Errorf("%s: answered %q, want the always-true branch", c.name, result.Raw)
+		}
+		if !result.UsedClock {
+			t.Errorf("%s: answered without recording that it read the clock, so the report would not "+
+				"say this answer has a date on it", c.name)
+		}
+	}
+}
+
+func TestTheClockIsPinnedForOneEvaluation(t *testing.T) {
+	// A file may call two time helpers, and a boundary crossed between them
+	// would have it answering about two different moments - a branch no browser
+	// would take. So the instant is taken once and handed to every helper.
+	//
+	// THE CLOCK HERE JUMPS THREE DAYS ON EVERY CALL, which no real clock does.
+	// That is the point: an unpinned build would let the second helper see a
+	// Thursday while the first saw a Monday, and this file reports both.
+	monday := time.Date(2026, time.September, 7, 12, 0, 0, 0, time.UTC)
+	calls := 0
+	sandbox := testSandbox()
+	sandbox.Ports.Now = func() time.Time {
+		calls++
+		return monday.AddDate(0, 0, 3*(calls-1))
+	}
+
+	result := sandbox.Evaluate("function "+Entry+
+		`(u, h) { return "PROXY " + weekdayRange("MON","MON") + "-" + weekdayRange("THU","THU") + ":1"; }`,
+		"http://x.test/", "x.test")
+
+	if want := "PROXY true-false:1"; result.Raw != want {
+		t.Errorf("the file saw %q, want %q - both helpers must read ONE instant", result.Raw, want)
+	}
+	if calls != 1 {
+		t.Errorf("the clock was read %d time(s), want exactly 1 for one evaluation", calls)
+	}
+}
+
+func TestOnlyAFileThatAskedTheClockIsSaidToHaveAskedIt(t *testing.T) {
+	// The caveat this flag produces tells a reader the answer has a date on it.
+	// Set on a file that never asked, it would put a date on an answer that has
+	// none - and a caveat nobody can act on is the shape docs/19 forbids by
+	// calling these sentences measured rather than precautionary.
+	//
+	// THE Date ROW IS THE SECOND ROUTE AND IT WAS OPEN ALL ALONG. Measured
+	// 2026-09-08: with Ports.Now nil the engine used its own default clock, so
+	// new Date() answered while our three helpers threw. A file deciding that
+	// way has just as much of a date on its answer.
+	for _, c := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"no clock at all", `if (isPlainHostName(host)) { return "DIRECT"; } return "PROXY p.test:1";`, false},
+		{"a helper", `if (timeRange(0, 24)) { return "PROXY p.test:1"; } return "DIRECT";`, true},
+		{"the file's own Date", `return "PROXY d" + new Date().getDay() + ".test:1";`, true},
+	} {
+		result := answer(t, c.body)
+		if result.Outcome != corepac.OutcomeAnswered {
+			t.Fatalf("%s: outcome %s (%s)", c.name, result.Outcome, result.Detail)
+		}
+		if result.UsedClock != c.want {
+			t.Errorf("%s: UsedClock %v, want %v", c.name, result.UsedClock, c.want)
+		}
+	}
+}

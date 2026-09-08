@@ -184,7 +184,7 @@ type formatDecl struct {
 var formats = []formatDecl{
 	{name: "terminal", built: true},
 	{name: "json", built: true},
-	{name: "md", built: false, why: "the markdown report is not built yet"},
+	{name: "md", built: true},
 	{name: "html", built: false, why: "the HTML report is not built yet"},
 }
 

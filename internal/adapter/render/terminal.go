@@ -321,18 +321,29 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 // through visible, because the rule on this page is that borrowed strings are
 // escaped and deciding case by case is how one gets missed.
 func writeCaveats(b *strings.Builder, finding report.Finding) {
-	var caveats []string
-	switch {
-	case finding.PACScript != nil:
-		caveats = finding.PACScript.Caveats
-	case finding.ProxyStack != nil:
-		caveats = finding.ProxyStack.Caveats
-	case finding.ProxyChallenge != nil:
-		caveats = finding.ProxyChallenge.Caveats
-	}
-	for _, caveat := range caveats {
+	for _, caveat := range caveatsOf(finding) {
 		writeTrimmed(b, fmt.Sprintf("        note: %s", visible(caveat)))
 	}
+}
+
+// caveatsOf says which body on a finding carries the caveat list.
+//
+// IT WAS INLINE IN writeCaveats UNTIL A SECOND RENDERER NEEDED IT. Copied
+// instead of extracted, it would have been one rule in two places - and this
+// tree has measured what that costs six times over: the copies disagree
+// silently, and the first sign of it is the mutation register reporting SKIP
+// because one anchor now matches two sites. Three bodies carry caveats today and
+// a fourth will be added by somebody who greps for one of these field names.
+func caveatsOf(finding report.Finding) []string {
+	switch {
+	case finding.PACScript != nil:
+		return finding.PACScript.Caveats
+	case finding.ProxyStack != nil:
+		return finding.ProxyStack.Caveats
+	case finding.ProxyChallenge != nil:
+		return finding.ProxyChallenge.Caveats
+	}
+	return nil
 }
 
 // writeAsked prints the names a PAC file sent to a resolver, underneath the row

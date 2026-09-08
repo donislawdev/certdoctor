@@ -364,6 +364,17 @@ func caveatsOfScript(s script, body report.PACScript) []string {
 				"that point were answered as though they did not resolve, and its answer may not be the "+
 				"one a browser would get")
 	}
+	if s.answer.Result.UsedClock {
+		// THE SENTENCE NAMES THE MOMENT AND NOT THE HELPER. Which of the three
+		// the file called is our vocabulary; what a reader can act on is that
+		// this answer has a date on it, so a report pasted into a ticket on
+		// Monday may be describing a Saturday route. It is deliberately NOT a
+		// refusal - see pac.Result.UsedClock for why a clock this run really has
+		// is not the same thing as a question nobody could be asked.
+		caveats = append(caveats,
+			"this script decided by asking what day or time it is, so this is the answer for the moment this "+
+				"run was taken and a run at another hour may get a different one")
+	}
 	if s.answer.Result.UsedRandomness {
 		// The sandbox pins the random source so two runs of one binary agree.
 		// That makes the report reproducible and makes this answer ONE of the

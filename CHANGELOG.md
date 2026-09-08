@@ -10,6 +10,46 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Added - `--format md` writes the report as markdown, to paste into a ticket
+
+- **The whole report, in a form that survives being pasted.** The layer overview
+  is a table you can scan, each finding is a list entry with its evidence
+  underneath, and the remediation command is in a fenced block so it copies in
+  one gesture. It carries the same facts as the terminal - the certificate chain
+  with whole fingerprints, the names a PAC file asked a resolver about, and every
+  note about what a row does not settle.
+
+- **It does not change with where it is going.** The terminal report drops colour
+  when it is written to a file, because colour is for a console. This format has
+  no such switch and cannot grow one, so a report mailed as an attachment and the
+  same report pasted out of a pipe are the same document. (Two separate runs still
+  differ where they should - they measured different things, at different moments.)
+
+- **Text from the machine being diagnosed cannot change what the page does.**
+  A report is pasted into places that render markdown as HTML, and a host name or
+  a certificate subject is somebody else's text. Those are escaped, so a value
+  spelled like a link stays a value.
+
+### Fixed - a PAC file that asks what day or time it is was reported as broken
+
+- 🔴 **`weekdayRange`, `dateRange` and `timeRange` now answer.** These are ordinary
+  functions from the PAC specification - the ones a company uses to send traffic
+  through a proxy during office hours - and until now a file calling any of them
+  was reported as `UNKNOWN`, with the reason certdoctor uses for a file that will
+  not parse and a sentence saying the PAC file failed. The file was fine. The
+  clock behind those three functions had never been connected.
+
+- **An answer that depended on the clock now says so.** A file routing office
+  hours through a proxy and evenings direct gives one answer in the morning and a
+  different one at night, and both are correct - so the row says this is the
+  answer for the moment the run was taken. A report pasted into a ticket on
+  Monday may be describing a Saturday route, and now it tells you that. This is
+  a note, not a refusal: the answer is genuine for its moment.
+
+  The note appears whether the file used those three functions or read the clock
+  through JavaScript's own `Date`, because it is about the answer having a date
+  on it rather than about how the file asked.
+
 ### Added - certdoctor fetches the proxy auto-configuration script and tells you where it sends this URL
 
 - 🔴 **A PAC script is fetched, run in a sandbox, and reported: which entry it names for your URL, and every entry it listed.** This is the fault this product exists for. A proxy is configured on the machine, the environment says so, the system settings say so, and anybody reading either would tell you the request goes through it - and then the script sends that one name straight out. Nothing else tells you so.

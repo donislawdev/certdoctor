@@ -96,6 +96,23 @@ type Result struct {
 	// it measured.
 	UsedRandomness bool
 
+	// UsedClock says the PAC file decided by asking what day or time it is.
+	//
+	// IT IS UsedRandomness' SIBLING AND EXISTS FOR THE IDENTICAL REASON. A file
+	// routing office hours through a proxy and evenings direct gives a different
+	// answer at nine in the morning than at nine at night, and both are correct.
+	// The report is therefore describing ONE of the answers this machine would
+	// give rather than THE answer, and a verdict that did not know the difference
+	// would be saying more than it measured - somebody reading a Saturday run on
+	// Monday would be reading about a route that is not theirs today.
+	//
+	// IT DOES NOT FORBID A VERDICT, and that is the line between it and
+	// Unanswered. A clock this run really has is not a question nobody could be
+	// asked: the answer is genuine for the moment it was taken, and the caveat
+	// says which moment that was. Unanswered marks an answer built on a known
+	// untruth, which is a different thing and earns a different refusal.
+	UsedClock bool
+
 	// Unanswered names the helpers the file called that this run had nothing
 	// behind, in the order the sandbox declares them.
 	//

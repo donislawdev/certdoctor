@@ -2,6 +2,7 @@ package pac
 
 import (
 	"errors"
+	"time"
 
 	"github.com/dop251/goja"
 
@@ -39,13 +40,27 @@ var helperNames = []string{
 // looks, and the layer has to be able to say so.
 // It returns a function saying whether the PAC file ever asked for randomness,
 // so the result can carry that rather than leaving the caveat in a comment.
-func (s Sandbox) makeDeterministic(vm *goja.Runtime) func() bool {
+// It also returns a reader saying whether the file read the clock through
+// goja's OWN Date, which is a second route to the same caveat and was measured
+// to be open all along: with Ports.Now nil the engine fell back to its default
+// time source, so new Date() answered correctly while our three helpers threw.
+// A file deciding by Date has just as much of a date on its answer as one
+// deciding by timeRange, and a report that said so for one and not the other
+// would be describing the helper rather than the answer.
+func (s Sandbox) makeDeterministic(vm *goja.Runtime) (func() bool, func() bool) {
+	readClock := false
 	if s.Ports.Now != nil {
-		vm.SetTimeSource(s.Ports.Now)
+		// WRAPPED TO RECORD, NOT TO PIN. pinnedClock explains why Date is left
+		// moving: freezing it changes what somebody else's file DOES, while
+		// this only changes what we can say about it.
+		vm.SetTimeSource(func() time.Time {
+			readClock = true
+			return s.Ports.Now()
+		})
 	}
 	source, used := fixedRandom()
 	vm.SetRandSource(source)
-	return used
+	return used, func() bool { return readClock }
 }
 
 // fixedRandom is a xorshift64 sequence with a fixed seed.
@@ -95,6 +110,11 @@ func (s Sandbox) inject(vm *goja.Runtime) (func() helperRecord, error) {
 	// send one name twice or more names than Sandbox.MaxLookups permits.
 	ports, lookups := s.boundedPorts()
 
+	// AND THE CLOCK IS PINNED THE SAME WAY, for the reason the next function
+	// gives: one evaluation describes one moment or it describes none.
+	clock, clockUsed := s.pinnedClock()
+	ports.Now = clock
+
 	helpers := map[string]any{
 		"isPlainHostName":     corepac.IsPlainHostName,
 		"dnsDomainIs":         corepac.DNSDomainIs,
@@ -129,9 +149,17 @@ func (s Sandbox) inject(vm *goja.Runtime) (func() helperRecord, error) {
 			return address
 		},
 
-		"weekdayRange": s.timeHelper(vm, "weekdayRange", s.Ports.WeekdayRange),
-		"dateRange":    s.timeHelper(vm, "dateRange", s.Ports.DateRange),
-		"timeRange":    s.timeHelper(vm, "timeRange", s.Ports.TimeRange),
+		// THESE THREE READ ports AND NOT s.Ports, WHICH THEY DID NOT UNTIL
+		// 2026-09-08. The comment above this map has always said the helpers
+		// read the bounded copy, and for the resolver ones it was true - these
+		// three reached past it to the raw clock. Nothing was visibly wrong
+		// while the clock was nil, because they answered "not understood"
+		// either way. Measured the moment it was wired: they answered
+		// correctly, took an unpinned instant, and recorded nothing - so the
+		// caveat that says this answer has a date on it would never have fired.
+		"weekdayRange": s.timeHelper(vm, "weekdayRange", ports.WeekdayRange),
+		"dateRange":    s.timeHelper(vm, "dateRange", ports.DateRange),
+		"timeRange":    s.timeHelper(vm, "timeRange", ports.TimeRange),
 	}
 
 	for _, name := range helperNames {
@@ -159,7 +187,7 @@ func (s Sandbox) inject(vm *goja.Runtime) (func() helperRecord, error) {
 			}
 		}
 		asked, exhausted := lookups()
-		return helperRecord{unanswered: called, asked: asked, exhausted: exhausted}
+		return helperRecord{unanswered: called, asked: asked, exhausted: exhausted, usedClock: clockUsed()}
 	}, nil
 }
 
@@ -174,6 +202,7 @@ type helperRecord struct {
 	unanswered []string
 	asked      []string
 	exhausted  bool
+	usedClock  bool
 }
 
 // errLookupsExhausted is the answer a name gets once the allowance is spent.
@@ -240,6 +269,47 @@ func (s Sandbox) boundedPorts() (corepac.Ports, func() ([]string, bool)) {
 	}
 
 	return ports, func() ([]string, bool) { return asked, exhausted }
+}
+
+// pinnedClock hands the three time helpers ONE instant for the whole
+// evaluation, and a reader saying whether they took it.
+//
+// WHY ONE INSTANT AND NOT time.Now ON EVERY CALL. A PAC file may ask
+// weekdayRange and then timeRange, and an evaluation is bounded in
+// milliseconds - but a boundary crossed between those two calls would have the
+// file answering about two different moments, and the branch it then takes is
+// one no browser would take. That is the same class of untruth this package
+// already refuses for a name nobody could resolve, arriving through the clock
+// instead of through the resolver. Pinning is also what makeDeterministic
+// already does to the random source, and for a reason stated the same way: a
+// report describes one moment or it describes none.
+//
+// IT DOES NOT PIN goja'S OWN Date, AND THAT IS DELIBERATE. makeDeterministic
+// hands the engine s.Ports.Now, which is the real clock, so a file calling
+// Date.now() sees time move exactly as it does today. Freezing it would be a
+// change in what somebody else's file does rather than in what we report: a
+// file spinning until a few milliseconds pass would spin until the stopwatch
+// stopped it, and we would then blame a working file for running long. OBS130
+// is that mistake made once already, and it is not worth making again for a
+// tidier invariant.
+//
+// NO LOCK, FOR THE REASON boundedPorts GIVES ABOVE: goja runs one Runtime on one
+// goroutine, so the helper that writes this flag and the Evaluate that reads it
+// back are the same goroutine, and the stopwatch touches only Interrupt.
+func (s Sandbox) pinnedClock() (func() time.Time, func() bool) {
+	if s.Ports.Now == nil {
+		// A nil port stays nil so that pac.Ports' own rule - nobody can answer -
+		// remains the single description of that state. Wrapping it would put a
+		// second one here.
+		return nil, func() bool { return false }
+	}
+
+	instant := s.Ports.Now()
+	used := false
+	return func() time.Time {
+		used = true
+		return instant
+	}, func() bool { return used }
 }
 
 // timeHelper adapts one of the three variadic time helpers.
