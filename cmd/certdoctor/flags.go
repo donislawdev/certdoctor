@@ -185,7 +185,7 @@ var formats = []formatDecl{
 	{name: "terminal", built: true},
 	{name: "json", built: true},
 	{name: "md", built: true},
-	{name: "html", built: false, why: "the HTML report is not built yet"},
+	{name: "html", built: true},
 }
 
 func formatNames() []string {

@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"html"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,11 +31,11 @@ import (
 
 // surface is one way of turning a report into bytes somebody reads.
 //
-// THE THIRD ENTRY IS MISSING ON PURPOSE AND IS NAMED RATHER THAN FORGOTTEN. The
-// HTML report is declared and not built, so it cannot be listed here yet; the
-// test below says so out loud on every run rather than leaving a two-item list
-// that looks complete. That is the same discipline the testbed applies to a
-// bench nobody can read yet.
+// THE LIST IS COMPLETE AS OF THE SLICE THAT ADDED HTML. It was two entries and
+// a test saying the third was declared and not built; that test has been removed
+// because it did its job - somebody flipping the built bit was told there was a
+// list here waiting for them. A fourth surface would need the same treatment,
+// and the shape to copy is the one that just retired.
 type surface struct {
 	name   string
 	render func(report.Report) (string, error)
@@ -50,6 +51,11 @@ func surfaces() []surface {
 		{"markdown", func(r report.Report) (string, error) {
 			var b bytes.Buffer
 			err := Markdown{}.Render(&b, r)
+			return b.String(), err
+		}},
+		{"html", func(r report.Report) (string, error) {
+			var b bytes.Buffer
+			err := HTML{}.Render(&b, r)
 			return b.String(), err
 		}},
 		{"json", func(r report.Report) (string, error) {
@@ -242,35 +248,25 @@ func TestNoSurfaceInventsAVerdictWord(t *testing.T) {
 // escaping, which is the one change here that is a security defect rather than
 // a cosmetic one.
 //
-// So the comparison drops backslashes from both sides before looking. That is
-// blunt, and it is blunt in the safe direction: it can only ever make this test
-// more willing to say a value is present, and every other assertion in this file
-// is about presence rather than absence. The one test that asserts ABSENCE -
-// the closed status vocabulary - deliberately does not use it.
-func containsEscaped(surface, value string) bool {
-	strip := func(s string) string { return strings.ReplaceAll(s, `\`, "") }
-	return strings.Contains(strip(surface), strip(value))
-}
-
-// TestTheHTMLSurfaceIsDeclaredAndNotYetHere fails the day html is built without
-// being added above.
+// So the comparison drops backslashes from both sides before looking, and
+// resolves HTML entities on the way in. That is blunt, and it is blunt in the
+// safe direction: it can only ever make this test more willing to say a value is
+// present, and every other assertion in this file is about presence rather than
+// absence. The one test that asserts ABSENCE - the closed status vocabulary -
+// deliberately does not use it.
 //
-// A TWO-SURFACE LIST THAT LOOKS COMPLETE IS THE FAILURE THIS SLICE EXISTS TO
-// PREVENT, one level up. Rule 12 names three document surfaces; two of them are
-// checked here and the third is declared in the flag surface with built=false.
-// When somebody flips that bit, this test is what tells them there is a list
-// here waiting for them - rather than the rule quietly covering two thirds of
-// what it claims.
-func TestTheHTMLSurfaceIsDeclaredAndNotYetHere(t *testing.T) {
-	if len(surfaces()) != 3 {
-		t.Fatalf("this file checks %d surfaces and expected 3", len(surfaces()))
+// THE ENTITY HALF ARRIVED WITH THE THIRD SURFACE AND IS NOT YET LOAD-BEARING.
+// None of the values below contains an ampersand or an angle bracket today, so
+// dropping it would change no result this afternoon - which is exactly the
+// argument for putting it in now rather than the argument against. The day
+// somebody adds a fixture holding a "&", the failure without this would be a
+// renderer reported as LOSING a value it escaped correctly, and the obvious fix
+// for that reading is to remove the escaping.
+func containsEscaped(surface, value string) bool {
+	strip := func(s string) string {
+		return strings.ReplaceAll(html.UnescapeString(s), `\`, "")
 	}
-	for _, one := range surfaces() {
-		if one.name == "html" {
-			t.Fatal("the html surface has arrived - remove this test, it has done its job")
-		}
-	}
-	t.Log("html is declared and not built: when it is, add it to surfaces() above")
+	return strings.Contains(strip(surface), strip(value))
 }
 
 // parityReport is one report carrying one finding, and everything else a report

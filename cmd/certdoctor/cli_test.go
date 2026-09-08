@@ -463,7 +463,12 @@ func TestOnlyASuccessfulRunWritesToStandardOutput(t *testing.T) {
 		{"unknown switch", []string{"https://example.com", "--nope"}, exitcode.Usage},
 		{"target without a scheme", []string{"example.com"}, exitcode.Usage},
 		{"two targets", []string{"https://a.example", "https://b.example"}, exitcode.Usage},
-		{"format not built", []string{"https://example.com", "--format", "html"}, exitcode.Config},
+		// THIS ROW USED TO SAY "format not built" AND NAMED html. Every declared
+		// format is built now, so the case it covered cannot be reached from a
+		// command line at all - it is checked directly instead, against a format
+		// declared for the length of one test. What is left here is the other
+		// half of the same door: a format nobody declared.
+		{"unknown format", []string{"https://example.com", "--format", "paper"}, exitcode.Usage},
 		{"contradictory formats", []string{"https://example.com", "--json", "--format", "html"}, exitcode.Config},
 		{"compare with nothing to compare", []string{"https://example.com", "--compare", "host,container"}, exitcode.Config},
 		{"two places to run", []string{"https://example.com", "--in", "c", "--image", "i"}, exitcode.Config},
@@ -587,7 +592,7 @@ func TestTheTargetNeverCarriesACredential(t *testing.T) {
 	}
 
 	for _, target := range targets {
-		for _, format := range []string{"terminal", "json"} {
+		for _, format := range builtFormatNames() {
 			h := invoke(target, "--format", format)
 			if h.code != exitcode.Inconclusive {
 				t.Fatalf("%s as %s ended with %s: %s", target, format, h.code.Name(), h.stderr.String())
@@ -706,7 +711,7 @@ func TestEveryLayerInTheDocumentAppearsInTheTerminalReport(t *testing.T) {
 // was caught 13 times out of 30 - a guard that is a coin toss is not a guard,
 // and it read as a clean pass in the summary line.
 func TestTheSameRunProducesTheSameBytes(t *testing.T) {
-	for _, format := range []string{"terminal", "json"} {
+	for _, format := range builtFormatNames() {
 		first := invoke("https://example.com", "--format", format).stdout.String()
 		if first == "" {
 			t.Fatalf("a %s run produced no report at all, so comparing it with another proves nothing", format)
@@ -1375,7 +1380,7 @@ func TestNoEnvironmentCredentialReachesEitherSurface(t *testing.T) {
 	const secret = "s3kret"
 	env := map[string]string{"HTTPS_PROXY": "http://someone:" + secret + "@proxy.example:8080"}
 
-	for _, format := range []string{"terminal", "json"} {
+	for _, format := range builtFormatNames() {
 		h := invokeIn(env, report.PrivilegeUnknown, "https://example.com", "--format", format)
 		everything := h.stdout.String() + h.stderr.String()
 

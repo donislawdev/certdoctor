@@ -1,0 +1,50 @@
+# Size ceilings, one line per dial: <dial> <number>.
+#
+# THE ONLY PLACE THESE NUMBERS LIVE. They are deliberately not repeated in any
+# document, because a number kept in two places starts disagreeing with itself
+# the first time one of them is edited - the same sentence coverage-floor.txt
+# opens with, and for the same reason.
+#
+# HOW THEY WERE SET: measured on the day M1's last renderer landed, and frozen
+# exactly as measured. docs/22 section 6 point 2 says the measured values become
+# the ceiling, with no slack added: a ceiling picked above the tree would be a
+# guess, and this project had zero code on the day that rule was written, which
+# is why the ratchet waited for a measurement instead of starting from one.
+#
+# A CEILING ONLY EVER FALLS. Lowering one after something is shortened is
+# ordinary work and welcome. Raising one is the owner's decision, not a way to
+# get unblocked - because at a size ratchet that move is especially tempting: it
+# looks like tidying rather than like editing an expected value to make a test
+# pass, and it is the same act.
+#
+# THE UNIT IS LINES OF CODE, never all lines: lines that are neither empty nor
+# entirely comment. This project requires comments saying WHY and stands a
+# paragraph beside every guard about what it does not catch, so a measure that
+# counted those would be a ceiling on explanation. The first version of the
+# reporting tool counted spans and would have had exactly that effect.
+#
+# WHY SIX NUMBERS AND NOT THREE. A ceiling on the single worst case catches one
+# function growing to a record, and misses twenty functions growing by two lines
+# each - which moves no maximum at all. The three "-near-ceiling" counts are the
+# second dial: how many things are already within 60% of their ceiling. That
+# share is set in the guard, because it is a rule; these counts are here,
+# because they are measurements.
+#
+# WHAT THESE NUMBERS ARE NOT. Length says nothing about readability. A short
+# function can be unreadable, and a long table of test cases is often the
+# clearest thing in a file - the top of the test list has been a table of cases
+# on every measurement so far. This gate is a tripwire on drift, not a claim
+# that anything under it is well written.
+#
+# The guard is internal/guard/size_test.go, and it runs in "go test ./...", so
+# it is checked on every platform without a step of its own.
+
+# The single worst case, in lines of code.
+function                       84
+test-function                 143
+file                         1340
+
+# How many are already within 60% of the ceiling above.
+functions-near-ceiling          9
+test-functions-near-ceiling     4
+files-near-ceiling              4

@@ -964,16 +964,27 @@ func renderReport(o *options, env environment, finished report.Report) ([]byte, 
 	// the shape this tree keeps measuring: one rule written twice drifts, and
 	// the drift is invisible because both halves look right.
 	//
-	// MARKDOWN TAKES NO OPTIONS AND ASKS THE ENVIRONMENT NOTHING. That document
-	// is read by whatever the person pastes it into, and none of that is
-	// knowable from here, so there is no colour to decide and no glyph set to
-	// detect - which also makes it the same bytes wherever it is sent, and the
-	// terminal format deliberately is not.
+	// TWO OF THE THREE TAKE NO OPTIONS AND ASK THE ENVIRONMENT NOTHING. Those
+	// documents are read by whatever the person pastes them into or opens them
+	// with, and none of that is knowable from here, so there is no colour to
+	// decide and no glyph set to detect - which also makes them the same bytes
+	// wherever they are sent, and the terminal format deliberately is not.
+	//
+	// THE DEFAULT ARM IS THE TERMINAL AND THE NAMED ONES ARE THE DOCUMENTS, the
+	// opposite of how this read while markdown was the only page. An unknown
+	// format cannot arrive here - the flag surface refuses it long before - so
+	// the arm that runs when nothing matched should be the one a person at a
+	// console would want, rather than a document they did not ask for.
 	var page interface {
 		Render(io.Writer, report.Report) error
-	} = render.Markdown{}
+	}
 
-	if o.format != "md" {
+	switch o.format {
+	case "md":
+		page = render.Markdown{}
+	case "html":
+		page = render.HTML{}
+	default:
 		terminal := render.Terminal{}
 		// Colour and glyphs are for a person at a console. A report going into a
 		// file gets neither, whatever the console behind this process can do.

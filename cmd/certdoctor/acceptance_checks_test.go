@@ -1276,3 +1276,116 @@ func TestTheShippedBinaryDeliversAMarkdownReportToAFileAndNotAlsoToThePipe(t *te
 		}
 	}
 }
+
+// TestTheShippedBinaryWritesAnHTMLPageThatFetchesNothing is the check the whole
+// design of that renderer was aimed at, asked where it actually matters.
+//
+// EVERY IN-PROCESS TEST OF HTML HANDS IT A REPORT AND READS THE STRING BACK.
+// That says the renderer is right and says nothing about the binary: the format
+// has to be selected by a flag whose declaration carries a "built" bit,
+// dispatched by a switch that gained a third arm, and delivered down the same
+// pipe the terminal uses. The dispatch is the interesting part - its default arm
+// is the terminal, so a mis-wired case does not fail, it silently ships the
+// WRONG DOCUMENT, and an escape sequence in the output is what that looks like.
+//
+// THE SECOND HALF IS A SECURITY CLAIM AND THIS IS THE ONLY PLACE IT CAN BE MADE
+// ABOUT WHAT WE SHIP. A page that carried script or reached out for a font would
+// be executable content, and a beacon, arriving in the inbox of the security
+// team that a report about TLS interception is written for.
+func TestTheShippedBinaryWritesAnHTMLPageThatFetchesNothing(t *testing.T) {
+	r := runProgram(t, aTarget, "--format", "html")
+	if r.code != exitcode.Inconclusive.Int() {
+		t.Fatalf("the run ended with %d: %s", r.code, r.stderr)
+	}
+	if strings.Contains(r.stdout, "\x1b") {
+		t.Errorf("the html page carries a terminal escape sequence, so the dispatch fell through")
+	}
+	assertAnInertPage(t, "the page on standard output", r.stdout)
+}
+
+// TestTheShippedBinaryDeliversAnHTMLPageToAFileAndNotAlsoToThePipe covers the
+// delivery half, which is a different code path from the rendering one.
+//
+// IT DOES NOT COMPARE TWO RUNS BYTE FOR BYTE, and the markdown test beside it
+// records why: two runs against a live target measure different things, so a
+// comparison of them is the network being compared with itself. What only a real
+// binary can say is that the file is written, holds a whole document rather than
+// a fragment, and that the pipe stays EMPTY - a report delivered to both places
+// would be read twice by anything downstream.
+func TestTheShippedBinaryDeliversAnHTMLPageToAFileAndNotAlsoToThePipe(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.html")
+	r := runProgram(t, aTarget, "--format", "html", "--out", path)
+	if r.code != exitcode.Inconclusive.Int() {
+		t.Fatalf("the run ended with %d: %s", r.code, r.stderr)
+	}
+	if r.stdout != "" {
+		t.Errorf("the report went to a file AND to standard output:\n%s", r.stdout)
+	}
+
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading the report back: %v", err)
+	}
+	assertAnInertPage(t, "the page on disk", string(onDisk))
+}
+
+// TestTheShippedBinaryAcceptsHTMLOnStandardOutput settles the question docs/24
+// parked for this slice.
+//
+// --out DEFAULTS TO "-", so refusing this combination would have meant that
+// "certdoctor --format html <url>" - the shortest thing anybody would type -
+// ends in a configuration error unless a path is supplied too. It is allowed,
+// for the same reason --json on a pipe is: redirecting output is how a command
+// line hands a document to a file, and a format that could not be redirected
+// would be the only place in this program where a format restricts a
+// destination.
+func TestTheShippedBinaryAcceptsHTMLOnStandardOutput(t *testing.T) {
+	r := runProgram(t, aTarget, "--format", "html", "--out", "-")
+	if r.code != exitcode.Inconclusive.Int() {
+		t.Fatalf("--format html --out - ended with %d, want a report: %s", r.code, r.stderr)
+	}
+	if !strings.HasPrefix(r.stdout, "<!DOCTYPE html>") {
+		t.Errorf("--out - did not put the page on standard output, it starts:\n%.80s", r.stdout)
+	}
+}
+
+// assertAnInertPage is everything this project promises about a report somebody
+// forwards, asked in one place because two call sites would drift.
+func assertAnInertPage(t *testing.T, what, page string) {
+	t.Helper()
+
+	if !strings.HasPrefix(page, "<!DOCTYPE html>") || !strings.HasSuffix(page, "</html>\n") {
+		t.Errorf("%s is not a whole document", what)
+	}
+	if strings.Contains(page, "\x1b") {
+		t.Errorf("%s carries a terminal escape sequence", what)
+	}
+
+	// The shape a reader expects, and the headings this page is organised by.
+	for _, want := range []string{"<title>", "<h1>", "<h2>Layers</h2>", "<h2>Notes</h2>"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("%s has no %q", what, want)
+		}
+	}
+
+	// Every declared layer, exactly once. A missing row is a silence, and
+	// silence reads as "nothing was found".
+	for _, id := range layer.All {
+		if got := strings.Count(page, ">"+id.String()+"<"); got != 1 {
+			t.Errorf("%s carries %d cells for %s, want exactly 1", what, got, id)
+		}
+	}
+
+	// NOTHING EXECUTES AND NOTHING IS FETCHED. The stylesheet is inline, there
+	// is no script, and the only address on the page points inside it.
+	for _, forbidden := range []string{"<script", "<iframe", "<object", "<embed", "<link ", "javascript:", "src="} {
+		if strings.Contains(strings.ToLower(page), forbidden) {
+			t.Errorf("%s carries %q, which either executes or fetches", what, forbidden)
+		}
+	}
+	for _, href := range regexp.MustCompile(`href="([^"]*)"`).FindAllStringSubmatch(page, -1) {
+		if !strings.HasPrefix(href[1], "#") {
+			t.Errorf("%s links to %q, which is not a place inside itself", what, href[1])
+		}
+	}
+}

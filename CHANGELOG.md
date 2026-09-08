@@ -10,6 +10,41 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Added - `--format html` writes the report as one page you can attach to a mail
+
+- **The whole report as a single file, and nothing in it reaches out.** The
+  stylesheet is inline; there are no images, no fonts and no scripts. A report is
+  something you forward, so a page that fetched a font would announce every
+  opening of it to somebody else - from a program whose first promise is that the
+  set of places it connects to is finite and named.
+
+- **Three things the page can do that a terminal and a pasted document cannot.**
+  The certificate chain folds away when there is more than one certificate and
+  stays open when there is only one, so the evidence is present without being in
+  the way. Each layer that found something has an anchor, and the overview links
+  to it - but only where there is somewhere to go, so no link is dead. The
+  remediation command sits in a block that selects in a single click.
+
+- **There is no copy button, and that is deliberate.** A real one needs the
+  clipboard API, which would mean this page carries executable code into the
+  inbox of whoever reads a report about TLS interception. Selecting the command
+  in one click is the weaker affordance, and the file stays inert.
+
+- **Text from the machine being diagnosed cannot change what the page does.**
+  Host names, certificate subjects and store paths are somebody else's text, and
+  on this surface markup is behaviour. Every such value is escaped, and none of
+  them ever reaches an HTML attribute - so the page cannot be steered even by a
+  value that was escaped incorrectly.
+
+- **`--format html --out -` writes the page to standard output**, the same as the
+  other formats, so redirecting it into a file works the way a command line
+  expects. Writing it to a path with `--out` still says on standard error where
+  the file went, and puts nothing on the pipe.
+
+- **The report says the same things wherever you read it.** The test that holds
+  the terminal, the markdown report and the machine readable document to the same
+  facts now covers this page too, one finding kind at a time.
+
 ### Added - `--format md` writes the report as markdown, to paste into a ticket
 
 - **The whole report, in a form that survives being pasted.** The layer overview
