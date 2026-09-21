@@ -10,6 +10,59 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - the verdict at the top names the cause instead of counting red rows
+
+- **The first line now says what is wrong, in the words of the layer that
+  established it.** A name that does not resolve reads "Neither view found an
+  address for this name ..."; a server that forgot its intermediate reads "The
+  server presented 1 certificate(s) and did not send the issuer of the first one
+  ... a fact about the server rather than about this machine"; a certificate
+  signed by an authority this machine holds in some stores and not in others
+  reads "<issuer> signed this certificate and is an authority local to this
+  machine - 1 store(s) here hold it and 1 do not. Without it: git." Until now
+  the line read "Failures in 2 of 8 diagnostic layers", which was true and sent
+  every reader scrolling.
+
+- **The layer that decides is not simply the first red one.** A middlebox
+  re-signing traffic presents a chain without its issuer exactly as a server
+  that forgot its intermediate does, so the TLS layer fails identically for
+  both. What separates them is the trust matrix: the middlebox's signer is an
+  authority this machine holds in some stores, the forgetful server's issuer is
+  held by nobody. So a local authority split across stores is named before a
+  structural TLS failure, and a chain nobody can complete is blamed on the
+  server even when every row of the trust matrix is red.
+
+- **The counts are still there, after the cause.** "Failures in N of M" when
+  more than one layer failed, "Warnings in N of M" when there is a warning, "N
+  of M diagnostic layers could not be assessed" when something was not - so
+  nothing the counting sentence used to say is lost, and one thing it used to
+  drop is back: a warning standing next to unassessed layers was previously
+  left off the top line.
+
+- **A passing run behind a proxy that wants credentials says so on the first
+  line.** certdoctor connects directly and passes; a runtime that goes through
+  the proxy without credentials stops at its 407. "Everything assessed passed,
+  but the proxy this URL goes through demands credentials ..." is that
+  difference, said where it is read.
+
+- **Under `--redact` the first line carries the masked names, never the raw
+  ones.** The verdict is built from the rows after masking, and the report's
+  own validator recomputes it from those rows and compares.
+
+- The two settled sentences - "Nothing could be assessed yet." and "Everything
+  that mattered was assessed and passed." - are unchanged. `--json` keeps
+  `schema_version` `1.15`: no key changed, the text in `verdict.sentence` did.
+
+### Fixed - a PAC file that trips one of certdoctor's own helpers no longer prints an internal Go symbol
+
+- The message used to end "... will not guess an answer at
+  github.com/donislawdev/certdoctor/internal/adapter/pac.Sandbox.timeHelper.func1
+  (native)" and, worse, lost the one thing you could act on - where in YOUR
+  file the call stands. It now reads "... will not guess an answer at
+  FindProxyForURL (<eval>:1:58)". A script's own errors keep their own words
+  and position, as before, minus a program counter that meant nothing to
+  anybody outside the engine.
+
 ### Added - `--format html` writes the report as one page you can attach to a mail
 
 - **The whole report as a single file, and nothing in it reaches out.** The

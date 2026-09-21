@@ -271,5 +271,46 @@ func outcomeOf(err error, context string) corepac.Result {
 		}
 	}
 
-	return corepac.Result{Outcome: corepac.OutcomeMalformed, Detail: context + ": " + err.Error()}
+	return corepac.Result{Outcome: corepac.OutcomeMalformed, Detail: context + ": " + describe(err)}
+}
+
+// describe renders an engine error for the report - the thrown value, and the
+// place in the SCRIPT it was thrown from.
+//
+// WHY NOT err.Error(), AND IT IS MEASURED (S19, 2026-09-21). goja's Exception
+// formats itself as the thrown value followed by ONE frame, the innermost. When
+// a script's own code throws, that frame is the script's - "at FindProxyForURL
+// (<eval>:1:38)" - and it is exactly what a reader wants. When one of OUR
+// helpers refuses a shape it cannot read, the innermost frame is the helper,
+// and the message carries the path of a package inside this program -
+// "at github.com/donislawdev/certdoctor/internal/adapter/pac.Sandbox.timeHelper.func1
+// (native)" - while the script's own position, one frame up, is DROPPED. That
+// is OBS136: an internal symbol on a public surface, and the one useful
+// coordinate missing. Cutting the stack would fix the first and not the second.
+// So the frames are walked and the first one that is not native is the one
+// printed, in goja's own shape minus the program counter it appends.
+//
+// Anything that is not an Exception - a syntax error at load time, which goja
+// reports as a different type - keeps its own text, which names no frames.
+func describe(err error) string {
+	var thrown *goja.Exception
+	if !errors.As(err, &thrown) || thrown.Value() == nil {
+		return err.Error()
+	}
+	said := thrown.Value().String()
+	for _, frame := range thrown.Stack() {
+		if frame.SrcName() == "<native>" {
+			continue
+		}
+		where := frame.SrcName()
+		if where == "" {
+			where = "<eval>"
+		}
+		position := frame.Position()
+		if frame.FuncName() == "" {
+			return fmt.Sprintf("%s at %s:%d:%d", said, where, position.Line, position.Column)
+		}
+		return fmt.Sprintf("%s at %s (%s:%d:%d)", said, frame.FuncName(), where, position.Line, position.Column)
+	}
+	return said
 }

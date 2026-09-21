@@ -31,10 +31,254 @@ func TestTheVerdictNamesBothFailuresAndLayersItCouldNotAssess(t *testing.T) {
 	}
 
 	got := Assess(results).Sentence
-	for _, want := range []string{"2 of 8", "3 could not be assessed"} {
+	for _, want := range []string{"Failures in 2 of 8", "3 of 8 diagnostic layers could not be assessed"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the verdict leaves out %q: %q", want, got)
 		}
+	}
+}
+
+// storeTrusting and storeRefusing build the two kinds of trust-matrix row the verdict reads.
+func storeTrusting(runtime string) Finding {
+	yes := true
+	return Finding{Kind: FindingTrustStore, TrustStore: &TrustStore{Runtime: runtime, TrustsPresentedChain: &yes}}
+}
+
+func storeRefusing(runtime string, why TrustFailure) Finding {
+	no := false
+	return Finding{Kind: FindingTrustStore, TrustStore: &TrustStore{Runtime: runtime, TrustsPresentedChain: &no, TrustFailure: why}}
+}
+
+func signer(summary string, held AnchorHolding) Finding {
+	return Finding{Kind: FindingSigningAuthority, Summary: summary, SigningAuthority: &SigningAuthority{Issuer: "x", HeldBy: held}}
+}
+
+// inspected is a signer whose name matched the list of inspection products.
+func inspected(summary string, held AnchorHolding) Finding {
+	f := signer(summary, held)
+	f.SigningAuthority.Inspection = &Inspection{Product: "mitmproxy", MatchedAttribute: "CN"}
+	return f
+}
+
+// row is a layer result with the detail its layer would have written.
+func row(id layer.ID, s status.Status, detail string, findings ...Finding) LayerResult {
+	r := LayerResult{ID: id, Status: s, Detail: detail, Findings: findings}
+	if s == status.Unknown {
+		r.Reason = status.ReasonNothingToCheck
+	}
+	return r
+}
+
+const (
+	l4Incomplete    = "the server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine"
+	l5TwoRefuse     = "2 of 3 store(s) do not trust the presented chain"
+	middlebox       = "mitmproxy signed this certificate and is an authority local to this machine - 1 store(s) here hold it and 1 do not - and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server"
+	nobodyHolds     = "certdoctor testbed intermediate signed this certificate, and no store on this machine holds an anchor for it"
+	unheldMiddlebox = "mitmproxy signed this certificate, and no store on this machine holds an anchor for it - and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server"
+	wantsCreds      = "the proxy this URL goes through demands credentials before it will pass a request, and this run offered none - so whether this URL can be reached through it was not established"
+)
+
+// TestTheVerdictNamesTheCauseInTheDecisiveLayersWords is the product's promise
+// after the arithmetic: the top line says WHAT is wrong, in the words of the
+// layer that established it, and keeps the counts behind it.
+//
+// The cases are the bench scenarios of docs/21 written as rows. The two that
+// matter most are the pair measured on 2026-08-19: a middlebox and a server
+// that forgot its intermediate fail L4 identically, and only the trust matrix
+// tells them apart - so the middlebox verdict must come from L5 even though L4
+// is the earlier red row, and the forgetful server's verdict must blame the
+// server even though every trust row under it is red.
+func TestTheVerdictNamesTheCauseInTheDecisiveLayersWords(t *testing.T) {
+	for _, c := range causeScenarios {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Assess(c.rows).Sentence; got != c.want {
+				t.Errorf("\n got %q\nwant %q", got, c.want)
+			}
+		})
+	}
+}
+
+func pass(id layer.ID) LayerResult                { return row(id, status.Pass, "") }
+func skipped(id layer.ID, why string) LayerResult { return row(id, status.Unknown, why) }
+
+// unbuilt is the pair of layers this build does not implement, present in every
+// real report and so in every scenario here.
+var unbuilt = []LayerResult{skipped(layer.Containers, "not implemented"), skipped(layer.Report, "not implemented")}
+
+// causeScenarios are the bench scenarios of docs/21 written as rows, with the
+// sentence each must produce at the top of the report.
+var causeScenarios = []struct {
+	name string
+	rows []LayerResult
+	want string
+}{
+	{
+		name: "S-4 or a name that does not resolve: L1 is the cause of everything under it",
+		rows: append([]LayerResult{pass(layer.Context),
+			row(layer.Resolution, status.Fail, "neither view found an address for this name, and at least one of them said so"),
+			skipped(layer.Proxy, "x"), skipped(layer.TCP, "nothing to connect to"), skipped(layer.TLS, "x"), skipped(layer.TrustMatrix, "x")}, unbuilt...),
+		want: "Neither view found an address for this name, and at least one of them said so. 6 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "no address accepts a connection: L3 is the cause and L4/L5 are consequences",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy),
+			row(layer.TCP, status.Fail, "none of the 2 address(es) this name resolved to accepted a connection"),
+			skipped(layer.TLS, "x"), skipped(layer.TrustMatrix, "x")}, unbuilt...),
+		want: "None of the 2 address(es) this name resolved to accepted a connection. 4 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "S-5 the server forgot its intermediate: every trust row is red and the server is still to blame",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Fail, l4Incomplete),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))}, unbuilt...),
+		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine. Failures in 2 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "S-1 a middlebox: L4 fails exactly as in S-5, and the local authority in L5 outranks it",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Fail, l4Incomplete),
+			row(layer.TrustMatrix, status.Fail, "1 of 2 store(s) do not trust the presented chain", inspected(middlebox, HeldBySomeStores),
+				storeTrusting("curl"), storeRefusing("git", UnknownAuthority))}, unbuilt...),
+		want: middlebox + ". Without it: git. Failures in 2 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "a middlebox nobody here trusts: L4 fails, no store holds the signer, and the named product still leads - measured on the bench 2026-09-22",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Fail, l4Incomplete),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, inspected(unheldMiddlebox, HeldByNoStores),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))}, unbuilt...),
+		want: unheldMiddlebox + ". Failures in 2 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "S-3 and S-6 an honest server under a company authority: which runtimes lack the anchor, with counts where a runtime has several stores",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Fail, "4 of 6 store(s) do not trust the presented chain",
+				signer("Example Corp Root CA signed this certificate and is an authority local to this machine - 2 store(s) here hold it and 4 do not", HeldBySomeStores),
+				storeTrusting("curl"), storeRefusing("git", UnknownAuthority), storeTrusting("java"), storeRefusing("java", UnknownAuthority), storeRefusing("java", UnknownAuthority), storeRefusing("java", UnknownAuthority))}, unbuilt...),
+		want: "Example Corp Root CA signed this certificate and is an authority local to this machine - 2 store(s) here hold it and 4 do not. Without it: git, java (3 of 4). 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "a private root nobody here holds, chain complete: the signer is named and no runtime is listed",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))}, unbuilt...),
+		want: nobodyHolds + ". 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "stores hold the anchor and still refuse, all for the same reason: the layer's count and that reason",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, storeRefusing("curl", Expired), storeRefusing("git", Expired), storeTrusting("java"))}, unbuilt...),
+		want: "2 of 3 store(s) do not trust the presented chain - a certificate in the path is past its validity. 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "stores refuse for different reasons: the layer's count and nothing invented",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, storeRefusing("curl", Expired), storeRefusing("git", NotYetValid), storeTrusting("java"))}, unbuilt...),
+		want: "2 of 3 store(s) do not trust the presented chain. 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "nothing failed but the proxy wants credentials: a passing run says so out loud",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution),
+			{ID: layer.Proxy, Status: status.Unknown, Reason: status.ReasonCredentialsRequired, Detail: wantsCreds},
+			pass(layer.TCP), pass(layer.TLS), pass(layer.TrustMatrix)}, unbuilt...),
+		want: "Everything assessed passed, but " + wantsCreds + ". 3 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "nothing failed, one warning, two layers unbuilt: the warning is no longer dropped from the top line",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Warn, "9 of 11 store(s) trust the presented chain, and 2 could not be assessed")}, unbuilt...),
+		want: "Everything assessed passed. Warnings in 1 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "a failing row with no detail names nothing, so the count stands in and the function stays total",
+		rows: append([]LayerResult{pass(layer.Context), row(layer.Resolution, status.Fail, ""), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS), pass(layer.TrustMatrix)}, unbuilt...),
+		want: "Failures in 1 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+	},
+}
+
+// TestTheDecisiveLayerIsFoundByIdentityNotByPosition: the validator hands the
+// fold whatever order the report holds, so the answer must not depend on it.
+func TestTheDecisiveLayerIsFoundByIdentityNotByPosition(t *testing.T) {
+	rows := []LayerResult{
+		row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores), storeRefusing("git", UnknownAuthority)),
+		row(layer.TLS, status.Fail, l4Incomplete),
+		row(layer.TCP, status.Pass, ""),
+		row(layer.Resolution, status.Fail, "neither view found an address for this name"),
+	}
+	want := Assess(rows).Sentence
+	if !strings.HasPrefix(want, "Neither view found an address") {
+		t.Fatalf("the earliest dependency is not the cause: %q", want)
+	}
+	reversed := []LayerResult{rows[3], rows[2], rows[1], rows[0]}
+	if got := Assess(reversed).Sentence; got != want {
+		t.Errorf("order changed the verdict:\n %q\n %q", want, got)
+	}
+}
+
+// TestACauseNeverLosesTheCountsBehindIt walks every combination of statuses
+// over rows that carry a detail, and checks that naming a cause dropped none of
+// the three numbers the arithmetic sentence used to carry.
+func TestACauseNeverLosesTheCountsBehindIt(t *testing.T) {
+	everyCombinationUpTo(t, 3, func(statuses []status.Status) {
+		rows := resultsFor(statuses)
+		for i := range rows {
+			rows[i].Detail = fmt.Sprintf("detail of %s", rows[i].ID)
+			if rows[i].Status == status.Unknown {
+				rows[i].Reason = status.ReasonTimeout
+			}
+		}
+		sentence := Assess(rows).Sentence
+		total := len(statuses)
+		failures, warnings, unknowns := countOf(statuses, status.Fail), countOf(statuses, status.Warn), countOf(statuses, status.Unknown)
+		if total == 0 || unknowns == total {
+			return
+		}
+		checks := map[string]bool{}
+		if failures > 0 {
+			decisive := ""
+			for _, id := range []layer.ID{layer.Resolution, layer.TCP, layer.TLS, layer.TrustMatrix, layer.Context, layer.Proxy, layer.Containers, layer.Report} {
+				if r, ok := failing(rows, id); ok {
+					decisive = r.Detail
+					break
+				}
+			}
+			checks["Detail of "+strings.TrimPrefix(decisive, "detail of ")] = true
+		}
+		if failures > 1 {
+			checks[fmt.Sprintf("Failures in %d of %d", failures, total)] = true
+		}
+		if warnings > 0 {
+			checks[fmt.Sprintf("Warnings in %d of %d", warnings, total)] = true
+		}
+		if unknowns > 0 {
+			checks[fmt.Sprintf("%d of %d diagnostic layers could not be assessed", unknowns, total)] = true
+		}
+		for want := range checks {
+			if !strings.Contains(sentence, want) {
+				t.Errorf("layers %v produced %q, which leaves out %q", statuses, sentence, want)
+			}
+		}
+		if !strings.HasSuffix(sentence, ".") || strings.Contains(sentence, "..") {
+			t.Errorf("layers %v produced %q, which is not punctuated as sentences", statuses, sentence)
+		}
+	})
+}
+
+// TestANameKeepsItsOwnCasingAtTheTop: the sentence over a local authority
+// starts with the issuer's name as the certificate spells it, and a detail that
+// starts with a digit is left alone too.
+func TestANameKeepsItsOwnCasingAtTheTop(t *testing.T) {
+	if got, _ := sentence("2 of 3 store(s) do not trust the presented chain"); got != "2 of 3 store(s) do not trust the presented chain." {
+		t.Errorf("a leading digit was touched: %q", got)
+	}
+	if got, _ := sentence("neither view found"); got != "Neither view found." {
+		t.Errorf("a leading lower-case letter was not raised: %q", got)
+	}
+	// The signer's own casing at the top is pinned by the S-1 case above, which
+	// starts with "mitmproxy" - the authority sentence is quoted, never raised.
+	if got, _ := sentence("it ended already."); got != "It ended already." {
+		t.Errorf("a detail that already ends as a sentence got a second full stop: %q", got)
 	}
 }
 

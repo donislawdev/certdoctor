@@ -202,10 +202,17 @@ func Execute(ctx context.Context, o Options) (report.Report, error) {
 
 // mask rewrites in place everything the layers produced, and nothing else.
 //
-// The verdict is deliberately not touched. It is built from counts of statuses
-// and carries no text from anybody's machine, and the report validator
-// recomputes it and compares - so a masked sentence would be a difference with
-// no cause.
+// The verdict is not masked here and MUST NOT BE, for a reason that changed
+// shape on 2026-09-21 and kept its conclusion. Until then the verdict was built
+// from counts of statuses and carried no text from anybody's machine. Since
+// ADR99 it quotes the decisive layer - an issuer, a runtime, a proxy - and the
+// order of the two phases is what keeps a redacted report redacted: masking
+// runs first, assembly second, so Assess reads the rows the report is allowed
+// to show and nothing else. The validator recomputes the sentence from those
+// same rows and compares, so masking the sentence afterwards would be a
+// difference with no cause, and building it before masking would put the raw
+// name on the one line everybody reads. Both orders are pinned by a test that
+// goes through Execute.
 func (o Options) mask(results []report.LayerResult, notes []report.Note) {
 	for i := range results {
 		results[i].Detail = o.Redaction.Text(results[i].Detail)
