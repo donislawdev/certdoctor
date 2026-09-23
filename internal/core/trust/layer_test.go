@@ -93,6 +93,11 @@ func TestAMissingPortIsOurDefectAndSaysSo(t *testing.T) {
 		{"no leaf port", func(in *Input) { in.PresentedLeaf = nil }, noLeaf},
 		{"no platform", func(in *Input) { in.Machine.OS = "" }, noOS},
 		{"no probes", func(in *Input) { in.Probes = nil }, noProbes},
+		// A missing port outranks a target without TLS - ADR100 part 3.
+		{"no chain port, on a target without TLS", func(in *Input) {
+			in.PresentedChain = nil
+			in.Plaintext = true
+		}, noChain},
 	}
 	// THE POSITIVE TWIN, AND IT IS HERE BECAUSE OF OBS56. Every case below asserts
 	// that a missing port is refused, and a breach check that refused every input
@@ -663,5 +668,41 @@ func TestAMissingClockIsOurOmissionAndReadsAsOurs(t *testing.T) {
 	}
 	if !strings.Contains(got.Detail, "clock") {
 		t.Errorf("the sentence does not name the missing port: %q", got.Detail)
+	}
+}
+
+// TestATargetWithoutTLSAsksNoStore is the L5 half of ADR100.
+//
+// On an http:// target L4 is never asked for a handshake, so the chain is
+// empty - and the old sentence for an empty chain, "the server presented no
+// certificate", says a server was asked. This one names the scheme instead.
+//
+// THE CONTROL RUN COMES FIRST for the reason it does one layer down: a count of
+// zero proves nothing about a probe the walk would never have reached anyway.
+func TestATargetWithoutTLSAsksNoStore(t *testing.T) {
+	asked := 0
+	in := probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		asked++
+		return nil, nil
+	})
+	Ask(context.Background(), in)
+	if asked == 0 {
+		t.Fatal("the control run asked no probe, so a count of zero below would prove nothing")
+	}
+	asked = 0
+
+	in.Plaintext = true
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown || got.Reason != status.ReasonNothingToCheck {
+		t.Errorf("a target without TLS came back as %s/%s, want UNKNOWN/nothing_to_check", got.Status, got.Reason)
+	}
+	if got.Detail != plaintextTarget {
+		t.Errorf("the sentence is %q, and it must not say a server was asked", got.Detail)
+	}
+	if asked != 0 {
+		t.Errorf("%d probe(s) were asked about a target that does not use TLS", asked)
+	}
+	if got.Findings != nil {
+		t.Errorf("a layer that did not look reported findings: %v", got.Findings)
 	}
 }

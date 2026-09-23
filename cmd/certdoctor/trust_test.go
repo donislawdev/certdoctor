@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 // a build wired without probes would look exactly like a machine with no
 // runtimes on it, which is a claim about somebody else made out of our own gap.
 func TestNoTrustPortMeansNoProbesRatherThanNoRuntimes(t *testing.T) {
-	got := trustInput(&options{}, environment{})
+	got := trustInput(&options{}, environment{}, &url.URL{Scheme: "https"})
 	if got.Probes != nil {
 		t.Errorf("a missing port produced %d probe(s), want none", len(got.Probes))
 	}
@@ -27,7 +28,7 @@ func TestTheTrustPortIsPassedThrough(t *testing.T) {
 			}
 		},
 	}
-	got := trustInput(&options{}, env)
+	got := trustInput(&options{}, env, &url.URL{Scheme: "https"})
 	if len(got.Probes) != 1 {
 		t.Fatalf("%d probe(s) reached L5, want 1", len(got.Probes))
 	}

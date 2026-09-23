@@ -55,3 +55,10 @@ l2_pac_url=http://pac.proxy.test/pac/proxy.pac
 # layer that could get it wrong exists - the same guard no-intermediate.txt is.
 verdict_names=pac
 verdict_forbidden=goes through the proxy,uses HTTPS_PROXY
+
+# --- L4 and L5: a target without TLS - ADR100 ---
+# The same answer as proxy-auth.txt and for the same reason: the target is
+# http://, so no handshake is attempted and no store is asked.
+l4_status=UNKNOWN
+l4_reason=nothing_to_check
+l5_status=UNKNOWN

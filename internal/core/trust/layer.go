@@ -57,6 +57,10 @@ type Input struct {
 	// bytes into a distinguished name, which is exactly how a complete chain
 	// starts looking broken. It is nil when no handshake completed.
 	PresentedLeaf func() *report.Certificate
+	// Plaintext says the target was given as http://, so no certificate was
+	// ever going to arrive - ADR100. The entry point hands L4 the same answer,
+	// worked out once.
+	Plaintext bool
 	// Probes are the runtime families to ask, keyed by descriptor id.
 	Probes map[string]Probe
 	// Machine is what a remediation command needs to know about where it will be
@@ -97,6 +101,10 @@ const (
 	noClock  = "no clock was supplied, so no probe could be given a share of the time this layer has left"
 	nothing  = "the server presented no certificate, so there was nothing for any store to judge"
 	noneHere = "no runtime this program knows how to ask was found on this machine"
+	// plaintextTarget is its own sentence because "the server presented no
+	// certificate" would say a server was asked, and on an http:// target none
+	// was.
+	plaintextTarget = "the target does not use TLS, so there is no certificate for any store to judge"
 )
 
 // Ask walks every declared probe and reports what each store made of the chain.
@@ -110,6 +118,11 @@ const (
 func Ask(ctx context.Context, in Input) Result {
 	if broken := in.breach(); broken != "" {
 		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: broken}
+	}
+	if in.Plaintext {
+		// No probe is asked. There is no chain, and a store asked about nothing
+		// has nothing to say - ADR100.
+		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: plaintextTarget}
 	}
 
 	chain := in.PresentedChain()

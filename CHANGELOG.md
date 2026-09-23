@@ -10,6 +10,27 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - an http:// target is no longer handed a TLS handshake
+
+- **An http:// target gets no TLS handshake and no trust matrix, and the
+  report says why.** The TLS layer used to send a ClientHello to the plain HTTP
+  port and report "none of the 1 address(es) completed a TLS handshake" as a
+  failure - which the first line of the report then named as the cause. There
+  was nothing to complete. The TLS layer and the trust matrix now both answer
+  `UNKNOWN` with the reason `nothing_to_check`, and the TLS row says what to
+  type instead: "the target was given as an http:// address, which does not
+  use TLS, so no handshake was attempted - give the https:// address to
+  diagnose TLS".
+
+- **The scheme decides, not the port.** `http://host:443/` is a target without
+  TLS, because a client following that URL speaks plain HTTP to port 443.
+  `https://host:80/` is still a TLS target, and its failure is still reported.
+
+- **What this changes for a script.** A run against an http:// target where
+  nothing else fails now ends with `5 INCONCLUSIVE` instead of `4 DIAGNOSIS`.
+  TLS was not assessed, and `5` is the code that keeps "could not assess" from
+  ever reading as `0`. The table of exit codes is unchanged.
+
 ### Changed - the verdict at the top names the cause instead of counting red rows
 
 - **The first line now says what is wrong, in the words of the layer that

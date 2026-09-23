@@ -64,3 +64,10 @@ l2_status=PASS
 l2_proxy=172.28.0.128:3128
 l2_source=pac
 l2_pac_url=http://pac.proxy.test/pac/proxy.pac
+
+# --- L4 and L5: a target without TLS - ADR100 ---
+# The same answer as proxy-auth.txt and for the same reason: the target is
+# http://, so no handshake is attempted and no store is asked.
+l4_status=UNKNOWN
+l4_reason=nothing_to_check
+l5_status=UNKNOWN

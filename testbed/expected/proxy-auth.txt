@@ -78,3 +78,14 @@ l2_reason_forbidden=access_denied
 # It must not accuse the machine's trust stores, which is what a run that stops
 # at 407 looks like from further down the pipeline.
 verdict_forbidden=trust store,certificate
+
+# --- L4 and L5: a target without TLS - ADR100, closing OBS149 ---
+#
+# MEASURED HERE FIRST. On 2026-09-22 this scenario gave L4 FAIL, "none of the 1
+# address(es) completed a TLS handshake", on a port that speaks plain HTTP - and
+# nothing in this file asked about L4 at all, so the bench never noticed. The
+# answer does not depend on whether L3 reached anything, so it is declared
+# outright rather than conditionally.
+l4_status=UNKNOWN
+l4_reason=nothing_to_check
+l5_status=UNKNOWN

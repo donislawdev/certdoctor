@@ -225,7 +225,7 @@ func diagnose(ctx context.Context, o *options, env environment) exitcode.Code {
 			Proxy:       proxyInput(o, env, parsed, targets, found),
 			Reach:       reachInput(o, env, parsed, targets),
 			Handshake:   handshakeInput(o, env, parsed, targets),
-			Trust:       trustInput(o, env),
+			Trust:       trustInput(o, env, parsed),
 			Authorise:   authoriser(parsed, targets),
 			// THE TWO PROXY WIDENINGS ARE SEPARATE CLOSURES BECAUSE THEY ARE
 			// SEPARATE DERIVATIONS - inviolable rule 16 lists a PAC address and
@@ -729,6 +729,7 @@ func handshakeInput(o *options, env environment, parsed *url.URL, targets *allow
 		// certificate issued to [host-1] - the same trap resolutionInput records
 		// one layer up, arriving here through a different field. A test pins it.
 		ServerName: parsed.Hostname(),
+		Plaintext:  plaintext(parsed),
 		Shake:      shake,
 		Now:        env.now,
 		PerAddress: budget(o.probeTimeout),
@@ -802,6 +803,17 @@ func proxyAuthoriser(targets *allowed.Targets) func([]string) {
 			_ = targets.Allow(endpoint, allowed.ReasonProxy)
 		}
 	}
+}
+
+// plaintext says the target does not use TLS - ADR100, which closed OBS149.
+//
+// THE ONE PLACE THIS RULE LIVES. L4 and L5 are both handed its answer and
+// neither reads the scheme itself, because a second copy of "http means no TLS"
+// is the shape OBS50 measured disarming mutation entries. THE SCHEME DECIDES,
+// NEVER THE PORT: a client following http://host:443/ speaks plain HTTP to 443,
+// and https://host:80/ is a TLS target whose failure is real.
+func plaintext(parsed *url.URL) bool {
+	return parsed.Scheme == "http"
 }
 
 // portOf is the port this run will try, from the URL or from its scheme.
@@ -1075,12 +1087,13 @@ func proxyInput(o *options, env environment, parsed *url.URL, targets *allowed.T
 	}
 }
 
-func trustInput(o *options, env environment) trust.Input {
+func trustInput(o *options, env environment, parsed *url.URL) trust.Input {
 	if env.trustProbes == nil {
 		return trust.Input{}
 	}
 	return trust.Input{
-		Probes: env.trustProbes(),
+		Plaintext: plaintext(parsed),
+		Probes:    env.trustProbes(),
 		// What a remediation command needs to know about where it will be run.
 		// Both values come from this environment rather than being read inside
 		// the layer, so an assessment stays reproducible from its input.

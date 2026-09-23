@@ -1098,6 +1098,15 @@ check_pac_route() {
   want_reason="$(value "$file" l2_reason)"
   want_reason_forbidden="$(value "$file" l2_reason_forbidden)"
   want_auth="$(value "$file" l2_auth_required)"
+  # THE TWO LAYERS AFTER THE CONNECTION, ASKED HERE SINCE ADR100. Every target in
+  # these scenarios is http://, and L4 used to try a handshake on the plain HTTP
+  # port and call the silence a FAIL - measured on proxy-auth 2026-09-22, and
+  # never caught, because nothing in this function read L4 at all. The answer does
+  # not depend on whether L3 reached anything, so it can be declared outright.
+  local want_l4 want_l4_reason want_l5
+  want_l4="$(value "$file" l4_status)"
+  want_l4_reason="$(value "$file" l4_reason)"
+  want_l5="$(value "$file" l5_status)"
 
   local env_proxy doc said_status said_proxy said_source said_detail
   env_proxy="$(value "$file" env_https_proxy)"
@@ -1160,6 +1169,14 @@ check_pac_route() {
       echo "    challenge:  a 407 from ${said_asked:-nobody}"
     fi
 
+    local said_l4 said_l4_reason said_l5
+    said_l4="$(echo "$doc" | jq -r '.layers[] | select(.id=="L4") | .status' 2>/dev/null)"
+    said_l4_reason="$(echo "$doc" | jq -r '.layers[] | select(.id=="L4") | .reason // ""' 2>/dev/null)"
+    said_l5="$(echo "$doc" | jq -r '.layers[] | select(.id=="L5") | .status' 2>/dev/null)"
+    [ -z "$want_l4" ] || [ "$said_l4" = "$want_l4" ] || say "L4 answered $said_l4 where the bench expects $want_l4"
+    [ -z "$want_l4_reason" ] || [ "$said_l4_reason" = "$want_l4_reason" ] || say "L4 gives the reason ${said_l4_reason:-none} where the bench expects $want_l4_reason"
+    [ -z "$want_l5" ] || [ "$said_l5" = "$want_l5" ] || say "L5 answered $said_l5 where the bench expects $want_l5"
+
     # THE FORBIDDEN SENTENCES ARE THE POINT OF proxy-pac-direct. A report saying
     # "a proxy is configured" and stopping has told somebody the opposite of what
     # is happening on their machine, so those words were written down before the
@@ -1174,7 +1191,7 @@ check_pac_route() {
       done
     fi
 
-    echo "    certdoctor: L2 $said_status, proxy $said_proxy from ${said_source:-the machine}"
+    echo "    certdoctor: L2 $said_status, proxy $said_proxy from ${said_source:-the machine} | L4 $said_l4 / ${said_l4_reason:-no reason} | L5 $said_l5"
   fi
 
   if [ "$got_answer" = "$want_answer" ] && [ "$seen" = "$want_log" ]; then

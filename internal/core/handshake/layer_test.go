@@ -97,6 +97,12 @@ func TestAskRefusesWhenItWasGivenNoWayToTry(t *testing.T) {
 		{"no way to hand shake", func(in *Input) { in.Shake = nil }, "handshake"},
 		{"no clock", func(in *Input) { in.Now = nil }, "clock"},
 		{"no way to learn the addresses", func(in *Input) { in.Addresses = nil }, "addresses"},
+		// A missing port outranks a target without TLS - ADR100 part 3. Our own
+		// omission has to be visible whatever the user asked about.
+		{"no way to hand shake, on a target without TLS", func(in *Input) {
+			in.Shake = nil
+			in.Plaintext = true
+		}, "handshake"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := workingInput(shakeReturning(completeChain("aa")))
@@ -669,5 +675,58 @@ func TestAHandshakeThatPresentedNothingIsAnOrdinaryRow(t *testing.T) {
 	}
 	if !strings.Contains(got.Detail, "no certificate") {
 		t.Errorf("the layer sentence does not say what actually happened: %q", got.Detail)
+	}
+}
+
+// TestATargetWithoutTLSIsNeitherHandShakenWithNorFailed is OBS149, closed by
+// ADR100.
+//
+// Measured on the bench 2026-09-22: http://auth.proxy.test/ came back as L4
+// FAIL, "none of the 1 address(es) completed a TLS handshake", and ADR99 put
+// that sentence at the top of the report as the cause of a failure that did not
+// exist. There was nothing to complete.
+//
+// THE COUNTER IS THE HALF NO STATUS CAN SHOW. A layer answering UNKNOWN after
+// sending a ClientHello to a plain HTTP port would satisfy every assertion about
+// the result, so the same input is first run WITH TLS - which proves the counter
+// can see a handshake at all - and only then without.
+func TestATargetWithoutTLSIsNeitherHandShakenWithNorFailed(t *testing.T) {
+	var shakes atomic.Int64
+	var asked atomic.Bool
+	in := workingInput(func(context.Context, string, int, string) (Presented, error) {
+		shakes.Add(1)
+		return Presented{}, ErrRejected
+	})
+	in.Addresses = func() []string {
+		asked.Store(true)
+		return []string{"192.0.2.10"}
+	}
+
+	if control := Ask(context.Background(), in); control.Status != status.Fail || shakes.Load() == 0 {
+		t.Fatalf("the control run with TLS came back %s after %d handshake(s), so the counter proves nothing",
+			control.Status, shakes.Load())
+	}
+	shakes.Store(0)
+	asked.Store(false)
+
+	in.Plaintext = true
+	got := Ask(context.Background(), in)
+	if got.Status != status.Unknown || got.Reason != status.ReasonNothingToCheck {
+		t.Errorf("a target without TLS came back as %s/%s, want UNKNOWN/nothing_to_check", got.Status, got.Reason)
+	}
+	if got.Detail != plaintextTarget {
+		t.Errorf("the sentence is %q, and it has to name the scheme and what to type instead", got.Detail)
+	}
+	if n := shakes.Load(); n != 0 {
+		t.Errorf("%d handshake(s) went to a target the user named as http://", n)
+	}
+	// ASKED BEFORE THE ADDRESSES, so the answer cannot depend on whether L3
+	// reached anything - which is what lets the bench declare it.
+	if asked.Load() {
+		t.Error("the addresses were asked for, so this answer depends on what L3 reached")
+	}
+	if got.Findings != nil || len(got.Presented) != 0 || got.Leaf != nil {
+		t.Errorf("a layer that did not look handed on findings %v, a chain of %d or a leaf %v",
+			got.Findings, len(got.Presented), got.Leaf)
 	}
 }

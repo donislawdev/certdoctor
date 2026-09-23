@@ -152,6 +152,14 @@ type Input struct {
 	Port int
 	// ServerName is the host from the target URL, sent in SNI.
 	ServerName string
+	// Plaintext says the target was given as http://, so there is no TLS to
+	// hand shake with - ADR100, which closed OBS149.
+	//
+	// IT IS A FACT HANDED IN, NOT A SCHEME READ HERE. The entry point works it
+	// out once and hands the same answer to L5, so the rule "http means no TLS"
+	// lives in one place. Left false by a forgotten wire, the layer tries a
+	// handshake and fails as it did before - a visible FAIL, never a PASS.
+	Plaintext bool
 	// Shake is how a handshake is completed. A nil one refuses everything: a
 	// forgotten port must read as a program that cannot ask.
 	Shake Shake
@@ -221,6 +229,15 @@ const (
 	// and this layer announcing that the name resolved to nowhere. The sentence
 	// described a layer two floors down, guessed at its result, and guessed wrong.
 	nothingToDo = "no address accepted a connection, so there was nothing to hand shake with"
+	// plaintextTarget is what this layer says about a target that does not use
+	// TLS. It names the scheme rather than the server, because the server was
+	// never asked, and it says what to type instead.
+	//
+	// EVERY "://" IN IT IS FOLLOWED BY A SPACE, AND THAT IS MEASURED RATHER THAN
+	// STYLE. The first wording had "http://," and under --redact the comma came
+	// out as [host-2]: the masking reads whatever follows a scheme up to the next
+	// space as a host name - OBS152.
+	plaintextTarget = "the target was given as an http:// address, which does not use TLS, so no handshake was attempted - give the https:// address to diagnose TLS"
 	// nothingEstablished is the other way this layer can be handed nothing, and
 	// telling the two apart is ADR20 applied to a seam: an empty list is a
 	// measurement, a nil one means the layer before this established nothing at
@@ -240,6 +257,15 @@ const (
 func Ask(ctx context.Context, in Input) Result {
 	if broken := in.unusable(); broken != "" {
 		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: broken}
+	}
+	if in.Plaintext {
+		// NOT A FAILURE, AND NOT AN ATTEMPT EITHER - ADR100. Measured on the
+		// bench 2026-09-22: an http:// target came back as "none of the
+		// address(es) completed a TLS handshake", which ADR99 then put at the
+		// top of the report as the cause. There was nothing to complete. Asked
+		// BEFORE the addresses, so the answer does not depend on whether L3
+		// reached anything.
+		return Result{Status: status.Unknown, Reason: status.ReasonNothingToCheck, Detail: plaintextTarget}
 	}
 	addresses := in.Addresses()
 	if len(addresses) == 0 {
