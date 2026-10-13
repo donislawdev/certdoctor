@@ -1,3 +1,3 @@
 module certdoctor.probe.macos
 
-go 1.27.0
+go 1.27.2

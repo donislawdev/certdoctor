@@ -165,6 +165,15 @@ jobs:
   # 2026-09-01: MIT, Copyright (c) 2016 Dominik Honnef. It is a CI tool and
   # never reaches a user, so it is the lightest of the three sieves in docs/22
   # section 7a - and it is still read rather than assumed.
+  #
+  # MOVED 2026.2.1 -> 2026.2.2 ON 2026-10-14, FOR THE SAME REASON ONE STEP
+  # LATER. The toolchain went to 1.27.2, and 2026.2.1 answered "export data
+  # version 5 is greater than maximum supported version 4" for five standard
+  # library packages - measured on Windows that day. The 2026.2.2 release note
+  # says it supports the updated export data format used by Go 1.27.2. Released
+  # 2026-10-12 per proxy.golang.org. Licence read at
+  # https://raw.githubusercontent.com/dominikh/go-tools/2026.2.2/LICENSE on
+  # 2026-10-14: MIT, Copyright (c) 2016 Dominik Honnef, unchanged.
   static-analysis:
     name: staticcheck
     runs-on: ubuntu-latest
@@ -177,7 +186,7 @@ jobs:
           go-version-file: go.mod
       - name: staticcheck
         shell: bash
-        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.1 -checks=SA,U ./...
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks=SA,U ./...
 
   # A security-adjacent tool with no dependencies still runs on a standard
   # library that gets advisories of its own, and the Go version is pinned in
@@ -218,9 +227,19 @@ jobs:
       # inviolable rules 5 and 23 applied to a workflow pin, which is the one
       # place a dependency reaches this project without passing the licence
       # sieve in tools/expected-modules.txt.
+      #
+      # MOVED v1.7.0 -> v1.9.0 ON 2026-10-14, by the owner's decision to take
+      # every pin to its newest release together with the toolchain - so this
+      # time the pin IS the newest number, and it still went in on a
+      # measurement. v1.9.0, published 2026-10-11 per
+      # proxy.golang.org/golang.org/x/vuln/@latest, answered "No vulnerabilities
+      # found." on Windows and in golang:1.27-alpine carrying go1.27.2, over the
+      # tree with every linked module moved too.
+      # BSD-3-Clause, read at source that day at
+      # https://raw.githubusercontent.com/golang/vuln/v1.9.0/LICENSE, unchanged.
       - name: govulncheck
         shell: bash
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   # THE ONE PROBE THAT HAS TO BE PUBLIC, and it is worth saying why since every
   # other one lives outside this repository.

@@ -13,6 +13,15 @@
 # decision, not a way to get unblocked - the same rule the size ratchet follows.
 # Raising one after coverage improves is ordinary work and welcome.
 #
+# TWO FLOORS WERE LOWERED ON 2026-10-14, BY THE OWNER, AND NOT FOR THE CODE.
+# Go 1.27.0 and 1.27.1 counted some statements twice and reported coverage
+# higher than it was (golang/go#81832, fixed in 1.27.2). Every floor set between
+# 2026-09-01, when this module moved to 1.27.0, and that day was measured with
+# that instrument. Two of them - proxyconf and proxyauth - fell below themselves
+# on unchanged code and are now the corrected measurement rounded down. The rest
+# still clear their floors, which means their slack is smaller than it was
+# written as being, and nothing else about them changed.
+#
 # EVERY PACKAGE MUST APPEAR HERE. A package with no line is a finding, not a
 # package with no floor. Without that rule the gate would quietly stop covering
 # the tree as new directories appear, which is exactly how the layer guard would
@@ -143,12 +152,19 @@ github.com/donislawdev/certdoctor/internal/core/proxy 100
 # returns nothing and a reason, which is tested exactly. So the floor is the
 # Windows number rounded down, and Linux clears it with room to spare.
 #
+# MEASURED AGAIN 2026-10-14 UNDER GO 1.27.2: Windows 83.1 percent, 54 of 65
+# statements, three runs alike. The 84.5 of September fits 60 of 71 - the same
+# eleven statements unreached over a denominator the cover tool had inflated
+# (golang/go#81832). That is arithmetic and the upstream report, not a rerun
+# under 1.27.0. The floor is 83 by the owner's decision. Linux was not measured
+# again that day.
+#
 # WHAT NO NUMBER HERE COVERS, said plainly: proxyconf_darwin.go. It is one line
 # long, and it is one line long on purpose - every branch that line could get
 # wrong was moved into proxyconf.go, which every platform compiles and every
 # platform tests. The gate does not run on macOS at all (see ci.yml), so a floor
 # would not have caught it either way. This is the narrowed remainder of OBS107.
-github.com/donislawdev/certdoctor/internal/adapter/proxyconf 84
+github.com/donislawdev/certdoctor/internal/adapter/proxyconf 83
 
 # Asking a proxy whether it wants credentials arrived 2026-09-07 with P8-K3c.
 #
@@ -159,12 +175,16 @@ github.com/donislawdev/certdoctor/internal/adapter/proxyconf 84
 # makes the number honest without a machine in a particular state - a loopback
 # listener answering fixed bytes reaches every branch that decides anything.
 #
-# WHAT THE REMAINDER IS, said plainly rather than left to be guessed at. Two
-# statements are not reached and both are error paths that need the operating
+# WHAT THE REMAINDER IS, said plainly rather than left to be guessed at. Three
+# statements are not reached. Two are error paths that need the operating
 # system to fail in a specific way: a write that fails on a socket the proxy
 # accepted, and a dial error that is not a *net.OpError. Chasing either would
 # mean a test that passes or fails depending on whose kernel it runs on, which is
-# the opposite of what this gate is for.
+# the opposite of what this gate is for. The third is the check for an empty
+# scheme name in schemesOf, and no test can reach it: the piece is trimmed and
+# not empty, so it never starts with the space or tab firstWord cuts on. Until
+# 2026-10-14 this paragraph said two - it was written from reading the code, and
+# the profile says three.
 #
 # WHICH PLATFORM IS THE LOWER ONE WAS ASKED RATHER THAN ASSUMED - OBS100, the note
 # that cost a month of a floor which had been true once. Measured 2026-09-07:
@@ -172,4 +192,10 @@ github.com/donislawdev/certdoctor/internal/adapter/proxyconf 84
 # golang:1.27-alpine container. There is no build tag in this package, so both
 # platforms compile the same single file and the two numbers have no reason to
 # diverge. The floor is the Windows measurement rounded down.
-github.com/donislawdev/certdoctor/internal/adapter/proxyauth 97
+#
+# MEASURED AGAIN 2026-10-14 UNDER GO 1.27.2: 96.7 percent, 87 of 90 statements,
+# three runs alike. The 97.1 of September fits 100 of 103 - the same three
+# statements unreached over a denominator the cover tool had inflated
+# (golang/go#81832). That is arithmetic and the upstream report, not a rerun
+# under 1.27.0. The floor is 96 by the owner's decision.
+github.com/donislawdev/certdoctor/internal/adapter/proxyauth 96

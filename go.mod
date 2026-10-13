@@ -35,13 +35,24 @@ module github.com/donislawdev/certdoctor
 // No formatting of that file is green under both, so the versions had to meet.
 // go1.27.0 was the current stable release, read at https://go.dev/dl/ on
 // 2026-09-01.
-go 1.27.0
+//
+// MOVED 1.27.0 -> 1.27.2 ON 2026-10-14, AND THIS TIME THE REASON WAS THE
+// LIBRARY. go1.27.2 carries security fixes to crypto/tls, net/http,
+// html/template, net/textproto and os, and the binary links four of the five -
+// all but html/template, measured with "go list -deps ./cmd/certdoctor".
+// The same release fixed cmd/cover, which under 1.27.0 counted some statements
+// twice and so reported coverage higher than it was (golang/go#81832). That is
+// how the gap was noticed: the installation on PATH had already moved, and two
+// floors in tools/coverage-floor.txt, measured with the old instrument, fell
+// below themselves on code nobody had touched. go1.27.2 was the current stable
+// release, read at https://go.dev/doc/devel/release on 2026-10-14.
+go 1.27.2
 
-require github.com/dop251/goja v0.0.0-20260901132549-43234fa61381
+require github.com/dop251/goja v0.0.0-20261013122152-245c54f48cfc
 
 require (
-	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
-	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
-	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
-	golang.org/x/text v0.39.0 // indirect
+	github.com/dlclark/regexp2/v2 v2.8.4 // indirect
+	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
+	github.com/google/pprof v0.0.0-20261012231050-2af12c3f4d87 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )
