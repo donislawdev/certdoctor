@@ -153,9 +153,19 @@ var AllReasons = []Reason{
 	ReasonCredentialsRequired,
 }
 
-// reasonDescriptions carries the English one-liner shown to the user. Keeping it
-// here rather than at the call site is what stops the same reason from being
-// worded three different ways in three renderers.
+// reasonDescriptions carries an English one-liner for every declared reason,
+// and its keys are the list Valid answers from - so it is not dead code even
+// though nothing reads the sentences.
+//
+// NO SURFACE SHOWS THESE TODAY - OBS151, measured 2026-09-23. Description has
+// no caller outside the tests, and every renderer prints the reason token
+// alone. This comment used to say the text was shown to the user, which was a
+// promise in prose that no code kept. Showing them changes the text on four
+// surfaces and waits in the backlog, and some no longer fit every case they
+// are attached to: nothing_to_check also stands for a target without TLS
+// (ADR100) and for L4 after L3 reached nothing. They have to be worded again
+// before anybody renders them. Kept here rather than at a call site, so that
+// when they are shown, one reason is worded one way on every surface.
 var reasonDescriptions = map[Reason]string{
 	ReasonUnparseable:    "the probe produced output certdoctor does not recognize",
 	ReasonTimeout:        "the probe did not finish within its time limit",
@@ -176,9 +186,9 @@ func (r Reason) Valid() bool {
 	return ok
 }
 
-// Description returns the user-facing English text for r, or the empty string
-// for an unknown reason. Callers render the empty string as nothing rather than
-// as a lie about what happened.
+// Description returns the English one-liner for r, or the empty string for an
+// unknown reason. No renderer calls it yet (OBS151). One that does should
+// render the empty string as nothing rather than as a lie about what happened.
 func (r Reason) Description() string { return reasonDescriptions[r] }
 
 // String makes Reason printable without a conversion at every call site.

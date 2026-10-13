@@ -20,8 +20,9 @@ import (
 // kinds of stack together, and that a build with no platform reading still
 // answers about the environment.
 
-// proxyTarget is named for this file's subject because aTarget already exists in
-// acceptance_checks_test.go, which sits behind the "acceptance" build tag.
+// proxyTarget is named for this file's subject because the acceptance files,
+// which sit behind the "acceptance" build tag, already declare targets of their
+// own - aRealName and aLoopbackTarget.
 //
 // A PLAIN go test COMPILES NEITHER OF THEM TOGETHER AND SAYS NOTHING, which is
 // the trap: the package was green here and broke four gates at once - the audit,

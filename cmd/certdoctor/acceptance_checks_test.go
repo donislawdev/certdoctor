@@ -20,11 +20,19 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
-// aTarget is the URL every check uses unless it is about the URL itself.
+// aRealName is the URL for the checks whose question IS a real server - the
+// chain somebody else's server presents, a public authority every store
+// trusts.
 //
 // A documentation domain, because these runs are real and a name belonging to
 // somebody would make this suite send traffic at them.
-const aTarget = "https://example.com"
+//
+// EVERY CHECK THAT REACHES FOR IT ASKS needsTheInternet FIRST, and a guard
+// outside this build tag holds that (OBS150). Until 2026-10-13 this was the
+// target of every check, and seventeen of them turned red whenever the network
+// blinked while asking questions about files, pipes and pages. Everything else
+// runs against aLoopbackTarget.
+const aRealName = "https://example.com"
 
 // anUnresolvableTarget is a name that CANNOT exist, and that is a guarantee
 // rather than a hope.
@@ -53,11 +61,15 @@ const anUnresolvableTarget = "https://certdoctor-acceptance.invalid"
 // and after instead, which is the form of the promise a user would check.
 func TestTheShippedBinaryWritesNoFileNobodyAskedFor(t *testing.T) {
 	dir := t.TempDir()
+	target := aLoopbackTarget(t)
 
+	// A DIAGNOSIS, because the loopback target is built to fail L4 on every
+	// machine - and a run that got that far also ran every trust store probe,
+	// which is where another program gets started and could leave a file.
 	before := census(t, dir)
-	r := startProgram(t, invocation{dir: dir}, aTarget)
-	if r.code != exitcode.Inconclusive.Int() {
-		t.Fatalf("an ordinary run ended with %d, not the code for nothing assessed: %s", r.code, r.stderr)
+	r := startProgram(t, invocation{dir: dir}, target)
+	if r.code != exitcode.Diagnosis.Int() {
+		t.Fatalf("an ordinary run ended with %d, not the code for a diagnosis: %s", r.code, r.stderr)
 	}
 	if new := appeared(before, census(t, dir)); len(new) != 0 {
 		t.Errorf("a run that was asked for nothing on disk created %v", new)
@@ -67,8 +79,8 @@ func TestTheShippedBinaryWritesNoFileNobodyAskedFor(t *testing.T) {
 	// atomic write puts its temporary file beside the destination, so a run that
 	// forgot to clean up would show two.
 	before = census(t, dir)
-	r = startProgram(t, invocation{dir: dir}, aTarget, "--json", "--out", "report.json")
-	if r.code != exitcode.Inconclusive.Int() {
+	r = startProgram(t, invocation{dir: dir}, target, "--json", "--out", "report.json")
+	if r.code != exitcode.Diagnosis.Int() {
 		t.Fatalf("writing a report ended with %d: %s", r.code, r.stderr)
 	}
 	new := appeared(before, census(t, dir))
@@ -98,7 +110,7 @@ func TestTheShippedBinaryRefusesADirectoryAndLeavesNoLitter(t *testing.T) {
 	}
 
 	before := census(t, dir)
-	r := startProgram(t, invocation{dir: dir}, aTarget, "--json", "--out", "report.json")
+	r := startProgram(t, invocation{dir: dir}, aLoopbackTarget(t), "--json", "--out", "report.json")
 
 	if r.code == exitcode.OK.Int() {
 		t.Error("writing a report over a directory reported success")
@@ -132,7 +144,7 @@ func TestTheShippedBinaryRefusesADeviceAsAReportDestination(t *testing.T) {
 		device = "NUL"
 	}
 
-	r := runProgram(t, aTarget, "--json", "--out", device)
+	r := runProgram(t, aLoopbackTarget(t), "--json", "--out", device)
 	if r.code == exitcode.OK.Int() {
 		t.Fatal("a device was accepted as a report destination")
 	}
@@ -153,8 +165,8 @@ func TestTheShippedBinaryRefusesADeviceAsAReportDestination(t *testing.T) {
 // second description of the document written here - a copy would agree with
 // itself however wrong both were.
 func TestTheShippedBinaryPutsNothingButJSONOnStandardOutput(t *testing.T) {
-	r := runProgram(t, aTarget, "--json")
-	if r.code != exitcode.Inconclusive.Int() {
+	r := runProgram(t, aLoopbackTarget(t), "--json")
+	if r.code != exitcode.Diagnosis.Int() {
 		t.Fatalf("the run ended with %d: %s", r.code, r.stderr)
 	}
 	if err := render.ValidateDocument([]byte(r.stdout)); err != nil {
@@ -184,11 +196,12 @@ func TestTheShippedBinaryPutsNothingButJSONOnStandardOutput(t *testing.T) {
 // TestTheShippedBinaryWritesNothingToStandardOutputWhenItFails keeps a pipeline
 // from parsing an error as a result.
 func TestTheShippedBinaryWritesNothingToStandardOutputWhenItFails(t *testing.T) {
+	target := aLoopbackTarget(t)
 	for _, args := range [][]string{
 		{},
 		{"--json", "not a url at all"},
-		{aTarget, "--timeout", "abc"},
-		{aTarget, "--format", "invented"},
+		{target, "--timeout", "abc"},
+		{target, "--format", "invented"},
 	} {
 		r := runProgram(t, args...)
 		if r.code == exitcode.OK.Int() {
@@ -211,7 +224,8 @@ func TestTheShippedBinaryWritesNothingToStandardOutputWhenItFails(t *testing.T) 
 // no. Colour arriving here would reach a log file or a ticket as <-[34m, which
 // reads as a corrupted report.
 func TestTheShippedBinarySendsNoColourIntoAPipe(t *testing.T) {
-	for _, args := range [][]string{{aTarget}, {aTarget, "--json"}, {"--help"}} {
+	target := aLoopbackTarget(t)
+	for _, args := range [][]string{{target}, {target, "--json"}, {"--help"}} {
 		r := runProgram(t, args...)
 		for where, text := range map[string]string{"standard output": r.stdout, "standard error": r.stderr} {
 			if strings.Contains(text, "\x1b") {
@@ -230,12 +244,13 @@ func TestTheShippedBinarySendsNoColourIntoAPipe(t *testing.T) {
 // writing `if code == 2` the difference decides whether one typo in one flag is
 // caught and the other waved through.
 func TestTheShippedBinaryTellsAnUnreadableValueFromAnImpossibleOne(t *testing.T) {
-	unreadable := runProgram(t, aTarget, "--timeout", "abc")
+	target := aLoopbackTarget(t)
+	unreadable := runProgram(t, target, "--timeout", "abc")
 	if unreadable.code != exitcode.Usage.Int() {
 		t.Errorf("a value that does not parse ended with %d, not the usage code: %s", unreadable.code, unreadable.stderr)
 	}
 
-	impossible := runProgram(t, aTarget, "--timeout", "-5")
+	impossible := runProgram(t, target, "--timeout", "-5")
 	if impossible.code != exitcode.Config.Int() {
 		t.Errorf("a value that parses and cannot be met ended with %d, not the config code: %s",
 			impossible.code, impossible.stderr)
@@ -249,14 +264,15 @@ func TestTheShippedBinaryTellsAnUnreadableValueFromAnImpossibleOne(t *testing.T)
 // TestTheShippedBinaryNamesTheSwitchItDidNotRecogniseRatherThanTheURL keeps a
 // mistyped flag from being reported as a bad address.
 func TestTheShippedBinaryNamesTheSwitchItDidNotRecogniseRatherThanTheURL(t *testing.T) {
-	r := runProgram(t, aTarget, "--jsno")
+	target := aLoopbackTarget(t)
+	r := runProgram(t, target, "--jsno")
 	if r.code != exitcode.Usage.Int() {
 		t.Fatalf("a misspelt switch ended with %d: %s", r.code, r.stderr)
 	}
 	if !strings.Contains(r.stderr, "jsno") {
 		t.Errorf("the message does not name the switch that was not recognised: %q", r.stderr)
 	}
-	if strings.Contains(r.stderr, aTarget) {
+	if strings.Contains(r.stderr, target) {
 		t.Errorf("the message blames the URL for a mistake in a switch: %q", r.stderr)
 	}
 }
@@ -268,7 +284,7 @@ func TestTheShippedBinaryNamesTheSwitchItDidNotRecogniseRatherThanTheURL(t *test
 // does not report it, so this exact command line once printed a terminal report
 // and said nothing about --json.
 func TestTheShippedBinaryHonoursASwitchAfterTheURL(t *testing.T) {
-	r := runProgram(t, aTarget, "--json")
+	r := runProgram(t, aLoopbackTarget(t), "--json")
 	if err := render.ValidateDocument([]byte(r.stdout)); err != nil {
 		t.Fatalf("a switch written after the URL was ignored - what came out is not the document:\n%v", err)
 	}
@@ -879,9 +895,10 @@ func varyingNames(m map[string]bool) []string {
 // this file is public and stays public.
 func TestTheShippedBinaryKeepsAProxyPasswordOffEverySurface(t *testing.T) {
 	const secret = "zzsecretzz"
-	env := []string{"HTTPS_PROXY=http://someone:" + secret + "@proxy.example.com:8080"}
+	env := []string{"HTTPS_PROXY=http://someone:" + secret + "@" + aPortNobodyListensOn(t)}
 
-	for _, args := range [][]string{{aTarget}, {aTarget, "--json"}, {aTarget, "--redact"}} {
+	target := aLoopbackTarget(t)
+	for _, args := range [][]string{{target}, {target, "--json"}, {target, "--redact"}} {
 		r := startProgram(t, invocation{env: env}, args...)
 		if strings.Contains(r.stdout, secret) {
 			t.Errorf("%v put the proxy password on standard output", args)
@@ -907,7 +924,7 @@ func TestTheShippedBinaryKeepsAProxyPasswordOffEverySurface(t *testing.T) {
 func TestTheShippedBinaryKeepsTheDisabledCertificateCheckVisible(t *testing.T) {
 	env := []string{"NODE_TLS_REJECT_UNAUTHORIZED=0"}
 
-	r := startProgram(t, invocation{env: env}, aTarget, "--json")
+	r := startProgram(t, invocation{env: env}, aLoopbackTarget(t), "--json")
 	if !strings.Contains(r.stdout, "NODE_TLS_REJECT_UNAUTHORIZED") {
 		t.Fatalf("the variable is not reported at all:\n%s", r.stdout)
 	}
@@ -953,8 +970,8 @@ func TestTheShippedBinaryWritesAReportOnlyItsOwnerCanRead(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	r := startProgram(t, invocation{dir: dir}, aTarget, "--json", "--out", "report.json")
-	if r.code != exitcode.Inconclusive.Int() {
+	r := startProgram(t, invocation{dir: dir}, aLoopbackTarget(t), "--json", "--out", "report.json")
+	if r.code != exitcode.Diagnosis.Int() {
 		t.Fatalf("writing the report ended with %d: %s", r.code, r.stderr)
 	}
 
@@ -1000,7 +1017,7 @@ func TestTheShippedBinaryShowsTheChainItWasPresented(t *testing.T) {
 			} `json:"findings"`
 		} `json:"layers"`
 	}
-	if err := json.Unmarshal([]byte(runProgram(t, aTarget, "--json").stdout), &document); err != nil {
+	if err := json.Unmarshal([]byte(runProgram(t, aRealName, "--json").stdout), &document); err != nil {
 		t.Fatalf("the document does not parse: %v", err)
 	}
 
@@ -1039,7 +1056,7 @@ func TestTheShippedBinaryShowsTheChainItWasPresented(t *testing.T) {
 	if carrying != 1 {
 		t.Errorf("%d of %d rows carry a chain, and exactly one may", carrying, rows)
 	}
-	if !strings.Contains(runProgram(t, aTarget).stdout, leafPrint) {
+	if !strings.Contains(runProgram(t, aRealName).stdout, leafPrint) {
 		t.Error("the leaf fingerprint reaches the machine readable document and not the terminal page, " +
 			"so the surfaces are not at parity for the one field somebody came here for")
 	}
@@ -1055,13 +1072,13 @@ func TestTheShippedBinaryShowsTheChainItWasPresented(t *testing.T) {
 func TestTheShippedBinaryNeverMasksAFingerprint(t *testing.T) {
 	needsTheInternet(t)
 
-	plain := runProgram(t, aTarget, "--json").stdout
+	plain := runProgram(t, aRealName, "--json").stdout
 	print64 := regexp.MustCompile(`"fingerprint_sha256": "([0-9a-f]{64})"`).FindStringSubmatch(plain)
 	if print64 == nil {
 		t.Fatal("no fingerprint reached the plain document, so there is nothing to check masking against")
 	}
 
-	redacted := runProgram(t, aTarget, "--json", "--redact").stdout
+	redacted := runProgram(t, aRealName, "--json", "--redact").stdout
 	if !strings.Contains(redacted, print64[1]) {
 		t.Errorf("the fingerprint %s does not survive --redact, and it is the evidence rule 21 requires "+
 			"to travel beside any claim about interception", print64[1])
@@ -1085,7 +1102,7 @@ func TestTheShippedBinaryNeverMasksAFingerprint(t *testing.T) {
 func TestTheShippedBinaryProducesAValidDocumentForARealName(t *testing.T) {
 	needsTheInternet(t)
 
-	r := runProgram(t, aTarget, "--json")
+	r := runProgram(t, aRealName, "--json")
 	if err := render.ValidateDocument([]byte(r.stdout)); err != nil {
 		t.Fatalf("a run against a real name produced a document its own schema refuses:\n%v", err)
 	}
@@ -1157,7 +1174,7 @@ func TestTheFileCensusCanSeeAFileAppear(t *testing.T) {
 func TestTheShippedBinaryOffersNoCommandWhereNothingIsBroken(t *testing.T) {
 	needsTheInternet(t)
 
-	document := runProgram(t, aTarget, "--json").stdout
+	document := runProgram(t, aRealName, "--json").stdout
 
 	// The check is worth nothing unless the matrix was actually built, so the
 	// half that proves the layer ran comes first.
@@ -1206,8 +1223,8 @@ func TestTheShippedBinaryOffersNoCommandWhereNothingIsBroken(t *testing.T) {
 // that had grown a capability question, would show up here as an escape sequence
 // in a document somebody is about to paste into a ticket.
 func TestTheShippedBinaryWritesAMarkdownReportWithNoTerminalDressing(t *testing.T) {
-	r := runProgram(t, aTarget, "--format", "md")
-	if r.code != exitcode.Inconclusive.Int() {
+	r := runProgram(t, aLoopbackTarget(t), "--format", "md")
+	if r.code != exitcode.Diagnosis.Int() {
 		t.Fatalf("the run ended with %d: %s", r.code, r.stderr)
 	}
 	if strings.Contains(r.stdout, "\x1b") {
@@ -1249,8 +1266,8 @@ func TestTheShippedBinaryWritesAMarkdownReportWithNoTerminalDressing(t *testing.
 // that did not.
 func TestTheShippedBinaryDeliversAMarkdownReportToAFileAndNotAlsoToThePipe(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "report.md")
-	r := runProgram(t, aTarget, "--format", "md", "--out", path)
-	if r.code != exitcode.Inconclusive.Int() {
+	r := runProgram(t, aLoopbackTarget(t), "--format", "md", "--out", path)
+	if r.code != exitcode.Diagnosis.Int() {
 		t.Fatalf("the run ended with %d: %s", r.code, r.stderr)
 	}
 	if r.stdout != "" {
@@ -1293,8 +1310,8 @@ func TestTheShippedBinaryDeliversAMarkdownReportToAFileAndNotAlsoToThePipe(t *te
 // be executable content, and a beacon, arriving in the inbox of the security
 // team that a report about TLS interception is written for.
 func TestTheShippedBinaryWritesAnHTMLPageThatFetchesNothing(t *testing.T) {
-	r := runProgram(t, aTarget, "--format", "html")
-	if r.code != exitcode.Inconclusive.Int() {
+	r := runProgram(t, aLoopbackTarget(t), "--format", "html")
+	if r.code != exitcode.Diagnosis.Int() {
 		t.Fatalf("the run ended with %d: %s", r.code, r.stderr)
 	}
 	if strings.Contains(r.stdout, "\x1b") {
@@ -1314,8 +1331,8 @@ func TestTheShippedBinaryWritesAnHTMLPageThatFetchesNothing(t *testing.T) {
 // would be read twice by anything downstream.
 func TestTheShippedBinaryDeliversAnHTMLPageToAFileAndNotAlsoToThePipe(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "report.html")
-	r := runProgram(t, aTarget, "--format", "html", "--out", path)
-	if r.code != exitcode.Inconclusive.Int() {
+	r := runProgram(t, aLoopbackTarget(t), "--format", "html", "--out", path)
+	if r.code != exitcode.Diagnosis.Int() {
 		t.Fatalf("the run ended with %d: %s", r.code, r.stderr)
 	}
 	if r.stdout != "" {
@@ -1340,8 +1357,8 @@ func TestTheShippedBinaryDeliversAnHTMLPageToAFileAndNotAlsoToThePipe(t *testing
 // would be the only place in this program where a format restricts a
 // destination.
 func TestTheShippedBinaryAcceptsHTMLOnStandardOutput(t *testing.T) {
-	r := runProgram(t, aTarget, "--format", "html", "--out", "-")
-	if r.code != exitcode.Inconclusive.Int() {
+	r := runProgram(t, aLoopbackTarget(t), "--format", "html", "--out", "-")
+	if r.code != exitcode.Diagnosis.Int() {
 		t.Fatalf("--format html --out - ended with %d, want a report: %s", r.code, r.stderr)
 	}
 	if !strings.HasPrefix(r.stdout, "<!DOCTYPE html>") {

@@ -77,10 +77,15 @@ func TestTheSchemeTheUserTypedDecidesWhetherTLSIsAsked(t *testing.T) {
 // binary and pinned here.
 //
 // The first wording of L4's sentence said "given as http://," and under
-// --redact the comma came out as [host-2]. The masking reads whatever follows a
-// scheme up to the next space as a host name, so a sentence ABOUT a scheme is
-// exactly the one it mangles - and no layer test can see it, because masking
+// --redact the comma came out as [host-2]. The masking read whatever followed a
+// scheme up to the next space as a host name, so a sentence ABOUT a scheme was
+// exactly the one it mangled - and no layer test can see it, because masking
 // happens after the layers.
+//
+// The rule now steps over punctuation straight after the separator, so the
+// comma alone would pass. This stays because the sentence still has to survive
+// as a whole, and a word written straight after "://" is still read as a host -
+// correctly, since that is what a host looks like.
 func TestTheSentenceForATargetWithoutTLSSurvivesRedaction(t *testing.T) {
 	_, _, plain := runAgainst(t, "http://internal.corp.example/")
 	_, _, masked := runAgainst(t, "http://internal.corp.example/", "--redact")

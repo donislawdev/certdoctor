@@ -178,7 +178,32 @@ var (
 	// a host where the first pass found none. Masking would stop being
 	// idempotent - measured on the input "A://#@0". Two rules that rewrite the
 	// same text have to agree on where things are.
-	hostInURL = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://(?:[^/\s@]+@)?)([^/\s?#@]+)`)
+	//
+	// Third, and this one was found by running the binary - OBS152. A sentence
+	// ABOUT a scheme rather than about an address put a comma straight after the
+	// separator, "given as http://, which", and the comma came out as [host-2]:
+	// a pseudonym for a host that appears in no row of the report, with the
+	// sentence's punctuation gone. So prose punctuation right after the separator
+	// is STEPPED OVER and kept, and the host starts at the first character after
+	// it. Where the host ends did not move.
+	//
+	// STEPPED OVER RATHER THAN REFUSED, and that is the half that keeps this from
+	// becoming a leak. A rule that simply declined to match "http://,secret.corp"
+	// would leave secret.corp standing in a redacted report. This one masks it
+	// and keeps the comma. The colon is not on the list - it is the port
+	// separator, so it has a meaning here that prose punctuation does not. The
+	// opening bracket is not either - an address and every pseudonym start with
+	// one.
+	hostInURL = regexp.MustCompile(
+		"([a-zA-Z][a-zA-Z0-9+.\\-]*://(?:[^/\\s@]+@)?" + leadingPunctuation + "*)" +
+			"([^/\\s?#@" + proseMarks + "][^/\\s?#@]*)")
+)
+
+// proseMarks are the characters a sentence can put straight after "://" and a
+// host never starts with. leadingPunctuation is the class built from them.
+const (
+	proseMarks         = ",.;!)\\]}'\"`>"
+	leadingPunctuation = "[" + proseMarks + "]"
 )
 
 // Redaction masks text and remembers the pseudonyms it has handed out.

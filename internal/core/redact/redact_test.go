@@ -865,3 +865,44 @@ func TestAnEmptyAuthorityStaysEmpty(t *testing.T) {
 		t.Errorf("an absent address became %q", got)
 	}
 }
+
+// TestPunctuationAfterTheSchemeSeparatorIsNotAHost is OBS152, found by running
+// the binary with --redact and by nothing here.
+//
+// The first wording of L4's sentence about a target without TLS read "given as
+// http://, which", and the comma came out as [host-2] - a pseudonym for a host
+// that appears in no row of the report. Masking runs after the layers, so no
+// test of a layer could have seen it.
+//
+// THE SECOND HALF MATTERS MORE THAN THE FIRST. Stepping over punctuation must
+// not become a way past the rule: a name standing behind it is still a name,
+// and it gets the same pseudonym as the same name written without it.
+func TestPunctuationAfterTheSchemeSeparatorIsNotAHost(t *testing.T) {
+	for _, text := range []string{
+		"the target was given as http://, which does not use TLS",
+		"a scheme on its own (http://) names no machine",
+		"the sentence ends with https://.",
+		"quoted as 'https://' here",
+		"written as `http://` in a note",
+	} {
+		if got := New(Everything).Text(text); got != text {
+			t.Errorf("masking rewrote a sentence that names no host:\n  in:  %q\n  out: %q", text, got)
+		}
+	}
+
+	r := New(Everything)
+	plain := r.Text("http://secret.corp.example:8080")
+	for _, text := range []string{
+		"http://,secret.corp.example:8080",
+		"http://.secret.corp.example:8080",
+		"see https://)secret.corp.example:8080",
+	} {
+		got := r.Text(text)
+		if strings.Contains(got, "secret.corp.example") {
+			t.Errorf("a name standing behind punctuation survived --redact: %q became %q", text, got)
+		}
+		if !strings.HasSuffix(got, strings.TrimPrefix(plain, "http://")) {
+			t.Errorf("the same machine got a different pseudonym behind punctuation: %q beside %q", got, plain)
+		}
+	}
+}

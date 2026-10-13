@@ -98,6 +98,10 @@ func FuzzMaskingIsIdempotent(f *testing.F) {
 		"",
 		"\x00\x01 not text at all",
 		"https://[::1]:8443/x and https://[::1]/y",
+		// OBS152: punctuation straight after the separator is stepped over, so
+		// the pseudonym lands after it and a second pass has to leave it there.
+		"given as http://, which",
+		"http://,secret.corp:8080 and (https://)",
 		"C:\\Users\\jdoe\\AppData\\Roaming\\npm",
 	} {
 		f.Add(seed)
