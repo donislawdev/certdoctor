@@ -174,9 +174,10 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 // certificate, found afterwards by its serial number and removed again. It was
 // measured on this account's Personal store, which grants no trust, rather
 // than on Root - reading the file happens before any store is chosen, which is
-// a JUDGEMENT. WHAT IS STILL NOT MEASURED: the confirmation dialog the
-// CurrentUser caveat promises. No document found says so, and answering it
-// takes a person at the dialog.
+// a JUDGEMENT. The confirmation dialog the CurrentUser caveat promises has no
+// document behind it, so it was measured by the owner the same day: the same
+// command aimed at this account's Root store opened Windows' security warning,
+// it was declined, and the store was read afterwards with nothing added.
 //
 // A ROW THIS PROGRAM DID NOT WRITE GETS NO COMMAND. Only the two instances the
 // probe produces are known, and only on Windows. Anything else is a store nobody

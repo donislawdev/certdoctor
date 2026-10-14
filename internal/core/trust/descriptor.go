@@ -114,8 +114,9 @@ var descriptors = []Descriptor{
 			"https://learn.microsoft.com/windows-server/administration/windows-commands/certutil - -addstore adds a " +
 			"certificate to the named store, and -user aims it at this account's store instead of the machine's. " +
 			"Measured beside it the same day: certutil -user -addstore read a PEM file and added the certificate, " +
-			"tried on this account's Personal store so that nothing was trusted, then removed. Not measured: the " +
-			"confirmation dialog Windows is said to show before adding to this account's Root store.",
+			"tried on this account's Personal store so that nothing was trusted, then removed. And the dialog the " +
+			"caveat promises was measured by the owner: aimed at this account's Root store, the command opened " +
+			"Windows' security warning, it was declined, and nothing was added.",
 	},
 	{
 		ID:          "git",
