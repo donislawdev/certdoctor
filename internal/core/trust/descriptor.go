@@ -14,6 +14,8 @@
 // SAME structural verdict, and only a trust store tells them apart.
 package trust
 
+import "github.com/donislawdev/certdoctor/internal/core/report"
+
 // Source says where a claim about somebody else's runtime came from.
 //
 // THIS TYPE IS INVIOLABLE RULE 18 MADE MACHINE-CHECKABLE. The rule says every
@@ -91,6 +93,29 @@ type Descriptor struct {
 // schema fields and ADR30 refuses for schema versions. An entry arrives with the
 // code that answers it.
 var descriptors = []Descriptor{
+	{
+		// FIRST, because it is the store several other rows defer to - curl on
+		// Schannel says in so many words that this row answers for it.
+		ID:      report.RuntimeSystemStore,
+		Runtime: report.RuntimeSystemStore,
+		TrustSource: "the platform's own store - on Windows the logical Root store of this account and of the machine, " +
+			"asked through crypt32 with every network retrieval switched off",
+		Source: Measured,
+		Evidence: "Measured on the owner's machine 2026-09-23: the logical Root store holds 91 certificates for both " +
+			"CurrentUser and LocalMachine, because it CONTAINS AuthRoot and Enterprise - so adding the stores up counts " +
+			"twice. With the three flags that switch off retrieval, a root in Microsoft's root program that this machine " +
+			"has not downloaded yet - www.buypass.no - fails as a partial chain, exactly like an inspection authority nobody " +
+			"installed. Measured 2026-10-13: the local copy of the program's list in the registry, 562 entries, tells " +
+			"the two apart without the network. Measured 2026-10-14 on generated chains: a missing issuer reports " +
+			"PARTIAL_CHAIN alone, a root the server sent reports UNTRUSTED_ROOT, both engines answer alike, and an AIA " +
+			"address in a certificate is not fetched.",
+		FixSource: Documentation,
+		FixEvidence: "certutil, Windows Commands reference, read 2026-10-14 at " +
+			"https://learn.microsoft.com/windows-server/administration/windows-commands/certutil - -addstore adds a " +
+			"certificate to the named store, and -user aims it at this account's store instead of the machine's. Not " +
+			"measured: running it changes this machine, so whether it reads a PEM file as it reads a DER one is the " +
+			"owner's check by hand.",
+	},
 	{
 		ID:          "git",
 		Runtime:     "git",

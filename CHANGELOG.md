@@ -10,6 +10,38 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Added - the Windows trust store has rows of its own
+
+- **The trust matrix now asks the Windows store itself, twice.** One row says
+  what a program running as this account would make of the chain, the other
+  what a service running as the machine would. A root added to this account's
+  store alone is the shape of "the browser works and the service does not",
+  and one row could not show it. Each row carries how many roots that store
+  holds. Linux and macOS do not have these rows yet.
+
+- **No network is used to answer.** Windows would normally fetch a missing
+  certificate from an address written into the certificate by the server - so
+  certdoctor asks with that switched off. A root Microsoft publishes and this
+  machine has not downloaded yet then looks like an authority nobody
+  installed. certdoctor tells them apart with this machine's own copy of
+  Microsoft's root program list. Where the list names the issuer, where the
+  certificate names an address to fetch the issuer from, or where the list is
+  missing or has not been brought up to date for thirty days, the row is
+  `UNKNOWN` with that reason - never `FAIL`.
+
+- **A refusing Windows row carries a command.** `certutil -addstore Root
+  "<certificate.pem>"` for the machine's store, marked as needing
+  administrator rights, and `certutil -user -addstore Root "<certificate.pem>"`
+  for this account's store, which needs none and makes Windows ask for
+  confirmation. Like every other command, it only appears where the chain was
+  complete or another store on this machine closed it.
+
+- **The trust matrix grows by two rows on Windows**, so its counts change - on
+  the machine this was developed on, "9 of 11 store(s)" became "11 of 13" for
+  the same site. Exit codes are unchanged, and no field of `--json` was added
+  or renamed. A `trust_store` row may now carry a `fix` while its
+  `store_form` is `system` - only when its `runtime` is `system-store`.
+
 ### Changed - an http:// target is no longer handed a TLS handshake
 
 - **An http:// target gets no TLS handshake and no trust matrix, and the

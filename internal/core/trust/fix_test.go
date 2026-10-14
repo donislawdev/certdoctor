@@ -40,6 +40,24 @@ func aBundleStore() report.TrustStore {
 
 func posix() Machine { return Machine{OS: "linux", Home: "/home/jdoe"} }
 
+// aPlatformStore is the row the system-store probe writes when Windows refused
+// the chain for want of a root - a store with no path, named by its location.
+func aPlatformStore(instance string) report.TrustStore {
+	s := aRefusedStore(report.RuntimeSystemStore, instance, "")
+	s.StoreForm = report.StoreSystem
+	return s
+}
+
+// aRefusedRowFor is the refused row a descriptor's own probe would write. The
+// platform's store has no file, so handing it a file-shaped row would test a
+// shape its probe never produces.
+func aRefusedRowFor(descriptor Descriptor) report.TrustStore {
+	if descriptor.Runtime == report.RuntimeSystemStore {
+		return aPlatformStore(report.InstanceLocalMachine)
+	}
+	return aRefusedStore(descriptor.Runtime, `C:\somewhere\install`, `C:\somewhere\install\store.crt`)
+}
+
 // TestEveryDeclaredRuntimeCanBeFixed is the registry test, and it is what stops a
 // probe arriving with no template and nobody noticing.
 //
@@ -50,8 +68,7 @@ func posix() Machine { return Machine{OS: "linux", Home: "/home/jdoe"} }
 func TestEveryDeclaredRuntimeCanBeFixed(t *testing.T) {
 	for _, descriptor := range All() {
 		t.Run(descriptor.ID, func(t *testing.T) {
-			store := aRefusedStore(descriptor.Runtime, `C:\somewhere\install`, `C:\somewhere\install\store.crt`)
-			fix, _ := fixFor(store, true, false, aMachine())
+			fix, _ := fixFor(aRefusedRowFor(descriptor), true, false, aMachine())
 			if fix == nil {
 				t.Fatalf("runtime %q is asked by a probe and has no remediation template, so its rows can be "+
 					"diagnosed and never acted on", descriptor.Runtime)
@@ -358,7 +375,8 @@ func TestElevationIsAnsweredAndSaysWhy(t *testing.T) {
 // manager owns is removed by the next update, and somebody who was not told that
 // concludes the tool was wrong the first time.
 func TestEveryCommandSaysWhatOutlivesIt(t *testing.T) {
-	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore()} {
+	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore(),
+		aPlatformStore(report.InstanceLocalMachine), aPlatformStore(report.InstanceCurrentUser)} {
 		fix, _ := fixFor(store, true, false, aMachine())
 		if fix == nil {
 			t.Fatalf("no command for %s", store.Runtime)
@@ -372,8 +390,12 @@ func TestEveryCommandSaysWhatOutlivesIt(t *testing.T) {
 // TestAProducedCommandSatisfiesTheContract closes the loop between the generator
 // and the validator, which are in two packages and could drift apart.
 func TestAProducedCommandSatisfiesTheContract(t *testing.T) {
-	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore()} {
+	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore(),
+		aPlatformStore(report.InstanceLocalMachine), aPlatformStore(report.InstanceCurrentUser)} {
 		store.Fix, _ = fixFor(store, true, false, aMachine())
+		if store.Fix == nil {
+			t.Fatalf("no command for %s %s, so the contract would be judging nothing", store.Runtime, store.Instance)
+		}
 		finding := report.Finding{
 			Kind:       report.FindingTrustStore,
 			Summary:    "a store that refused the chain",

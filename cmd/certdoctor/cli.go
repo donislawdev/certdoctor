@@ -267,7 +267,7 @@ func walk(ctx context.Context, o *options, env environment, shown targetReductio
 		LayerBudget: budget(o.probeTimeout),
 		Now:         env.now,
 		Layers:      run.Wire(wiring),
-		Notes:       pendingNotes(shown, env.privilege, found),
+		Notes:       pendingNotes(shown, env.privilege, found, wiring.Trust.Probes),
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -881,9 +881,10 @@ var standingNotes = []report.Note{
 
 // pendingNotes is the standing list plus whatever this particular invocation
 // added to it.
-func pendingNotes(shown targetReduction, privilege report.PrivilegeLevel, found dns.Nameservers) []report.Note {
+func pendingNotes(shown targetReduction, privilege report.PrivilegeLevel, found dns.Nameservers,
+	probes map[string]trust.Probe) []report.Note {
 	notes := append([]report.Note{}, standingNotes...)
-	notes = append(notes, trustCoverageNote())
+	notes = append(notes, trustCoverageNote(probes))
 	if note, trimmed := resolverTrimNote(found); trimmed {
 		notes = append(notes, note)
 	}
@@ -1126,7 +1127,25 @@ func trustInput(o *options, env environment, parsed *url.URL) trust.Input {
 // The registry is a parameter so BOTH branches can be reached from a test - a
 // build with no probes at all is a real state during a port to a new platform,
 // and a branch nothing can execute is a branch nothing proves.
-func trustCoverageNote() report.Note { return coverageNoteFor(trust.All()) }
+//
+// AND IT IS THE REGISTRY AS WIRED, NOT AS DECLARED - ADR103. The platform's own
+// store is declared everywhere and read only on Windows in this slice, so a
+// note built from the declarations alone would tell a Linux reader that a family
+// was asked when nobody looked - the opposite lie to the one this note replaced.
+func trustCoverageNote(probes map[string]trust.Probe) report.Note {
+	return coverageNoteFor(wired(trust.All(), probes))
+}
+
+// wired keeps the descriptors this run has a probe for, in registry order.
+func wired(descriptors []trust.Descriptor, probes map[string]trust.Probe) []trust.Descriptor {
+	out := make([]trust.Descriptor, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		if probes[descriptor.ID] != nil {
+			out = append(out, descriptor)
+		}
+	}
+	return out
+}
 
 func coverageNoteFor(descriptors []trust.Descriptor) report.Note {
 	asked := make([]string, 0, len(descriptors))

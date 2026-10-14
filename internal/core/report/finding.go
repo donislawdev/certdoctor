@@ -1129,6 +1129,34 @@ var storeFormMeanings = map[StoreForm]string{
 	StoreSystem: "the platform's own store, which has no path to point at",
 }
 
+// RuntimeSystemStore is the runtime a row carries when it answers for the
+// platform's OWN store rather than for a program that reads one - ADR103.
+//
+// IT IS DECLARED HERE, IN THE CONTRACT, BECAUSE THE CONTRACT HAS TO KNOW IT. A
+// remediation command on a store that is not a file is refused for every other
+// runtime - a file-shaped command aimed at Schannel is the measured trap that
+// does nothing - and allowed for this one, whose command names the store by the
+// platform's own constant rather than by a path. The probe that writes the rows
+// and the generator that writes the command read the same constant, so the
+// three places cannot disagree about which runtime the exception is for.
+const RuntimeSystemStore = "system-store"
+
+// The two instances of the Windows platform store, spelled as Windows spells
+// the two system store locations - CERT_SYSTEM_STORE_CURRENT_USER and
+// CERT_SYSTEM_STORE_LOCAL_MACHINE, documented under CertOpenStore. They are
+// identities, not display names, so they are not translated on any machine -
+// inviolable rule 19.
+//
+// TWO ROWS RATHER THAN ONE - ADR103, decided by the owner 2026-10-14. A process
+// running as this account builds its chains with one engine, and a service
+// running as the machine builds them with the other. A root added to this
+// account's store alone is the measured shape of "the browser works and the
+// service does not", and one row could not say it.
+const (
+	InstanceCurrentUser  = "CurrentUser"
+	InstanceLocalMachine = "LocalMachine"
+)
+
 // Valid reports whether the form is one this program declared.
 func (f StoreForm) Valid() bool {
 	_, ok := storeFormMeanings[f]
@@ -1210,6 +1238,13 @@ func (t *TrustStore) remediationBreach() string {
 		return ""
 	}
 	refused := t.TrustsPresentedChain != nil && !*t.TrustsPresentedChain
+	// THE PLATFORM'S OWN STORE IS THE ONE EXCEPTION TO THE FILE RULE - ADR103.
+	// Its command adds a certificate to the store by the platform's own name for
+	// it, so it names no file at all, and the rule below exists to stop a
+	// FILE-shaped command reaching a store that never reads a file. Every other
+	// runtime on a platform store - curl on Schannel is the measured one - stays
+	// refused, because whatever it would be handed would be that trap.
+	platformOwn := t.Runtime == RuntimeSystemStore && t.StoreForm == StoreSystem
 	switch {
 	case !refused:
 		return "carries a remediation command for a store that did not refuse the presented chain"
@@ -1217,9 +1252,11 @@ func (t *TrustStore) remediationBreach() string {
 		return fmt.Sprintf(
 			"carries a remediation command for a store that refused the chain because %s, which importing a certificate does not repair",
 			t.TrustFailure.Meaning())
-	case t.StoreForm != StoreFile:
+	case platformOwn && t.StorePath != "":
+		return "carries a remediation command for the platform's own store and a path beside it, and that store has no path to name"
+	case !platformOwn && t.StoreForm != StoreFile:
 		return "carries a remediation command for a store that is not a file, so the command could only name a file nobody chose"
-	case t.StorePath == "":
+	case !platformOwn && t.StorePath == "":
 		return "carries a remediation command for a store with no path, and docs/20 rule 6 is that the path is the real one"
 	}
 	if broken := t.Fix.breach(); broken != "" {

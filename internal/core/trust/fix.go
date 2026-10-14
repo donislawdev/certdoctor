@@ -25,7 +25,9 @@ import (
 //     expired. Importing a certificate does not move a clock.
 //  3. the store is a FILE this program opened and can name. Measured 2026-08-02:
 //     Schannel ignores CURL_CA_BUNDLE, so a file-shaped fix aimed at a platform
-//     store is a command that does nothing while a person waits for it.
+//     store is a command that does nothing while a person waits for it. The ONE
+//     exception is the platform's own store asked directly - ADR103 - whose
+//     command names that store by the platform's constant and no file at all.
 //
 // A second copy of this function would be a second place where two of the three
 // could be checked, and the row it produced would look identical. That is the
@@ -97,6 +99,12 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 	if store.TrustFailure != report.UnknownAuthority {
 		return nil, ""
 	}
+	if store.Runtime == report.RuntimeSystemStore {
+		// ASKED BEFORE THE FILE GATE, AND ONLY FOR THIS RUNTIME. The file gate
+		// stays shut for every other row on a platform store, which is the
+		// measured trap it exists for - ADR103.
+		return platformStoreFix(store, m)
+	}
 	if store.StoreForm != report.StoreFile || store.StorePath == "" {
 		return nil, ""
 	}
@@ -143,6 +151,58 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 	}
 	// A runtime with a probe and no template gets NO command rather than a
 	// guessed one. The registry test refuses to let that state ship.
+	return nil, ""
+}
+
+// platformStoreFix is the command that adds one root to the Windows store this
+// row answered for - ADR103, decided by the owner 2026-10-14.
+//
+// IT ADDS AND NOTHING ELSE, like every command in this file. certutil -addstore
+// puts one certificate into the named store and leaves the rest of it alone;
+// the -f switch docs/20 once carried is left out, because overwriting an entry
+// that is already there is not adding.
+//
+// SOURCE, inviolable rule 18: certutil, Windows Commands reference, read
+// 2026-10-14 at https://learn.microsoft.com/windows-server/administration/windows-commands/certutil
+// - "-addstore: Adds a certificate to the store", and "-user accesses a user
+// store instead of a machine store". WHAT IS NOT MEASURED, said here rather than
+// implied: whether -addstore reads a PEM file as it reads a DER one. Running it
+// changes this machine's store, so it is the owner's check, by hand - and until
+// it is made the descriptor says Documentation rather than Measured.
+//
+// A ROW THIS PROGRAM DID NOT WRITE GETS NO COMMAND. Only the two instances the
+// probe produces are known, and only on Windows. Anything else is a store nobody
+// here knows how to name, and a guessed name is the command that does nothing.
+func platformStoreFix(store report.TrustStore, m Machine) (*report.Fix, string) {
+	if store.StoreForm != report.StoreSystem || m.OS != "windows" {
+		return nil, ""
+	}
+	certificate, ok := quoteFor(m.OS, certificatePlaceholder)
+	if !ok {
+		return nil, unwritablePath
+	}
+	switch store.Instance {
+	case report.InstanceLocalMachine:
+		return &report.Fix{
+			Command:           "certutil -addstore Root " + certificate,
+			Placeholders:      []string{certificatePlaceholder},
+			RequiresElevation: true,
+			Elevation:         "the LocalMachine store is read by every account and every service on this machine, so changing it needs administrator rights",
+			Caveat: "programs that carry a store of their own - git and java among them - do not read this one, " +
+				"so their rows need their own commands",
+		}, ""
+	case report.InstanceCurrentUser:
+		return &report.Fix{
+			Command:      "certutil -user -addstore Root " + certificate,
+			Placeholders: []string{certificatePlaceholder},
+			// THIS ACCOUNT'S OWN STORE, so no administrator is needed - and
+			// Windows asks the person to confirm instead, which the caveat says
+			// before it surprises anybody.
+			RequiresElevation: false,
+			Caveat: "Windows asks for confirmation in a dialog before it adds a root to this account's store, and services " +
+				"running as other accounts do not read it - the LocalMachine command reaches them too",
+		}, ""
+	}
 	return nil, ""
 }
 

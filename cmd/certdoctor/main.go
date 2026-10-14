@@ -32,6 +32,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/curl"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/git"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe/java"
+	"github.com/donislawdev/certdoctor/internal/adapter/probe/systemstore"
 	"github.com/donislawdev/certdoctor/internal/adapter/proxyauth"
 	"github.com/donislawdev/certdoctor/internal/adapter/proxyconf"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
@@ -174,25 +175,8 @@ func liveEnvironment() environment {
 				return out.Stdout, out.ExitCode, out.Truncated, err
 			})
 		},
-		// The L5 probes. git reads plain INI and a PEM bundle through the same
-		// guarded port everything else uses, so the refusal rule - including "this
-		// path would leave the machine" - stays in one place and applies here too.
-		trustProbes: func() map[string]trust.Probe {
-			source, resolvePath := file.Live()
-			guarded := file.Guarded(source, resolvePath, caBundleLimit, nil)
-			paths := pathDirectories()
-			return map[string]trust.Probe{
-				// THE CLOCK GOES IN because "this certificate is out of date" and
-				// "nobody here signed it" are two different answers with two
-				// different remedies, and only the second is repaired by importing
-				// anything. Left to itself crypto/x509 would read the clock behind
-				// the probe's back, which is the one thing that stops an assessment
-				// being reproducible from its input.
-				"git":  git.Probe(guarded, globalGitConfigs(), paths, time.Now),
-				"java": java.Probe(guarded, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
-				"curl": curl.Probe(guarded, probe.Run, paths, os.Getenv("CURL_CA_BUNDLE"), time.Now),
-			}
-		},
+		// The L5 probes, built by a function of their own - liveTrustProbes.
+		trustProbes: liveTrustProbes,
 		// L2's automatic configuration script: fetched over the network and then
 		// run inside the sandbox. It is the FIFTH place in this program that can
 		// open a connection, and it asks the SAME rule as the four below -
@@ -487,6 +471,38 @@ func queryID() uint16 {
 // 229042 bytes, so 8 MB is two orders of magnitude of headroom and still caps
 // memory against a file that is not what it claims to be.
 const caBundleLimit = 8 << 20
+
+// liveTrustProbes builds the L5 probes. git reads plain INI and a PEM bundle
+// through the same guarded port everything else uses, so the refusal rule -
+// including "this path would leave the machine" - stays in one place and
+// applies here too.
+//
+// IT IS A FUNCTION OF ITS OWN BECAUSE THE SIZE RATCHET SAID SO, 2026-10-14: the
+// platform store pushed liveEnvironment past the ceiling, and the ceiling is
+// not raised to get unblocked.
+func liveTrustProbes() map[string]trust.Probe {
+	source, resolvePath := file.Live()
+	guarded := file.Guarded(source, resolvePath, caBundleLimit, nil)
+	paths := pathDirectories()
+	probes := map[string]trust.Probe{
+		// THE CLOCK GOES IN because "this certificate is out of date" and "nobody
+		// here signed it" are two different answers with two different remedies,
+		// and only the second is repaired by importing anything. Left to itself
+		// crypto/x509 would read the clock behind the probe's back, which is the
+		// one thing that stops an assessment being reproducible from its input.
+		"git":  git.Probe(guarded, globalGitConfigs(), paths, time.Now),
+		"java": java.Probe(guarded, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
+		"curl": curl.Probe(guarded, probe.Run, paths, os.Getenv("CURL_CA_BUNDLE"), time.Now),
+	}
+	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - ADR103,
+	// Windows in this slice. Elsewhere there is no probe rather than one finding
+	// nothing, because that store is never absent, and the coverage note names
+	// only what is wired.
+	if platform := systemstore.Probe(time.Now); platform != nil {
+		probes[report.RuntimeSystemStore] = platform
+	}
+	return probes
+}
 
 // globalGitConfigs names the user-level git config files, in git's own
 // precedence order.

@@ -111,6 +111,13 @@ github.com/donislawdev/certdoctor/internal/adapter/probe/git 92
 github.com/donislawdev/certdoctor/internal/adapter/probe/java 94
 github.com/donislawdev/certdoctor/internal/adapter/probe/curl 98
 
+# The platform's own store arrived 2026-10-14, Windows only (ADR103). Measured
+# under go1.27.2: 86.5 on Windows and 92.3 in golang:1.27-alpine, where the
+# crypt32 half is not compiled at all - so the floor is the Windows number
+# rounded down. What stays unexecuted is a registry or crypt32 call failing,
+# which no test can provoke without a machine that fails on purpose.
+github.com/donislawdev/certdoctor/internal/adapter/probe/systemstore 86
+
 # The PAC sandbox arrived 2026-09-02 with P8-K1. Floors are the measured value
 # rounded DOWN to a whole percent, the same rule every line above follows.
 #
