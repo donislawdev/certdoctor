@@ -165,10 +165,18 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 // SOURCE, inviolable rule 18: certutil, Windows Commands reference, read
 // 2026-10-14 at https://learn.microsoft.com/windows-server/administration/windows-commands/certutil
 // - "-addstore: Adds a certificate to the store", and "-user accesses a user
-// store instead of a machine store". WHAT IS NOT MEASURED, said here rather than
-// implied: whether -addstore reads a PEM file as it reads a DER one. Running it
-// changes this machine's store, so it is the owner's check, by hand - and until
-// it is made the descriptor says Documentation rather than Measured.
+// store instead of a machine store". That the machine's Root store needs an
+// elevated session and a user's Root store applies to that user context is at
+// https://learn.microsoft.com/windows-server/identity/ad-cs/inspect-certificates-manage-certificate-stores
+// read the same day.
+//
+// MEASURED 2026-10-14: certutil -user -addstore read a PEM file and added the
+// certificate, found afterwards by its serial number and removed again. It was
+// measured on this account's Personal store, which grants no trust, rather
+// than on Root - reading the file happens before any store is chosen, which is
+// a JUDGEMENT. WHAT IS STILL NOT MEASURED: the confirmation dialog the
+// CurrentUser caveat promises. No document found says so, and answering it
+// takes a person at the dialog.
 //
 // A ROW THIS PROGRAM DID NOT WRITE GETS NO COMMAND. Only the two instances the
 // probe produces are known, and only on Windows. Anything else is a store nobody

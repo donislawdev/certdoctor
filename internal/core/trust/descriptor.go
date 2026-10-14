@@ -112,9 +112,10 @@ var descriptors = []Descriptor{
 		FixSource: Documentation,
 		FixEvidence: "certutil, Windows Commands reference, read 2026-10-14 at " +
 			"https://learn.microsoft.com/windows-server/administration/windows-commands/certutil - -addstore adds a " +
-			"certificate to the named store, and -user aims it at this account's store instead of the machine's. Not " +
-			"measured: running it changes this machine, so whether it reads a PEM file as it reads a DER one is the " +
-			"owner's check by hand.",
+			"certificate to the named store, and -user aims it at this account's store instead of the machine's. " +
+			"Measured beside it the same day: certutil -user -addstore read a PEM file and added the certificate, " +
+			"tried on this account's Personal store so that nothing was trusted, then removed. Not measured: the " +
+			"confirmation dialog Windows is said to show before adding to this account's Root store.",
 	},
 	{
 		ID:          "git",
