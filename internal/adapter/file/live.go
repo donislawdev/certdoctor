@@ -28,6 +28,11 @@ func Live() (Source, Resolve) {
 // needs it and the two ports above are enough for everything else.
 func LiveList() List { return liveList }
 
+// LiveFiles is the same port for the other half of a directory - what is in it
+// that is not a directory. L5 needs it for the certificate directories a Linux
+// distribution keeps beside its bundle - ADR104.
+func LiveFiles() List { return liveFiles }
+
 // liveSource opens a path for reading and nothing else.
 //
 // It hands back the handle without reading a byte, because the cap on how much
@@ -67,6 +72,27 @@ func liveList(path string) ([]string, error) {
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
+			names = append(names, filepath.Join(path, entry.Name()))
+		}
+	}
+	return names, nil
+}
+
+// liveFiles names every entry directly inside one directory that is not itself
+// a directory - files and symbolic links alike.
+//
+// A LINK IS NAMED WITHOUT BEING FOLLOWED. Following it is a filesystem operation
+// on wherever it points, and judging where it points before touching it is
+// Guarded's job - so the caller opens each name through that port, the same way
+// it opens everything else.
+func liveFiles(path string) ([]string, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
 			names = append(names, filepath.Join(path, entry.Name()))
 		}
 	}

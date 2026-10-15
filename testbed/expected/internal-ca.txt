@@ -70,8 +70,11 @@ l4_status=PASS
 chain_complete=true
 
 # --- L5: one store accepts this server and one does not ---
+#
+# TWO REFUSING ROWS SINCE ADR104, the same two as intercepted.txt: git on its
+# copy without the root, and the platform's own row on the untouched image bundle.
 l5_status=FAIL
-l5_rows_not_trusting=1
+l5_rows_not_trusting=2
 l5_trust_failure=unknown_authority
 
 # --- P6b: the same measured answer as the middlebox, and no accusation ---

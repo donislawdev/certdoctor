@@ -494,11 +494,13 @@ func liveTrustProbes() map[string]trust.Probe {
 		"java": java.Probe(guarded, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
 		"curl": curl.Probe(guarded, probe.Run, paths, os.Getenv("CURL_CA_BUNDLE"), time.Now),
 	}
-	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - ADR103,
-	// Windows in this slice. Elsewhere there is no probe rather than one finding
-	// nothing, because that store is never absent, and the coverage note names
-	// only what is wired.
-	if platform := systemstore.Probe(time.Now); platform != nil {
+	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - Windows by
+	// ADR103, Linux by ADR104. Elsewhere there is no probe rather than one
+	// finding nothing, because that store is never absent, and the coverage note
+	// names only what is wired. On Linux the store is a bundle and the
+	// directories beside it, read through the same guarded ports as git's.
+	files := file.GuardedList(file.LiveFiles(), resolvePath, nil)
+	if platform := systemstore.Probe(guarded, files, time.Now); platform != nil {
 		probes[report.RuntimeSystemStore] = platform
 	}
 	return probes

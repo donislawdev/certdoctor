@@ -14,6 +14,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
@@ -67,7 +68,7 @@ var engines = []struct {
 	{report.InstanceLocalMachine, storeLocalMachine, engineLocalMachine},
 }
 
-func platformProbe(now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+func platformProbe(_ file.Source, _ file.List, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
 		// ONE CLOCK READING AND ONE LIST FOR BOTH ROWS. Two readings could put the
 		// two rows on opposite sides of the freshness line, and the list is a

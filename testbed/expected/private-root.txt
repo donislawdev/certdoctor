@@ -50,8 +50,12 @@ chain_complete=true
 # holds it. curl is asked with CURL_CA_BUNDLE pointing at the image's own bundle,
 # which is what curl reads anyway on this build - the variable makes the store
 # NAMEABLE rather than changing which one is used.
+#
+# TWO ROWS SINCE ADR104, ONE STORE. The platform's own row reads the same image
+# bundle curl is pointed at, so both refuse - and the authority finding counts
+# them once, because it counts stores by the file they read.
 l5_status=FAIL
-l5_rows_not_trusting=1
+l5_rows_not_trusting=2
 l5_trust_failure=unknown_authority
 
 # THE INDEPENDENT WITNESS IS THE RUNTIME ITSELF, and this is the first time in

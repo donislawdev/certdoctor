@@ -10,6 +10,32 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Added - the Linux trust store has a row of its own
+
+- **On Linux the trust matrix now asks the platform's store too.** There it is
+  a file, and the row reads the one Go itself reads - the first CA bundle on
+  Go's own list. The row is named after the distribution, such as
+  `system-store debian`, and carries the path and how many roots it holds.
+  `SSL_CERT_FILE` and `SSL_CERT_DIR` are not followed by this row - they point
+  programs away from the platform's store, and they are reported with the
+  other variables.
+
+- **A machine with no CA bundle says so.** `ubuntu:24.04` and
+  `debian:trixie-slim` ship without one, and the row is `UNKNOWN` with a
+  sentence naming the package that installs it, never `FAIL`.
+
+- **A certificate copied by hand into `/etc/ssl/certs` is noticed.** When the
+  bundle refuses a chain and a certificate in that directory would close it,
+  the row is `UNKNOWN` and says that programs reading the directory trust the
+  chain and programs reading only the bundle do not.
+
+- **A refusing Linux row carries a command** - `cat '<certificate.pem>' >>`
+  followed by the bundle's real path, marked as needing root. It appends and
+  nothing else. Its note says that `update-ca-certificates` and
+  `update-ca-trust` rebuild the bundle and drop what was appended, and where a
+  copy survives the rebuild. Like every other command, it only appears where
+  the chain was complete or another store on this machine closed it.
+
 ### Added - the Windows trust store has rows of its own
 
 - **The trust matrix now asks the Windows store itself, twice.** One row says
@@ -17,7 +43,7 @@ Barely diagnosable yet, and there has been no release.
   what a service running as the machine would. A root added to this account's
   store alone is the shape of "the browser works and the service does not",
   and one row could not show it. Each row carries how many roots that store
-  holds. Linux and macOS do not have these rows yet.
+  holds. macOS does not have these rows yet.
 
 - **No network is used to answer.** Windows would normally fetch a missing
   certificate from an address written into the certificate by the server - so

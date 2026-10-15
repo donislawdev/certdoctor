@@ -117,8 +117,11 @@ chain_complete=false
 #
 # One store accepts this traffic and one does not, on one machine, at one moment.
 # That is "the browser works and npm install does not" reproduced in a container.
+#
+# TWO REFUSING ROWS SINCE ADR104: git on its copy without the root, and the
+# platform's own row on the image bundle, which this scenario leaves untouched.
 l5_status=FAIL
-l5_rows_not_trusting=1
+l5_rows_not_trusting=2
 l5_trust_failure=unknown_authority
 
 # --- P6b: who signed it, and how widely this machine holds them ---

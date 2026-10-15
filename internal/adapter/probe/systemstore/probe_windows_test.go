@@ -109,7 +109,7 @@ func TestAnUndeterminedRowCarriesNoCount(t *testing.T) {
 	leaf := aLeaf(t, root, leafOptions{notBefore: now.Add(-time.Hour), notAfter: now.Add(time.Hour),
 		issuerAddress: []string{"http://127.0.0.1:9/never-fetched.crt"}})
 
-	stores, err := Probe(func() time.Time { return now })(context.Background(), [][]byte{leaf.Raw})
+	stores, err := Probe(nil, nil, func() time.Time { return now })(context.Background(), [][]byte{leaf.Raw})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestTheProbeWritesTwoRowsTheContractAccepts(t *testing.T) {
 	root := anAuthorityValid(t, "certdoctor test root", now.Add(-time.Hour), now.Add(24*time.Hour))
 	leaf := aLeaf(t, root, leafOptions{notBefore: now.Add(-time.Hour), notAfter: now.Add(time.Hour)})
 
-	stores, err := Probe(func() time.Time { return now })(context.Background(), [][]byte{leaf.Raw})
+	stores, err := Probe(nil, nil, func() time.Time { return now })(context.Background(), [][]byte{leaf.Raw})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestTheProbeWritesTwoRowsTheContractAccepts(t *testing.T) {
 func TestACancelledRunAsksNothing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	stores, err := Probe(time.Now)(ctx, [][]byte{{1}})
+	stores, err := Probe(nil, nil, time.Now)(ctx, [][]byte{{1}})
 	if err != nil {
 		t.Fatal(err)
 	}

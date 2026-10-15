@@ -126,13 +126,13 @@ func TestTheLiveEnvironmentCarriesTheTrustProbes(t *testing.T) {
 	}
 }
 
-// THE PLATFORM'S OWN STORE IS WIRED EXACTLY WHERE IT CAN BE READ - ADR103. Both
-// directions: missing on Windows is the probe this slice exists for never
-// running, and present elsewhere is a probe answering for a store it never
-// opened.
+// THE PLATFORM'S OWN STORE IS WIRED EXACTLY WHERE IT CAN BE READ - Windows by
+// ADR103, Linux by ADR104. Both directions: missing on either is the probe a
+// slice existed for never running, and present elsewhere - macOS until M3 - is
+// a probe answering for a store it never opened.
 func TestThePlatformStoreIsWiredExactlyWhereItCanBeRead(t *testing.T) {
 	_, present := liveEnvironment().trustProbes()[report.RuntimeSystemStore]
-	if want := runtime.GOOS == "windows"; present != want {
+	if want := runtime.GOOS == "windows" || runtime.GOOS == "linux"; present != want {
 		t.Errorf("on %s the platform store probe is wired=%v, want %v", runtime.GOOS, present, want)
 	}
 }

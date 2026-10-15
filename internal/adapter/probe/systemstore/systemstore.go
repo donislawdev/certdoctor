@@ -15,18 +15,26 @@
 // this product exists for. The local copy of the program's list tells them
 // apart without the network, measured 2026-10-13 - judge.go is where.
 //
-// WINDOWS ONLY IN THIS SLICE - ADR103. Linux is the next one, macOS is M3.
+// ON LINUX THERE IS NO SUCH LIBRARY, AND THE STORE IS A FILE - ADR104. The row
+// reads the bundle Go itself reads, and bundle.go is where.
+//
+// WINDOWS AND LINUX - ADR103 and ADR104. macOS is M3.
 package systemstore
 
 import (
 	"context"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
 // Probe builds the L5 probe for the platform's own store, or returns nil on a
 // platform whose store this package does not read yet.
+//
+// THE TWO PORTS ARE HOW LINUX IS READ - a source for files and a listing of the
+// files in a directory, both guarded the way every other probe's are. Windows
+// asks crypt32 and does not use them.
 //
 // NIL RATHER THAN A PROBE THAT FINDS NOTHING. Every probe in this tree answers
 // "zero instances" when a runtime is not installed, and the layer reads that as
@@ -34,6 +42,6 @@ import (
 // Saying it was would turn a gap in this program into a claim about somebody's
 // machine, so on those platforms the probe is simply not wired, and the
 // coverage note says which families were asked.
-func Probe(now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
-	return platformProbe(now)
+func Probe(source file.Source, files file.List, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+	return platformProbe(source, files, now)
 }

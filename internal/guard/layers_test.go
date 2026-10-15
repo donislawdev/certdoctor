@@ -231,6 +231,10 @@ var intraLayerEdges = map[string][]string{
 	// Neither carries a copy of either rule - one place, OBS50.
 	"internal/adapter/probe/java": {"internal/adapter/file", "internal/adapter/probe"},
 	"internal/adapter/probe/curl": {"internal/adapter/file", "internal/adapter/probe"},
+	// The platform store on Linux is a bundle and the directories beside it -
+	// ADR104 - read through the same file port and judged by the same shared
+	// verifier as the three above. Windows asks crypt32 and uses neither.
+	"internal/adapter/probe/systemstore": {"internal/adapter/file", "internal/adapter/probe"},
 	// L4's handshake needs the address spelled the ONE way the allowed set was
 	// given it, and that spelling lives in the connection adapter as tcp.Target.
 	// The arrow runs from the newer plumbing to the older, and cannot run back:

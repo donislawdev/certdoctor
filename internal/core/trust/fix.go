@@ -102,7 +102,8 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 	if store.Runtime == report.RuntimeSystemStore {
 		// ASKED BEFORE THE FILE GATE, AND ONLY FOR THIS RUNTIME. The file gate
 		// stays shut for every other row on a platform store, which is the
-		// measured trap it exists for - ADR103.
+		// measured trap it exists for - ADR103. On Linux this store IS a file,
+		// and the function asks for its path itself - ADR104.
 		return platformStoreFix(store, m)
 	}
 	if store.StoreForm != report.StoreFile || store.StorePath == "" {
@@ -180,9 +181,13 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 // it was declined, and the store was read afterwards with nothing added.
 //
 // A ROW THIS PROGRAM DID NOT WRITE GETS NO COMMAND. Only the two instances the
-// probe produces are known, and only on Windows. Anything else is a store nobody
-// here knows how to name, and a guessed name is the command that does nothing.
+// probe produces are known, and only on Windows - and on Linux only the file the
+// probe names. Anything else is a store nobody here knows how to name, and a
+// guessed name is the command that does nothing.
 func platformStoreFix(store report.TrustStore, m Machine) (*report.Fix, string) {
+	if store.StoreForm == report.StoreFile && m.OS == "linux" {
+		return distributionBundleFix(store, m)
+	}
 	if store.StoreForm != report.StoreSystem || m.OS != "windows" {
 		return nil, ""
 	}
@@ -213,6 +218,42 @@ func platformStoreFix(store report.TrustStore, m Machine) (*report.Fix, string) 
 		}, ""
 	}
 	return nil, ""
+}
+
+// distributionBundleFix is the command for the Linux platform store - ADR104,
+// decided by the owner 2026-10-15: the same append git and curl get, aimed at
+// the bundle the distribution keeps.
+//
+// THE DISTRIBUTION'S OWN TOOL WAS MEASURED AND NOT CHOSEN, because it TAKES
+// AWAY. Probe S24, 2026-10-15: update-ca-certificates and update-ca-trust
+// rebuild the bundle from their source directory, and in all five images where
+// the tool ran, a certificate appended to the bundle by hand was gone
+// afterwards. A command that drops whatever somebody added before is not
+// adding, whatever it adds. The same run measured the two traps the caveat
+// names: the Debian and Ubuntu tool ignores a file not named *.crt, and one RHEL
+// image ships update-ca-trust unable to start.
+//
+// THE PRICE IS THAT THIS APPEND DOES NOT SURVIVE THE NEXT REBUILD - measured the
+// same way - and the caveat says so before anybody relies on it.
+func distributionBundleFix(store report.TrustStore, m Machine) (*report.Fix, string) {
+	if store.StorePath == "" {
+		return nil, ""
+	}
+	command, ok := appendPEM(store.StorePath, m.OS)
+	if !ok {
+		return nil, unwritablePath
+	}
+	elevated, why := elevationFor(store.StorePath, m)
+	return &report.Fix{
+		Command:           command,
+		Placeholders:      []string{certificatePlaceholder},
+		RequiresElevation: elevated,
+		Elevation:         why,
+		Caveat: "update-ca-certificates and update-ca-trust rebuild this file from the distribution's own directory " +
+			"and drop a certificate appended here - a copy named *.crt in /usr/local/share/ca-certificates, or one in " +
+			"/etc/pki/ca-trust/source/anchors, is what survives the rebuild, and programs that carry a store of their " +
+			"own - java among them - do not read this file",
+	}, ""
 }
 
 // appendPEM is the command that adds one certificate to a PEM bundle without
