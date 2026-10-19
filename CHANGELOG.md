@@ -10,6 +10,15 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - a self-signed server certificate is no longer reported as a missing issuer
+
+- **A server presenting a certificate that signed itself was told it had not
+  sent the issuer** - so the report sent you to the server's administrator for
+  a certificate that does not exist. Most self-signed server certificates say
+  they are not an authority, and that is what confused the check. The TLS
+  layer now passes such a chain as complete, and the trust matrix says who
+  signed it and which stores hold it.
+
 ### Fixed - Java is found where its own container image puts it
 
 - **In the official `eclipse-temurin` images Java lives in `/opt/java/openjdk`,

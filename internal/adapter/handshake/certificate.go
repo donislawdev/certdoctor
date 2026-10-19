@@ -56,12 +56,37 @@ func summarise(certificate *x509.Certificate) core.Certificate {
 		// so nothing downstream can write into a buffer the parser still owns. L5
 		// needs them to verify a path, which a summary cannot support.
 		Raw: append([]byte(nil), certificate.Raw...),
-		// FROM THE SIGNATURE, NOT FROM THE NAMES MATCHING. A certificate can name
-		// itself as its own issuer without having signed itself, and treating that
-		// as self-signed would call a broken chain complete - which is the exact
-		// verdict this layer exists to get right.
-		SelfSigned: certificate.CheckSignatureFrom(certificate) == nil,
+		// FROM THE SIGNATURE, NOT FROM THE NAMES MATCHING ALONE. A certificate can
+		// name itself as its own issuer without having signed itself, and treating
+		// that as self-signed would call a broken chain complete - which is the
+		// exact verdict this layer exists to get right.
+		SelfSigned: selfSigned(certificate),
 	}
+}
+
+// selfSigned says whether a certificate issued itself: its issuer is its own
+// subject, and its own key verifies its signature. RFC 5280 section 3.2 defines
+// the term with exactly those two parts, for CA certificates. The same test is
+// applied here whatever the CA flag says, because that flag is about what the
+// key may sign for others - section 4.2.1.9 - and not about whether it signed
+// this.
+//
+// NOT CheckSignatureFrom, AND THE REASON IS MEASURED. That function refuses a
+// "parent" that is not an authority - crypto/x509/x509.go in Go 1.27.2, the
+// RFC 5280 section 4.2.1.9 check at its top - so a self-signed SERVER
+// certificate, which carries CA:FALSE like the one self-signed.badssl.com
+// presents, came back as not self-signed, and L4 told the reader that the
+// server had withheld an issuer which does not exist (OBS163, 2026-10-19).
+// CheckSignature asks only whether the key verifies the bytes.
+//
+// THE NAMES GO THROUGH distinguishedName, the one function chain completeness
+// compares by, so "issued itself" and "its issuer arrived" cannot disagree
+// about the same two names.
+func selfSigned(certificate *x509.Certificate) bool {
+	if distinguishedName(certificate.Subject) != distinguishedName(certificate.Issuer) {
+		return false
+	}
+	return certificate.CheckSignature(certificate.SignatureAlgorithm, certificate.RawTBSCertificate, certificate.Signature) == nil
 }
 
 // distinguishedName renders one name, and it is the ONE function that does.

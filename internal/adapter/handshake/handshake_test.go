@@ -274,6 +274,47 @@ func TestSelfSignedIsReadFromTheSignatureAndNotFromTheNames(t *testing.T) {
 	}
 }
 
+// TestASelfSignedServerCertificateIsSelfSigned is OBS163, measured 2026-10-19:
+// self-signed.badssl.com presents one certificate that issued itself and says
+// CA:FALSE, as most self-signed server certificates do. CheckSignatureFrom
+// refuses a parent that is not an authority, so the leaf was read as not
+// self-signed and L4 reported an issuer the server had "not sent" - an issuer
+// that does not exist.
+func TestASelfSignedServerCertificateIsSelfSigned(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating a key: %v", err)
+	}
+	serial++
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(serial),
+		Subject:               pkix.Name{CommonName: "*.partner.test", Organization: []string{"certdoctor test"}},
+		DNSNames:              []string{"*.partner.test", "partner.test"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		BasicConstraintsValid: true,
+		IsCA:                  false,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("signing the leaf with its own key: %v", err)
+	}
+	parsed, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("reading the leaf back: %v", err)
+	}
+
+	summary := summarise(parsed)
+	if summary.IsCA {
+		t.Fatal("the fixture is an authority, so it proves nothing about a server certificate")
+	}
+	if !summary.SelfSigned {
+		t.Error("a server certificate that signed itself with CA:FALSE was not recognised as self-signed")
+	}
+}
+
 // TestTheServerAskingUsToAuthenticateIsReported covers one of the commonest
 // causes of "works in the browser, fails in the tool" - and one a browser holding
 // a certificate never shows the user.
