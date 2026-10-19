@@ -71,6 +71,11 @@
 # for a reason nobody can reproduce - which is the failure this whole piece of
 # work was undoing. Raise it once a Windows runner has reported a number.
 #
+# SINCE 2026-10-19 THE GATE PRINTS EVERY PACKAGE'S NUMBER ON GREEN TOO, next to
+# its floor (OBS161). The sentence above about nobody having seen the runner's
+# number describes the day it was written, and the condition it ends with is
+# met by reading a CI log rather than by waiting for a red run.
+#
 # WHY IT EXISTS AT ALL, measured on 2026-08-03: internal/adapter/output sat at
 # 54.5 percent while every guard in the repository was green, and the statements
 # nobody had ever executed were the ones that clean up after a failed write -

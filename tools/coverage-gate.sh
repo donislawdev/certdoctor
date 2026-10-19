@@ -132,16 +132,31 @@ if [ "${#measured[@]}" -eq 0 ]; then
   exit 1
 fi
 
+# The package list is captured once, and its failure stops the gate.
+#
+# IT USED TO BE READ THROUGH A PROCESS SUBSTITUTION, and bash ignores the exit
+# status of one. A go list that failed would have fed the loop below nothing,
+# no package would have been reported as missing a floor, and the gate would
+# have carried on as if that check had run. It also feeds the table at the end
+# and gives that table its order, which is go list's own and the same on every
+# run.
+packages="$(go list ./...)" || {
+  echo "COULD NOT LIST the module's packages: go list did not finish."
+  echo "  Without that list no package can be checked for a missing floor."
+  exit 1
+}
+
 problems=0
 
 # Every package the module contains has to be named in the floor file.
 while read -r package; do
+  [ -z "$package" ] && continue
   if [ -z "${floor_of[$package]+set}" ]; then
     echo "MISSING FLOOR: $package is not in tools/coverage-floor.txt."
     echo "  A package with no floor is not a package without a rule - it is a hole in this gate."
     problems=$((problems + 1))
   fi
-done < <(go list ./...)
+done <<< "$packages"
 
 for package in "${!floor_of[@]}"; do
   want="${floor_of[$package]}"
@@ -176,10 +191,45 @@ for package in "${!floor_of[@]}"; do
   fi
 done
 
+verdict=0
 if [ "$problems" -gt 0 ]; then
   echo
   echo "coverage gate: $problems problem(s)"
-  exit 1
+  verdict=1
+else
+  echo "coverage gate: every package is at or above its floor"
 fi
 
-echo "coverage gate: every package is at or above its floor"
+# EVERY PACKAGE'S NUMBER IS PRINTED, ON GREEN TOO - OBS161, 2026-10-19. Until
+# then a green run said one line and nothing else, and a floor can only be
+# raised from a measurement. The one taken on the author's machine is not
+# enough: OBS100 is a floor that held on one platform and not on the other, and
+# coverage-floor.txt has a paragraph waiting for a number from a Windows runner
+# that this gate never printed. A floor is now raised from a CI log, as the
+# lower of the platforms that run this gate.
+#
+# THE TABLE COMES AFTER THE VERDICT, NEVER BEFORE THE PROBLEMS, and the order is
+# the point. The wrappers that run this gate locally show the first twenty-five
+# lines of a red run. A table in front would push the BELOW FLOOR line out of
+# that window - the same failure, measured 2026-09-05, that the comment at the
+# top of this file describes: a screen of packages that passed, and the one
+# that did not, out of view.
+#
+# NO SORT IS CALLED, and the reason is the PATH, measured 2026-10-19 under Git
+# Bash on Windows: /usr/bin/sort comes first and the system's own sort.exe is
+# right behind it. The gate would be depending on that order for nothing,
+# because go list already prints the packages in the same order every time.
+toolchain="$(go version 2>&1)" || toolchain="an unknown toolchain"
+echo
+echo "coverage per package, measured with ${toolchain#go version }:"
+printf '  %8s  %6s  %7s  %s\n' measured floor margin package
+while read -r package; do
+  [ -z "$package" ] && continue
+  printf '%s %s %s\n' "$package" "${measured[$package]-absent}" "${floor_of[$package]-missing}"
+done <<< "$packages" | awk '
+  { margin = "-" }
+  $2 ~ /^[0-9.]+$/ && $3 ~ /^[0-9.]+$/ { margin = sprintf("%+.1f", $2 - $3) }
+  { printf "  %8s  %6s  %7s  %s\n", $2, $3, margin, $1 }
+'
+
+exit "$verdict"
