@@ -14,8 +14,9 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/trust"
 )
 
-// Wire returns the behaviour of all eight layers: the ones that are written
-// doing their work, and the rest saying they are not written.
+// Wire returns the behaviour of every declared layer: the ones that are written
+// doing their work, and any that are not saying so. Since ADR108 took L6 and L7
+// out of the registry, every declared layer is written.
 //
 // IT IS BUILT ON TOP OF NotImplemented RATHER THAN BESIDE IT. The unwritten
 // layers keep answering exactly as before, and a ninth layer added to the
@@ -97,8 +98,9 @@ type Wiring struct {
 	AuthoriseProxies func([]string)
 }
 
-// Wire returns the behaviour of all eight layers: the ones that are written
-// doing their work, and the rest saying they are not written.
+// Wire returns the behaviour of every declared layer: the ones that are written
+// doing their work, and any that are not saying so. Since ADR108 took L6 and L7
+// out of the registry, every declared layer is written.
 //
 // IT IS BUILT ON TOP OF NotImplemented RATHER THAN BESIDE IT. The unwritten
 // layers keep answering exactly as before, and a ninth layer added to the

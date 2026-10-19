@@ -859,6 +859,17 @@ var standingNotes = []report.Note{
 		Field:  "run.platform.container",
 		Detail: "certdoctor does not detect containers yet, so this is left empty rather than answered no",
 	},
+	// THE REPORT COVERS THE MACHINE IT RAN ON AND SAYS SO HERE, since ADR108
+	// took the container layer out of it. L6 used to stand in every run as
+	// UNKNOWN "not implemented", which said this too and also kept every healthy
+	// run from ending with code 0. --in, --image and --compare are refused with
+	// a reason when somebody asks. This note goes when L6 comes back.
+	{
+		Kind:  report.NoteNotImplemented,
+		Field: "layers",
+		Detail: "diagnosis from inside a container is not built yet, so this report covers the machine it ran on " +
+			"and nothing else - to look inside a container, run certdoctor there",
+	},
 	// THE DOCUMENT SAYS OUT LOUD THAT IT IS NOT STABLE YET, and it says it HERE
 	// rather than only in a document nobody reading --json will ever open.
 	//

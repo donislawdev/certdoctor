@@ -18,8 +18,6 @@ func TestLayerTableMatchesFrozenContract(t *testing.T) {
 		{TCP, "L3"},
 		{TLS, "L4"},
 		{TrustMatrix, "L5"},
-		{Containers, "L6"},
-		{Report, "L7"},
 	}
 
 	if len(registry) != len(frozen) {
@@ -115,9 +113,11 @@ func TestAllIsACopyRatherThanTheRegistryItself(t *testing.T) {
 
 // TestLayerOutsideTheRegistryDescribesItselfAsNothing guards the same promise as
 // the status vocabulary and the exit code table: something we do not recognise
-// is reported as nothing, never as an invented answer.
+// is reported as nothing, never as an invented answer. L6 and L7 are on the list
+// since ADR108 took them out of the report - a document still carrying them is
+// one this build did not write.
 func TestLayerOutsideTheRegistryDescribesItselfAsNothing(t *testing.T) {
-	for _, id := range []ID{"", "L8", "L42", "l0", "Context"} {
+	for _, id := range []ID{"", "L6", "L7", "L8", "L42", "l0", "Context"} {
 		if id.Valid() {
 			t.Errorf("Valid() accepted %q, which is not in the registry", string(id))
 		}

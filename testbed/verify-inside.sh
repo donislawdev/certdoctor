@@ -1574,10 +1574,10 @@ fi
 # THE SECOND SELF-BUILDING LIST, AND IT EXISTS FOR THE SAME REASON THE FIRST ONE
 # DOES - slice P4c, waiting for P8.
 #
-# L2 is the one layer of the eight that has nothing behind it but an identifier
-# in internal/core/layer/layer.go. Every expectation naming a key that starts
-# with l2_ is therefore beyond what this script can ask, however well the bench
-# around it works.
+# L2 was, when this was written, the one layer that had nothing behind it but an
+# identifier in internal/core/layer/layer.go. Every expectation naming a key that
+# starts with l2_ was therefore beyond what this script could ask, however well the
+# bench around it worked.
 #
 # IT KEYS ON THE PREFIX RATHER THAN ON ONE FIELD NAME because the shape of an L2
 # finding is not settled - ADR75 approved adding the finding kind and the fields

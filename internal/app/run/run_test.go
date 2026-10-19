@@ -51,10 +51,10 @@ func baseOptions(clock *fakeClock) Options {
 // means the RUN ran out of its overall time, which is a different fact - so a
 // reader scanning the notes for what was given up found nothing to find.
 //
-// THE TWIN IS WHAT KEEPS THIS FROM BEING A NOTE ON EVERY UNKNOWN. Three of the
-// eight layers report UNKNOWN in every ordinary run because they are not
-// implemented, and a note for each of those would teach people to skip notes -
-// at which point the one that mattered goes with them.
+// THE TWIN IS WHAT KEEPS THIS FROM BEING A NOTE ON EVERY UNKNOWN. When this was
+// written three layers reported UNKNOWN in every ordinary run because they were
+// not implemented, and a note for each of those would teach people to skip
+// notes - at which point the one that mattered goes with them.
 func TestALayerThatGaveUpHalfwaySaysSoInTheNotes(t *testing.T) {
 	skipped := func(reason status.Reason) report.Report {
 		t.Helper()

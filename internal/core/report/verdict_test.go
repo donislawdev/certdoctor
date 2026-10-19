@@ -26,12 +26,10 @@ func TestTheVerdictNamesBothFailuresAndLayersItCouldNotAssess(t *testing.T) {
 		{ID: layer.TCP, Status: status.Unknown, Reason: status.ReasonTimeout, Detail: "x"},
 		{ID: layer.TLS, Status: status.Unknown, Reason: status.ReasonTimeout, Detail: "x"},
 		{ID: layer.TrustMatrix, Status: status.Pass},
-		{ID: layer.Containers, Status: status.Pass},
-		{ID: layer.Report, Status: status.Pass},
 	}
 
 	got := Assess(results).Sentence
-	for _, want := range []string{"Failures in 2 of 8", "3 of 8 diagnostic layers could not be assessed"} {
+	for _, want := range []string{"Failures in 2 of 6", "3 of 6 diagnostic layers could not be assessed"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the verdict leaves out %q: %q", want, got)
 		}
@@ -117,10 +115,6 @@ func TestTheVerdictNamesTheCauseInTheDecisiveLayersWords(t *testing.T) {
 func pass(id layer.ID) LayerResult                { return row(id, status.Pass, "") }
 func skipped(id layer.ID, why string) LayerResult { return row(id, status.Unknown, why) }
 
-// unbuilt is the pair of layers this build does not implement, present in every
-// real report and so in every scenario here.
-var unbuilt = []LayerResult{skipped(layer.Containers, "not implemented"), skipped(layer.Report, "not implemented")}
-
 // causeScenarios are the bench scenarios of docs/21 written as rows, with the
 // sentence each must produce at the top of the report.
 var causeScenarios = []struct {
@@ -130,133 +124,133 @@ var causeScenarios = []struct {
 }{
 	{
 		name: "S-4 or a name that does not resolve: L1 is the cause of everything under it",
-		rows: append([]LayerResult{pass(layer.Context),
+		rows: []LayerResult{pass(layer.Context),
 			row(layer.Resolution, status.Fail, "neither view found an address for this name, and at least one of them said so"),
-			skipped(layer.Proxy, "x"), skipped(layer.TCP, "nothing to connect to"), skipped(layer.TLS, "x"), skipped(layer.TrustMatrix, "x")}, unbuilt...),
-		want: "Neither view found an address for this name, and at least one of them said so. 6 of 8 diagnostic layers could not be assessed.",
+			skipped(layer.Proxy, "x"), skipped(layer.TCP, "nothing to connect to"), skipped(layer.TLS, "x"), skipped(layer.TrustMatrix, "x")},
+		want: "Neither view found an address for this name, and at least one of them said so. 4 of 6 diagnostic layers could not be assessed.",
 	},
 	{
 		name: "no address accepts a connection: L3 is the cause and L4/L5 are consequences",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy),
 			row(layer.TCP, status.Fail, "none of the 2 address(es) this name resolved to accepted a connection"),
-			skipped(layer.TLS, "x"), skipped(layer.TrustMatrix, "x")}, unbuilt...),
-		want: "None of the 2 address(es) this name resolved to accepted a connection. 4 of 8 diagnostic layers could not be assessed.",
+			skipped(layer.TLS, "x"), skipped(layer.TrustMatrix, "x")},
+		want: "None of the 2 address(es) this name resolved to accepted a connection. 2 of 6 diagnostic layers could not be assessed.",
 	},
 	{
 		name: "S-5 the server forgot its intermediate: every trust row is red and the server is still to blame",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			row(layer.TLS, status.Fail, l4Incomplete),
 			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
-				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))}, unbuilt...),
-		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine. Failures in 2 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
+		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine. Failures in 2 of 6 diagnostic layers.",
 	},
 	{
 		name: "S-1 a middlebox: L4 fails exactly as in S-5, and the local authority in L5 outranks it",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			row(layer.TLS, status.Fail, l4Incomplete),
 			row(layer.TrustMatrix, status.Fail, "1 of 2 store(s) do not trust the presented chain", inspected(middlebox, HeldBySomeStores),
-				storeTrusting("curl"), storeRefusing("git", UnknownAuthority))}, unbuilt...),
-		want: middlebox + ". Without it: git. Failures in 2 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+				storeTrusting("curl"), storeRefusing("git", UnknownAuthority))},
+		want: middlebox + ". Without it: git. Failures in 2 of 6 diagnostic layers.",
 	},
 	{
 		name: "a middlebox nobody here trusts: L4 fails, no store holds the signer, and the named product still leads - measured on the bench 2026-09-22",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			row(layer.TLS, status.Fail, l4Incomplete),
 			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, inspected(unheldMiddlebox, HeldByNoStores),
-				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))}, unbuilt...),
-		want: unheldMiddlebox + ". Failures in 2 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
+		want: unheldMiddlebox + ". Failures in 2 of 6 diagnostic layers.",
 	},
 	{
 		name: "S-3 and S-6 an honest server under a company authority: which runtimes lack the anchor, with counts where a runtime has several stores",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
 			row(layer.TrustMatrix, status.Fail, "4 of 6 store(s) do not trust the presented chain",
 				signer("Example Corp Root CA signed this certificate and is an authority local to this machine - 2 store(s) here hold it and 4 do not", HeldBySomeStores),
-				storeTrusting("curl"), storeRefusing("git", UnknownAuthority), storeTrusting("java"), storeRefusing("java", UnknownAuthority), storeRefusing("java", UnknownAuthority), storeRefusing("java", UnknownAuthority))}, unbuilt...),
-		want: "Example Corp Root CA signed this certificate and is an authority local to this machine - 2 store(s) here hold it and 4 do not. Without it: git, java (3 of 4). 2 of 8 diagnostic layers could not be assessed.",
+				storeTrusting("curl"), storeRefusing("git", UnknownAuthority), storeTrusting("java"), storeRefusing("java", UnknownAuthority), storeRefusing("java", UnknownAuthority), storeRefusing("java", UnknownAuthority))},
+		want: "Example Corp Root CA signed this certificate and is an authority local to this machine - 2 store(s) here hold it and 4 do not. Without it: git, java (3 of 4).",
 	},
 	{
 		name: "a private root nobody here holds, chain complete: the signer is named and no runtime is listed",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
 			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
-				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))}, unbuilt...),
-		want: nobodyHolds + ". 2 of 8 diagnostic layers could not be assessed.",
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
+		want: nobodyHolds + ".",
 	},
 	{
 		name: "stores hold the anchor and still refuse, all for the same reason: the layer's count and that reason",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, storeRefusing("curl", Expired), storeRefusing("git", Expired), storeTrusting("java"))}, unbuilt...),
-		want: "2 of 3 store(s) do not trust the presented chain - a certificate in the path is past its validity. 2 of 8 diagnostic layers could not be assessed.",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, storeRefusing("curl", Expired), storeRefusing("git", Expired), storeTrusting("java"))},
+		want: "2 of 3 store(s) do not trust the presented chain - a certificate in the path is past its validity.",
 	},
 	{
 		name: "stores refuse for different reasons: the layer's count and nothing invented",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, storeRefusing("curl", Expired), storeRefusing("git", NotYetValid), storeTrusting("java"))}, unbuilt...),
-		want: "2 of 3 store(s) do not trust the presented chain. 2 of 8 diagnostic layers could not be assessed.",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, storeRefusing("curl", Expired), storeRefusing("git", NotYetValid), storeTrusting("java"))},
+		want: "2 of 3 store(s) do not trust the presented chain.",
 	},
 	{
 		name: "nothing failed but the proxy wants credentials: a passing run says so out loud",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
 			{ID: layer.Proxy, Status: status.Unknown, Reason: status.ReasonCredentialsRequired, Detail: wantsCreds},
-			pass(layer.TCP), pass(layer.TLS), pass(layer.TrustMatrix)}, unbuilt...),
-		want: "Everything assessed passed, but " + wantsCreds + ". 3 of 8 diagnostic layers could not be assessed.",
+			pass(layer.TCP), pass(layer.TLS), pass(layer.TrustMatrix)},
+		want: "Everything assessed passed, but " + wantsCreds + ". 1 of 6 diagnostic layers could not be assessed.",
 	},
 	{
-		name: "nothing failed, one warning, two layers unbuilt: the warning is no longer dropped from the top line",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
-			row(layer.TrustMatrix, status.Warn, "9 of 11 store(s) trust the presented chain, and 2 could not be assessed")}, unbuilt...),
-		want: "Everything assessed passed. Warnings in 1 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+		name: "nothing failed, one warning: the warning is no longer dropped from the top line",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Warn, "9 of 11 store(s) trust the presented chain, and 2 could not be assessed")},
+		want: "Everything assessed passed. Warnings in 1 of 6 diagnostic layers.",
 	},
 	{
 		name: "OBS159 nothing failed and the platform has no store at all, measured in ubuntu:24.04: the top line says what the row says",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
 			row(layer.TrustMatrix, status.Unknown, "none of the 1 store(s) found could be assessed",
-				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))}, unbuilt...),
-		want: "Everything assessed passed, but system-store ubuntu could not be assessed: " + noBundle + ". 3 of 8 diagnostic layers could not be assessed.",
+				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))},
+		want: "Everything assessed passed, but system-store ubuntu could not be assessed: " + noBundle + ". 1 of 6 diagnostic layers could not be assessed.",
 	},
 	{
 		name: "other stores trust and one of the platform's two Windows stores is undetermined: that row is named and the warning still counted",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
 			row(layer.TrustMatrix, status.Warn, "2 of 3 store(s) trust the presented chain, and 1 could not be assessed",
-				storeTrusting("git"), storeTrusting(RuntimeSystemStore), storeUndetermined(RuntimeSystemStore, "LocalMachine", notFetched))}, unbuilt...),
-		want: "Everything assessed passed, but system-store LocalMachine could not be assessed: " + notFetched + ". Warnings in 1 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+				storeTrusting("git"), storeTrusting(RuntimeSystemStore), storeUndetermined(RuntimeSystemStore, "LocalMachine", notFetched))},
+		want: "Everything assessed passed, but system-store LocalMachine could not be assessed: " + notFetched + ". Warnings in 1 of 6 diagnostic layers.",
 	},
 	{
 		name: "curl on schannel could not be assessed and the platform's row judged the chain, measured on Windows 2026-10-19: the tail counts it and nothing more is said",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
 			row(layer.TrustMatrix, status.Warn, "2 of 3 store(s) trust the presented chain, and 1 could not be assessed",
 				summarised(storeTrusting(RuntimeSystemStore), "system-store CurrentUser trusts the presented chain (60 anchors)"),
-				storeUndetermined("curl", "curl.exe", onSchannel), storeTrusting("git"))}, unbuilt...),
-		want: "Everything assessed passed. Warnings in 1 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+				storeUndetermined("curl", "curl.exe", onSchannel), storeTrusting("git"))},
+		want: "Everything assessed passed. Warnings in 1 of 6 diagnostic layers.",
 	},
 	{
 		name: "an undetermined platform row with no summary names nothing, so nothing is invented and the function stays total",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
 			row(layer.TrustMatrix, status.Unknown, "none of the 1 store(s) found could be assessed",
-				summarised(storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle), ""))}, unbuilt...),
-		want: "Everything assessed passed. 3 of 8 diagnostic layers could not be assessed.",
+				summarised(storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle), ""))},
+		want: "Everything assessed passed. 1 of 6 diagnostic layers could not be assessed.",
 	},
 	{
 		name: "the proxy wants credentials AND the platform has no store: one but, and the proxy's comes first in layer order",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
 			{ID: layer.Proxy, Status: status.Unknown, Reason: status.ReasonCredentialsRequired, Detail: wantsCreds},
 			pass(layer.TCP), pass(layer.TLS),
 			row(layer.TrustMatrix, status.Unknown, "none of the 1 store(s) found could be assessed",
-				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))}, unbuilt...),
-		want: "Everything assessed passed, but " + wantsCreds + ". 4 of 8 diagnostic layers could not be assessed.",
+				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))},
+		want: "Everything assessed passed, but " + wantsCreds + ". 2 of 6 diagnostic layers could not be assessed.",
 	},
 	{
 		name: "S-5 with the platform's row undetermined: a failure outranks it and the server is still to blame",
-		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			row(layer.TLS, status.Fail, l4Incomplete),
 			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority),
-				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))}, unbuilt...),
-		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine. Failures in 2 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))},
+		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine. Failures in 2 of 6 diagnostic layers.",
 	},
 	{
 		name: "a failing row with no detail names nothing, so the count stands in and the function stays total",
-		rows: append([]LayerResult{pass(layer.Context), row(layer.Resolution, status.Fail, ""), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS), pass(layer.TrustMatrix)}, unbuilt...),
-		want: "Failures in 1 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+		rows: []LayerResult{pass(layer.Context), row(layer.Resolution, status.Fail, ""), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS), pass(layer.TrustMatrix)},
+		want: "Failures in 1 of 6 diagnostic layers.",
 	},
 }
 
@@ -300,7 +294,7 @@ func TestACauseNeverLosesTheCountsBehindIt(t *testing.T) {
 		checks := map[string]bool{}
 		if failures > 0 {
 			decisive := ""
-			for _, id := range []layer.ID{layer.Resolution, layer.TCP, layer.TLS, layer.TrustMatrix, layer.Context, layer.Proxy, layer.Containers, layer.Report} {
+			for _, id := range []layer.ID{layer.Resolution, layer.TCP, layer.TLS, layer.TrustMatrix, layer.Context, layer.Proxy} {
 				if r, ok := failing(rows, id); ok {
 					decisive = r.Detail
 					break

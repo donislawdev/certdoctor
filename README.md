@@ -328,7 +328,8 @@ A tool that quietly fails to look at something is worse than one that says what 
 - **Container diagnosis is not built.** `--in`, `--image` and `--compare` are accepted and refused
   with a reason. Until they work, copy the binary into the container and run it there.
 - **Proxy auto-discovery (WPAD) is not performed.** On a machine where it is switched on, the proxy
-  layer says it could not establish which proxy applies, rather than claiming there is none.
+  layer says it could not establish which proxy applies, rather than claiming there is none - so a
+  healthy target there ends with exit code 5, not 0.
 - **It names an inspection product only when the certificate says so in a way the vendor
   publishes** - today mitmproxy and Cisco Umbrella. Anything else is reported as an authority local to
   this machine, held by some of its stores, with the issuer and the fingerprint. From one connection,

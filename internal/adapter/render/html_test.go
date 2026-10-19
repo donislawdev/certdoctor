@@ -290,7 +290,7 @@ func hostileReport() report.Report {
 			Name: "HTTPS_PROXY", Value: hostile, Set: true,
 		},
 	}}
-	document.Notes = []report.Note{{Kind: report.NoteSkipped, Layer: layer.Report, Detail: hostile}}
+	document.Notes = []report.Note{{Kind: report.NoteSkipped, Layer: layer.TrustMatrix, Detail: hostile}}
 	return document
 }
 
@@ -311,7 +311,7 @@ func poisonedReport() report.Report {
 			Name: poison, Value: poison, Set: true,
 		},
 	}}
-	document.Notes = []report.Note{{Kind: report.NoteSkipped, Layer: layer.Report, Detail: poison}}
+	document.Notes = []report.Note{{Kind: report.NoteSkipped, Layer: layer.TrustMatrix, Detail: poison}}
 	return document
 }
 

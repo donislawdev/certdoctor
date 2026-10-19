@@ -1,4 +1,4 @@
-// Package layer names the eight diagnostic layers certdoctor walks, L0 to L7.
+// Package layer names the six diagnostic layers certdoctor walks, L0 to L5.
 //
 // The identifiers are a public contract. They go out in --json, they head the
 // sections of the terminal report, and they end up quoted in other people's
@@ -6,7 +6,15 @@
 // pipeline filtering on "L4" would quietly match nothing and report that as
 // having found no problem.
 //
-// Why a registry and not eight bare constants. Every entry has to carry a
+// L6 AND L7 WERE REMOVED BEFORE THE FIRST RELEASE, AND THAT IS WHY THE SCHEMA
+// WENT TO 2.0 - ADR108. Both stood in every report as UNKNOWN "not
+// implemented", so no healthy target could ever end a run with code 0. L6, the
+// same questions asked from inside a container, comes back with --in and
+// --image and keeps its identifier. L7 was the report itself, which is what
+// this program produces rather than a layer of diagnosis. Neither identifier is
+// ever given another meaning.
+//
+// Why a registry and not bare constants. Every entry has to carry a
 // display name and a one-line summary, and the registry test refuses a row that
 // is missing either. That is the mistake this shape exists to catch - the layer
 // added in a hurry with an identifier and nothing else, rendering as a blank
@@ -35,10 +43,6 @@ const (
 	// TrustMatrix is which runtimes on this machine trust that chain. It is the
 	// part no other tool does.
 	TrustMatrix ID = "L5"
-	// Containers is the same questions asked from inside a container.
-	Containers ID = "L6"
-	// Report is assembling everything above into one artefact.
-	Report ID = "L7"
 )
 
 // entry is one row of the registry. Every field is mandatory and the registry
@@ -53,7 +57,7 @@ type entry struct {
 	summary string
 }
 
-// registry is the single declaration of what the eight layers are, in report
+// registry is the single declaration of what the layers are, in report
 // order.
 var registry = []entry{
 	{Context, "Context", "the machine itself - operating system, container, VPN, the clock, and the environment variables that decide trust and proxying"},
@@ -62,8 +66,6 @@ var registry = []entry{
 	{TCP, "TCP", "whether each resolved address accepts a connection, and how it refuses when it does not"},
 	{TLS, "TLS", "the handshake and the chain the server presented, including whether it was re-signed on the way here"},
 	{TrustMatrix, "Trust matrix", "which runtimes on this machine trust that chain, one row per installed instance"},
-	{Containers, "Containers", "the same questions asked from inside a container, and the difference against the host"},
-	{Report, "Report", "assembling the verdict, the layers and the remediation commands into one artefact"},
 }
 
 // All lists every layer exactly once, in report order. Anything that needs to

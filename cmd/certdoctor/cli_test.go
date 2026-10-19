@@ -1452,13 +1452,13 @@ func TestAVariableSetToNothingReadsDifferentlyFromAnAbsentOne(t *testing.T) {
 // The report used to carry a standing note saying no layer was implemented. That
 // sentence stopped being true the day L0 started reading this machine, and a note
 // kept past the arrival of the thing it announced teaches people to skip notes.
-// What it said is now worked out from the rows themselves. Six, because this
-// world names no proxy and L2 answers that since ADR108, beside L0.
+// What it said is now worked out from the rows themselves. Four of six, because
+// this world names no proxy and L2 answers that since ADR108, beside L0.
 func TestTheVerdictCountsTheLayersItCouldNotAssess(t *testing.T) {
 	h := invoke("https://example.com")
 	out := h.stdout.String()
 
-	if !strings.Contains(out, "6 of 8 diagnostic layers could not be assessed.") {
+	if !strings.Contains(out, "4 of 6 diagnostic layers could not be assessed.") {
 		t.Errorf("the verdict does not count the unassessed layers:\n%.400s", out)
 	}
 	if strings.Contains(out, "Nothing could be assessed yet.") {

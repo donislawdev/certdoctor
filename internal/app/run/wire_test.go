@@ -67,7 +67,7 @@ func TestWiringPutsTheContextLayerInPlaceOfTheStub(t *testing.T) {
 // written is the set of layers that have grown code. It is written out by hand
 // rather than derived, so that a layer starting to answer for itself has to be
 // added here deliberately - the alternative is a wiring that quietly answers for
-// all eight while the tool claims to have checked things it has not.
+// every layer while the tool claims to have checked things it has not.
 var written = map[layer.ID]bool{
 	layer.Context:    true,
 	layer.Resolution: true,
@@ -90,26 +90,37 @@ var written = map[layer.ID]bool{
 // it has changed three times already. A number in the name of a test goes stale
 // silently, and a test asserting the stub for a layer that has since grown code
 // would have to be loosened to pass - which is how a guard turns into decoration.
+//
+// SINCE ADR108 EVERY DECLARED LAYER IS WRITTEN, so the first loop checks nothing
+// today - and until then this test failed outright when that happened. What
+// still stands behind the promise is the base Wire is built on: a layer added to
+// the registry before its code answers through NotImplemented. So that base is
+// asked directly, for every declared layer, and the test never passes having
+// looked at nothing.
 func TestTheUnwrittenLayersStillSayTheyAreNotWritten(t *testing.T) {
 	layers := Wire(Wiring{Environment: envOf(nil)})
 
-	checked := 0
 	for _, id := range layer.All {
-		if written[id] {
-			continue
-		}
-		checked++
-		answer := layers[id](context.Background())
-		if answer.Status != status.Unknown || answer.Detail != notImplementedDetail {
-			t.Errorf("layer %s answered %s / %q, want unknown / %q",
-				id, answer.Status, answer.Detail, notImplementedDetail)
-		}
-		if answer.Findings != nil {
-			t.Errorf("layer %s did not look and reported a list of findings, which renders as a claim that it did", id)
+		if !written[id] {
+			saysItIsNotWritten(t, id, layers[id](context.Background()))
 		}
 	}
-	if checked == 0 {
-		t.Fatal("every layer is claimed to be written, so this test checked nothing")
+	base := NotImplemented()
+	for _, id := range layer.All {
+		saysItIsNotWritten(t, id, base[id](context.Background()))
+	}
+}
+
+// saysItIsNotWritten is the stub's answer, the same for a layer Wire left
+// alone and for the base underneath it.
+func saysItIsNotWritten(t *testing.T, id layer.ID, answer Answer) {
+	t.Helper()
+	if answer.Status != status.Unknown || answer.Detail != notImplementedDetail {
+		t.Errorf("layer %s answered %s / %q, want unknown / %q",
+			id, answer.Status, answer.Detail, notImplementedDetail)
+	}
+	if answer.Findings != nil {
+		t.Errorf("layer %s did not look and reported a list of findings, which renders as a claim that it did", id)
 	}
 }
 

@@ -287,7 +287,7 @@ func parityReport(finding report.Finding) report.Report {
 	}}
 	document.Notes = []report.Note{{
 		Kind:   report.NoteSkipped,
-		Layer:  layer.Report,
+		Layer:  layer.TrustMatrix,
 		Detail: "a note this run wrote about itself",
 	}}
 	return document

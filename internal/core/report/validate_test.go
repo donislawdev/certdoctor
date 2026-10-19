@@ -88,7 +88,7 @@ func TestValidateAcceptsAWellFormedReport(t *testing.T) {
 // would be printed. The sentence is the part a person reads.
 func TestValidateRejectsAVerdictSentenceThatDisagreesWithItsLayers(t *testing.T) {
 	r := wellFormedReport()
-	r.Verdict.Sentence = "Failures in 3 of 8 diagnostic layers."
+	r.Verdict.Sentence = "Failures in 3 of 6 diagnostic layers."
 	requireRejected(t, r, "while the rows beneath it call for")
 }
 

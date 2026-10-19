@@ -1099,6 +1099,12 @@ func TestTheShippedBinaryNeverMasksAFingerprint(t *testing.T) {
 // target"; it is the whole live path producing a document its own schema accepts.
 // It was written before any of that existed, which is why the change showed up in
 // it rather than needing a new check.
+//
+// CODE 0 IS ALLOWED SINCE ADR108. Until then two layers that were never written
+// stood UNKNOWN in every run, so a real name could only end with 4 or 5. Now a
+// healthy name on a runner with no proxy and a complete trust store ends with
+// 0, and which of the three it gets depends on that runner rather than on this
+// program - so the check is that the run ended with a verdict at all.
 func TestTheShippedBinaryProducesAValidDocumentForARealName(t *testing.T) {
 	needsTheInternet(t)
 
@@ -1106,9 +1112,10 @@ func TestTheShippedBinaryProducesAValidDocumentForARealName(t *testing.T) {
 	if err := render.ValidateDocument([]byte(r.stdout)); err != nil {
 		t.Fatalf("a run against a real name produced a document its own schema refuses:\n%v", err)
 	}
-	if r.code != exitcode.Inconclusive.Int() && r.code != exitcode.Diagnosis.Int() {
-		t.Errorf("a run against a real name ended with %d, which is neither a diagnosis nor an inability to make one: %s",
-			r.code, r.stderr)
+	switch r.code {
+	case exitcode.OK.Int(), exitcode.Diagnosis.Int(), exitcode.Inconclusive.Int():
+	default:
+		t.Errorf("a run against a real name ended with %d, which is not a verdict about it: %s", r.code, r.stderr)
 	}
 }
 

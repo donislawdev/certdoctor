@@ -206,7 +206,16 @@ import (
 // read "Everything assessed passed". L4 now fails on a name the leaf does not
 // cover, so a run that used to end with code 0 or 5 against such a server ends
 // with 4 - the right answer, and a different one.
-const SchemaVersion = "1.16"
+//
+// 2.0 IS THE FIRST MAJOR, AND IT IS ONE FOR A REMOVAL - ADR108, decided by the
+// owner. layers carries six entries, L0 to L5, where it carried eight. L6 and
+// L7 stood in every document as UNKNOWN "not implemented", so no run against a
+// healthy target could end with code 0. The rule at the top of this comment
+// reserves the major for exactly this: a consumer counting eight entries, or
+// filtering on "L6", now reads a different shape rather than one more value.
+// Nothing is released, so it costs nothing today. A note of kind
+// not_implemented says that diagnosis from inside a container is not built.
+const SchemaVersion = "2.0"
 
 // JSON renders the machine readable report.
 //

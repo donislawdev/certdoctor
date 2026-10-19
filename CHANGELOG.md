@@ -10,13 +10,25 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - the report carries six layers, so a healthy target can end with exit code 0
+
+- **[contract] L6 (containers) and L7 (report) are no longer in the report.**
+  Both stood in every run as `UNKNOWN` "not implemented", so a run against a
+  healthy target never ended with exit code 0. The report and `--json` carry
+  `L0` to `L5`, the verdict counts "of 6", and a note says that diagnosis from
+  inside a container is not built yet. To look inside a container, run
+  certdoctor there.
+- **[contract] The schema version is now 2.0.** `layers` carries six entries
+  where it carried eight. That is a removal, which the schema's own rule counts
+  as a major change.
+
 ### Changed - a machine with no proxy anywhere passes the proxy layer
 
 - **[contract] No proxy, no automatic configuration script and no automatic
   discovery is now an answer.** On such a machine - the ordinary Linux machine
   or container - the proxy layer reported `UNKNOWN` with the reason
-  `nothing_to_check`, and that alone kept a healthy target from ever ending
-  with exit code 0. It now passes and says that a program following these
+  `nothing_to_check`, one of the reasons a healthy target never ended with
+  exit code 0. It now passes and says that a program following these
   settings reaches the URL directly. When one of the places this machine keeps
   proxy settings in could not be read, the layer stays `UNKNOWN`, now with the
   reason `undetermined`, because the unread place may be the one naming a

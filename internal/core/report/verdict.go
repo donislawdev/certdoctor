@@ -121,7 +121,7 @@ func codeFor(counts map[status.Status]int, total int) exitcode.Code {
 // Five shapes, in this order:
 //
 //   - nothing assessed: the settled sentence, because "nothing could be
-//     assessed" reads better than "8 of 8 could not be assessed" and says the
+//     assessed" reads better than "6 of 6 could not be assessed" and says the
 //     same thing. A run where only some came back unknown must not use it,
 //     because then it would be false.
 //   - a failure: the cause the decisive layer established, followed by the
@@ -205,7 +205,7 @@ func tail(counts map[status.Status]int, total int, causeNamed bool) string {
 // scenario S-5 - every row of the trust matrix red, and the right answer still
 // "do nothing on this machine".
 //
-// Any layer that has no cause of its own here (L0, L2, L6, L7 - none of which
+// Any layer that has no cause of its own here (L0 and L2, neither of which
 // fails today) is taken in layer order, in its own words, so that a failure a
 // future layer produces is never reported as a count alone.
 func causeOf(results []LayerResult) (string, bool) {

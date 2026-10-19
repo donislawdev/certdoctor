@@ -116,7 +116,7 @@ func everyStatusReport() report.Report {
 		},
 		Verdict: report.Verdict{
 			Status:   status.Fail,
-			Sentence: "Failures in 2 of 8 diagnostic layers.",
+			Sentence: "Failures in 2 of 6 diagnostic layers.",
 			ExitCode: exitcode.Diagnosis,
 		},
 		Layers: rows,
@@ -147,7 +147,7 @@ func everyStatusReport() report.Report {
 const screenPlainASCII = `certdoctor 0.0.0-test   https://api.example.com
 2026-02-02T02:40:00Z   testos/testarch   privilege: user   took 4.82s
 
-x Failures in 2 of 8 diagnostic layers.
+x Failures in 2 of 6 diagnostic layers.
 exit 4 DIAGNOSIS
 
 LAYERS
@@ -160,8 +160,6 @@ LAYERS
       nothing was found
   x FAIL     L4  TLS              unrecognized_output  the presented chain does not reach any trust anchor this runtime knows about, and the issuer is local to this machine
   ! WARN     L5  Trust matrix     access_denied  one of the configured resolvers could not be read
-  ? UNKNOWN  L6  Containers       probe_error  not implemented
-  + PASS     L7  Report
 
 NOTES
   - [not_implemented] no diagnostic layer is implemented yet
