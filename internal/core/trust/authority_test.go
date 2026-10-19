@@ -429,3 +429,49 @@ func TestAnIssuerNamedAfterAnAccusationDoesNotBreakTheContract(t *testing.T) {
 			"which would degrade all of L5: %s", broken)
 	}
 }
+
+// TestALeafThatSignedItselfSaysSo is ADR107, on every holding, because the word
+// is added before the holding is chosen and a version that added it on one
+// branch only would pass any single case.
+//
+// THE TWIN IS THE SAME NAMES WITHOUT THE FLAG. A certificate can name itself as
+// its own issuer while carrying somebody else's signature, and L4 read the flag
+// off the signature for exactly that reason - a sentence built from the names
+// matching would say "itself" about a certificate that never signed itself.
+func TestALeafThatSignedItselfSaysSo(t *testing.T) {
+	sets := map[string][]report.TrustStore{
+		"held by every store": {holder("curl", "/usr/bin/curl", "/etc/ssl/certs/ca.crt")},
+		"held by some stores": {holder("curl", "/usr/bin/curl", "/etc/ssl/certs/ca.crt"), refuser("git", "/usr/bin/git", "/etc/git.crt")},
+		"held by no store":    {refuser("curl", "/usr/bin/curl", "/etc/ssl/certs/ca.crt")},
+	}
+	for name, stores := range sets {
+		t.Run(name, func(t *testing.T) {
+			self := &report.Certificate{
+				Subject:           "CN=*.badssl.com,O=BadSSL",
+				Issuer:            "CN=*.badssl.com,O=BadSSL",
+				FingerprintSHA256: "aa:bb:cc:dd",
+				SelfSigned:        true,
+			}
+			finding := authorityOf(self, stores)
+			if finding == nil {
+				t.Fatal("no row for stores that were assessed")
+			}
+			if broken := finding.Breach(); broken != "" {
+				t.Fatalf("the row does not satisfy its own contract: %s", broken)
+			}
+			if !strings.HasPrefix(finding.Summary, "CN=*.badssl.com,O=BadSSL signed this certificate itself") {
+				t.Errorf("a self-signed leaf is named as though somebody else signed it: %q", finding.Summary)
+			}
+
+			namesOnly := *self
+			namesOnly.SelfSigned = false
+			twin := authorityOf(&namesOnly, stores)
+			if twin == nil {
+				t.Fatal("no row for the twin, so the assertion below would prove nothing")
+			}
+			if strings.Contains(twin.Summary, "itself") {
+				t.Errorf("a leaf that only NAMES itself as issuer is said to have signed itself: %q", twin.Summary)
+			}
+		})
+	}
+}

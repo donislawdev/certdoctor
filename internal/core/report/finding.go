@@ -788,6 +788,16 @@ type Certificate struct {
 	FingerprintSHA256 string
 	// IsCA is the basic constraint as presented.
 	IsCA bool
+	// SelfSigned says the certificate issued itself, decided on the adapter side
+	// from its own signature rather than from its two names matching - a
+	// certificate can name itself as issuer while carrying somebody else's
+	// signature.
+	//
+	// IT IS NOT IN --json, and schema 1.15 does not change for it - ADR107. It
+	// is here so L5 can say "signed this certificate itself" instead of naming
+	// the same distinguished name as though it were somebody else, and that
+	// sentence travels on every surface.
+	SelfSigned bool
 }
 
 // TLSHandshake is what one address presented when the connection was upgraded.

@@ -194,6 +194,7 @@ func certificatesFor(chain []Certificate) []report.Certificate {
 			FingerprintSHA256: c.FingerprintSHA256,
 			DNSNames:          c.DNSNames,
 			IsCA:              c.IsCA,
+			SelfSigned:        c.SelfSigned,
 		})
 	}
 	return out

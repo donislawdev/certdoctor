@@ -92,7 +92,7 @@ func authorityOf(leaf *report.Certificate, stores []report.TrustStore) *report.F
 
 	return &report.Finding{
 		Kind:             report.FindingSigningAuthority,
-		Summary:          summaryFor(authority),
+		Summary:          summaryFor(authority, leaf.SelfSigned),
 		Source:           report.SourceDetected,
 		SigningAuthority: &authority,
 	}
@@ -123,8 +123,8 @@ const inspectionCaveat = "this name comes from a list this program carries, with
 // THE MEASUREMENT COMES FIRST AND IS UNTOUCHED BY THE NAME. A reader who does
 // not believe the second half still has the first, and the first is the half
 // that produced the trust rows and the commands underneath.
-func summaryFor(a report.SigningAuthority) string {
-	measured := sentenceFor(a)
+func summaryFor(a report.SigningAuthority, selfSigned bool) string {
+	measured := sentenceFor(a, selfSigned)
 	if a.Inspection == nil {
 		return measured
 	}
@@ -232,17 +232,25 @@ var caveats = map[report.AnchorHolding]string{
 // in the caveat beside it, which travels on all three surfaces - and keeping the
 // two apart is what stops this line growing into a paragraph that the terminal
 // then pads every other row of the matrix out to.
-func sentenceFor(a report.SigningAuthority) string {
+//
+// A LEAF THAT SIGNED ITSELF SAYS SO - ADR107. The issuer of such a certificate
+// is its own subject, and a sentence naming it as though it were somebody else
+// hides the one thing a person searching for "self signed certificate" needs
+// to recognise. The flag comes from L4, where it was read off the signature, so
+// a certificate merely NAMING itself as issuer does not get the word.
+func sentenceFor(a report.SigningAuthority, selfSigned bool) string {
+	signed := a.Issuer + " signed this certificate"
+	if selfSigned {
+		signed += " itself"
+	}
 	switch a.HeldBy {
 	case report.HeldByAllStores:
-		return fmt.Sprintf("%s signed this certificate, and all %d store(s) assessed here hold an anchor for it",
-			a.Issuer, len(a.TrustingStores))
+		return fmt.Sprintf("%s, and all %d store(s) assessed here hold an anchor for it",
+			signed, len(a.TrustingStores))
 	case report.HeldByNoStores:
-		return fmt.Sprintf("%s signed this certificate, and no store on this machine holds an anchor for it",
-			a.Issuer)
+		return signed + ", and no store on this machine holds an anchor for it"
 	default:
-		return fmt.Sprintf(
-			"%s signed this certificate and is an authority local to this machine - %d store(s) here hold it and %d do not",
-			a.Issuer, len(a.TrustingStores), len(a.RefusingStores))
+		return fmt.Sprintf("%s and is an authority local to this machine - %d store(s) here hold it and %d do not",
+			signed, len(a.TrustingStores), len(a.RefusingStores))
 	}
 }

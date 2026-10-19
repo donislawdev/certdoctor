@@ -16,8 +16,10 @@ Barely diagnosable yet, and there has been no release.
   sent the issuer** - so the report sent you to the server's administrator for
   a certificate that does not exist. Most self-signed server certificates say
   they are not an authority, and that is what confused the check. The TLS
-  layer now passes such a chain as complete, and the trust matrix says who
-  signed it and which stores hold it.
+  layer now passes such a chain as complete, and the sentence at the top says
+  that the certificate "signed this certificate itself" and whether any store
+  on the machine holds it. A certificate that only names itself as its issuer,
+  without its own signature, is not described that way.
 
 ### Fixed - Java is found where its own container image puts it
 

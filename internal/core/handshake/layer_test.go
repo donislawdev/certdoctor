@@ -197,6 +197,25 @@ func TestASelfSignedLeafChainsToItself(t *testing.T) {
 	}
 }
 
+// TestTheLeafHandedToL5SaysWhetherItSignedItself is the seam ADR107 reads. L5
+// says "signed this certificate itself" off this flag, and it was read from the
+// signature on the adapter side - so it has to cross, rather than be rebuilt
+// from two names matching on the far side.
+//
+// BOTH DIRECTIONS ON ONE PATH: a mapping that dropped the flag and one that set
+// it everywhere would each pass one half.
+func TestTheLeafHandedToL5SaysWhetherItSignedItself(t *testing.T) {
+	self := Ask(context.Background(), workingInput(shakeReturning([]Certificate{certAt("CN=self", "CN=self", "aa", true)})))
+	if self.Leaf == nil || !self.Leaf.SelfSigned {
+		t.Errorf("a self-signed leaf crossed to L5 without saying so: %+v", self.Leaf)
+	}
+
+	issued := Ask(context.Background(), workingInput(shakeReturning(completeChain("bb"))))
+	if issued.Leaf == nil || issued.Leaf.SelfSigned {
+		t.Errorf("a leaf with an issuer of its own crossed to L5 as self-signed: %+v", issued.Leaf)
+	}
+}
+
 // TestEveryAddressGetsARowAndOnlyOneCarriesTheChain is ADR45.
 //
 // MEASURED BEFORE IT WAS DECIDED: every address of example.com and of
