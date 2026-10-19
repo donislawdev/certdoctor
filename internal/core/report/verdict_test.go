@@ -49,6 +49,19 @@ func storeRefusing(runtime string, why TrustFailure) Finding {
 	return Finding{Kind: FindingTrustStore, TrustStore: &TrustStore{Runtime: runtime, TrustsPresentedChain: &no, TrustFailure: why}}
 }
 
+// storeUndetermined is a row that could not judge the chain, carrying the
+// summary the trust layer writes for one.
+func storeUndetermined(runtime, instance, why string) Finding {
+	return Finding{Kind: FindingTrustStore, Summary: runtime + " " + instance + " could not be assessed: " + why,
+		TrustStore: &TrustStore{Runtime: runtime, Instance: instance, NotAssessed: why}}
+}
+
+// summarised gives a row the one line a surface prints for it.
+func summarised(f Finding, summary string) Finding {
+	f.Summary = summary
+	return f
+}
+
 func signer(summary string, held AnchorHolding) Finding {
 	return Finding{Kind: FindingSigningAuthority, Summary: summary, SigningAuthority: &SigningAuthority{Issuer: "x", HeldBy: held}}
 }
@@ -76,6 +89,9 @@ const (
 	nobodyHolds     = "certdoctor testbed intermediate signed this certificate, and no store on this machine holds an anchor for it"
 	unheldMiddlebox = "mitmproxy signed this certificate, and no store on this machine holds an anchor for it - and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server"
 	wantsCreds      = "the proxy this URL goes through demands credentials before it will pass a request, and this run offered none - so whether this URL can be reached through it was not established"
+	noBundle        = "there is no CA bundle at any of the places Go and the common distributions keep one, so this platform has no store to judge the chain with - on Debian and Ubuntu the ca-certificates package is what installs it"
+	notFetched      = "the issuer this chain needs is on this machine's copy of Microsoft's root program list and is not installed yet - Windows fetches such a root when it first needs one and this program does not, so whether this store would trust the chain is undetermined"
+	onSchannel      = "this build uses schannel, which reads the platform store rather than a file - the system-store probe answers for it"
 )
 
 // TestTheVerdictNamesTheCauseInTheDecisiveLayersWords is the product's promise
@@ -189,6 +205,53 @@ var causeScenarios = []struct {
 		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
 			row(layer.TrustMatrix, status.Warn, "9 of 11 store(s) trust the presented chain, and 2 could not be assessed")}, unbuilt...),
 		want: "Everything assessed passed. Warnings in 1 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "OBS159 nothing failed and the platform has no store at all, measured in ubuntu:24.04: the top line says what the row says",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Unknown, "none of the 1 store(s) found could be assessed",
+				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))}, unbuilt...),
+		want: "Everything assessed passed, but system-store ubuntu could not be assessed: " + noBundle + ". 3 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "other stores trust and one of the platform's two Windows stores is undetermined: that row is named and the warning still counted",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Warn, "2 of 3 store(s) trust the presented chain, and 1 could not be assessed",
+				storeTrusting("git"), storeTrusting(RuntimeSystemStore), storeUndetermined(RuntimeSystemStore, "LocalMachine", notFetched))}, unbuilt...),
+		want: "Everything assessed passed, but system-store LocalMachine could not be assessed: " + notFetched + ". Warnings in 1 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "curl on schannel could not be assessed and the platform's row judged the chain, measured on Windows 2026-10-19: the tail counts it and nothing more is said",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Warn, "2 of 3 store(s) trust the presented chain, and 1 could not be assessed",
+				summarised(storeTrusting(RuntimeSystemStore), "system-store CurrentUser trusts the presented chain (60 anchors)"),
+				storeUndetermined("curl", "curl.exe", onSchannel), storeTrusting("git"))}, unbuilt...),
+		want: "Everything assessed passed. Warnings in 1 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "an undetermined platform row with no summary names nothing, so nothing is invented and the function stays total",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Unknown, "none of the 1 store(s) found could be assessed",
+				summarised(storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle), ""))}, unbuilt...),
+		want: "Everything assessed passed. 3 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "the proxy wants credentials AND the platform has no store: one but, and the proxy's comes first in layer order",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution),
+			{ID: layer.Proxy, Status: status.Unknown, Reason: status.ReasonCredentialsRequired, Detail: wantsCreds},
+			pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Unknown, "none of the 1 store(s) found could be assessed",
+				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))}, unbuilt...),
+		want: "Everything assessed passed, but " + wantsCreds + ". 4 of 8 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "S-5 with the platform's row undetermined: a failure outranks it and the server is still to blame",
+		rows: append([]LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Fail, l4Incomplete),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority),
+				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))}, unbuilt...),
+		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine. Failures in 2 of 8 diagnostic layers. 2 of 8 diagnostic layers could not be assessed.",
 	},
 	{
 		name: "a failing row with no detail names nothing, so the count stands in and the function stays total",

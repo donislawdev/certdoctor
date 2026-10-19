@@ -118,7 +118,7 @@ func codeFor(counts map[status.Status]int, total int) exitcode.Code {
 
 // sentenceFor picks the verdict sentence.
 //
-// Four shapes, in this order:
+// Five shapes, in this order:
 //
 //   - nothing assessed: the settled sentence, because "nothing could be
 //     assessed" reads better than "8 of 8 could not be assessed" and says the
@@ -128,9 +128,12 @@ func codeFor(counts map[status.Status]int, total int) exitcode.Code {
 //     tail. When no row can name a cause - which the validator rejects, since
 //     every non-passing row must carry a detail - the count of failures stands
 //     in, so the function stays total.
-//   - no failure, but the proxy this URL goes through wants credentials: the
-//     one thing a passing run has to say out loud, because this program
-//     connects directly and a runtime that goes through the proxy does not.
+//   - no failure, but the proxy this URL goes through wants credentials: said
+//     out loud, because this program connects directly and a runtime that
+//     goes through the proxy does not.
+//   - no failure, but the platform's own store could not judge the chain: said
+//     out loud too, because every program without a store of its own judges
+//     by that one. See platformStoreUndetermined.
 //   - no failure: the settled success sentence when there is nothing else to
 //     say, otherwise "everything assessed passed" and the tail.
 //
@@ -155,6 +158,9 @@ func sentenceFor(results []LayerResult, counts map[status.Status]int) string {
 	}
 	if demand, ok := credentialsDemand(results); ok {
 		return everythingAssessedPassed + ", but " + demand + tail(counts, total, false)
+	}
+	if why, ok := platformStoreUndetermined(results); ok {
+		return everythingAssessedPassed + ", but " + why + tail(counts, total, false)
 	}
 	if unknown == 0 && counts[status.Warn] == 0 {
 		return everythingPassed
@@ -245,6 +251,41 @@ func credentialsDemand(results []LayerResult) (string, bool) {
 		if r.ID == layer.Proxy && r.Status == status.Unknown &&
 			r.Reason == status.ReasonCredentialsRequired && r.Detail != "" {
 			return period(r.Detail), true
+		}
+	}
+	return "", false
+}
+
+// platformStoreUndetermined returns the summary of the first row for the
+// platform's own store that could not judge the chain - OBS159, settled by
+// ADR105 under a decision the owner delegated.
+//
+// WHY THIS STORE AND NO OTHER. The platform's store is the one every program
+// without a store of its own judges by, so "it could not be assessed" is a fact
+// about most of what runs on the machine - and on a machine with nothing
+// installed it is THE fact. Measured 2026-10-15 in ubuntu:24.04: the row said
+// in as many words that there is no CA bundle and which package installs one,
+// while the top line read "Everything assessed passed" and a count. A runtime
+// that cannot be assessed for reasons of its own stays in the tail, which
+// counts it - and measured 2026-10-19 on the author's Windows machine, those
+// are the rows that turn an ordinary run into a warning: curl on schannel,
+// which hands the question to this very store. The platform's own rows were
+// judged on all eight sites asked, so this shape does not fire on an ordinary
+// Windows run.
+//
+// ONE "BUT", AND THE PROXY'S GOES FIRST, in layer order. A run that has both
+// keeps the other in its rows and in the count behind the sentence - the top
+// line is the one people act on, and two clauses of this length would bury it.
+//
+// THE SUMMARY IS QUOTED, NOT THE REASON ALONE, because it names the store and
+// Windows has two of them. It is the row's own text, masked before this runs.
+func platformStoreUndetermined(results []LayerResult) (string, bool) {
+	for _, r := range results {
+		for _, f := range r.Findings {
+			if f.Kind == FindingTrustStore && f.TrustStore != nil && f.TrustStore.Runtime == RuntimeSystemStore &&
+				f.TrustStore.TrustsPresentedChain == nil && f.Summary != "" {
+				return period(f.Summary), true
+			}
 		}
 	}
 	return "", false

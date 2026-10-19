@@ -10,6 +10,17 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - a passing run says when the platform's store could not judge the chain
+
+- **The sentence at the top no longer reads as a clean pass on a machine with
+  no CA bundle.** When nothing failed but a row for the platform's own store
+  could not judge the chain, the sentence reads "Everything assessed passed,
+  but" followed by that row's own words - on `ubuntu:24.04`, that there is no
+  CA bundle and which package installs it. A certificate copied by hand into
+  `/etc/ssl/certs` is said the same way. Other runtimes that could not be
+  assessed are still only counted, a proxy demanding credentials keeps the one
+  "but" when both apply, and the exit code is unchanged.
+
 ### Added - the Linux trust store has a row of its own
 
 - **On Linux the trust matrix now asks the platform's store too.** There it is
