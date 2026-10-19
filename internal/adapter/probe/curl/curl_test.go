@@ -278,6 +278,73 @@ func TestADirectoryNamedLikeTheFileIsPassedOver(t *testing.T) {
 	}
 }
 
+// The entry point hands this package a getter, and the package asks it for
+// exactly the variables curl's own tool reads - no more, so nothing else in the
+// environment can steer a row, and no fewer, so no place curl looks is skipped.
+func TestTheEnvironmentIsReadThroughTheGetterItIsHanded(t *testing.T) {
+	asked := map[string]bool{}
+	env := EnvironmentFrom(func(name string) string {
+		asked[name] = true
+		return "value of " + name
+	})
+	if env.CABundle != "value of CURL_CA_BUNDLE" {
+		t.Errorf("CABundle is %q", env.CABundle)
+	}
+	for _, name := range homeVariables {
+		if env.Homes[name] != "value of "+name {
+			t.Errorf("%s reads %q", name, env.Homes[name])
+		}
+	}
+	if len(asked) != len(homeVariables)+1 {
+		t.Errorf("the getter was asked for %d variables, want %d: %v", len(asked), len(homeVariables)+1, asked)
+	}
+}
+
+// Through the whole row, not only through configFile: a place on another
+// machine leaves the row unassessed and naming no store - inviolable rule 16.
+func TestASchannelRowWithAConfigurationPlaceOffThisMachineIsUnassessed(t *testing.T) {
+	source := func(path string) (io.ReadCloser, error) { return nil, &file.RemotePath{Path: path} }
+	store := storeFor(context.Background(), versionSaying(schannelLine), source, Install{Path: system32Curl},
+		[][]byte{leafNaming(t, nil, nil)}, Environment{Homes: map[string]string{"HOME": hostSpelling(`\\files\home\jdoe`)}}, atNoon())
+
+	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
+		t.Fatalf("a row that could not look for its configuration file still answered: %+v", store)
+	}
+	if !strings.Contains(store.NotAssessed, "not on this machine") {
+		t.Errorf("the reason does not say where the file could not be looked for: %q", store.NotAssessed)
+	}
+}
+
+// No certificate means nothing to ask about revocation, and nothing for a store
+// to judge - the row says so rather than pointing at a store.
+func TestASchannelRowWithNoChainIsUnassessed(t *testing.T) {
+	store := storeFor(context.Background(), versionSaying(schannelLine), sourceOf(), Install{Path: `C:\curl.exe`},
+		nil, Environment{}, atNoon())
+
+	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
+		t.Fatalf("a row with no chain answered: %+v", store)
+	}
+	if !strings.Contains(store.NotAssessed, "no chain was presented") {
+		t.Errorf("the reason does not say there was no chain: %q", store.NotAssessed)
+	}
+}
+
+// A binary that could not be started at all is a row without a backend, and
+// the reason carries what went wrong.
+func TestACurlThatCannotBeStartedIsUnassessed(t *testing.T) {
+	run := func(context.Context, string, ...string) (probe.Output, error) {
+		return probe.Output{}, errors.New("the file is not an executable")
+	}
+	store := storeFor(context.Background(), run, sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
+
+	if store.Backend != "" || store.TrustsPresentedChain != nil {
+		t.Fatalf("a curl that never ran produced a backend or a verdict: %+v", store)
+	}
+	if !strings.Contains(store.NotAssessed, "not an executable") {
+		t.Errorf("the reason does not carry the failure: %q", store.NotAssessed)
+	}
+}
+
 type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("is a directory") }
