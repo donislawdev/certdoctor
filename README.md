@@ -1,58 +1,203 @@
-# certdoctor
+# certdoctor 🩺 - find out why this machine cannot connect to that URL, and what to run to fix it
+<p align="center">
+  <b>Follow me:</b>
+  &nbsp
+  <a href="https://discord.gg/bDTu8HX"><img src="https://cdn.simpleicons.org/discord/5865F2" alt="Discord" height="26" align="absmiddle"></a>
+  &nbsp
+  <a href="https://facebook.com/donislawdev"><img src="https://cdn.simpleicons.org/facebook/0866FF" alt="Facebook" height="26" align="absmiddle"></a>
+  &nbsp
+  <a href="https://x.com/donislawdev"><picture><source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/x/FFFFFF"><img src="https://cdn.simpleicons.org/x/000000" alt="X (Twitter)" height="26" align="absmiddle"></picture></a>
+  &nbsp
+  <a href="https://bsky.app/profile/donislawdev.bsky.social"><img src="https://cdn.simpleicons.org/bluesky/0285FF" alt="Bluesky" height="26" align="absmiddle"></a>
+  &nbsp
+ <a href="https://store.steampowered.com/developer/DonislawDev"><picture><source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/steam/FFFFFF"><img src="https://cdn.simpleicons.org/steam/000000" alt="Steam" height="26" align="absmiddle"></picture></a>
+</p>
 
-**Why does this machine - or this container - fail to connect to that URL?**
+[![CI](https://github.com/donislawdev/certdoctor/actions/workflows/ci.yml/badge.svg)](https://github.com/donislawdev/certdoctor/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/donislawdev/certdoctor?sort=semver)](https://github.com/donislawdev/certdoctor/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/donislawdev/certdoctor/total)](https://github.com/donislawdev/certdoctor/releases)
+[![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
+![Platform: Linux](https://img.shields.io/badge/platform-Linux-FCC624)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS-000000)
+[![Website](https://img.shields.io/badge/website-certdoctor.donislawdev.com-e4573f)](https://certdoctor.donislawdev.com/)
 
-certdoctor walks the whole path in one command - DNS, proxy and PAC, TCP, TLS - and then does the part no other tool does: it checks the trust store of **every runtime it finds on the machine**, one by one, and tells you which ones are broken and exactly what to run to fix each.
+**certdoctor** is a command-line tool for QA engineers, helpdesk and DevOps - for anyone who has
+read `PKIX path building failed` or `unable to get local issuer certificate` on a corporate laptop,
+behind a proxy, or inside a container that cannot do what the host does without trouble. Point it at
+the URL that fails. It walks the whole path in one run - DNS, proxy and PAC script, TCP, TLS - and
+then does the part no other tool does: it asks **each trust store on the machine**, one by one,
+whether it trusts what the server presented, and prints the command that would fix each store that
+does not, with the real paths from your machine in it. `curl -v` and `openssl s_client` answer for
+one program. certdoctor answers for the Windows store, every Java installation, every `git` and every
+`curl` it finds - and tells you whether the fault is on this machine at all.
+
+⭐ **If it ended a "works on my machine" argument, leave a star.** That is how the next person
+staring at `PKIX path building failed` finds out it exists.
+
+**What it can do**
+
+- **Say whose problem it is** - this machine, or the server. A server that does not send its
+  intermediate certificate is named as the server's fault, with the evidence to paste into a ticket.
+- **One row per trust store, not per runtime** - the Windows store as your account sees it and as
+  services see it, the Linux CA bundle, every JDK and JRE separately, every `git` and `curl` it
+  finds. On the machine it was built on, one run reads thirteen stores.
+- **Print the command that fixes each store** - `certutil`, `keytool` with the real `cacerts` path of
+  that JDK, an append to git's own bundle - and say when it needs administrator rights. It prints
+  them. It never runs them.
+- **Notice TLS inspection without accusing anyone** - who signed the certificate, how many stores on
+  this machine know that authority, and the product's name when it is one certdoctor recognises.
+- **Read your proxy settings the way your programs do** - the environment variables, the Windows
+  Internet Settings that Edge, Chrome and .NET follow, and the WinHTTP settings that services follow,
+  side by side. It runs your PAC script in a sandbox to see where your URL really goes, and asks the
+  proxy whether it wants credentials.
+- **Look at DNS twice** - every configured resolver asked directly, and the system resolver, with the
+  difference classified: split horizon, a leak past a VPN, a name that resolves nowhere.
+- **Try every address** - a TCP connection to each address the name resolves to, and the full
+  certificate chain from each one, with fingerprints and validity dates.
+- **Write a report for the ticket** - terminal, Markdown, one self-contained HTML page, or JSON with a
+  schema for CI. `--redact` masks host names, paths and user names. Credentials are masked always.
+- **Change nothing and call nobody** - the only file it writes is the report, at the path you name.
+  It connects only where you pointed it: no telemetry, no update check.
+- **Ship as one static binary** - nothing to install next to it, and it runs as it is inside Alpine
+  and Ubuntu images.
+
+<!-- The GIF of a real run goes here. It is recorded from the binary by the recorder kept with the
+project, once the terminal report fits a terminal. -->
+
+<!-- The star GIF goes here, recorded on this repository once it is public. -->
 
 ---
 
-## Status: early development. Six layers of eight do anything.
+## Try it on a broken site
 
-**There is a `certdoctor` command, it prints a complete report, and two of its eight rows say they could not assess anything.** You get the real artefact - a one sentence verdict, a row for each of the eight layers, and the notes saying what was held back. The verdict counts the layers it could not assess, and the run exits with the code that means exactly that.
+[badssl.com](https://badssl.com/) keeps deliberately broken HTTPS sites for exactly this. Three of
+them, with the first sentence certdoctor prints at the top of each report:
 
-That is the point rather than an accident. `UNKNOWN` is the correct status for "not built yet", so there is no moment in this program's life at which it claims to have checked something it has not.
+```
+certdoctor https://incomplete-chain.badssl.com/
+```
 
-**`L0`, the context layer**, reports twenty-three environment variables that decide what this machine trusts and what it proxies - both spellings of each proxy variable separately, because they are not the same variable everywhere - saying of each whether it is set, set to nothing, or absent. Credentials are removed from the values on the way out, always, whether or not you pass `--redact`.
+> The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can
+> build a path to a root - this is a fact about the server rather than about this machine.
 
-**`L1`, name resolution, is the first thing certdoctor does that leaves its own process.** It reads the resolvers this machine is configured to use - from the registry and the IP helper API on Windows, from `/etc/resolv.conf` elsewhere - then asks each of them separately for `A` and for `AAAA`, and reports one row per answer. `NXDOMAIN`, `SERVFAIL` and `NODATA` are told apart and reported as themselves, which is why it asks the resolvers directly rather than using the resolver built into Go: that one collapses "the name does not exist" and "resolving it failed" into a single message, and those send you to two different places. A query that got nothing back says why, in a field of its own, rather than pretending to a response code.
+```
+certdoctor https://untrusted-root.badssl.com/
+```
 
-**Point it at an address rather than a name and it asks no DNS question at all** - it says there was nothing to resolve and hands the address to the layers below, which is what you meant by typing one. **A name with a non-ASCII character in it is converted to its `xn--` form before anything is asked about it**, so international domain names work rather than producing a confident `NXDOMAIN` about a site that is up. The report shows what you typed and every row of this layer shows the converted name, because that is the one that went out. A name written with combining marks is refused with a reason instead of being converted into a valid-looking name for a different domain.
+> CN=BadSSL Untrusted Root Certificate Authority,O=BadSSL,L=San Francisco,ST=California,C=US signed
+> this certificate, and no store on this machine holds an anchor for it.
 
-That is one of two views. The other asks your system the same question, the way any other program on your machine would, and the report says which resolver actually did the work - your platform's, or the one built into certdoctor standing in for it. **The difference between the two views is classified rather than tested for equality**, because they differ constantly for reasons that are nobody's fault: your platform filters out record types certdoctor asked for by name, and certdoctor never reads your `hosts` file. Three of the seven kinds of difference are worth a verdict: the views sharing no address at all, which is what split horizon DNS and a leak past a VPN look like, and the two ways a name can resolve nowhere - nobody answered at all, or somebody answered and no address came back from either view.
+```
+certdoctor https://expired.badssl.com/
+```
 
-**`L2` reads every place your machine keeps proxy settings, and tells you where they disagree.** One row per PLACE rather than per program, because several programs read one place and one program reads two: on Windows that is the current user's Internet Settings, which Edge, Chrome and .NET follow, and the machine's default WinHTTP configuration, which services follow; on every system it is also the proxy environment variables this process was started with. Set a proxy in the Windows settings and those two views disagree about whether a proxy exists at all - measured - so Edge goes through it and a service goes direct, with nothing on the machine misconfigured. That run reports `WARN` and names the class of the disagreement.
+> 11 of 13 store(s) do not trust the presented chain, and 2 could not be assessed - a certificate in
+> the path is past its validity.
 
-**It also fetches the automatic configuration script and runs it, which is the fault this product exists for.** A proxy is configured, every place says so, and the script sends one name straight past it - anybody reading only the configuration would tell you the opposite of what happens. The report shows which entry the script names for your URL and every entry it listed, the script's own answer verbatim, and the names it asked a resolver about while deciding. A script that will not parse, times out, or runs past a limit gets `UNKNOWN` with a reason - never a silent fall back to direct, which is the behaviour this program exists to interrupt. `--pac-url` asks about a script your machine does not name - on Linux there is no place to read one from, so that flag is the only way to ask the question there at all.
+The second one is where the trust matrix earns its place. Every store refuses, and every refusal
+carries the command that would add that root to that store, with this machine's paths in it. An
+excerpt from a Windows machine, with the column padding taken out:
 
-**And it asks the proxy whether it wants credentials**, without offering any. Only a `407` answers that question: a proxy refusing a `CONNECT` to a port it does not consider safe returns `403` while wanting no credentials at all - measured - so everything except a `407` leaves the verdict alone and says why. What is missing is automatic discovery: certdoctor does not perform WPAD, and on a machine where it is switched on the layer says so rather than claiming there is no proxy.
+```
+system-store LocalMachine does NOT trust the presented chain (90 anchors)
+  needs elevated rights: the LocalMachine store is read by every account and every service on this machine, so changing it needs administrator rights
+  run: certutil -addstore Root "<certificate.pem>"
+  replace first: <certificate.pem>
+git C:\Program Files\Git\mingw64\bin\git.exe does NOT trust the presented chain (121 anchors)
+  needs elevated rights: this store is outside this account's own files, so it belongs to every account on the machine
+  run: cmd /c copy /b "C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt"+"<certificate.pem>" "C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt"
+java C:\Program Files\OpenJDK\jdk-21.0.2 does NOT trust the presented chain (106 anchors)
+  needs elevated rights: this store is outside this account's own files, so it belongs to every account on the machine
+  run: "C:\Program Files\OpenJDK\jdk-21.0.2\bin\keytool" -importcert -trustcacerts -keystore "C:\Program Files\OpenJDK\jdk-21.0.2\lib\security\cacerts" -storepass changeit -alias "<alias>" -file "<certificate.pem>"
+```
 
-**`L3` opens a TCP connection to every address the name resolved to, side by side rather than one after another**, and reports a row per address with what happened and how long it took. Refused, unreachable, timed out and connected are told apart, because they send you to four different places. **The rows come back in the order the addresses were resolved in, never in the order the attempts finished**, so two reports from the same machine line up row for row. Eight at a time is a ceiling rather than a tuning knob - how many addresses a name has is decided by whoever answers the query, and that is not a decision to hand to a stranger.
+**Do not run those for badssl.com.** That root is untrusted on purpose, and trusting it would make
+every store on your machine accept a certificate nobody vouches for. The commands are there for the
+day the refused root is your own company's.
 
-**`L4` completes a TLS handshake with every address that accepted a connection** and shows what each server presented: the negotiated version, the cipher by its IANA number with the name beside it, the name sent in SNI, what ALPN agreed, whether the server asked you for a client certificate, and the full chain with issuers, validity, the names each certificate is actually for, and SHA-256 fingerprints. **The chain is printed once and every other address carries the comparison instead** - the same certificate, or a different one. A different one is the only signal this program has for something sitting on one route and not another.
+---
 
-**Its verdict is structural and touches no trust store at all.** It answers "did the issuer of this certificate actually arrive" - the commonest real misconfiguration there is, and one that is invisible from a browser that cached the missing intermediate from some other site. Whether this machine trusts anything is the next layer's question. That separation is also why the handshake is completed without verifying it: a chain that fails verification leaves you with no certificates to look at, and here the evidence is the product.
+## Download and run
 
-**`L5` is the part no other tool does - one row per trust store, never one per runtime.** On the machine this was developed on that is thirteen rows, measured 2026-10-14: the Windows store asked twice - as this account sees it and as a service running as the machine sees it - seven Java trust stores across five JDK installations and two JREs in both bitnesses, two `git` binaries in `PATH` reading different stores, and two `curl` binaries which report that they read the platform's store rather than one of their own, so they point at the Windows rows instead of answering for them. Each row carries the real path on this machine where the store is a file, how many anchors it holds, what selects it by default, and what it makes of the chain that arrived. A store certdoctor cannot read says so with a reason and is never counted as a failure.
+**Download a binary.** Take the archive for your system from the
+[releases page](https://github.com/donislawdev/certdoctor/releases/latest), unpack it and run
+`certdoctor`. It is one file with nothing to install. The Windows and macOS binaries are signed, and
+every release carries `SHA256SUMS`.
 
-**The Windows store is asked with every network retrieval switched off**, because the address Windows would fetch a missing certificate from is written into that certificate by the server you are diagnosing - and certdoctor connects only to what you pointed it at. The price is one ambiguity: a public root Windows has simply not downloaded yet looks exactly like an authority nobody installed. certdoctor tells the two apart with this machine's own copy of Microsoft's root program list, and when that list cannot settle it - missing, or not brought up to date for thirty days - the row says `UNKNOWN` and why, never `FAIL`. macOS does not have this row yet.
+**With Go installed** (1.27.2 or newer):
 
-**On Linux the platform store is a file, and the row reads the one Go itself reads** - the first CA bundle on Go's own list, which is also where OpenSSL's default bundle led in every measured image that carried OpenSSL. The row is named after the distribution, such as `system-store debian` or `system-store alpine`. `SSL_CERT_FILE` and `SSL_CERT_DIR` point programs away from that store, so they are reported with the other variables rather than followed. A container with no CA bundle at all - `ubuntu:24.04` and `debian:trixie-slim` as shipped - gets `UNKNOWN` saying so, and a certificate copied by hand into `/etc/ssl/certs` without reaching the bundle gets `UNKNOWN` saying that some programs here trust the chain and some do not. This was measured in containers, not on a Linux machine.
+```
+go install github.com/donislawdev/certdoctor/cmd/certdoctor@latest
+```
 
-**The matrix opens with one line saying who signed the certificate and how much of this machine has heard of them.** It answers with a count of stores - all of them, some of them, or none - and `some_stores` is exactly why one tool on your machine works and another does not. **It is a count and never an accusation.** A TLS-inspecting proxy produces that answer and so does your own organisation's certificate authority on an internal service that is working as intended, and from a single connection those two are identical in every field this program has. Both were built on a test bench and measured. The issuer and the fingerprint travel with the line so that somebody who can tell them apart has what they need.
+**From source:**
 
-**A store that refuses carries the command that would repair it**, with the real path from your machine in it - or, for the Windows store, the `certutil` line that adds to it, and for the Linux store a line appending to the distribution's bundle, with a note that `update-ca-certificates` and `update-ca-trust` rebuild that file and drop what was appended - and only where your machine is the thing to change. It adds to the store that runtime already reads rather than pointing it somewhere else, and it says before you run it if it needs administrator or root rights.
+```
+git clone https://github.com/donislawdev/certdoctor
+cd certdoctor
+CGO_ENABLED=0 go build ./cmd/certdoctor
+```
 
-What the repository holds besides that is the whole path from the command line to the exit code: argument parsing, the orchestrator and its time budget, the terminal renderer, `--format md` for a report you paste into a ticket, `--format html` for one page you attach to a mail - no script in it and nothing fetched from anywhere - `--json` with a schema and a validator that runs before anything is printed, a test that holds all four surfaces to the same facts, `--out` with an atomic write, and the credential masking. Under that sits the foundation - the status vocabulary, the exit code table, the appearance dictionary, and the guards that police all three - plus CI and a Docker test bench that knows the right answer because it made the answer up.
+`CGO_ENABLED=0` gives the same static binary the releases carry, the one that runs in an Alpine
+image as it is.
 
-**What is missing is `L6` and `L7`.** Nothing reports what being inside a container changes, and no automatic proxy discovery is performed. **There has been no release, so there is still nothing to install** - but six layers of eight is a real diagnosis for a real class of failures: a name that resolves nowhere, an address that will not accept a connection, a proxy your machine names in one place and not another, a script that routes one host past the proxy everything else goes through, a server that withheld its intermediate, and a runtime on this machine that does not trust what a server presented.
+**Inside a container**, copy the Linux binary in and run it there - the report then describes the
+container, not the host:
 
-Everything below describes what certdoctor is being built to do. Some of it exists today and the paragraphs above say which. This section will be removed when the first release ships.
+```
+docker cp certdoctor my-container:/tmp/certdoctor
+docker exec my-container /tmp/certdoctor https://api.example.com/
+```
+
+---
+
+## Two minutes with it
+
+```bash
+# The question this tool exists for: why does this URL fail here?
+certdoctor https://api.example.com/
+
+# A report to attach to a ticket, with host names, paths and user names masked
+certdoctor https://api.example.com/ --redact --format md --out report.md
+
+# One HTML page with no script in it and nothing fetched from anywhere
+certdoctor https://api.example.com/ --format html --out report.html
+
+# JSON for a pipeline, validated against its schema before it is printed
+certdoctor https://api.example.com/ --json > report.json
+
+# Ask about a PAC script your machine does not name, which is the only way to ask on Linux
+certdoctor https://api.example.com/ --pac-url http://wpad.example.com/proxy.pac
+```
+
+The report opens with **one sentence naming the cause** in the words of the layer that decided it.
+The numbers come after that sentence, then every layer with its evidence, then the notes saying what
+was not looked at. Every flag is in `certdoctor --help`.
+
+<details>
+<summary><strong>Table of contents</strong></summary>
+
+- [Symptoms](#symptoms)
+- [Why this exists](#why-this-exists)
+- [What it checks, layer by layer](#what-it-checks-layer-by-layer)
+- [What makes it different](#what-makes-it-different)
+- [Using it in CI](#using-it-in-ci)
+- [Honest limits](#honest-limits)
+- [What it will never do](#what-it-will-never-do)
+- [Your report contains internal data](#your-report-contains-internal-data)
+- [Questions](#questions)
+- [Found a case it gets wrong?](#found-a-case-it-gets-wrong)
+- [License](#license)
+
+</details>
 
 ---
 
 ## Symptoms
 
-If you searched for one of these, you are in the right place. certdoctor is built to tell you **which** of the many possible causes is yours:
+If you searched for one of these, you are in the right place. certdoctor is built to tell you
+**which** of the many possible causes is yours:
 
 ```
 PKIX path building failed
@@ -64,53 +209,224 @@ x509: certificate signed by unknown authority
 407 Proxy Authentication Required
 ```
 
-The frustrating part of these errors is that they are all the same message from different runtimes, and each runtime keeps its own idea of who to trust. The browser works. `curl` works. The application does not. That is not a paradox - it is seven trust stores disagreeing.
+They are the same complaint in the words of different runtimes, and each runtime keeps its own idea
+of whom to trust. The browser works. `curl` works. The application does not. That is not a paradox -
+it is several trust stores disagreeing.
 
-## The point of the tool: the trust matrix
+| You saw | Usually from | What certdoctor asks |
+|---|---|---|
+| `PKIX path building failed`, `unable to find valid certification path` | Java | every JDK and JRE on the machine, each `cacerts` as its own row |
+| `SSL certificate problem: ...` | `curl`, and `git` over HTTPS | every `git` and `curl` it finds, and which store each of them reads |
+| `x509: certificate signed by unknown authority` | programs written in Go | the platform store - the Windows store, or the Linux CA bundle |
+| `407 Proxy Authentication Required` | anything going through a proxy | which proxy applies to this URL, and whether it wants credentials |
+| `certificate verify failed: unable to get local issuer certificate` | Python, `pip` | **coming next** - the Python and `pip` rows are being built |
+| `SELF_SIGNED_CERT_IN_CHAIN` | Node.js, `npm` | **coming next** - the Node.js and `npm` rows are being built |
 
-Other tools look at the certificate. certdoctor looks at **which runtimes on this machine trust it**.
+---
 
-```
-RUNTIME              TRUST STORE                                          RESULT
-system store         Windows Root store                                   PASS
-curl                 Windows Root store (Schannel backend)                PASS
-git                  C:\Program Files\Git\mingw64\...\ca-bundle.crt       FAIL
-java  jdk-21.0.2     C:\Program Files\OpenJDK\jdk-21.0.2\...\cacerts      FAIL
-java  jdk-25         C:\Program Files\OpenJDK\jdk-25\lib\security\cacerts PASS
-node                 bundled CAs                                          FAIL
-python               (could not assess - reason: unrecognized output)     UNKNOWN
-```
+## Why this exists
 
-Every `FAIL` comes with a ready command carrying the **real paths from this machine**, not a template. Every `UNKNOWN` says why it could not be assessed. **A probe that does not understand what it saw never reports `PASS`.**
+A new laptop, a new network, a new VPN or a new container image, and a connection that worked
+yesterday fails with one of the messages above. The fix is usually one command. Finding which command
+takes an afternoon, because:
 
-## What it will never do
+- **every runtime has its own trust store.** Java keeps one `cacerts` per installation, and a typical
+  developer machine has several JDKs, of which somebody fixed one. Git for Windows carries its own
+  bundle. `curl` built with Schannel reads the Windows store and ignores the bundle beside it.
+- **the proxy is decided in several places at once.** Environment variables, the Windows settings a
+  browser follows and the different ones a service follows, and a PAC script that sends one host past
+  the proxy everything else goes through.
+- **the network sees two different worlds.** On a VPN one resolver answers with an internal address
+  and another with a public one.
+- **nobody can tell whose fault it is.** A server that forgot its intermediate certificate works in
+  a browser that cached the intermediate from some other site and fails everywhere else.
 
-**certdoctor diagnoses. It does not repair.**
+The knowledge exists - in dozens of "every cause of `PKIX path building failed`" articles. What did
+not exist was a tool that checks every cause on the machine in front of you and gives a verdict.
 
-It never writes to a trust store, never edits a configuration file, and never runs the commands it generates. It prints them for you to read and run yourself. This is a deliberate limit, not a missing feature - a diagnostic tool that quietly modifies trust stores is a tool nobody should grant administrator rights to.
+---
 
-It also connects only to what you pointed it at - the target URL, the addresses it resolves to, your configured resolvers and proxies, and the PAC file your machine names. There is no telemetry, no update check and no reporting of any kind.
+## What it checks, layer by layer
 
-## Your report contains internal data
+| Layer | Question it answers | Example of what it finds |
+|---|---|---|
+| `L0` Context | which of the 23 environment variables that decide trust and proxying are set | `HTTPS_PROXY` set while `https_proxy` is not - programs disagree about which one counts |
+| `L1` Name resolution | what each resolver says, and what your system says | the two views sharing no address at all - what split horizon DNS looks like |
+| `L2` Proxy | which proxy this URL really goes through, and who decided that | a PAC script sending this host direct while every setting names a proxy |
+| `L3` TCP | which of the resolved addresses accept a connection | refused, unreachable and timed out told apart, per address |
+| `L4` TLS | what the server presented, and whether that chain is complete | a server that did not send its intermediate certificate |
+| `L5` Trust matrix | which trust stores on this machine accept that chain | one JDK refusing a root that another JDK and the Windows store accept |
 
-The report includes internal host names, file system paths and user names, because that is what makes it useful in a ticket. `--redact` masks them.
+**The handshake is completed without verifying it**, on purpose. A chain that fails verification
+leaves you with no certificates to look at, and here the evidence is the product.
 
-Credentials are different: proxy user info, authorization headers and cookies are **always** masked, with or without `--redact`, because a masking that depends on a flag is one forgotten flag away from a leak.
+**The Windows store is asked with every network retrieval switched off.** The address Windows would
+fetch a missing certificate from is written into that certificate by the server you are diagnosing,
+and certdoctor connects only where you pointed it. It tells a public root Windows has simply not
+downloaded yet from an authority nobody installed by reading this machine's own copy of Microsoft's
+root program list.
 
-**Read a report before you paste it somewhere.** Masking is a filter, not a guarantee.
+**A store that cannot be read says so, with the reason, and never counts as a pass.** A probe that
+does not understand what it saw reports `UNKNOWN`. There are exactly four statuses - `PASS`, `WARN`,
+`FAIL`, `UNKNOWN` - and `UNKNOWN` always carries why.
 
-## Neighbours
+---
 
-certdoctor does not compete with these, and links to them on purpose:
+## What makes it different
+
+Other tools look at the certificate. certdoctor looks at **the machine in front of you** and at which
+of its runtimes accept that certificate.
+
+It does not compete with these, and links to them on purpose:
 
 - [certigo](https://github.com/square/certigo) - inspects and explains certificates
 - [testssl.sh](https://testssl.sh) - audits the TLS configuration of a server
 - [tlstools](https://github.com/frdmn/tlstools) - certificate utilities
 
-They look at the certificate. certdoctor looks at **the machine in front of you** and at which of its runtimes accept that certificate.
+When the trouble is the server, they tell you more about the server than certdoctor does. When the
+trouble is that one runtime on your machine disagrees with another, they cannot see it at all.
+
+---
+
+## Using it in CI
+
+Every ending has its own exit code, and `--json` writes a report validated against its schema before
+anything is printed:
+
+| Code | Name | Meaning |
+|---|---|---|
+| `0` | OK | everything that mattered was assessed and passed |
+| `1` | RUNTIME | certdoctor itself failed |
+| `2` | USAGE | bad invocation syntax or an unknown flag |
+| `3` | CONFIG | flags are valid on their own but contradictory or unsatisfiable |
+| `4` | DIAGNOSIS | the run succeeded and found at least one failure |
+| `5` | INCONCLUSIVE | no failure, but at least one thing could not be assessed |
+| `6` | IO | the report could not be written |
+| `130` | INTERRUPTED | interrupted by the user |
+| `143` | TERMINATED | terminated by the system |
+
+A `WARN` alone does not fail a build. `certdoctor --version` prints the version of the tool and of
+every schema it emits, so a log from six months ago still says what produced it.
+
+```yaml
+- name: can the build agent reach the registry
+  run: certdoctor https://registry.example.com/ --redact --json --out certdoctor.json
+```
+
+---
+
+## Honest limits
+
+A tool that quietly fails to look at something is worse than one that says what it cannot do.
+
+- **The trust matrix knows four families today** - the platform store on Windows and Linux, Java,
+  `git` and `curl`. Node.js with `npm` and Python with `pip` come next, then OpenSSL, .NET and
+  PowerShell, Docker, Maven and Gradle, and apt. A family it does not know is not asked, and the
+  report lists the families it asked - so a missing row means nobody looked, never that nothing is
+  there.
+- **On macOS the system keychain is not read yet**, so the platform store has no row there.
+- **Container diagnosis is not built.** `--in`, `--image` and `--compare` are accepted and refused
+  with a reason. Until they work, copy the binary into the container and run it there.
+- **Proxy auto-discovery (WPAD) is not performed.** On a machine where it is switched on, the proxy
+  layer says it could not establish which proxy applies, rather than claiming there is none.
+- **It names an inspection product only when the certificate says so in a way the vendor
+  publishes** - today mitmproxy and Cisco Umbrella. Anything else is reported as an authority local to
+  this machine, held by some of its stores, with the issuer and the fingerprint. From one connection,
+  an inspecting proxy and your own company's certificate authority look identical, and telling
+  somebody "you are being intercepted" when they are not is harm, not a cosmetic mistake.
+- **No revocation checks.** OCSP and CRL would mean connecting somewhere you did not point it at.
+- **Linux has been measured in containers**, not on a desktop distribution.
+- **This is a 0.x release.** The JSON schema will keep moving until 1.0.0, and the report says so in
+  its notes.
+
+---
+
+## What it will never do
+
+**certdoctor diagnoses. It does not repair.**
+
+It never writes to a trust store, never edits a configuration file, and never runs the commands it
+generates. It prints them for you to read and run yourself. This is a deliberate limit, not a missing
+feature - a diagnostic tool that quietly modifies trust stores is a tool nobody should grant
+administrator rights to.
+
+It also connects only to what you pointed it at - the target URL, the addresses it resolves to, your
+configured resolvers and proxies, and the PAC file your machine names. There is no telemetry, no
+update check and no reporting of any kind.
+
+---
+
+## Your report contains internal data
+
+The report includes internal host names, file system paths and user names, because that is what makes
+it useful in a ticket. `--redact` masks them.
+
+Credentials are different: proxy user info, authorization headers and cookies are **always** masked,
+with or without `--redact`, because a masking that depends on a flag is one forgotten flag away from a
+leak.
+
+**Read a report before you paste it somewhere.** Masking is a filter, not a guarantee.
+
+---
+
+## Questions
+
+### Does it change anything on my machine?
+
+No. It reads, connects where you pointed it, and writes one report if you ask for one with `--out`.
+The commands it prints are for you to run, after reading them.
+
+### Why not just `openssl s_client` or `curl -v`?
+
+Both answer for themselves. `openssl s_client` tells you what OpenSSL's store thinks, and the Java
+service that fails does not use that store. certdoctor asks every store it can find the same
+question about the same chain, and the answer is usually that they disagree.
+
+### Will it tell me my company is intercepting my traffic?
+
+Only when the certificate names a product it recognises. Otherwise it says who signed the certificate
+and how many stores on your machine trust that authority - which is exactly what your own company's
+certificate authority looks like too.
+
+### Does it need administrator rights?
+
+No. It runs as whoever started it, and the report records which rights it ran with, because what a
+store looks like can depend on them. A printed fix says when running it needs administrator or root
+rights.
+
+### Is it free? Can I use it at work?
+
+Yes to both. It is GPL-3.0 and costs nothing. The reports you generate belong to you.
+
+---
+
+## Found a case it gets wrong?
+
+That is the most useful issue you can open. Attach the report made with `--redact --json`, say what
+the right answer was, and name the runtime that disagreed. The
+[issue tracker](https://github.com/donislawdev/certdoctor/issues) is open. Security problems go
+through [SECURITY.md](SECURITY.md) instead.
+
+---
 
 ## License
 
-GPL-3.0. The full text is in [LICENSE](LICENSE).
+Copyright (C) 2026 DonislawDev. The project is built with an AI-assisted workflow.
 
-Reports and any other output you generate with certdoctor belong to you and are not derivative works of this program.
+Released under the GNU General Public License, version 3. The full text is in [LICENSE](LICENSE), and
+`certdoctor --license` prints it from the binary.
+
+Reports and any other output you generate with certdoctor belong to you and are not derivative works
+of this program.
+
+---
+
+If it saves you an afternoon, a star helps the next person find it - and you can
+[support the project](https://donislawdev.com/support/).
+
+<sub>Keywords: PKIX path building failed · unable to find valid certification path to requested target ·
+certificate verify failed unable to get local issuer certificate · x509 certificate signed by unknown
+authority · SSL certificate problem self signed certificate in certificate chain · corporate proxy
+certificate error · TLS inspection troubleshooting · keytool import certificate into cacerts · which
+JDK cacerts · git SSL certificate problem Windows · PAC file test · 407 Proxy Authentication
+Required</sub>
