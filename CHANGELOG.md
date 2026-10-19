@@ -10,6 +10,33 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - curl on Schannel is judged by this account's Windows store
+
+- **[contract] curl built on Schannel now gets an answer.** Its rows said on
+  every Windows run that they could not be assessed, which turned an ordinary
+  run into a warning. Schannel judges with the store of the account running
+  curl, so each such row now carries the answer of the `system-store
+  CurrentUser` row, and a new member of the row, `defers_to`, names that row.
+  The line saying how widely this machine holds the signer counts that store
+  once, not once per curl.
+- **[contract] curl on Schannel refuses a server certificate that names nowhere
+  to check whether it was revoked**, even when the store trusts the chain, and
+  the row now says so with a new `trust_failure` value, `no_revocation_info`,
+  and that `--ssl-revoke-best-effort` lets curl connect. No store command
+  repairs it, so the row carries none.
+- **A curl configuration file stops that answer.** A `.curlrc` can point curl at
+  a CA file of its own or turn revocation checks off, and certdoctor does not
+  read it, so a row that finds one names the file and says it could not be
+  assessed.
+- **[contract] The schema version is now 2.1.** One member and one value are
+  added, nothing is removed.
+
+### Fixed - a curl built with several TLS backends is read by the one it uses
+
+- curl prints every backend it did not select in brackets, and a build such as
+  `OpenSSL/3.5.7 (Schannel)` was read as Schannel. The selected backend is now
+  the one outside the brackets.
+
 ### Changed - the report carries six layers, so a healthy target can end with exit code 0
 
 - **[contract] L6 (containers) and L7 (report) are no longer in the report.**

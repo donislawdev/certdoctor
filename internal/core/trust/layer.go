@@ -136,7 +136,13 @@ func Ask(ctx context.Context, in Input) Result {
 	// port was answering something else.
 	whole := in.ChainComplete()
 
-	rows, counted := in.walkProbes(ctx, chain)
+	rows, timedOut := in.walkProbes(ctx, chain)
+	// A ROW THAT DEFERS GETS ITS ANSWER BEFORE ANYTHING IS COUNTED - ADR108 part
+	// 4. Counting first would report curl on Schannel as unassessed on every run
+	// on Windows, which is the warning this part exists to remove.
+	leaf := in.PresentedLeaf()
+	rows = settleDeferred(rows, leaf != nil && leaf.SelfSigned)
+	counted := tallyOf(rows, timedOut)
 
 	// THE MATRIX IS WALKED BEFORE ANY COMMAND IS WRITTEN, AND THAT ORDER IS THE
 	// WHOLE OF ADR55. Whether a refusing store can be repaired depends on a fact
@@ -166,17 +172,32 @@ type tally struct {
 	timedOut   int
 }
 
+// tallyOf counts the rows the verdict is built from. Every row is one store
+// asked, a probe that could not run included.
+func tallyOf(rows []row, timedOut int) tally {
+	counted := tally{asked: len(rows), timedOut: timedOut}
+	for _, r := range rows {
+		switch {
+		case r.store.TrustsPresentedChain == nil:
+			counted.unassessed++
+		case *r.store.TrustsPresentedChain:
+			counted.trusting++
+		}
+	}
+	return counted
+}
+
 // walkProbes asks every declared probe that this machine has, and collects a row
-// for each store along with the counts the verdict is built from.
+// for each store, along with how many probes ran out of time.
 //
 // IT DECIDES NOTHING. No status, no command, no sentence about a signer - those
 // need facts about the WHOLE matrix, which do not exist until this returns. The
 // split is OBS85's named moment taken before anything new was added to this
 // layer rather than after: breaking a function up once the mutation entries are
 // green turns evidence just collected into evidence to collect again.
-func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, tally) {
+func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, int) {
 	var rows []row
-	var counted tally
+	timedOut := 0
 
 	// HOW MANY PROBES ARE LEFT TO ASK, COUNTED BEFORE THE FIRST ONE RUNS - R-5.
 	// The share arithmetic needs a divisor, and one taken inside the loop would
@@ -200,9 +221,7 @@ func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, tally) {
 			// NOT A REFUSAL AND NOT AN EMPTY STORE. Nothing was asked, so nothing
 			// was denied - this row is about our budget.
 			rows = append(rows, unaskable(descriptor, errNoTimeLeft))
-			counted.asked++
-			counted.unassessed++
-			counted.timedOut++
+			timedOut++
 			continue
 		}
 		stores, err := askProbe(probeCtx, probe, chain)
@@ -227,7 +246,7 @@ func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, tally) {
 			done()
 		}
 		if expired || errors.Is(err, context.DeadlineExceeded) {
-			counted.timedOut++
+			timedOut++
 		}
 		if err != nil {
 			// ONE PROBE FAILING DOES NOT SINK THE LAYER. It becomes a row saying
@@ -235,22 +254,13 @@ func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, tally) {
 			// does not trust this" and inviolable rule 15 wants the difference
 			// visible rather than averaged away.
 			rows = append(rows, unaskable(descriptor, err))
-			counted.asked++
-			counted.unassessed++
 			continue
 		}
 		for _, store := range stores {
-			counted.asked++
-			switch {
-			case store.TrustsPresentedChain == nil:
-				counted.unassessed++
-			case *store.TrustsPresentedChain:
-				counted.trusting++
-			}
 			rows = append(rows, row{store: store})
 		}
 	}
-	return rows, counted
+	return rows, timedOut
 }
 
 // findingsFrom turns the collected rows into what the report carries, once the

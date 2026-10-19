@@ -159,14 +159,21 @@ var descriptors = []Descriptor{
 			"than the one the document names.",
 	},
 	{
-		ID:          "curl",
-		Runtime:     "curl",
-		TrustSource: "decided by the TLS backend: Schannel and friends read the platform store, OpenSSL builds read a file",
-		Source:      Measured,
+		ID:      "curl",
+		Runtime: "curl",
+		TrustSource: "decided by the TLS backend: a Schannel build judges by this account's Windows store and takes the " +
+			"answer of system-store CurrentUser, OpenSSL builds read a file",
+		Source: Measured,
 		Evidence: "Measured on the owner machine 2026-08-18: TWO curl.exe on PATH, the system one and the one shipped " +
 			"inside the Git installation, and BOTH are Schannel - the second was expected to be OpenSSL and is not. " +
 			"Schannel IGNORES CURL_CA_BUNDLE, measured earlier by pointing it at a path that does not exist and still " +
-			"getting a 200, so a fix generated without reading the backend is a command that does nothing.",
+			"getting a 200, so a fix generated without reading the backend is a command that does nothing. " +
+			"Measured 2026-10-20 with probe S25, both builds, curl 8.21.0: a root held in this account's Root store " +
+			"and not in the machine's was trusted, so Schannel judges with the CurrentUser engine, and a leaf naming no " +
+			"revocation address failed with CRYPT_E_NO_REVOCATION_CHECK. Read beside it in curl 8.21.0, " +
+			"lib/vtls/schannel.c and src/tool_operate.c at https://github.com/curl/curl/tree/curl-8_21_0 - with no " +
+			"--cacert Schannel validates by itself with SCH_CRED_REVOCATION_CHECK_CHAIN, and on Schannel the tool " +
+			"ignores CURL_CA_BUNDLE, SSL_CERT_FILE, SSL_CERT_DIR and curl-ca-bundle.crt.",
 		FixSource: Documentation,
 		FixEvidence: "curl manual page, section Environment and the --cacert entry, read 2026-08-04 at " +
 			"https://curl.se/docs/manpage.html - CURL_CA_BUNDLE supplies the value of --cacert, which names the file " +

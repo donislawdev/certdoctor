@@ -268,10 +268,10 @@ func credentialsDemand(results []LayerResult) (string, bool) {
 // while the top line read "Everything assessed passed" and a count. A runtime
 // that cannot be assessed for reasons of its own stays in the tail, which
 // counts it - and measured 2026-10-19 on the author's Windows machine, those
-// are the rows that turn an ordinary run into a warning: curl on schannel,
-// which hands the question to this very store. The platform's own rows were
-// judged on all eight sites asked, so this shape does not fire on an ordinary
-// Windows run.
+// were the rows that turned an ordinary run into a warning: curl on schannel,
+// which hands the question to this very store. Since ADR108 part 4 those rows
+// carry this store's answer instead. The platform's own rows were judged on all
+// eight sites asked, so this shape does not fire on an ordinary Windows run.
 //
 // ONE "BUT", AND THE PROXY'S GOES FIRST, in layer order. A run that has both
 // keeps the other in its rows and in the count behind the sentence - the top

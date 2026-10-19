@@ -149,7 +149,7 @@ func TestARemediationWithNothingToFillInIsAccepted(t *testing.T) {
 // The registry of trust failures, checked the same way every other closed list
 // in this package is.
 func TestEveryTrustFailureHasAMeaning(t *testing.T) {
-	for _, failure := range []TrustFailure{UnknownAuthority, Expired, NotYetValid, OtherFailure} {
+	for _, failure := range []TrustFailure{UnknownAuthority, Expired, NotYetValid, OtherFailure, NoRevocationInfo} {
 		if !failure.Valid() {
 			t.Errorf("%q is declared and does not report itself valid", failure)
 		}
@@ -341,6 +341,101 @@ func TestTheContractRefusesARemediationThatWouldWasteSomebodysTime(t *testing.T)
 		t.Run(c.name, func(t *testing.T) {
 			store := aRefusingStore()
 			store.Fix = aFix()
+			c.spoil(&store)
+			got := store.breach()
+			if got == "" {
+				t.Fatalf("%s was accepted", c.name)
+			}
+			if !strings.Contains(got, c.says) {
+				t.Errorf("the refusal does not name what it defends: %q, wanted it to mention %q", got, c.says)
+			}
+		})
+	}
+}
+
+// aDeferringRow is curl on Schannel as the trust layer writes it once the
+// platform's own row has answered - ADR108 part 4, measured with probe S25.
+func aDeferringRow() TrustStore {
+	return TrustStore{
+		Runtime:              "curl",
+		Instance:             `C:\Windows\system32\curl.exe`,
+		StoreForm:            StoreSystem,
+		Backend:              "schannel",
+		DefersTo:             &StoreRef{Runtime: RuntimeSystemStore, Instance: InstanceCurrentUser},
+		TrustAnchorCount:     91,
+		TrustsPresentedChain: trusts(true),
+		SelectedBy:           []string{"PATH"},
+	}
+}
+
+// THE POSITIVE TWINS, for the reason TestARefusalMayCarryARemediation gives:
+// every case in the table below is a refusal, and a contract refusing every
+// deferring row would pass all of them.
+func TestARowDeferringToThePlatformStoreIsAccepted(t *testing.T) {
+	store := aDeferringRow()
+	if got := store.breach(); got != "" {
+		t.Errorf("a row deferring to the platform's own store was refused: %q", got)
+	}
+	store.TrustsPresentedChain = trusts(false)
+	store.TrustFailure = NoRevocationInfo
+	if got := store.breach(); got != "" {
+		t.Errorf("a deferring row refusing for want of a revocation address was refused: %q", got)
+	}
+}
+
+func TestADeferringRowRefusesWhatItMustRefuse(t *testing.T) {
+	cases := []struct {
+		name  string
+		spoil func(*TrustStore)
+		says  string
+	}{
+		{
+			name:  "a row deferring to another runtime",
+			spoil: func(s *TrustStore) { s.DefersTo.Runtime = "java" },
+			says:  "only the platform's own store",
+		},
+		{
+			name:  "a row deferring to no instance",
+			spoil: func(s *TrustStore) { s.DefersTo.Instance = "" },
+			says:  "which instance",
+		},
+		{
+			name:  "the platform's own row deferring to itself",
+			spoil: func(s *TrustStore) { s.Runtime = RuntimeSystemStore },
+			says:  "judges one store twice",
+		},
+		{
+			name: "a deferring row naming a file of its own",
+			spoil: func(s *TrustStore) {
+				s.StoreForm = StoreFile
+				s.StorePath = `C:\curl\curl-ca-bundle.crt`
+			},
+			says: "names a file of its own",
+		},
+		{
+			// The platform row has no path, so a path beside a system form is the
+			// half the form alone cannot catch.
+			name:  "a deferring row with a path and a system form",
+			spoil: func(s *TrustStore) { s.StorePath = `C:\curl\curl-ca-bundle.crt` },
+			says:  "names a file of its own",
+		},
+		{
+			// No store repairs a certificate that names nowhere to check it, so a
+			// command beside this refusal would be one more command that does
+			// nothing.
+			name: "a command beside a refusal no store repairs",
+			spoil: func(s *TrustStore) {
+				s.TrustsPresentedChain = trusts(false)
+				s.TrustFailure = NoRevocationInfo
+				s.Fix = &Fix{Command: `certutil -user -addstore Root "<certificate.pem>"`, Placeholders: []string{"<certificate.pem>"}}
+			},
+			says: "does not repair",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			store := aDeferringRow()
 			c.spoil(&store)
 			got := store.breach()
 			if got == "" {

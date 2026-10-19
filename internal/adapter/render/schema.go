@@ -198,7 +198,14 @@ var schema = object(map[string]node{
 				"store_form": text(),
 				// Empty where the runtime does not choose a TLS implementation.
 				// Where it does, this is what decides WHICH store applies.
-				"backend":            text(),
+				"backend": text(),
+				// Null for a row that judged a store itself. Set, it names the
+				// row whose answer this one carries - two rows over one store
+				// are one opinion.
+				"defers_to": nullable(object(map[string]node{
+					"runtime":  text(),
+					"instance": text(),
+				})),
 				"trust_anchor_count": number(),
 				// Null is a THIRD STATE, not a false. "Does not trust the chain"
 				// and "could not read the store" send a person to two different

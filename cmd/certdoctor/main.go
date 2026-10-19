@@ -492,7 +492,7 @@ func liveTrustProbes() map[string]trust.Probe {
 		// one thing that stops an assessment being reproducible from its input.
 		"git":  git.Probe(guarded, resolvePath, globalGitConfigs(), paths, time.Now),
 		"java": java.Probe(guarded, resolvePath, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
-		"curl": curl.Probe(guarded, resolvePath, probe.Run, paths, os.Getenv("CURL_CA_BUNDLE"), time.Now),
+		"curl": curl.Probe(guarded, resolvePath, probe.Run, paths, curl.EnvironmentFrom(os.Getenv), time.Now),
 	}
 	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - Windows by
 	// ADR103, Linux by ADR104. Elsewhere there is no probe rather than one

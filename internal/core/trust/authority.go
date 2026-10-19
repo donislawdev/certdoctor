@@ -50,8 +50,9 @@ import (
 // authorityOf builds the one row saying who signed this chain and how widely the
 // machine holds them, or returns nil when there is nothing honest to say.
 //
-// NIL IS A REAL ANSWER HERE. A run where no store could be assessed - every curl
-// on Schannel, say - has measured nothing about any signer, and a row saying
+// NIL IS A REAL ANSWER HERE. A run where no store could be assessed - a machine
+// whose only rows are builds with a compiled-in bundle, say - has measured
+// nothing about any signer, and a row saying
 // "no_stores" would turn our own inability to look into a fact about somebody's
 // certificate authority. That is the inversion inviolable rule 15 forbids.
 func authorityOf(leaf *report.Certificate, stores []report.TrustStore) *report.Finding {
@@ -175,7 +176,14 @@ func sides(stores []report.TrustStore) (trusting, refusing []string) {
 // seen reports whether this store has already been counted, and records it.
 func seen(counted map[string]bool, store report.TrustStore) bool {
 	key := store.StorePath
-	if key == "" {
+	switch {
+	case store.DefersTo != nil:
+		// A ROW THAT DEFERS IS THE STORE IT DEFERS TO - ADR108 part 4. Measured
+		// with probe S25: curl on Schannel judged by this account's Root store,
+		// the one the system-store row for CurrentUser reads, so the two rows are
+		// one opinion and are counted once.
+		key = store.DefersTo.Runtime + "\x00" + store.DefersTo.Instance
+	case key == "":
 		// A platform store has no path to be counted by, so the instance is the
 		// identity - which is what it is for everywhere else in this layer.
 		key = store.Runtime + "\x00" + store.Instance
@@ -189,7 +197,13 @@ func seen(counted map[string]bool, store report.TrustStore) bool {
 
 // label is how one store is named in the two lists. It matches the wording of a
 // trust row's own summary, so a reader meets one spelling rather than two.
+//
+// A ROW THAT DEFERS IS NAMED AS THE STORE IT DEFERS TO, so that the store is
+// spelled one way whichever of its rows the walk met first.
 func label(store report.TrustStore) string {
+	if store.DefersTo != nil {
+		return strings.TrimSpace(store.DefersTo.Runtime + " " + store.DefersTo.Instance)
+	}
 	return strings.TrimSpace(store.Runtime + " " + store.Instance)
 }
 

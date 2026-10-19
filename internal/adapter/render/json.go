@@ -215,7 +215,17 @@ import (
 // filtering on "L6", now reads a different shape rather than one more value.
 // Nothing is released, so it costs nothing today. A note of kind
 // not_implemented says that diagnosis from inside a container is not built.
-const SchemaVersion = "2.0"
+//
+// 2.1 ADDS ONE MEMBER TO trust_store, defers_to, AND ONE VALUE TO trust_failure,
+// no_revocation_info - ADR108 part 4, both decided by the owner. A MINOR by
+// rule 2: nothing removed, nothing renamed, no meaning changed.
+//
+// WHAT CHANGES FOR A CONSUMER THAT ALREADY SHIPPED. curl on Schannel used to
+// come back with trusts_presented_chain null on every run. It now carries the
+// answer of the row defers_to names - system-store CurrentUser, measured with
+// probe S25 - so a consumer counting stores must count that row once, and a
+// consumer switching on trust_failure meets a value no store fix repairs.
+const SchemaVersion = "2.1"
 
 // JSON renders the machine readable report.
 //
@@ -1063,6 +1073,10 @@ type jsonTrustStore struct {
 	StorePath string `json:"store_path"`
 	StoreForm string `json:"store_form"`
 	Backend   string `json:"backend"`
+	// DefersTo names the row whose answer this one carries, and is null for a
+	// row that judged a store itself. Two rows over one store are one opinion -
+	// a consumer counting stores counts the row named here, not this one.
+	DefersTo *jsonStoreRef `json:"defers_to"`
 	// TrustAnchorCount is evidence and is never redacted, the same call the
 	// fingerprint got in the body above.
 	TrustAnchorCount int `json:"trust_anchor_count"`
@@ -1088,6 +1102,13 @@ type jsonTrustStore struct {
 	// bother" - it means there is nothing honest to say, which on a green matrix
 	// is every row.
 	Fix *jsonFix `json:"fix"`
+}
+
+// jsonStoreRef points at another trust_store row by the two members that
+// identify one.
+type jsonStoreRef struct {
+	Runtime  string `json:"runtime"`
+	Instance string `json:"instance"`
 }
 
 // jsonFix is the only object in this document that describes something a person
@@ -1139,6 +1160,9 @@ func trustStoreOf(finding report.Finding) *jsonTrustStore {
 	if store.TrustFailure != "" {
 		failure := store.TrustFailure.String()
 		body.TrustFailure = &failure
+	}
+	if store.DefersTo != nil {
+		body.DefersTo = &jsonStoreRef{Runtime: store.DefersTo.Runtime, Instance: store.DefersTo.Instance}
 	}
 	body.Fix = fixOf(store.Fix)
 	return &body

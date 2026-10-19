@@ -1000,6 +1000,16 @@ type TrustStore struct {
 	// measured, git says openssl and reads its own bundle while the curl in the
 	// same install is on schannel and asks Windows.
 	Backend string
+	// DefersTo names the row whose answer this one takes, and is nil for a row
+	// that judged a store itself - ADR108 part 4.
+	//
+	// A RUNTIME THAT ASKS THE PLATFORM IS NOT A SECOND STORE. Measured on the
+	// owner's machine 2026-10-20 with probe S25: curl on Schannel trusted a root
+	// held in this account's Root store and in no other, so it judges with the
+	// engine the system-store row for CurrentUser was judged with. Two rows over
+	// one store are one opinion, and the line saying how widely this machine
+	// holds a signer counts stores - ADR53.
+	DefersTo *StoreRef
 	// TrustAnchorCount is how many anchors this store holds. It is evidence, not
 	// a verdict, and it is not a secret - it is not redacted, for the same
 	// reason a fingerprint is not.
@@ -1044,7 +1054,8 @@ type TrustStore struct {
 	Fix *Fix
 }
 
-// TrustFailure is the way a store refused a chain.
+// TrustFailure is the way a store refused a chain, or the way a runtime judging
+// by a store refused it when the store did not.
 //
 // The list is closed and has a registry, like every other closed list here. It
 // exists because the answer decides whether a fix is even possible: only an
@@ -1065,6 +1076,14 @@ const (
 	// not classify. It is an honest answer and it is NOT a licence to guess a
 	// fix.
 	OtherFailure TrustFailure = "other"
+	// NoRevocationInfo - the store accepts the chain and the runtime still
+	// refuses it, because the server's certificate names nowhere to check its
+	// revocation and this runtime refuses what it cannot check. Measured
+	// 2026-10-20 with probe S25: both curl builds on the owner's machine, on
+	// Schannel, failed with CRYPT_E_NO_REVOCATION_CHECK on such a leaf and
+	// connected to the same server once the leaf named a revocation list.
+	// Importing a certificate does not repair it.
+	NoRevocationInfo TrustFailure = "no_revocation_info"
 )
 
 var trustFailureMeanings = map[TrustFailure]string{
@@ -1072,6 +1091,14 @@ var trustFailureMeanings = map[TrustFailure]string{
 	Expired:          "a certificate in the path is past its validity",
 	NotYetValid:      "a certificate in the path is not valid yet",
 	OtherFailure:     "the path could not be built, for a reason this program does not classify",
+	NoRevocationInfo: "the server's certificate names nowhere to check whether it was revoked, and this runtime refuses what it cannot check",
+}
+
+// StoreRef points at another row of the trust matrix by the two fields that
+// identify a row.
+type StoreRef struct {
+	Runtime  string
+	Instance string
 }
 
 // Valid reports whether the failure is one this program declared.
@@ -1246,7 +1273,33 @@ func (t *TrustStore) breach() string {
 		return fmt.Sprintf("carries the trust failure %q, which is outside the registry", t.TrustFailure)
 	}
 
+	if broken := t.deferralBreach(); broken != "" {
+		return broken
+	}
 	return t.remediationBreach()
+}
+
+// deferralBreach refuses a pointer at another row that could not mean anything.
+//
+// THE PLATFORM'S OWN STORE IS THE ONLY ROW ANYTHING DEFERS TO, and the contract
+// says so rather than accepting any pointer. A row deferring to another runtime,
+// or a platform row deferring at all, would be one store judged twice under two
+// names - the double count the field exists to prevent.
+func (t *TrustStore) deferralBreach() string {
+	if t.DefersTo == nil {
+		return ""
+	}
+	switch {
+	case t.DefersTo.Runtime != RuntimeSystemStore:
+		return fmt.Sprintf("defers to a %q row, and only the platform's own store is one a runtime defers to", t.DefersTo.Runtime)
+	case t.DefersTo.Instance == "":
+		return "defers to the platform's own store without saying which instance of it"
+	case t.Runtime == RuntimeSystemStore:
+		return "is the platform's own store and defers to it as well, which judges one store twice"
+	case t.StoreForm != StoreSystem || t.StorePath != "":
+		return "defers to the platform's own store and also names a file of its own"
+	}
+	return ""
 }
 
 // remediationBreach is where the contract refuses a command that would waste

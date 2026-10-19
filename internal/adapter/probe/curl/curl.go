@@ -71,12 +71,58 @@ func backendOf(ctx context.Context, run probe.Runner, install Install) (string, 
 	if line, _, found := strings.Cut(out.Stdout, "\n"); found {
 		first = line
 	}
+	selected := withoutBracketed(first)
 	for _, backend := range backends {
-		if strings.Contains(first, backend) {
+		if strings.Contains(selected, backend) {
 			return strings.ToLower(backend), nil
 		}
 	}
 	return "", nil
+}
+
+// withoutBracketed drops everything the version line puts in brackets.
+//
+// A BUILD WITH SEVERAL BACKENDS BRACKETS EVERY ONE IT DID NOT SELECT - curl
+// 8.21.0, lib/vtls/vtls.c, multissl_version, read 2026-10-20 at
+// https://github.com/curl/curl/blob/curl-8_21_0/lib/vtls/vtls.c . Before this,
+// "OpenSSL/3.5.7 (Schannel)" read as Schannel, because Schannel is the name asked
+// first - harmless while a Schannel row only said it could not be assessed, and a
+// verdict about the wrong store once that row takes the Windows store's answer
+// (ADR108 part 4). The platform in brackets after the version goes too, and no
+// backend is ever spelled there.
+func withoutBracketed(line string) string {
+	var b strings.Builder
+	depth := 0
+	for _, r := range line {
+		switch {
+		case r == '(':
+			depth++
+		case r == ')' && depth > 0:
+			depth--
+		case depth == 0:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// Environment is what this package reads from the environment, handed in by the
+// entry point so the package reads none of its own.
+type Environment struct {
+	// CABundle is CURL_CA_BUNDLE, which only a build reading a file honours.
+	CABundle string
+	// Homes holds the variables curl's own tool reads to find its configuration
+	// file, by name - homeVariables lists them.
+	Homes map[string]string
+}
+
+// EnvironmentFrom reads every variable this package needs, through getenv.
+func EnvironmentFrom(getenv func(string) string) Environment {
+	env := Environment{CABundle: getenv("CURL_CA_BUNDLE"), Homes: map[string]string{}}
+	for _, name := range homeVariables {
+		env.Homes[name] = getenv(name)
+	}
+	return env
 }
 
 // errExitedNonZero is the one failure this package names for itself.

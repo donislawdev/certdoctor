@@ -92,12 +92,14 @@ certdoctor https://untrusted-root.badssl.com/
 certdoctor https://expired.badssl.com/
 ```
 
-> 11 of 13 store(s) do not trust the presented chain, and 2 could not be assessed - a certificate in
-> the path is past its validity.
+> 13 of 13 store(s) do not trust the presented chain - a certificate in the path is past its
+> validity.
 
-The second one is where the trust matrix earns its place. Every store refuses, and every refusal
-carries the command that would add that root to that store, with this machine's paths in it. An
-excerpt from a Windows machine, with the column padding taken out:
+The second one is where the trust matrix earns its place. Every store refuses, and every store that
+can be given the root carries the command that would add it there, with this machine's paths in it.
+curl built on Schannel judges by this account's Windows store, so its rows point at that store's
+command rather than carrying one of their own. An excerpt from a Windows machine, with the column
+padding taken out:
 
 ```
 system-store LocalMachine does NOT trust the presented chain (90 anchors)
