@@ -108,14 +108,18 @@ func TestAPortThatNamesNoPlaceAtAllIsAlsoOurDefect(t *testing.T) {
 	}
 }
 
-// TestAMachineWithNoProxyAnywhereHasNothingToCheck is the ordinary Linux answer
-// and it must not be a PASS: this layer establishes that there is no proxying to
-// examine, which is not the same as examining proxying and finding it well.
-func TestAMachineWithNoProxyAnywhereHasNothingToCheck(t *testing.T) {
+// TestAMachineWithNoProxyAnywhereIsReachedDirectly is the ordinary Linux answer,
+// and since ADR108 it is a PASS: the layer asks which proxy applies to this URL,
+// and "none" is an answer to that. Until then it was UNKNOWN nothing_to_check,
+// so a healthy target on such a machine could never end a run with code 0.
+func TestAMachineWithNoProxyAnywhereIsReachedDirectly(t *testing.T) {
 	result := askLayer(t, Input{Lenses: lensesOf(silentLens(StackEnvironment)), Target: target})
 
-	if result.Status != status.Unknown || result.Reason != status.ReasonNothingToCheck {
-		t.Errorf("a machine with no proxy answered %s / %s, want unknown / nothing_to_check", result.Status, result.Reason)
+	if result.Status != status.Pass || result.Reason != "" {
+		t.Errorf("a machine with no proxy answered %s / %q, want a PASS with no reason", result.Status, result.Reason)
+	}
+	if !strings.Contains(result.Detail, "reaches this URL directly") {
+		t.Errorf("the detail does not say the URL is reached directly: %q", result.Detail)
 	}
 	if divergenceOf(result) != nil {
 		t.Error("one place was read and a class of divergence was still produced - ADR65 says a class needs two")
@@ -126,6 +130,53 @@ func TestAMachineWithNoProxyAnywhereHasNothingToCheck(t *testing.T) {
 	}
 	if len(row.Servers) != 0 {
 		t.Errorf("a place naming nothing came back with %d server(s)", len(row.Servers))
+	}
+}
+
+// TestSeveralSilentPlacesPassAndAreStillCompared is the Windows machine with
+// discovery off. The answer is the same sentence, and the comparison row stays,
+// because two places agreeing on "no proxy" is a fact a reader can check.
+func TestSeveralSilentPlacesPassAndAreStillCompared(t *testing.T) {
+	off := silentLens(StackWinINET)
+	off.AutoDetect = Off
+
+	result := askLayer(t, Input{
+		Lenses: lensesOf(silentLens(StackEnvironment), off, silentLens(StackWinHTTP)),
+		Target: target,
+	})
+
+	if result.Status != status.Pass {
+		t.Errorf("three places naming nothing answered %s / %s, want PASS", result.Status, result.Reason)
+	}
+	compared := divergenceOf(result)
+	if compared == nil {
+		t.Fatal("three readable places produced no comparison")
+	}
+	if compared.Class != DivergeAgreeDirect.String() || len(compared.Stacks) != 3 {
+		t.Errorf("the comparison says %s over %d place(s), want %s over 3",
+			compared.Class, len(compared.Stacks), DivergeAgreeDirect)
+	}
+}
+
+// TestAnUnreadablePlaceKeepsTheNoProxyAnswerOpen is the one case ADR108 does
+// not turn into a PASS. "No proxy applies" is a claim about every place, and a
+// place that refused to be read may be the one naming a proxy - so the answer
+// stays open, and the sentence says how many places this run could not speak for.
+func TestAnUnreadablePlaceKeepsTheNoProxyAnswerOpen(t *testing.T) {
+	result := askLayer(t, Input{
+		Lenses: lensesOf(silentLens(StackEnvironment), UnreadableLens(StackWinHTTP, "test", "the call failed")),
+		Target: target,
+	})
+
+	if result.Status != status.Unknown || result.Reason != status.ReasonUndetermined {
+		t.Errorf("one silent and one unreadable place answered %s / %s, want unknown / undetermined",
+			result.Status, result.Reason)
+	}
+	if !strings.Contains(result.Detail, "1 of its 2 places refused to be read") {
+		t.Errorf("the detail does not count the place it could not read: %q", result.Detail)
+	}
+	if strings.Contains(result.Detail, "reaches this URL directly") {
+		t.Errorf("the detail claims a direct route it did not establish: %q", result.Detail)
 	}
 }
 

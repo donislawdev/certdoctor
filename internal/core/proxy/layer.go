@@ -496,11 +496,7 @@ func gradeOf(lenses []Lens, scripts []script, findings []report.Finding, target 
 				"so which proxy applies here was not established", len(lenses)),
 		}
 	case !named && answered == 0 && !incomplete:
-		return Result{
-			Status: status.Unknown, Reason: status.ReasonNothingToCheck, Findings: findings,
-			Detail: "no place this machine keeps proxy settings in names a proxy, an automatic " +
-				"configuration script or automatic discovery, so there was no proxying to examine",
-		}
+		return nothingNamed(readable, len(lenses), findings)
 	case !named && answered == 0:
 		// THE REASON COMES OFF THE SCRIPT WHEN A SCRIPT IS WHAT BLOCKED THE
 		// ANSWER, and that is what the ninth and the first reasons are for. A
@@ -532,6 +528,35 @@ func gradeOf(lenses []Lens, scripts []script, findings []report.Finding, target 
 	return Result{
 		Status: status.Pass, Findings: findings,
 		Detail: agreementOf(readable, compared, class, scripts, target),
+	}
+}
+
+// nothingNamed is the answer for a machine whose places name no proxy, no
+// automatic configuration script and no automatic discovery - the ordinary
+// Linux machine.
+//
+// IT IS A PASS, AND UNTIL ADR108 IT WAS UNKNOWN nothing_to_check. This layer
+// asks which proxy applies to this URL, and "none, it is reached directly" is an
+// answer to that question rather than the absence of one - so a healthy target
+// on such a machine ended its run with code 5 over a question that was settled.
+//
+// EVERY PLACE HAS TO HAVE BEEN READ, AND THAT IS WHERE THIS DIFFERS FROM A NAMED
+// PROXY. "A proxy applies" needs one place that says so, and the rows name which
+// one. "No proxy applies" is a claim about all of them, and a place that refused
+// to be read is one this run cannot speak for - inviolable rule 15.
+func nothingNamed(readable, total int, findings []report.Finding) Result {
+	if readable < total {
+		return Result{
+			Status: status.Unknown, Reason: status.ReasonUndetermined, Findings: findings,
+			Detail: fmt.Sprintf("no place this machine could read names a proxy, an automatic configuration "+
+				"script or automatic discovery, but %d of its %d places refused to be read - so a proxy may "+
+				"still apply to this URL and this run did not establish which", total-readable, total),
+		}
+	}
+	return Result{
+		Status: status.Pass, Findings: findings,
+		Detail: "no place this machine keeps proxy settings in names a proxy, an automatic configuration " +
+			"script or automatic discovery, so a program that follows these settings reaches this URL directly",
 	}
 }
 

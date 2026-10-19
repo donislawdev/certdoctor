@@ -41,9 +41,11 @@ const (
 	// as probe_error would blame this program for a fact about somebody's
 	// machine, which is the exact inversion inviolable rule 15 exists to stop.
 	//
-	// It is deliberately general rather than about resolvers. The same shape is
-	// waiting at L2 with no proxy configured and at L5 with no runtime
-	// installed, and a reason named after L1 would be reinvented twice.
+	// It is deliberately general rather than about resolvers. The same shape
+	// waited at L5 with no runtime installed, and a reason named after L1 would
+	// have been reinvented there. L2 with no proxy configured used it too until
+	// ADR108, which counts "no proxy applies" as an answer rather than as
+	// nothing to look at.
 	ReasonNothingToCheck Reason = "nothing_to_check"
 	// ReasonTransportError - every attempt to ask failed on the wire, and none of
 	// them failed inside this program.

@@ -236,8 +236,9 @@ func TestTheProxyLayerIsWiredToTheOneThatReadsThisMachine(t *testing.T) {
 	if asked != 1 {
 		t.Fatalf("the layer asked the port %d time(s), want exactly one", asked)
 	}
-	if answer.Status != status.Unknown || answer.Reason != status.ReasonNothingToCheck {
-		t.Errorf("the wired layer answered %s / %s, want unknown / nothing_to_check", answer.Status, answer.Reason)
+	if answer.Status != status.Pass {
+		t.Errorf("the wired layer answered %s / %s, want PASS - no proxy anywhere is an answer (ADR108)",
+			answer.Status, answer.Reason)
 	}
 	if len(answer.Findings) != 1 {
 		t.Errorf("one place produced %d row(s)", len(answer.Findings))

@@ -10,6 +10,19 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - a machine with no proxy anywhere passes the proxy layer
+
+- **[contract] No proxy, no automatic configuration script and no automatic
+  discovery is now an answer.** On such a machine - the ordinary Linux machine
+  or container - the proxy layer reported `UNKNOWN` with the reason
+  `nothing_to_check`, and that alone kept a healthy target from ever ending
+  with exit code 0. It now passes and says that a program following these
+  settings reaches the URL directly. When one of the places this machine keeps
+  proxy settings in could not be read, the layer stays `UNKNOWN`, now with the
+  reason `undetermined`, because the unread place may be the one naming a
+  proxy. Automatic proxy discovery switched on still leaves the layer
+  `UNKNOWN`, since this run does not perform it.
+
 ### Fixed - a certificate issued for another name fails the TLS layer
 
 - **[contract] A server presenting a certificate for a different name passed

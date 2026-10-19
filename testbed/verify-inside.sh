@@ -902,8 +902,9 @@ check_proxy_env() {
   # POINT OF THE LAYER RATHER THAN A CONCESSION. This claim asks whether reading
   # a proxy variable REROUTED the diagnosis. L2 exists to READ those variables
   # and say what they hold, so its row differing between a run with them and a
-  # run without them is the product working - measured, UNKNOWN becomes WARN -
-  # and a check that forbade it would forbid the layer.
+  # run without them is the product working - when this was written the status
+  # changed too, and since ADR108 a run without them passes as well, so only the
+  # row's contents differ - and a check that forbade it would forbid the layer.
   #
   # WHAT STILL WITNESSES THE CLAIM, and it is three things rather than one: the
   # OTHER SEVEN layers, which have no business noticing a proxy variable; the
