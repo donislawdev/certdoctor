@@ -43,7 +43,6 @@ func helpText() string {
 	writeSwitches(&b)
 	writeExitCodes(&b)
 	writeEnvironment(&b)
-	writeNotBuilt(&b)
 
 	b.WriteString("\nLICENSE\n")
 	fmt.Fprintf(&b, "  GPL-3.0. Run %s --license for the full text.\n", toolName)
@@ -101,25 +100,6 @@ func writeEnvironment(b *strings.Builder) {
 	fmt.Fprintf(b, "            It is the only variable that changes what %s does, and it changes\n", toolName)
 	b.WriteString("            only how the report looks. Proxy and trust store variables are read\n")
 	b.WriteString("            as things to diagnose, never as configuration for this tool.\n")
-}
-
-// writeNotBuilt says out loud which accepted options do nothing yet.
-//
-// An option that is accepted and quietly does nothing leaves a person waiting
-// for an effect that is not coming. This section disappears one line at a time.
-func writeNotBuilt(b *strings.Builder) {
-	b.WriteString("\nNOT BUILT YET\n")
-	b.WriteString("  No diagnostic layer is implemented. Every layer reports that it could not\n")
-	fmt.Fprintf(b, "  be assessed, the run ends with %d %s, and nothing about this machine is\n",
-		exitcode.Inconclusive.Int(), exitcode.Inconclusive.Name())
-	b.WriteString("  claimed. The options below are accepted and refused with a reason:\n")
-	for _, f := range formats {
-		if !f.built {
-			fmt.Fprintf(b, "    --format %-9s %s\n", f.name, f.why)
-		}
-	}
-	b.WriteString("    --in, --image, --compare  container diagnosis is not built yet\n")
-	b.WriteString("    --redact                  accepted, and there is nothing to mask yet\n")
 }
 
 // versionText renders --version.

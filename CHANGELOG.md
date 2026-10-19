@@ -10,6 +10,13 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - `--help` no longer says that nothing is built
+
+- **The help page ended with a section claiming that no diagnostic layer was
+  implemented** and that `--redact` had nothing to mask. Neither has been true
+  for a long time, and the section is gone. An option that is accepted and not
+  built yet, such as `--in`, still says so when you use it.
+
 ### Changed - a passing run says when the platform's store could not judge the chain
 
 - **The sentence at the top no longer reads as a clean pass on a machine with

@@ -50,13 +50,12 @@ func TestADeclaredFormatThatIsNotBuiltIsRefusedWithItsReason(t *testing.T) {
 	}
 }
 
-// TestEveryDeclaredFormatIsBuiltOrSaysWhyNot is the invariant behind the help
-// text.
+// TestEveryDeclaredFormatIsBuiltOrSaysWhyNot is the invariant behind the
+// refusal of an unbuilt format.
 //
-// writeNotBuilt PRINTS f.why FOR EVERY UNBUILT FORMAT, so a declaration with an
-// empty reason produces a help page with a blank line where an explanation
-// belongs - and the same empty string reaches the refusal above. Neither is a
-// crash and both are silence, which is the failure inviolable rule 1 names.
+// The refusal above PRINTS f.why, so a declaration with an empty reason refuses
+// with nothing where an explanation belongs. That is not a crash, it is
+// silence, which is the failure inviolable rule 1 names.
 func TestEveryDeclaredFormatIsBuiltOrSaysWhyNot(t *testing.T) {
 	for _, f := range formats {
 		if f.built && f.why != "" {
