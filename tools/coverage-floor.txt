@@ -22,6 +22,15 @@
 # still clear their floors, which means their slack is smaller than it was
 # written as being, and nothing else about them changed.
 #
+# FIFTEEN FLOORS WERE RAISED ON 2026-10-19, BY THE OWNER, FROM A CI LOG. It was
+# the first run in which this gate printed every package's number on green
+# (OBS161) - run 39285407348, windows-latest and ubuntu-latest, go1.27.2. Each
+# of the fifteen is now the lower of the two platforms rounded down, the rule
+# above. Some had drifted far below what the code reaches - output sat at 72
+# against 85.3 on both platforms - and a floor that far down lets a regression
+# of that size through without a word. Paragraphs further down that quote an
+# older floor or measurement describe the day they were written.
+#
 # EVERY PACKAGE MUST APPEAR HERE. A package with no line is a finding, not a
 # package with no floor. Without that rule the gate would quietly stop covering
 # the tree as new directories appear, which is exactly how the layer guard would
@@ -74,7 +83,8 @@
 # SINCE 2026-10-19 THE GATE PRINTS EVERY PACKAGE'S NUMBER ON GREEN TOO, next to
 # its floor (OBS161). The sentence above about nobody having seen the runner's
 # number describes the day it was written, and the condition it ends with is
-# met by reading a CI log rather than by waiting for a red run.
+# met by reading a CI log rather than by waiting for a red run. Met the same
+# day: windows-latest 91.8, ubuntu-latest 97.4, so the floor is 91.
 #
 # WHY IT EXISTS AT ALL, measured on 2026-08-03: internal/adapter/output sat at
 # 54.5 percent while every guard in the repository was green, and the statements
@@ -85,12 +95,12 @@
 github.com/donislawdev/certdoctor none
 github.com/donislawdev/certdoctor/cmd/certdoctor 90
 github.com/donislawdev/certdoctor/internal/adapter/dial 100
-github.com/donislawdev/certdoctor/internal/adapter/dns 90
-github.com/donislawdev/certdoctor/internal/adapter/file 91
-github.com/donislawdev/certdoctor/internal/adapter/output 72
+github.com/donislawdev/certdoctor/internal/adapter/dns 91
+github.com/donislawdev/certdoctor/internal/adapter/file 93
+github.com/donislawdev/certdoctor/internal/adapter/output 85
 github.com/donislawdev/certdoctor/internal/adapter/privilege 87
-github.com/donislawdev/certdoctor/internal/adapter/probe 96
-github.com/donislawdev/certdoctor/internal/adapter/render 87
+github.com/donislawdev/certdoctor/internal/adapter/probe 100
+github.com/donislawdev/certdoctor/internal/adapter/render 90
 github.com/donislawdev/certdoctor/internal/app/run 100
 github.com/donislawdev/certdoctor/internal/core/allowed 100
 github.com/donislawdev/certdoctor/internal/core/dnsmsg 100
@@ -100,19 +110,19 @@ github.com/donislawdev/certdoctor/internal/core/layer 94
 github.com/donislawdev/certdoctor/internal/core/machine 100
 github.com/donislawdev/certdoctor/internal/core/redact 96
 github.com/donislawdev/certdoctor/internal/core/resolve 100
-github.com/donislawdev/certdoctor/internal/core/report 92
-github.com/donislawdev/certdoctor/internal/core/status 82
-github.com/donislawdev/certdoctor/internal/guard 84
+github.com/donislawdev/certdoctor/internal/core/report 96
+github.com/donislawdev/certdoctor/internal/core/status 85
+github.com/donislawdev/certdoctor/internal/guard 85
 github.com/donislawdev/certdoctor/internal/core/tcp 98
-github.com/donislawdev/certdoctor/internal/adapter/tcp 84
+github.com/donislawdev/certdoctor/internal/adapter/tcp 87
 github.com/donislawdev/certdoctor/internal/core/fanout 100
-github.com/donislawdev/certdoctor/internal/core/handshake 95
+github.com/donislawdev/certdoctor/internal/core/handshake 96
 github.com/donislawdev/certdoctor/internal/adapter/handshake 95
 
 # L5 arrived 2026-08-18 with P7a. Floors are the measured value rounded DOWN to
 # a whole percent, the same rule every line above follows.
-github.com/donislawdev/certdoctor/internal/core/trust 98
-github.com/donislawdev/certdoctor/internal/adapter/probe/git 92
+github.com/donislawdev/certdoctor/internal/core/trust 99
+github.com/donislawdev/certdoctor/internal/adapter/probe/git 94
 github.com/donislawdev/certdoctor/internal/adapter/probe/java 94
 github.com/donislawdev/certdoctor/internal/adapter/probe/curl 98
 
@@ -121,7 +131,11 @@ github.com/donislawdev/certdoctor/internal/adapter/probe/curl 98
 # crypt32 half is not compiled at all - so the floor is the Windows number
 # rounded down. What stays unexecuted is a registry or crypt32 call failing,
 # which no test can provoke without a machine that fails on purpose.
-github.com/donislawdev/certdoctor/internal/adapter/probe/systemstore 86
+#
+# Linux followed on 2026-10-15 (ADR104). Raised on 2026-10-19 from the first CI
+# log that printed it: windows-latest 89.5, ubuntu-latest 94.9 - Windows is
+# still the lower half, for the reason above.
+github.com/donislawdev/certdoctor/internal/adapter/probe/systemstore 89
 
 # The PAC sandbox arrived 2026-09-02 with P8-K1. Floors are the measured value
 # rounded DOWN to a whole percent, the same rule every line above follows.
@@ -131,8 +145,8 @@ github.com/donislawdev/certdoctor/internal/adapter/probe/systemstore 86
 # with no JavaScript in sight, and adapter/pac holds the engine. That split is
 # also why both numbers are high - neither half needs a broken machine to
 # exercise it.
-github.com/donislawdev/certdoctor/internal/core/pac 93
-github.com/donislawdev/certdoctor/internal/adapter/pac 94
+github.com/donislawdev/certdoctor/internal/core/pac 96
+github.com/donislawdev/certdoctor/internal/adapter/pac 95
 
 # The proxy exception rules arrived 2026-09-05 with P8-K2.
 #
