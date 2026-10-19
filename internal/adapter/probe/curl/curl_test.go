@@ -56,7 +56,7 @@ func versionSaying(line string) probe.Runner {
 // and taking the first would have hidden the one shipped inside Git.
 func TestEveryCurlOnPathIsFound(t *testing.T) {
 	source := sourceOf(system32Curl, gitBinCurl)
-	found := find(source, []string{winSystem32, gitBin})
+	found := find(source, noLinks, []string{winSystem32, gitBin})
 	if len(found) != 2 {
 		t.Fatalf("found %d curl binaries, want 2", len(found))
 	}
@@ -68,7 +68,7 @@ func TestEveryCurlOnPathIsFound(t *testing.T) {
 // nine. Caught by running the binary.
 func TestOneBinaryReachedByTwoSpellingsIsOneRow(t *testing.T) {
 	source := sourceOf(system32Curl)
-	found := find(source, []string{winSystem32, winSystem32Loud})
+	found := find(source, noLinks, []string{winSystem32, winSystem32Loud})
 	if len(found) != 1 {
 		t.Fatalf("found %d rows for one binary: %+v", len(found), found)
 	}
@@ -165,7 +165,7 @@ func TestACurlThatRefusesToReportIsUnassessed(t *testing.T) {
 // both Schannel, so two rows and no verdicts.
 func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
 	source := sourceOf(system32Curl, hostSpelling(`C:\git\bin\curl.exe`))
-	stores, err := Probe(source, versionSaying("curl 8.21.0 libcurl/8.21.0 Schannel"),
+	stores, err := Probe(source, noLinks, versionSaying("curl 8.21.0 libcurl/8.21.0 Schannel"),
 		[]string{winSystem32, winSystem32Loud, hostSpelling(`C:\git\bin`), hostSpelling(`C:\empty`)}, "", atNoon)(context.Background(), [][]byte{{0x30}})
 
 	if err != nil {
@@ -183,7 +183,7 @@ func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
 
 // NO curl IS NOT AN ERROR - docs/20 rule 1.
 func TestAMachineWithNoCurlIsNotAnError(t *testing.T) {
-	stores, err := Probe(sourceOf(), nil, []string{`C:\empty`}, "", atNoon)(context.Background(), nil)
+	stores, err := Probe(sourceOf(), noLinks, nil, []string{`C:\empty`}, "", atNoon)(context.Background(), nil)
 	if err != nil {
 		t.Errorf("a machine without curl produced an error: %v", err)
 	}
@@ -214,3 +214,6 @@ func TestAReadableBundleProducesAVerdict(t *testing.T) {
 // is whether a certificate is out of date - and a test whose answer depends on
 // the day it runs is a test that will one day fail for a reason nobody planted.
 func atNoon() time.Time { return time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC) }
+
+// noLinks is a resolver for a filesystem with no symbolic links on it.
+func noLinks(path string) (string, error) { return path, nil }

@@ -31,18 +31,30 @@ import (
 // the trust matrix as an installation, which is a claim about a store nobody
 // has. An empty file is refused by the same line and deliberately: nothing
 // executes a zero-byte binary.
-func Binaries(open func(string) (io.ReadCloser, error), pathDirs []string, names ...string) []string {
+//
+// ONE FILE REACHED THROUGH TWO DIRECTORIES IS ONE BINARY - OBS170, measured
+// 2026-10-19 in debian:stable-slim: /bin is a link to usr/bin, PATH names both,
+// and every git and curl came out twice. resolve tells them apart by where the
+// file really is, and the row keeps the spelling PATH reached first, because
+// that is the one a typed command runs.
+//
+// THE FILE IS OPENED BEFORE ITS PATH IS RESOLVED, AND THE ORDER IS THE POINT.
+// open is the guarded port, which judges a path by its text before touching the
+// filesystem and refuses one that leaves this machine. Resolving first would
+// follow a link on exactly such a path - the cost docs/14 section 3a measured
+// as twenty-one seconds on one UNC name.
+func Binaries(open func(string) (io.ReadCloser, error), resolve func(string) (string, error), pathDirs []string, names ...string) []string {
 	var found []string
 	seen := map[string]bool{}
 
 	for _, dir := range pathDirs {
 		for _, name := range names {
 			path := filepath.Clean(filepath.Join(dir, name))
-			key := PathKey(path)
-			if seen[key] {
+			if !readableFile(open, path) {
 				continue
 			}
-			if !readableFile(open, path) {
+			key := identityKey(resolve, path)
+			if seen[key] {
 				continue
 			}
 			seen[key] = true
@@ -50,6 +62,21 @@ func Binaries(open func(string) (io.ReadCloser, error), pathDirs []string, names
 		}
 	}
 	return found
+}
+
+// identityKey is what two PATH entries are told apart by: the file a path
+// really names, folded the way PathKey folds it.
+//
+// A RESOLVER THAT FAILS OR IS MISSING FALLS BACK TO THE PATH AS WRITTEN. The
+// worst that does is show one binary twice, which is visible, rather than merge
+// two different binaries into one row, which is not.
+func identityKey(resolve func(string) (string, error), path string) string {
+	if resolve != nil {
+		if real, err := resolve(path); err == nil && real != "" {
+			return PathKey(real)
+		}
+	}
+	return PathKey(path)
 }
 
 // PathKey folds a path into the key this program tells two files apart by.

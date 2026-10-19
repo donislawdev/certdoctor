@@ -16,9 +16,9 @@ import (
 // handed in so this package touches no environment of its own. It is used ONLY
 // for backends that honour it - which is the whole point of reading the backend
 // first.
-func Probe(source file.Source, run probe.Runner, pathDirs []string, bundleFromEnv string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+func Probe(source file.Source, resolve file.Resolve, run probe.Runner, pathDirs []string, bundleFromEnv string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
-		installs := find(source, pathDirs)
+		installs := find(source, resolve, pathDirs)
 		if len(installs) == 0 {
 			return nil, nil
 		}

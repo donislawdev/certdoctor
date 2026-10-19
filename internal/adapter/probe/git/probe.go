@@ -17,9 +17,9 @@ import (
 // are passed in rather than derived here because this package must not read the
 // environment: the same rule redact follows, and for the same reason - an
 // assessment has to be reproducible from its input.
-func Probe(source file.Source, globalConfigs []string, pathDirs []string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+func Probe(source file.Source, resolve file.Resolve, globalConfigs []string, pathDirs []string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(_ context.Context, chain [][]byte) ([]report.TrustStore, error) {
-		installs := find(source, systemConfigs, pathDirs)
+		installs := find(source, resolve, systemConfigs, pathDirs)
 		if len(installs) == 0 {
 			// NOT AN ERROR. docs/20 rule 1: a runtime that is not here sits
 			// outside the matrix, and "git is not installed" is not a fact about

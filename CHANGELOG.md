@@ -10,6 +10,13 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - one binary reached through two directories is one row
+
+- **On Debian, Ubuntu and other distributions where `/bin` is a link to
+  `/usr/bin`, every `git` and `curl` appeared twice** in the trust matrix, once
+  for each directory on `PATH`. Each binary is now one row, named the way
+  `PATH` reaches it first. Two different binaries are still two rows.
+
 ### Fixed - `--help` no longer says that nothing is built
 
 - **The help page ended with a section claiming that no diagnostic layer was

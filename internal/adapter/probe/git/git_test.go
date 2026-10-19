@@ -79,7 +79,7 @@ func sourceOf(files map[string]string) func(string) (io.ReadCloser, error) {
 // which is what ADR48 part 2 refuses for Java.
 func TestAnInstallFoundOnlyByItsConfigIsStillFound(t *testing.T) {
 	source := sourceOf(map[string]string{gitSysConfig: "[http]\n"})
-	found := find(source, []string{
+	found := find(source, noLinks, []string{
 		gitSysConfig,
 		hostSpelling(`C:\Program Files (x86)\Git\etc\gitconfig`),
 	}, nil)
@@ -101,7 +101,7 @@ func TestAnInstallFoundOnlyByItsConfigIsStillFound(t *testing.T) {
 // answers, so the row has to say which one it is.
 func TestTheBitnessComesFromThePath(t *testing.T) {
 	source := sourceOf(map[string]string{`C:\Program Files (x86)\Git\etc\gitconfig`: "[http]\n"})
-	found := find(source, []string{`C:\Program Files (x86)\Git\etc\gitconfig`}, nil)
+	found := find(source, noLinks, []string{`C:\Program Files (x86)\Git\etc\gitconfig`}, nil)
 	if len(found) != 1 || found[0].Architecture != "x86" {
 		t.Fatalf("got %+v, want one x86 install", found)
 	}
@@ -120,7 +120,7 @@ func TestTheBitnessComesFromThePath(t *testing.T) {
 func TestAGitWithNoConfigurationAtAllStillGetsARow(t *testing.T) {
 	source := sourceOf(map[string]string{"/usr/bin/git": "ELF"})
 
-	found := find(source, systemConfigs, []string{"/usr/bin"})
+	found := find(source, noLinks, systemConfigs, []string{"/usr/bin"})
 	if len(found) != 1 {
 		t.Fatalf("found %d installs, want 1 - the binary is there and the config is not", len(found))
 	}
@@ -131,7 +131,7 @@ func TestAGitWithNoConfigurationAtAllStillGetsARow(t *testing.T) {
 		t.Errorf("a config was claimed at %q, and this machine has none", found[0].SystemConfig)
 	}
 
-	stores, err := Probe(source, nil, []string{"/usr/bin"}, atNoon)(t.Context(), [][]byte{{0x30}})
+	stores, err := Probe(source, noLinks, nil, []string{"/usr/bin"}, atNoon)(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestTheSystemConfigIsFoundNextToTheBinary(t *testing.T) {
 		gitSysConfig: "[http]\n\tsslBackend = openssl\n",
 	})
 
-	found := find(source, nil, []string{gitCmdDir, gitMingwDir})
+	found := find(source, noLinks, nil, []string{gitCmdDir, gitMingwDir})
 	if len(found) != 2 {
 		t.Fatalf("found %d installs, want one per binary: %+v", len(found), found)
 	}
@@ -192,7 +192,7 @@ func TestAConfigAlreadyClaimedByABinaryIsNotASecondInstall(t *testing.T) {
 	// config already claimed by a binary is not a second installation, and
 	// naming the colliding path states it more plainly than borrowing a list
 	// whose other entries have nothing to do with this scenario.
-	found := find(source, []string{gitSysConfig}, []string{gitCmdDir})
+	found := find(source, noLinks, []string{gitSysConfig}, []string{gitCmdDir})
 	if len(found) != 1 {
 		t.Fatalf("found %d installs, want 1: %+v", len(found), found)
 	}
@@ -211,7 +211,7 @@ func TestAConfigFoundNextToABinaryIsReportedAtSystemLevel(t *testing.T) {
 		config:      "[http]\n\tsslBackend = openssl\n",
 	})
 
-	found := find(source, nil, []string{gitMingwDir})
+	found := find(source, noLinks, nil, []string{gitMingwDir})
 	if len(found) != 1 || found[0].SystemConfig != config {
 		t.Fatalf("got %+v, want the config one directory up", found)
 	}
@@ -477,7 +477,7 @@ func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 // A runtime that is not here sits OUTSIDE the matrix - docs/20 rule 1 - and that
 // is not an error.
 func TestNoInstallFoundIsNotAnError(t *testing.T) {
-	probe := Probe(sourceOf(nil), nil, nil, atNoon)
+	probe := Probe(sourceOf(nil), noLinks, nil, nil, atNoon)
 	stores, err := probe(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("git not being installed came back as an error: %v", err)
@@ -494,7 +494,7 @@ func TestTheProbeProducesOneRowPerInstall(t *testing.T) {
 		"/bundle.crt":    string(anchorPEM),
 	})
 
-	stores, err := Probe(source, nil, nil, atNoon)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, noLinks, nil, nil, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -526,7 +526,7 @@ func TestEveryGitOnPathGetsItsOwnRow(t *testing.T) {
 		"/bundle.crt": string(anchorPEM),
 	})
 
-	stores, err := Probe(source, nil, []string{gitCmdDir, gitMingwDir}, atNoon)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, noLinks, nil, []string{gitCmdDir, gitMingwDir}, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -580,6 +580,9 @@ func TestAnInstallNothingSelectsGetsAnEmptyListRatherThanNil(t *testing.T) {
 // is whether a certificate is out of date - and a test whose answer depends on
 // the day it runs is a test that will one day fail for a reason nobody planted.
 func atNoon() time.Time { return time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC) }
+
+// noLinks is a resolver for a filesystem with no symbolic links on it.
+func noLinks(path string) (string, error) { return path, nil }
 
 // TestAConfigThatCouldNotBeReadToTheEndIsNotReadAsEmpty is P3-1.
 //

@@ -105,11 +105,11 @@ type Settings struct {
 // binaries name C:\Program Files\Git\etc\gitconfig, which is also in the list
 // above, and without this the matrix would report three gits where there are
 // two.
-func find(source file.Source, candidates []string, pathDirs []string) []Install {
+func find(source file.Source, resolve file.Resolve, candidates []string, pathDirs []string) []Install {
 	var found []Install
 	claimed := map[string]bool{}
 
-	for _, binary := range probe.Binaries(source, pathDirs, "git.exe", "git") {
+	for _, binary := range probe.Binaries(source, resolve, pathDirs, "git.exe", "git") {
 		config := systemConfigNear(source, binary)
 		if config != "" {
 			claimed[probe.PathKey(config)] = true

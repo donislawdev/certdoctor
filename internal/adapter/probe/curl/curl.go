@@ -50,9 +50,9 @@ type Install struct {
 // them gains a case. Why the walk searches instead of selecting, why it looks
 // for a file rather than a name, and why one byte has to come back, are all
 // recorded there.
-func find(source file.Source, pathDirs []string) []Install {
+func find(source file.Source, resolve file.Resolve, pathDirs []string) []Install {
 	var found []Install
-	for _, path := range probe.Binaries(source, pathDirs, "curl.exe", "curl") {
+	for _, path := range probe.Binaries(source, resolve, pathDirs, "curl.exe", "curl") {
 		found = append(found, Install{Path: path, OnPath: true})
 	}
 	return found

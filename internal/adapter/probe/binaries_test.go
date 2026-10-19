@@ -47,6 +47,9 @@ func hostSpelling(path string) string {
 	return strings.ReplaceAll(path, `\`, string(filepath.Separator))
 }
 
+// noLinks is a resolver for a filesystem with no symbolic links on it.
+func noLinks(path string) (string, error) { return path, nil }
+
 // sourceOf builds the file port from a map of path to content. A path mapped to
 // the empty string is an empty FILE, and a path listed in dirs is a DIRECTORY.
 //
@@ -107,7 +110,7 @@ func TestEveryBinaryOnPathIsFound(t *testing.T) {
 		mingwCurl:   "MZ",
 	})
 	firstOnPath := gitCmdDir
-	found := Binaries(source, []string{firstOnPath, gitMingwDir}, "git.exe", "git")
+	found := Binaries(source, noLinks, []string{firstOnPath, gitMingwDir}, "git.exe", "git")
 
 	if len(found) != 2 {
 		t.Fatalf("found %d git binaries, want 2: %v", len(found), found)
@@ -131,7 +134,7 @@ func TestEveryBinaryOnPathIsFound(t *testing.T) {
 // nine. Caught by running the binary, never by a test.
 func TestOneFileReachedByTwoSpellingsIsFoundOnce(t *testing.T) {
 	source := sourceOf(map[string]string{hostSpelling(`C:\Windows\system32\curl.exe`): "MZ"})
-	found := Binaries(source, []string{hostSpelling(`C:\Windows\system32`), hostSpelling(`C:\WINDOWS\system32`)}, "curl.exe")
+	found := Binaries(source, noLinks, []string{hostSpelling(`C:\Windows\system32`), hostSpelling(`C:\WINDOWS\system32`)}, "curl.exe")
 	if len(found) != 1 {
 		t.Fatalf("found %d entries for one binary: %v", len(found), found)
 	}
@@ -145,7 +148,7 @@ func TestOneFileReachedByTwoSpellingsIsFoundOnce(t *testing.T) {
 func TestADirectoryOnPathIsNotABinary(t *testing.T) {
 	source := sourceOf(map[string]string{toolsGitExe: "MZ"}, toolsGitDir)
 
-	found := Binaries(source, []string{toolsDir}, "git", "git.exe")
+	found := Binaries(source, noLinks, []string{toolsDir}, "git", "git.exe")
 	if len(found) != 1 {
 		t.Fatalf("found %v, want only the real binary", found)
 	}
@@ -159,7 +162,7 @@ func TestADirectoryOnPathIsNotABinary(t *testing.T) {
 // on both platforms, exactly like a directory does.
 func TestAnEmptyFileIsNotABinary(t *testing.T) {
 	source := sourceOf(map[string]string{toolsGitExe: ""})
-	if found := Binaries(source, []string{toolsDir}, "git.exe"); len(found) != 0 {
+	if found := Binaries(source, noLinks, []string{toolsDir}, "git.exe"); len(found) != 0 {
 		t.Errorf("a zero-byte file was reported as a binary: %v", found)
 	}
 }
@@ -168,7 +171,7 @@ func TestAnEmptyFileIsNotABinary(t *testing.T) {
 // entry point already reports by handing in no directories at all.
 func TestNoDirectoriesFindNoBinaries(t *testing.T) {
 	source := sourceOf(map[string]string{toolsGitExe: "MZ"})
-	if found := Binaries(source, nil, "git.exe"); len(found) != 0 {
+	if found := Binaries(source, noLinks, nil, "git.exe"); len(found) != 0 {
 		t.Errorf("an empty PATH still produced %v", found)
 	}
 }
@@ -187,5 +190,60 @@ func TestPathKeyCleansAndFoldsCase(t *testing.T) {
 	}
 	if PathKey(hostSpelling(`C:\tools\git.exe`)) == PathKey(hostSpelling(`C:\tools\git2.exe`)) {
 		t.Error("two different files produced one key")
+	}
+}
+
+// ONE FILE REACHED THROUGH A LINKED DIRECTORY IS ONE BINARY - OBS170. Measured
+// 2026-10-19 in debian:stable-slim: /bin is a link to usr/bin, PATH carries
+// both, and git and curl each came out as two rows describing one file.
+func TestOneFileReachedThroughALinkedDirectoryIsFoundOnce(t *testing.T) {
+	usrBin, bin := hostSpelling(`\usr\bin`), hostSpelling(`\bin`)
+	source := sourceOf(map[string]string{
+		filepath.Join(usrBin, "git"): "\x7fELF",
+		filepath.Join(bin, "git"):    "\x7fELF",
+	})
+	resolve := func(path string) (string, error) {
+		if filepath.Dir(path) == bin {
+			return filepath.Join(usrBin, filepath.Base(path)), nil
+		}
+		return path, nil
+	}
+
+	found := Binaries(source, resolve, []string{usrBin, bin}, "git")
+	if len(found) != 1 {
+		t.Fatalf("found %d entries for one binary reached through a linked directory: %v", len(found), found)
+	}
+	// THE ROW KEEPS THE SPELLING PATH REACHED FIRST, because that is the file a
+	// typed command runs and the one a person can check against.
+	if want := filepath.Join(usrBin, "git"); found[0] != want {
+		t.Errorf("the row names %q, and PATH reaches %q first", found[0], want)
+	}
+}
+
+// TWO DIFFERENT FILES STAY TWO WHEN THE RESOLVER FAILS. A failure is a reason
+// to fall back to the path as written, never a licence to merge rows - one
+// binary shown twice is visible, two binaries shown as one is not.
+func TestAResolverThatFailsKeepsEveryBinary(t *testing.T) {
+	source := sourceOf(map[string]string{gitCmdExe: "MZ", gitMingwExe: "MZ"})
+	failing := func(string) (string, error) { return "", errors.New("cannot resolve") }
+	if found := Binaries(source, failing, []string{gitCmdDir, gitMingwDir}, "git.exe"); len(found) != 2 {
+		t.Errorf("found %v, want both binaries when nothing could be resolved", found)
+	}
+}
+
+// THE RESOLVER IS ASKED ONLY ABOUT A FILE THAT OPENED. The open port refuses a
+// path that leaves this machine by its text alone, and resolving first would
+// follow links on exactly that path - the cost docs/14 section 3a measured.
+func TestTheResolverIsAskedOnlyAboutFilesThatOpened(t *testing.T) {
+	source := sourceOf(map[string]string{toolsGitExe: "MZ"})
+	var asked []string
+	resolve := func(path string) (string, error) {
+		asked = append(asked, path)
+		return path, nil
+	}
+
+	Binaries(source, resolve, []string{gitCmdDir, toolsDir}, "git.exe")
+	if len(asked) != 1 || asked[0] != toolsGitExe {
+		t.Errorf("the resolver was asked about %v, and only %s opened", asked, toolsGitExe)
 	}
 }
