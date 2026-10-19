@@ -42,7 +42,7 @@ func sourceOf(paths ...string) func(string) (io.ReadCloser, error) {
 		if !present[key(path)] {
 			return nil, errors.New("no such file")
 		}
-		return io.NopCloser(strings.NewReader("")), nil
+		return io.NopCloser(strings.NewReader("x")), nil
 	}
 }
 
@@ -57,7 +57,7 @@ func TestADirectoryWithoutAStoreIsNotAnInstall(t *testing.T) {
 		// a fixture where two gates can both refuse proves neither of them.
 		hostSpelling(`C:\Program Files\Java\latest\bin\keytool.exe`),
 	)
-	found := find(source, []string{jdk25, hostSpelling(`C:\Program Files\Java\latest`)})
+	found := find(source, noLinks, []string{jdk25, hostSpelling(`C:\Program Files\Java\latest`)})
 	if len(found) != 1 {
 		t.Fatalf("found %d installs, want 1 - latest has no store", len(found))
 	}
@@ -71,7 +71,7 @@ func TestADirectoryWithoutAStoreIsNotAnInstall(t *testing.T) {
 // directory name, which is inviolable rule 19 turned on our own filesystem.
 func TestAStoreWithoutJavacIsAJRE(t *testing.T) {
 	source := sourceOf(jre8Store, jre8Tool)
-	found := find(source, []string{jre8})
+	found := find(source, noLinks, []string{jre8})
 	if len(found) != 1 || found[0].Variant != "jre" {
 		t.Fatalf("got %+v, want one jre", found)
 	}
@@ -81,7 +81,7 @@ func TestAStoreWithoutJavacIsAJRE(t *testing.T) {
 // an install this probe can speak for.
 func TestAStoreWithNoKeytoolIsNotAnInstall(t *testing.T) {
 	source := sourceOf(hostSpelling(`C:\broken\lib\security\cacerts`))
-	if found := find(source, []string{hostSpelling(`C:\broken`)}); len(found) != 0 {
+	if found := find(source, noLinks, []string{hostSpelling(`C:\broken`)}); len(found) != 0 {
 		t.Errorf("found %+v, want none - there is no keytool to read the store with", found)
 	}
 }
@@ -91,7 +91,7 @@ func TestTheBitnessComesFromThePath(t *testing.T) {
 		hostSpelling(`C:\Program Files (x86)\Java\jre8\lib\security\cacerts`),
 		hostSpelling(`C:\Program Files (x86)\Java\jre8\bin\keytool.exe`),
 	)
-	found := find(source, []string{hostSpelling(`C:\Program Files (x86)\Java\jre8`)})
+	found := find(source, noLinks, []string{hostSpelling(`C:\Program Files (x86)\Java\jre8`)})
 	if len(found) != 1 || found[0].Architecture != "x86" {
 		t.Fatalf("got %+v, want one x86 install", found)
 	}
@@ -161,7 +161,7 @@ func TestTheProbeReturnsOneRowPerInstall(t *testing.T) {
 		return probe.Output{ExitCode: 1}, nil
 	}
 
-	stores, err := Probe(source, run, []string{jdk25, jre8, hostSpelling(`C:\nothing`)}, jdk25, nil, atNoon)(context.Background(), [][]byte{{0x30}})
+	stores, err := Probe(source, noLinks, run, []string{jdk25, jre8, hostSpelling(`C:\nothing`)}, jdk25, nil, atNoon)(context.Background(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestTheProbeReturnsOneRowPerInstall(t *testing.T) {
 // NO JAVA IS NOT AN ERROR - docs/20 rule 1. A machine without it sits outside
 // the matrix, and "there is no Java here" is not a fact about trust.
 func TestAMachineWithNoJavaIsNotAnError(t *testing.T) {
-	stores, err := Probe(sourceOf(), nil, []string{`C:\nothing`}, "", nil, atNoon)(context.Background(), nil)
+	stores, err := Probe(sourceOf(), noLinks, nil, []string{`C:\nothing`}, "", nil, atNoon)(context.Background(), nil)
 	if err != nil {
 		t.Errorf("a machine without Java produced an error: %v", err)
 	}
@@ -207,3 +207,65 @@ func TestARunnerThatCannotStartIsUnknownWithAReason(t *testing.T) {
 // is whether a certificate is out of date - and a test whose answer depends on
 // the day it runs is a test that will one day fail for a reason nobody planted.
 func atNoon() time.Time { return time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC) }
+
+// noLinks is a resolver for a filesystem with no symbolic links on it.
+func noLinks(path string) (string, error) { return path, nil }
+
+// A JAVA ONLY PATH KNOWS ABOUT IS STILL AN INSTALLATION - OBS168. Measured
+// 2026-10-19 in eclipse-temurin:21-jre: Java lives in /opt/java/openjdk, its bin
+// is on PATH, nothing is under /usr/lib/jvm, and the matrix had no java row.
+func TestAJavaOnlyPathKnowsAboutIsFound(t *testing.T) {
+	root := hostSpelling(`\opt\java\openjdk`)
+	bin := filepath.Join(root, "bin")
+	source := sourceOf(filepath.Join(bin, "java"), filepath.Join(bin, "keytool"),
+		filepath.Join(root, "lib", "security", "cacerts"))
+
+	found := installations(source, noLinks, nil, []string{bin})
+	if len(found) != 1 || found[0].Root != root {
+		t.Fatalf("found %+v, want the installation behind java on PATH at %s", found, root)
+	}
+}
+
+// ONE INSTALLATION REACHED TWICE IS ONE ROW. On Debian /usr/bin/java is a link
+// ending inside /usr/lib/jvm, which the directory scan has already named - and
+// taking two directories up from the link itself would land on /usr.
+func TestAJavaReachedByTheScanAndByPathIsOneRow(t *testing.T) {
+	jvm := hostSpelling(`\usr\lib\jvm\java-21-openjdk-amd64`)
+	usrBin := hostSpelling(`\usr\bin`)
+	linked := filepath.Join(usrBin, "java")
+	source := sourceOf(linked, filepath.Join(jvm, "bin", "java"), filepath.Join(jvm, "bin", "keytool"),
+		filepath.Join(jvm, "lib", "security", "cacerts"))
+	resolve := func(path string) (string, error) {
+		if path == linked {
+			return filepath.Join(jvm, "bin", "java"), nil
+		}
+		return path, nil
+	}
+
+	found := installations(source, resolve, []string{jvm}, []string{usrBin})
+	if len(found) != 1 {
+		t.Fatalf("found %d rows for one installation reached by the scan and by PATH: %+v", len(found), found)
+	}
+}
+
+// A java ON PATH WITH NO STORE BEHIND IT IS NOT AN INSTALLATION. A launcher
+// directory on PATH, like the one Oracle installs, is refused by the same gate
+// as any other candidate - ADR48 part 2.
+func TestAJavaOnPathWithNoStoreBehindItIsNotAnInstall(t *testing.T) {
+	launcher := hostSpelling(`C:\Program Files\Common Files\Oracle\Java\javapath`)
+	source := sourceOf(filepath.Join(launcher, "java.exe"))
+	if found := installations(source, noLinks, nil, []string{launcher}); len(found) != 0 {
+		t.Errorf("a launcher with no store behind it became %+v", found)
+	}
+}
+
+// JAVA_HOME IS NEVER ASKED WHERE JAVA IS - ADR50 kept that ban when it let PATH
+// be searched. An installation that only JAVA_HOME names stays out of the
+// matrix, and the row of one found otherwise is merely annotated with it.
+func TestJavaHomeAloneFindsNothing(t *testing.T) {
+	source := sourceOf(jdk25Store, jdk25Tool)
+	stores, err := Probe(source, noLinks, nil, nil, jdk25, nil, atNoon)(context.Background(), [][]byte{{0x30}})
+	if err != nil || len(stores) != 0 {
+		t.Errorf("JAVA_HOME alone produced %d rows (err %v) - it may enrich a row and never find one", len(stores), err)
+	}
+}

@@ -61,8 +61,15 @@ type Install struct {
 // JDK and absent from a JRE - measured on both - so the row says which one it is
 // without parsing a directory name, which is inviolable rule 19 applied to our
 // own filesystem rather than to somebody's output.
-func find(source file.Source, candidates []string) []Install {
+//
+// ONE INSTALLATION REACHED TWICE IS ONE ROW - the directory scan and PATH can
+// both name it, and on Debian /usr/bin/java is a link ending inside the
+// /usr/lib/jvm directory the scan already listed. The root is told apart by
+// probe.IdentityKey, after the store has opened, for the same reason Binaries
+// opens before it resolves.
+func find(source file.Source, resolve file.Resolve, candidates []string) []Install {
 	var found []Install
+	seen := map[string]bool{}
 	for _, root := range candidates {
 		store := filepath.Join(root, "lib", "security", "cacerts")
 		if !readable(source, store) {
@@ -72,6 +79,11 @@ func find(source file.Source, candidates []string) []Install {
 		if keytool == "" {
 			continue
 		}
+		key := probe.IdentityKey(resolve, root)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 
 		variant := "jre"
 		if binaryIn(source, root, "javac") != "" {
@@ -87,6 +99,31 @@ func find(source file.Source, candidates []string) []Install {
 		})
 	}
 	return found
+}
+
+// installations is every Java installation this probe can name: the
+// directories handed in, then the installation behind every java binary on
+// PATH.
+//
+// PATH IS SEARCHED, NEVER ASKED - ADR50. Every directory on it is walked and
+// every java there counts, so this can find more than one installation, which
+// is what makes it a search rather than a favourite. JAVA_HOME is still never
+// asked where Java is, and TestJavaHomeAloneFindsNothing holds that.
+//
+// OBS168, measured 2026-10-19 in eclipse-temurin:21-jre: Java lives in
+// /opt/java/openjdk, its bin is on PATH, nothing is under /usr/lib/jvm, and the
+// matrix had no java row while its note said java had been asked.
+//
+// THE BINARY IS RESOLVED BEFORE ITS ROOT IS TAKEN, because on Debian
+// /usr/bin/java is a link through /etc/alternatives, and two directories up
+// from the link is /usr, which is not an installation. A root that is not one
+// is refused by find exactly like any other candidate - no store, no row.
+func installations(source file.Source, resolve file.Resolve, candidates []string, pathDirs []string) []Install {
+	roots := append([]string{}, candidates...)
+	for _, binary := range probe.Binaries(source, resolve, pathDirs, "java.exe", "java") {
+		roots = append(roots, filepath.Dir(filepath.Dir(probe.Resolved(resolve, binary))))
+	}
+	return find(source, resolve, roots)
 }
 
 // readable answers whether the port can open this path at all.

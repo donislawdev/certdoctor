@@ -53,7 +53,7 @@ func Binaries(open func(string) (io.ReadCloser, error), resolve func(string) (st
 			if !readableFile(open, path) {
 				continue
 			}
-			key := identityKey(resolve, path)
+			key := IdentityKey(resolve, path)
 			if seen[key] {
 				continue
 			}
@@ -64,19 +64,27 @@ func Binaries(open func(string) (io.ReadCloser, error), resolve func(string) (st
 	return found
 }
 
-// identityKey is what two PATH entries are told apart by: the file a path
-// really names, folded the way PathKey folds it.
+// IdentityKey is what two paths are told apart by: the file or directory a
+// path really names, folded the way PathKey folds it. The Java probe asks it
+// about installation roots, so one rule decides "the same thing" for every
+// runtime - a second copy is the shape OBS50 has measured four times.
+func IdentityKey(resolve func(string) (string, error), path string) string {
+	return PathKey(Resolved(resolve, path))
+}
+
+// Resolved is the path a link leads to, or the path itself when it cannot be
+// resolved.
 //
 // A RESOLVER THAT FAILS OR IS MISSING FALLS BACK TO THE PATH AS WRITTEN. The
 // worst that does is show one binary twice, which is visible, rather than merge
 // two different binaries into one row, which is not.
-func identityKey(resolve func(string) (string, error), path string) string {
+func Resolved(resolve func(string) (string, error), path string) string {
 	if resolve != nil {
 		if real, err := resolve(path); err == nil && real != "" {
-			return PathKey(real)
+			return real
 		}
 	}
-	return PathKey(path)
+	return path
 }
 
 // PathKey folds a path into the key this program tells two files apart by.

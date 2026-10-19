@@ -10,6 +10,16 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - Java is found where its own container image puts it
+
+- **In the official `eclipse-temurin` images Java lives in `/opt/java/openjdk`,
+  and the trust matrix had no Java row there at all**, while saying Java had
+  been looked for. Every `java` on `PATH` now leads to its installation, so the
+  row appears, with the `keytool` command for that store. An installation
+  reached both through `PATH` and under `/usr/lib/jvm` is still one row.
+  `JAVA_HOME` still only says which installation it points at, and never adds
+  one.
+
 ### Fixed - one binary reached through two directories is one row
 
 - **On Debian, Ubuntu and other distributions where `/bin` is a link to

@@ -491,7 +491,7 @@ func liveTrustProbes() map[string]trust.Probe {
 		// crypto/x509 would read the clock behind the probe's back, which is the
 		// one thing that stops an assessment being reproducible from its input.
 		"git":  git.Probe(guarded, resolvePath, globalGitConfigs(), paths, time.Now),
-		"java": java.Probe(guarded, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
+		"java": java.Probe(guarded, resolvePath, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
 		"curl": curl.Probe(guarded, resolvePath, probe.Run, paths, os.Getenv("CURL_CA_BUNDLE"), time.Now),
 	}
 	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - Windows by

@@ -17,9 +17,11 @@ import (
 // than discovered here, because listing directories is not something the file
 // port offers and a probe must not reach for the filesystem behind it.
 // javaHome and pathDirs enrich the rows and NEVER select them - ADR48 part 4.
-func Probe(source file.Source, run probe.Runner, candidates []string, javaHome string, pathDirs []string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+// pathDirs is also SEARCHED for java binaries, every directory and every hit,
+// which ADR50 tells apart from selecting. javaHome is never searched.
+func Probe(source file.Source, resolve file.Resolve, run probe.Runner, candidates []string, javaHome string, pathDirs []string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
-		installs := find(source, candidates)
+		installs := installations(source, resolve, candidates, pathDirs)
 		if len(installs) == 0 {
 			// NOT AN ERROR - docs/20 rule 1. A machine without Java sits outside
 			// the matrix, and "there is no Java here" is not a fact about trust.
