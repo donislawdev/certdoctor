@@ -26,8 +26,12 @@ func aCertificate() Certificate {
 }
 
 // aCompletedRow is the row that carries the chain - the first address.
+// covers is a fresh pointer for name_covered, so no two fixtures share one.
+func covers(b bool) *bool { return &b }
+
 func aCompletedRow() TLSHandshake {
 	return TLSHandshake{
+		NameCovered:           covers(true),
 		Address:               "192.0.2.10",
 		Port:                  443,
 		Completed:             true,
@@ -61,6 +65,7 @@ func aComparingRow() TLSHandshake {
 		Version:               "TLS 1.3",
 		LeafFingerprintSHA256: "aa",
 		MatchesFirstAddress:   &same,
+		NameCovered:           covers(true),
 	}
 }
 
@@ -258,7 +263,14 @@ func TestTheTLSBodyAcceptsTheRowsItMustAccept(t *testing.T) {
 		// contract" about a server that had behaved legally. The family of ADR47.
 		{"a handshake that completed and presented nothing", func() TLSHandshake {
 			b := aCompletedRow()
-			b.LeafFingerprintSHA256, b.Chain, b.ChainComplete = "", nil, false
+			b.LeafFingerprintSHA256, b.Chain, b.ChainComplete, b.NameCovered = "", nil, false, nil
+			return b
+		}()},
+		// ADR106: a leaf that does not fit the name is a FINDING, and the
+		// contract has to carry it rather than refuse it.
+		{"a leaf that does not cover the name", func() TLSHandshake {
+			b := aCompletedRow()
+			b.NameCovered = covers(false)
 			return b
 		}()},
 		// ADR47, AND THIS IS THE ROW THE OLD CONTRACT REFUSED. A leaf whose
@@ -303,5 +315,46 @@ func TestALaterAddressMayDisagreeWithTheFirst(t *testing.T) {
 		TLSHandshake: &body,
 	}).Breach(); got != "" {
 		t.Errorf("the contract refused a row reporting a different certificate: %s", got)
+	}
+}
+
+// TestTheNameAnswerGoesWithALeafAndNowhereElse is ADR106's half of the
+// prohibitions: name_covered is required where a leaf arrived - a forgotten
+// wire must not read as a name that fits - and refused where none did.
+func TestTheNameAnswerGoesWithALeafAndNowhereElse(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		body   func() TLSHandshake
+		refuse string
+	}{
+		{"a leaf with nothing said about the name",
+			func() TLSHandshake { b := aCompletedRow(); b.NameCovered = nil; return b },
+			"does not say whether it covers the name"},
+		{"a later address with nothing said about the name",
+			func() TLSHandshake { b := aComparingRow(); b.NameCovered = nil; return b },
+			"does not say whether it covers the name"},
+		{"no handshake but an answer about the name",
+			func() TLSHandshake { b := anUnfinishedRow(); b.NameCovered = covers(true); return b },
+			"and none arrived"},
+		{"nothing presented but an answer about the name",
+			func() TLSHandshake {
+				b := aCompletedRow()
+				b.LeafFingerprintSHA256, b.Chain, b.ChainComplete = "", nil, false
+				return b
+			},
+			"still says whether it covers the name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := tc.body()
+			got := Finding{
+				Kind:         FindingTLSHandshake,
+				Summary:      "a row about one address",
+				Source:       SourceDetected,
+				TLSHandshake: &body,
+			}.Breach()
+			if !strings.Contains(got, tc.refuse) {
+				t.Errorf("the refusal is %q, wanted it to mention %q", got, tc.refuse)
+			}
+		})
 	}
 }

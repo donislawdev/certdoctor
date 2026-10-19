@@ -182,6 +182,9 @@ func presented(state tls.ConnectionState, serverName string, requested bool) cor
 		// would have built. The gap between those two IS the diagnosis in the
 		// commonest real misconfiguration there is.
 		Chain: certificates(state.PeerCertificates),
+		// THE SAME LEAF THE CHAIN STARTS WITH, asked here because the parsed
+		// certificate is here - the core only ever sees the summary.
+		Name: nameMatch(state.PeerCertificates, serverName),
 	}
 }
 

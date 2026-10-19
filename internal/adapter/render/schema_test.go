@@ -498,6 +498,7 @@ var bodyFixtures = map[report.FindingKind]report.Finding{
 			ClientCertificateRequested: false,
 			LeafFingerprintSHA256:      leafFingerprint,
 			ChainComplete:              true,
+			NameCovered:                nameCovered(),
 			Chain: []report.Certificate{
 				{
 					Subject: "CN=example.com",

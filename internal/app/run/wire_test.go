@@ -418,6 +418,7 @@ func TestTheChainL4SawIsTheChainL5Judges(t *testing.T) {
 				FingerprintSHA256: "aa",
 				Raw:               presented,
 			}},
+			Name: handshake.NameCovered,
 		},
 		map[string]trust.Probe{
 			"git": func(_ context.Context, chain [][]byte) ([]report.TrustStore, error) {
@@ -497,7 +498,7 @@ func TestWhetherTheChainWasWholeCrossesTheSameSeamAsTheChain(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			answer := walkTo(t, reachableWiring(
-				handshake.Presented{Completed: true, Version: "TLS 1.3", Chain: c.chain},
+				handshake.Presented{Completed: true, Version: "TLS 1.3", Chain: c.chain, Name: handshake.NameCovered},
 				map[string]trust.Probe{"git": refusing}))
 
 			// PICKED BY KIND RATHER THAN BY POSITION. L5 also emits a signing

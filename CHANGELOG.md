@@ -10,6 +10,22 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - a certificate issued for another name fails the TLS layer
+
+- **[contract] A server presenting a certificate for a different name passed
+  as healthy.** On `wrong.host.badssl.com` the report read "Everything
+  assessed passed", while every client refuses that server whatever it trusts.
+  The TLS layer now fails when the certificate's names do not cover the host in
+  the URL, the sentence at the top says which names it does cover, and the run
+  ends with exit code 4. A certificate with no subjectAltName at all, naming
+  the host only in its common name, is a warning instead: current rules forbid
+  that, and some older clients still accept it.
+- **[contract] `name_covered` in `--json`**, on every `tls_handshake` row whose
+  address presented a certificate: `true`, `false`, or `null` where no
+  certificate arrived. A name present only in the common name is `false`, and
+  the TLS layer's status - a warning rather than a failure - tells the two
+  apart. The schema version is now 1.16.
+
 ### Fixed - a self-signed server certificate is no longer reported as a missing issuer
 
 - **A server presenting a certificate that signed itself was told it had not

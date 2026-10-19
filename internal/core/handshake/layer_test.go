@@ -60,6 +60,7 @@ func shakeReturning(chain []Certificate) Shake {
 			Protocol:        "h2",
 			ServerName:      "partner.test",
 			Chain:           chain,
+			Name:            NameCovered,
 		}, nil
 	}
 }
@@ -265,9 +266,9 @@ func TestAnAddressPresentingADifferentCertificateSaysSo(t *testing.T) {
 	var seen atomic.Int64
 	in := workingInput(func(context.Context, string, int, string) (Presented, error) {
 		if seen.Add(1) == 1 {
-			return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("aa")}, nil
+			return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("aa"), Name: NameCovered}, nil
 		}
-		return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("bb")}, nil
+		return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("bb"), Name: NameCovered}, nil
 	})
 	in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
 
@@ -309,7 +310,7 @@ func TestTheRowShownAndTheChainJudgedComeFromOneAddress(t *testing.T) {
 		if address == silent {
 			return Presented{Completed: true, Version: "TLS 1.3"}, nil
 		}
-		return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("bb")}, nil
+		return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("bb"), Name: NameCovered}, nil
 	})
 	in.Addresses = func() []string { return []string{silent, presenting} }
 
@@ -492,7 +493,7 @@ func TestSwitchingEveryBudgetOffMeansNoLimitRatherThanNoAttempt(t *testing.T) {
 		if _, set := ctx.Deadline(); set {
 			deadlines.Add(1)
 		}
-		return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("aa")}, nil
+		return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("aa"), Name: NameCovered}, nil
 	})
 	in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
 	in.PerAddress = 0
@@ -521,7 +522,7 @@ func TestTheServerNameTravelsSeparatelyFromTheAddress(t *testing.T) {
 		names = append(names, serverName)
 		addresses = append(addresses, address)
 		mu.Unlock()
-		return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("aa")}, nil
+		return Presented{Completed: true, Version: "TLS 1.3", Chain: completeChain("aa"), Name: NameCovered}, nil
 	})
 	in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
 

@@ -44,6 +44,7 @@ func handshakeReport() report.Report {
 					ServerName:            "example.com",
 					LeafFingerprintSHA256: leafFingerprint,
 					MatchesFirstAddress:   &same,
+					NameCovered:           nameCovered(),
 				},
 			},
 			{
@@ -187,7 +188,7 @@ func TestARowWithNoHandshakeCarriesNothingItDidNotNegotiate(t *testing.T) {
 	}
 	for _, field := range []string{
 		"version", "cipher_suite", "cipher_suite_name", "server_name", "alpn",
-		"client_certificate_requested", "leaf_fingerprint_sha256", "chain_complete", "chain",
+		"client_certificate_requested", "leaf_fingerprint_sha256", "chain_complete", "name_covered", "chain",
 	} {
 		if failed[field] != nil {
 			t.Errorf("no handshake happened and %q is %v, which nothing established", field, failed[field])
@@ -461,5 +462,41 @@ func TestACertificateWithNoSubjectSaysSoRatherThanRenderingBlank(t *testing.T) {
 	}
 	if !strings.Contains(bare, "names      none presented") {
 		t.Error("a leaf presenting no name says nothing about it, and that is the reason a client would refuse it")
+	}
+}
+
+// nameCovered is a fresh name_covered of true, so no two fixtures share one
+// pointer - ADR106 made the field required on every row with a leaf.
+func nameCovered() *bool {
+	covered := true
+	return &covered
+}
+
+// TestEveryRowWithALeafSaysWhetherItCoversTheName is ADR106 seen from the
+// document: name_covered on the carrier AND on the row that only compares,
+// because each address presented its own leaf - and a false is carried as a
+// false rather than dropped as an empty value.
+func TestEveryRowWithALeafSaysWhetherItCoversTheName(t *testing.T) {
+	r := handshakeReport()
+	notCovered := false
+	for i := range r.Layers {
+		if r.Layers[i].ID != layer.TLS {
+			continue
+		}
+		second := *r.Layers[i].Findings[1].TLSHandshake
+		second.NameCovered = &notCovered
+		r.Layers[i].Findings[1].TLSHandshake = &second
+	}
+
+	document, err := Encode(r)
+	if err != nil {
+		t.Fatalf("encoding failed: %v", err)
+	}
+	bodies := decodeBodies(t, document)
+	if bodies[0]["name_covered"] != true {
+		t.Errorf("the row carrying the chain says %v", bodies[0]["name_covered"])
+	}
+	if covered, present := bodies[1]["name_covered"]; !present || covered != false {
+		t.Errorf("the comparing row says %v (present: %v), want false", covered, present)
 	}
 }

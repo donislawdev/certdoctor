@@ -151,6 +151,10 @@ var schema = object(map[string]node{
 				// completed one - ADR45. The two are the same fact from opposite
 				// ends, and the core refuses a row carrying both.
 				"matches_first_address": nullable(boolean()),
+				// Null where no certificate arrived, and set on every row whose
+				// address presented a leaf - ADR106. False includes a name only
+				// in the common name; the layer's status tells the two apart.
+				"name_covered": nullable(boolean()),
 				// THE FIRST NESTED ARRAY IN THIS DOCUMENT, and the case docs/18
 				// named when it argued for a typed body instead of a flat pair of
 				// name and value. A chain squeezed into that shape would be one

@@ -854,6 +854,16 @@ type TLSHandshake struct {
 	// MatchesFirstAddress is nil on the row carrying the chain and set on every
 	// other completed row.
 	MatchesFirstAddress *bool
+	// NameCovered says whether THIS row's leaf covers the name the run asked
+	// for, by subjectAltName - ADR106. It is set on every row that presented a
+	// leaf, carrier or not, because each address presented its own, and nil
+	// where nothing was presented.
+	//
+	// FALSE ALSO WHEN THE NAME IS ONLY IN THE COMMON NAME. RFC 9525 section 2
+	// forbids identifying a server that way, so the name is not covered by the
+	// rules in force - the layer says WARN rather than FAIL for that case, and
+	// the row's summary says which of the two it is.
+	NameCovered *bool
 	// Chain is what the server sent, leaf first, on one row only.
 	Chain []Certificate
 }
@@ -882,6 +892,8 @@ func (t *TLSHandshake) breach() string {
 			return "says no handshake completed and still carries a certificate, which nothing could have presented"
 		case t.ChainComplete:
 			return "says no handshake completed and calls the chain complete, and there was no chain"
+		case t.NameCovered != nil:
+			return "says no handshake completed and still says whether a certificate covers the name, and none arrived"
 		}
 		return ""
 	}
@@ -909,6 +921,8 @@ func (t *TLSHandshake) breach() string {
 			return "says nothing was presented and still compares what it presented against the first address"
 		case t.ChainComplete:
 			return "says nothing was presented and calls the chain complete, and there was no chain"
+		case t.NameCovered != nil:
+			return "says nothing was presented and still says whether it covers the name"
 		}
 		return ""
 	case len(t.Chain) > 0 && t.MatchesFirstAddress != nil:
@@ -931,6 +945,13 @@ func (t *TLSHandshake) breach() string {
 		if c.FingerprintSHA256 == "" {
 			return fmt.Sprintf("carries a certificate at position %d with no fingerprint, and the fingerprint is the evidence a claim about interception has to travel with", i)
 		}
+	}
+	if t.NameCovered == nil {
+		// THE ONE PLACE A FORGOTTEN WIRE SHOWS - ADR106. A leaf arrived and
+		// nothing says whether it fits the name, and a row read as "no
+		// complaint" would be the false reassurance OBS162 measured. Asked last,
+		// so a row broken in a more specific way is refused in those words.
+		return "presented a certificate and does not say whether it covers the name this run asked for"
 	}
 	return ""
 }

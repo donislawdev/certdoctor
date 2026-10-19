@@ -54,6 +54,7 @@ func handshakeAnswer() Answer {
 					ServerName:            "inside.corp",
 					LeafFingerprintSHA256: handshakeLeafPrint,
 					ChainComplete:         true,
+					NameCovered:           nameCovered(),
 					Chain: []report.Certificate{
 						{
 							Subject:           "CN=inside.corp",
@@ -85,6 +86,7 @@ func handshakeAnswer() Answer {
 					ServerName:            "inside.corp",
 					LeafFingerprintSHA256: handshakeLeafPrint,
 					MatchesFirstAddress:   &same,
+					NameCovered:           nameCovered(),
 				},
 			},
 		},
@@ -533,4 +535,11 @@ func TestLayerFourWithNoPortsAnswersForItselfRatherThanAsAStub(t *testing.T) {
 	if !strings.Contains(answer.Detail, "no way to complete a handshake") {
 		t.Errorf("L4 explains itself with %q, which does not say what was missing", answer.Detail)
 	}
+}
+
+// nameCovered is a fresh name_covered of true, so no two fixtures share one
+// pointer - ADR106 made the field required on every row with a leaf.
+func nameCovered() *bool {
+	covered := true
+	return &covered
 }

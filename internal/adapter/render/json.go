@@ -197,7 +197,16 @@ import (
 // carrying it on machines with a resolver, and such a script can now settle a
 // verdict where before it never could. A new caveat takes its place when a file
 // asks about more distinct names than one evaluation may resolve.
-const SchemaVersion = "1.15"
+//
+// 1.16 ADDS ONE MEMBER TO tls_handshake: name_covered - ADR106, which closed
+// OBS162. A MINOR by rule 2 - no removals and no changed meanings.
+//
+// WHAT CHANGES FOR A CONSUMER THAT ALREADY SHIPPED. Nothing used to ask whether
+// the certificate was issued for the name in the URL, so wrong.host.badssl.com
+// read "Everything assessed passed". L4 now fails on a name the leaf does not
+// cover, so a run that used to end with code 0 or 5 against such a server ends
+// with 4 - the right answer, and a different one.
+const SchemaVersion = "1.16"
 
 // JSON renders the machine readable report.
 //
@@ -534,6 +543,12 @@ type jsonTLSHandshake struct {
 	// trust store - ADR46, and the line on which the whole L4/L5 split stands.
 	ChainComplete       *bool `json:"chain_complete"`
 	MatchesFirstAddress *bool `json:"matches_first_address"`
+	// NameCovered says whether THIS row's leaf covers the name the run asked
+	// for, by subjectAltName - ADR106. Null where no certificate arrived. False
+	// also when the name is only in the common name, which RFC 9525 section 2
+	// forbids identifying a server by: the layer says WARN rather than FAIL for
+	// that case, so branch on the layer's status to tell the two apart.
+	NameCovered *bool `json:"name_covered"`
 	// Null rather than an empty array on the rows that do not carry it. An empty
 	// array would say "this server presented nothing", which is a claim about
 	// somebody else's machine; null says this row is not where the chain lives.
@@ -977,6 +992,10 @@ func tlsHandshakeOf(finding report.Finding) *jsonTLSHandshake {
 	if shake.MatchesFirstAddress != nil {
 		matches := *shake.MatchesFirstAddress
 		body.MatchesFirstAddress = &matches
+	}
+	if shake.NameCovered != nil {
+		covered := *shake.NameCovered
+		body.NameCovered = &covered
 	}
 	if !shake.Completed {
 		// NOTHING WAS NEGOTIATED, SO NOTHING IS FILLED IN. The core refuses a row

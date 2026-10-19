@@ -92,6 +92,12 @@ type Certificate struct {
 	DNSNames []string
 	// IsCA is the basic constraint, reported as presented.
 	IsCA bool
+	// IPAddresses are the subjectAltName iPAddress entries, rendered by the
+	// standard library. They do not reach the report - ADR106 put one field
+	// there, name_covered - and exist so the sentence saying which names a
+	// certificate covers does not leave out the addresses it covers, on a
+	// target given as an address.
+	IPAddresses []string
 	// Raw is this certificate exactly as it arrived, DER encoded.
 	//
 	// IT DOES NOT REACH THE REPORT AND MUST NOT: report.Certificate is a summary
@@ -140,7 +146,36 @@ type Presented struct {
 	// verifier would build: the gap between the two IS the diagnosis in the
 	// commonest real misconfiguration there is.
 	Chain []Certificate
+	// Name says whether the leaf covers ServerName - ADR106. It is answered on
+	// the adapter side, where the parsed certificate is, by the standard
+	// library's own matching rules rather than by a copy of them here.
+	Name NameMatch
 }
+
+// NameMatch is what the leaf says about the name this run asked for.
+//
+// THE ZERO VALUE IS "NOT CHECKED", and that is the safe direction rather than a
+// convenience: a handshake that presented a leaf and arrives here unchecked is
+// our own defect, and the report contract refuses such a row instead of letting
+// it read as a certificate that fits.
+type NameMatch int
+
+const (
+	// NameUnchecked - nothing was checked: no certificate arrived, or no name
+	// was known to check it against.
+	NameUnchecked NameMatch = iota
+	// NameCovered - a subjectAltName entry covers the name.
+	NameCovered
+	// NameInCommonNameOnly - the certificate carries no subjectAltName at all,
+	// and its common name covers the name. RFC 9525 section 2 forbids using the
+	// common name to identify a server, and Go refuses it (measured 2026-10-19
+	// with Go 1.27.2) - but RFC 6125 section 6.4.4, which RFC 9525 replaced,
+	// let a client fall back to it "as a last resort", so a client written to
+	// those rules may still accept it. Hence a warning rather than a failure.
+	NameInCommonNameOnly
+	// NameNotCovered - nothing in the certificate covers the name.
+	NameNotCovered
+)
 
 // Input is everything one walk of L4 was handed.
 type Input struct {
@@ -392,7 +427,13 @@ func chainComplete(chain []Certificate) bool {
 }
 
 // detailFor is the layer's one line.
-func detailFor(completed, total int, chain []Certificate, complete bool, disagreed bool) string {
+//
+// THE ORDER IS ADR106's: no certificate, then a name the certificate does not
+// cover, then an incomplete chain, then a name covered only by the common
+// name, then addresses that disagree. A name that does not fit fails every
+// client whatever it trusts, so it is said before the chain - completing a
+// chain for a certificate issued to another name would fix nothing.
+func detailFor(completed, total int, chain []Certificate, complete bool, disagreed bool, names nameTally) string {
 	switch {
 	case completed == 0:
 		return fmt.Sprintf("none of the %d address(es) completed a TLS handshake", total)
@@ -411,9 +452,13 @@ func detailFor(completed, total int, chain []Certificate, complete bool, disagre
 		// machine with nothing to judge.
 		return fmt.Sprintf("%d of %d address(es) completed a handshake and presented no certificate, so nothing on this machine has anything to judge - this is a fact about the server rather than about this machine",
 			completed, total)
+	case names.notCovered > 0:
+		return nameDetail(names)
 	case !complete:
 		return fmt.Sprintf("the server presented %d certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine",
 			len(chain))
+	case names.commonOnly > 0:
+		return nameDetail(names)
 	case disagreed:
 		return fmt.Sprintf("%d of %d address(es) completed a handshake, and they did not all present the same certificate",
 			completed, total)
