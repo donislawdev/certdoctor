@@ -24,15 +24,16 @@ func Probe(source file.Source, resolve file.Resolve, files file.List, run probe.
 			return nil, nil
 		}
 
+		ports := probe.Ports{Source: source, Resolve: resolve, Run: run}
 		stores := make([]report.TrustStore, 0, len(installs))
 		for _, install := range installs {
-			stores = append(stores, storeFor(ctx, run, source, files, install, chain, env, now()))
+			stores = append(stores, storeFor(ctx, ports, files, install, chain, env, now()))
 		}
 		return stores, nil
 	}
 }
 
-func storeFor(ctx context.Context, run probe.Runner, source file.Source, files file.List, install Install, chain [][]byte, env Environment, now time.Time) report.TrustStore {
+func storeFor(ctx context.Context, ports probe.Ports, files file.List, install Install, chain [][]byte, env Environment, now time.Time) report.TrustStore {
 	store := report.TrustStore{
 		Runtime:  "curl",
 		Instance: install.Path,
@@ -43,7 +44,7 @@ func storeFor(ctx context.Context, run probe.Runner, source file.Source, files f
 		StoreForm:  report.StoreSystem,
 	}
 
-	backend, err := backendOf(ctx, run, install)
+	backend, err := backendOf(ctx, ports.Run, install)
 	if err != nil {
 		store.NotAssessed = fmt.Sprintf("the backend could not be established: %v", err)
 		return store
@@ -58,7 +59,7 @@ func storeFor(ctx context.Context, run probe.Runner, source file.Source, files f
 	store.Backend = backend
 
 	if backend == "schannel" {
-		return judgedByThisAccount(store, source, install, chain, env)
+		return judgedByThisAccount(store, ports.Source, install, chain, env)
 	}
 
 	if backend != "openssl" && backend != "libressl" && backend != "boringssl" {
@@ -69,7 +70,7 @@ func storeFor(ctx context.Context, run probe.Runner, source file.Source, files f
 			"this build uses %s, which reads the platform store rather than a file - the system-store probe answers for it", backend)
 		return store
 	}
-	return judgedByAFile(store, source, files, install, chain, env, now)
+	return judgedByAFile(ctx, store, ports, files, install, chain, env, now)
 }
 
 // judgedByAFile writes the row of a build that reads a CA file - ADR110 part 1.
@@ -82,8 +83,9 @@ func storeFor(ctx context.Context, run probe.Runner, source file.Source, files f
 // by the owner 2026-10-20 on the measurement under probe.CADirectoriesOn: the
 // Debian, Ubuntu and Alpine packages trusted a root kept only in /etc/ssl/certs
 // while the named file lacked it, so a FAIL there would be false.
-func judgedByAFile(store report.TrustStore, source file.Source, files file.List, install Install, chain [][]byte, env Environment, now time.Time) report.TrustStore {
-	if stopped := configFileStops(&store, source, configOrderOn(env.Platform), install, env); stopped {
+func judgedByAFile(ctx context.Context, store report.TrustStore, ports probe.Ports, files file.List, install Install, chain [][]byte,
+	env Environment, now time.Time) report.TrustStore {
+	if stopped := configFileStops(&store, ports.Source, configOrderOn(env.Platform), install, env); stopped {
 		return store
 	}
 	variable, path := caNamed(env)
@@ -92,8 +94,18 @@ func judgedByAFile(store report.TrustStore, source file.Source, files file.List,
 		// Nothing named falls back to whatever the build was compiled with,
 		// and that is not something this program can read off disk without
 		// guessing.
-		store.NotAssessed = "this build reads a CA file and none of CURL_CA_BUNDLE, SSL_CERT_FILE and SSL_CERT_DIR is set, " +
-			"so the bundle it reads is its build-time default"
+		//
+		// ON LINUX THE DISTRIBUTION'S OWN BUILD IS ANSWERED BY THE PLATFORM
+		// STORE - ADR110, measured by S26 on 2026-10-20 with curl from the
+		// Debian, Ubuntu, Alpine and RHEL packages. Nothing curl's tool
+		// honours names another file by now: the configuration file and all
+		// three variables were ruled out above, which is condition 4.
+		const compiledIn = "this build reads a CA file and none of CURL_CA_BUNDLE, SSL_CERT_FILE and SSL_CERT_DIR is " +
+			"set, so the bundle it reads is its build-time default"
+		if env.Platform == "linux" {
+			return probe.DeferToThePlatform(ctx, store, ports, install.Path, "curl", compiledIn)
+		}
+		store.NotAssessed = compiledIn
 		return store
 	case "SSL_CERT_DIR":
 		// MEASURED BY S26 ON 2026-10-20: a root in that directory counted only
@@ -107,13 +119,13 @@ func judgedByAFile(store report.TrustStore, source file.Source, files file.List,
 
 	store.StoreForm = report.StoreFile
 	store.StorePath = path
-	bundle, err := readAll(source, path)
+	bundle, err := readAll(ports.Source, path)
 	if err != nil {
 		store.NotAssessed = fmt.Sprintf("the bundle named by %s could not be read: %v", variable, err)
 		return store
 	}
 	probe.Verify(&store, bundle, chain, now)
-	probe.WeighDirectories(&store, source, files, probe.CADirectoriesOn(env.Platform), bundle, chain, now,
+	probe.WeighDirectories(&store, ports.Source, files, probe.CADirectoriesOn(env.Platform), bundle, chain, now,
 		probe.LibcurlDirectorySentences(variable, "curl"))
 	return store
 }

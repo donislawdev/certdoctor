@@ -301,6 +301,41 @@ func TestADeferringRowIsNamedAsTheStoreItJudgesBy(t *testing.T) {
 	}
 }
 
+// ON LINUX THE PLATFORM STORE IS A FILE AND IS COUNTED BY ITS PATH - ADR110 -
+// so a row deferring to it is counted under that path too, whichever row the
+// walk meets first. Measured with the binary on 2026-10-20: counted under the
+// pointer, the one store was listed twice.
+func TestARowDeferringToAPlatformFileIsCountedUnderThatFile(t *testing.T) {
+	platform := platformRow("debian", yes(false))
+	platform.StoreForm, platform.StorePath = report.StoreFile, "/etc/ssl/certs/ca-certificates.crt"
+	deferring := func(runtime, instance string) report.TrustStore {
+		return report.TrustStore{Runtime: runtime, Instance: instance, StoreForm: report.StoreSystem,
+			DefersTo:             &report.StoreRef{Runtime: report.RuntimeSystemStore, Instance: "debian"},
+			TrustsPresentedChain: yes(false), TrustFailure: report.UnknownAuthority, TrustAnchorCount: 91,
+			SelectedBy: []string{"PATH"}}
+	}
+	_, refusing := sides([]report.TrustStore{deferring("git", "/usr/bin/git"), platform, deferring("curl", "/usr/bin/curl")})
+	if len(refusing) != 1 || refusing[0] != "system-store debian" {
+		t.Errorf("the store is listed as %v, want it once as system-store debian", refusing)
+	}
+
+	// A row naming that file itself is the same store as well - the rule the
+	// platform store's own row relied on from ADR104.
+	named := report.TrustStore{Runtime: "curl", Instance: "/opt/curl/bin/curl", StoreForm: report.StoreFile,
+		StorePath: platform.StorePath, TrustsPresentedChain: yes(false), TrustFailure: report.UnknownAuthority}
+	_, refusing = sides([]report.TrustStore{named, deferring("git", "/usr/bin/git"), platform})
+	if len(refusing) != 1 {
+		t.Errorf("one file read by three rows is listed as %v", refusing)
+	}
+
+	// A pointer at a store this run has no row for is counted under the
+	// pointer, so two rows pointing there are still one store.
+	_, refusing = sides([]report.TrustStore{deferring("git", "/usr/bin/git"), deferring("curl", "/usr/bin/curl")})
+	if len(refusing) != 1 {
+		t.Errorf("two rows pointing at one missing store are listed as %v", refusing)
+	}
+}
+
 // And the measured failure, through the layer: the store trusts the chain, the
 // leaf names nowhere to check, and the layer fails on curl alone without the
 // signer line counting curl as a store that lacks the signer.

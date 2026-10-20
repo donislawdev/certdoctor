@@ -123,7 +123,8 @@ var descriptors = []Descriptor{
 		Runtime: "git",
 		TrustSource: "http.sslBackend decides: schannel uses the Windows store, openssl the file GIT_SSL_CAINFO or " +
 			"http.sslCAInfo names - and on Linux a git naming no backend reads that file too, and may read " +
-			"/etc/ssl/certs beside it",
+			"/etc/ssl/certs beside it, and the distribution's own git naming nothing takes the answer of the platform " +
+			"store's row",
 		Source: Measured,
 		Evidence: "Measured on the owner's machine 2026-08-18: git 2.55.0.windows.3 reports http.sslbackend=openssl and " +
 			"http.sslcainfo pointing at its own bundle, both from the SYSTEM level - so adding a CA to the Windows " +
@@ -150,7 +151,8 @@ var descriptors = []Descriptor{
 			"followed, and the row says so: an [includeIf] or a URL section that sets one of the four keys, because " +
 			"which repository or address it applies to is not this probe's question, GIT_CONFIG_PARAMETERS, and on " +
 			"Windows a home directory that HOMEDRIVE and HOMEPATH put somewhere other than USERPROFILE, because " +
-			"telling which one git takes means looking at what may be a network share.",
+			"telling which one git takes means looking at what may be a network share. " +
+			"Measured 2026-10-20 with probe S26 and with this program's own binary in Debian 13, Alpine 3.24 and RHEL 9.7 images: with nothing named, a root appended to the first bundle on Go's list - the file the system-store row judges - was trusted by curl from the package and by git from the Debian and Alpine ones, and the command printed for that row fixed them too. So a binary the distribution's own package installed, on a distribution whose recipe for libcurl names that file, takes the answer of the system-store row, and each condition that does not hold is said on its own - the recipes are cited beside the table in internal/adapter/probe/deferral.go.",
 		FixSource: Documentation,
 		FixEvidence: "git-config, Documentation/config/http.adoc, read 2026-08-19 at " +
 			"https://git-scm.com/docs/git-config - http.sslCAInfo is \"File containing the certificates to verify the " +
@@ -181,7 +183,8 @@ var descriptors = []Descriptor{
 		Runtime: "curl",
 		TrustSource: "decided by the TLS backend: a Schannel build judges by this account's Windows store and takes the " +
 			"answer of system-store CurrentUser, OpenSSL builds read the file CURL_CA_BUNDLE or SSL_CERT_FILE names - " +
-			"and on Linux may read /etc/ssl/certs beside it",
+			"and on Linux may read /etc/ssl/certs beside it, and the distribution's own build naming nothing takes " +
+			"the answer of the platform store's row",
 		Source: Measured,
 		Evidence: "Measured on the owner machine 2026-08-18: TWO curl.exe on PATH, the system one and the one shipped " +
 			"inside the Git installation, and BOTH are Schannel - the second was expected to be OpenSSL and is not. " +
@@ -199,7 +202,8 @@ var descriptors = []Descriptor{
 			"link in /etc/ssl/certs while the named file lacked it - RHEL and the curlimages build did not. Read " +
 			"beside it in src/tool_operate.c, src/tool_findfile.c, lib/getenv.c and lib/vtls/vtls_config.c of " +
 			"8.21.0 and src/tool_operate.c of 7.76.1. Not looked at: the configuration file in the home directory " +
-			"of an account known only to a directory service, which a release build without cgo cannot ask for.",
+			"of an account known only to a directory service, which a release build without cgo cannot ask for. " +
+			"Measured 2026-10-20 with probe S26 and with this program's own binary in Debian 13, Alpine 3.24 and RHEL 9.7 images: with nothing named, a root appended to the first bundle on Go's list - the file the system-store row judges - was trusted by curl from the package and by git from the Debian and Alpine ones, and the command printed for that row fixed them too. So a binary the distribution's own package installed, on a distribution whose recipe for libcurl names that file, takes the answer of the system-store row, and each condition that does not hold is said on its own - the recipes are cited beside the table in internal/adapter/probe/deferral.go.",
 		FixSource: Documentation,
 		FixEvidence: "curl manual page, section Environment and the --cacert entry, read 2026-08-04 at " +
 			"https://curl.se/docs/manpage.html - CURL_CA_BUNDLE supplies the value of --cacert, which names the file " +

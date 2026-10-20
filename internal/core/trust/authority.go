@@ -150,13 +150,14 @@ func summaryFor(a report.SigningAuthority, selfSigned bool) string {
 // out of an installation detail.
 func sides(stores []report.TrustStore) (trusting, refusing []string) {
 	trusting, refusing = []string{}, []string{}
+	keys := keysOf(stores)
 	counted := map[string]bool{}
 	for _, store := range stores {
 		if store.TrustsPresentedChain == nil {
 			continue
 		}
 		if *store.TrustsPresentedChain {
-			if seen(counted, store) {
+			if seen(counted, keys, store) {
 				continue
 			}
 			trusting = append(trusting, label(store))
@@ -165,7 +166,7 @@ func sides(stores []report.TrustStore) (trusting, refusing []string) {
 		if store.TrustFailure != report.UnknownAuthority {
 			continue
 		}
-		if seen(counted, store) {
+		if seen(counted, keys, store) {
 			continue
 		}
 		refusing = append(refusing, label(store))
@@ -174,25 +175,53 @@ func sides(stores []report.TrustStore) (trusting, refusing []string) {
 }
 
 // seen reports whether this store has already been counted, and records it.
-func seen(counted map[string]bool, store report.TrustStore) bool {
-	key := store.StorePath
-	switch {
-	case store.DefersTo != nil:
-		// A ROW THAT DEFERS IS THE STORE IT DEFERS TO - ADR108 part 4. Measured
-		// with probe S25: curl on Schannel judged by this account's Root store,
-		// the one the system-store row for CurrentUser reads, so the two rows are
-		// one opinion and are counted once.
-		key = store.DefersTo.Runtime + "\x00" + store.DefersTo.Instance
-	case key == "":
-		// A platform store has no path to be counted by, so the instance is the
-		// identity - which is what it is for everywhere else in this layer.
-		key = store.Runtime + "\x00" + store.Instance
+//
+// A ROW THAT DEFERS IS THE STORE IT DEFERS TO - ADR108 part 4. Measured with
+// probe S25: curl on Schannel judged by this account's Root store, the one the
+// system-store row for CurrentUser reads, so the two rows are one opinion and are
+// counted once.
+//
+// AND IT IS COUNTED UNDER THAT STORE'S OWN KEY, NOT UNDER THE POINTER - ADR110.
+// On Linux the platform store is a file and is counted by its path, so a key
+// spelled from the pointer counted one store twice: measured with the binary on
+// 2026-10-20, "not held by: system-store debian, system-store debian".
+func seen(counted map[string]bool, keys map[report.StoreRef]string, store report.TrustStore) bool {
+	key := keyOf(store)
+	if store.DefersTo != nil {
+		key = refKey(*store.DefersTo)
+		if target, found := keys[*store.DefersTo]; found {
+			key = target
+		}
 	}
 	if counted[key] {
 		return true
 	}
 	counted[key] = true
 	return false
+}
+
+// keyOf is what a row that does not defer is counted by: the file it reads, or
+// for a platform store with no file, its instance - which is what the instance is
+// for everywhere else in this layer.
+func keyOf(store report.TrustStore) string {
+	if store.StorePath != "" {
+		return store.StorePath
+	}
+	return refKey(report.StoreRef{Runtime: store.Runtime, Instance: store.Instance})
+}
+
+func refKey(ref report.StoreRef) string { return ref.Runtime + "\x00" + ref.Instance }
+
+// keysOf maps every row that does not defer to the key it is counted by, so a
+// row pointing at it is counted under the same one.
+func keysOf(stores []report.TrustStore) map[report.StoreRef]string {
+	keys := map[report.StoreRef]string{}
+	for _, store := range stores {
+		if store.DefersTo == nil {
+			keys[report.StoreRef{Runtime: store.Runtime, Instance: store.Instance}] = keyOf(store)
+		}
+	}
+	return keys
 }
 
 // label is how one store is named in the two lists. It matches the wording of a

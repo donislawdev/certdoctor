@@ -63,9 +63,11 @@ verdict_blames_forbidden=machine,runtime,store
 # L5 row, and only one of them may produce a command.
 #
 # TWO ROWS SINCE ADR104 - curl and the platform's own row read the same image
-# bundle and both refuse, and neither may produce a command.
+# bundle and both refuse, and neither may produce a command. THREE SINCE ADR110:
+# git from the Alpine package names nothing and defers to the platform's own row,
+# so it refuses with it - and a row that defers never carries a command at all.
 l5_status=FAIL
-l5_rows_not_trusting=2
+l5_rows_not_trusting=3
 
 # There is no command for the user to run. A generated fix here would be a fix
 # for somebody else's server, which we cannot reach - so the deliverable is

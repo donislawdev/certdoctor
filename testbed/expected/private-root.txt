@@ -54,8 +54,12 @@ chain_complete=true
 # TWO ROWS SINCE ADR104, ONE STORE. The platform's own row reads the same image
 # bundle curl is pointed at, so both refuse - and the authority finding counts
 # them once, because it counts stores by the file they read.
+#
+# THREE SINCE ADR110, STILL ONE STORE. git here comes from the Alpine package
+# and nothing names a file for it, so it defers to the platform's own row and
+# refuses with it - and a row that defers is counted under that row's file.
 l5_status=FAIL
-l5_rows_not_trusting=2
+l5_rows_not_trusting=3
 l5_trust_failure=unknown_authority
 
 # THE INDEPENDENT WITNESS IS THE RUNTIME ITSELF, and this is the first time in

@@ -10,6 +10,23 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - curl and git on Linux take the answer of the system store
+
+- **curl and git that came with the distribution, naming no CA file, now get
+  a verdict.** They read the bundle the distribution built them with, and that
+  is the file the `system-store` row already judges - so their rows say they
+  judge by `system-store <distribution>` and carry that row's answer, where
+  they used to say only that the file was compiled in. The command printed for
+  the `system-store` row is the one that fixes all three.
+- **It happens only when it is known to be true:** the binary belongs to the
+  distribution's own package (dpkg, apk, or `rpm -qf`), the distribution is one
+  whose recipe for libcurl names the file - Debian, Ubuntu, Alpine, RHEL,
+  CentOS, Rocky Linux, AlmaLinux and Fedora - that file is the one the
+  `system-store` row read, and nothing curl or git honours names another file.
+  When one of those does not hold, the row says which.
+- **A named `http.sslBackend` never defers**, and neither does a build outside
+  a package - a curl copied into `/usr/local/bin` stays without a verdict.
+
 ### Fixed - git is judged by the configuration it actually reads
 
 - **`~/.gitconfig` wins over `~/.config/git/config`.** git reads the second

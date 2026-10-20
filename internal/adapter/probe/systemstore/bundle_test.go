@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"io/fs"
 	"slices"
@@ -339,55 +338,7 @@ func TestACancelledRunOrAMissingPortReadsNothing(t *testing.T) {
 	}
 }
 
-// THE INSTANCE IS THE DISTRIBUTION'S OWN ID, checked against os-release(5)
-// before it is printed - decided by the owner 2026-10-15.
-func TestTheInstanceIsTheIDOsReleaseGives(t *testing.T) {
-	const etc, usr = "/etc/os-release", "/usr/lib/os-release"
-	cases := []struct {
-		name string
-		etc  string
-		usr  string
-		err  bool
-		want string
-	}{
-		{name: "bare", etc: "NAME=Alpine\nID=alpine\nVERSION_ID=3.24.1\n", want: "alpine"},
-		{name: "double quotes", etc: `ID="rhel"` + "\n" + `ID_LIKE="fedora"`, want: "rhel"},
-		{name: "single quotes", etc: "ID='debian'", want: "debian"},
-		{name: "the last assignment wins", etc: "ID=first\nID=second", want: "second"},
-		{name: "a carriage return", etc: "ID=ubuntu\r\n", want: "ubuntu"},
-		{name: "no ID at all", etc: "NAME=Something\n", want: "linux"},
-		{name: "an empty ID", etc: "ID=\n", want: "linux"},
-		{name: "upper case is not an ID", etc: "ID=Ubuntu", want: "linux"},
-		{name: "a space is not an ID", etc: `ID="a b"`, want: "linux"},
-		{name: "an escape is not an ID", etc: "ID=\x1b[31mred", want: "linux"},
-		{name: "a page is not an ID", etc: "ID=" + strings.Repeat("a", 65), want: "linux"},
-		{name: "sixty-four is", etc: "ID=" + strings.Repeat("a", 64), want: strings.Repeat("a", 64)},
-		{name: "unmatched quotes", etc: `ID="rhel`, want: "linux"},
-		{name: "only /usr/lib", usr: "ID=fedora", want: "fedora"},
-		{name: "/etc is used exclusively", etc: "NAME=x", usr: "ID=fedora", want: "linux"},
-		{name: "/etc unreadable", err: true, usr: "ID=fedora", want: "linux"},
-		{name: "neither", want: "linux"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			d := newDisk()
-			if c.etc != "" {
-				d.files[etc] = []byte(c.etc)
-			}
-			if c.usr != "" {
-				d.files[usr] = []byte(c.usr)
-			}
-			if c.err {
-				d.errs[etc] = fmt.Errorf("denied")
-			}
-			if got := distribution(d.source, linuxLayout.releases); got != c.want {
-				t.Errorf("got %q, want %q", got, c.want)
-			}
-		})
-	}
-}
-
-// The instance reaches the row - the function above is not decoration.
+// The instance reaches the row - the reader in package probe is not decoration.
 func TestTheRowCarriesTheDistribution(t *testing.T) {
 	ours := anAuthority(t, "ours")
 	d := newDisk()

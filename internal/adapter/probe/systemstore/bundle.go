@@ -1,14 +1,8 @@
 package systemstore
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"io"
-	"io/fs"
-	"strings"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
@@ -46,29 +40,14 @@ type layout struct {
 // linuxLayout is Go's own list, so the row reads exactly what a Go program on
 // the machine reads.
 //
-// SOURCE, inviolable rule 18: src/crypto/x509/root_linux.go of Go 1.27.2, read
-// 2026-10-15 - certFiles ("stop after finding one"), in that order. The
-// directories are Go's too, and live in package probe because curl and git weigh
-// the same ones. The two release files and their precedence are
-// os-release(5): "/etc/os-release takes precedence over /usr/lib/os-release",
-// read the same day at https://man7.org/linux/man-pages/man5/os-release.5.html
+// ALL THREE LIVE IN PACKAGE probe, with their sources, because curl and git ask
+// the same questions - the directories when a named file refuses (ADR110 part
+// 1), the bundle and the distribution when they defer to this row (ADR110).
 var linuxLayout = layout{
-	bundles: []string{
-		"/etc/ssl/certs/ca-certificates.crt",
-		"/etc/pki/tls/certs/ca-bundle.crt",
-		"/etc/ssl/ca-bundle.pem",
-		"/etc/pki/tls/cacert.pem",
-		"/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
-		"/etc/ssl/cert.pem",
-	},
+	bundles:     probe.LinuxBundles,
 	directories: probe.LinuxCADirectories,
-	releases:    []string{"/etc/os-release", "/usr/lib/os-release"},
+	releases:    probe.LinuxReleases,
 }
-
-// fallbackDistribution is the instance when nothing names the distribution. It
-// is os-release(5)'s own default: "If not set, a default of ID=linux may be
-// used."
-const fallbackDistribution = "linux"
 
 // noBundle is the row on a machine with no bundle anywhere. Measured by S24:
 // debian:trixie-slim and ubuntu:24.04 hold none, and Go's own pool there is
@@ -87,7 +66,7 @@ func bundleProbe(source file.Source, files file.List, l layout, now func() time.
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
 		store := report.TrustStore{
 			Runtime:   report.RuntimeSystemStore,
-			Instance:  fallbackDistribution,
+			Instance:  probe.FallbackDistribution,
 			StoreForm: report.StoreSystem,
 			// NOTHING SELECTS A PLATFORM STORE, the same answer the Windows rows
 			// give - SSL_CERT_FILE selects something ELSE, and is not followed.
@@ -105,7 +84,7 @@ func bundleProbe(source file.Source, files file.List, l layout, now func() time.
 			store.NotAssessed = "this program was built without a way to read files here, so the store was not read"
 			return []report.TrustStore{store}, nil
 		}
-		store.Instance = distribution(source, l.releases)
+		store.Instance = probe.Distribution(source, l.releases)
 		assess(&store, source, files, l, chain, now())
 		return []report.TrustStore{store}, nil
 	}
@@ -114,7 +93,7 @@ func bundleProbe(source file.Source, files file.List, l layout, now func() time.
 // assess fills in what the first bundle - and, when it refuses, the
 // directories beside it - make of the chain.
 func assess(store *report.TrustStore, source file.Source, files file.List, l layout, chain [][]byte, at time.Time) {
-	path, bundle, err := firstBundle(source, l.bundles)
+	path, bundle, err := probe.FirstBundle(source, l.bundles)
 	if path == "" {
 		store.NotAssessed = noBundle
 		return
@@ -124,28 +103,13 @@ func assess(store *report.TrustStore, source file.Source, files file.List, l lay
 	// whatever it leads to - measured on RHEL, where it is a link.
 	store.StoreForm, store.StorePath = report.StoreFile, path
 	if err != nil {
-		// A BUNDLE THAT EXISTS AND CANNOT BE READ IS NOT SKIPPED, and that is a
-		// deliberate difference from Go, which moves on to the next file. OpenSSL
-		// does not move on, so the next file would be a store some programs here
-		// never read, reported as the one they do.
+		// A BUNDLE THAT EXISTS AND CANNOT BE READ IS NOT SKIPPED - why is on
+		// probe.FirstBundle.
 		store.NotAssessed = fmt.Sprintf("the CA bundle at %s could not be read: %v", path, err)
 		return
 	}
 	probe.Verify(store, bundle, chain, at)
 	probe.WeighDirectories(store, source, files, l.directories, bundle, chain, at, directorySentences)
-}
-
-// firstBundle returns the first candidate that exists, with its bytes or the
-// reason they could not be read, and an empty path when none exists.
-func firstBundle(source file.Source, candidates []string) (string, []byte, error) {
-	for _, path := range candidates {
-		data, err := readAll(source, path)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		return path, data, err
-	}
-	return "", nil, nil
 }
 
 // The sentences a row carries when the directories stop a refusal from being
@@ -162,79 +126,4 @@ const (
 
 var directorySentences = probe.DirectorySentences{
 	Closes: directoryCloses, Unreadable: directoryUnreadable, TooLarge: directoryTooLarge,
-}
-
-// distribution is the ID os-release gives, or the fallback.
-//
-// THE FIRST RELEASE FILE THAT EXISTS IS THE ONLY ONE READ - os-release(5): use
-// its data "exclusively ... if it exists". A file that exists and names no ID
-// gets the default, not the next file.
-func distribution(source file.Source, releases []string) string {
-	for _, path := range releases {
-		data, err := readAll(source, path)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return fallbackDistribution
-		}
-		return idFrom(data)
-	}
-	return fallbackDistribution
-}
-
-// idFrom reads ID out of an os-release file.
-//
-// THE VALUE IS CHECKED AGAINST THE SPECIFICATION BEFORE IT IS PRINTED, because
-// it is text from the machine being diagnosed and it lands in every surface of
-// the report. os-release(5): "A lower-case string (no spaces or other characters
-// outside of 0-9, a-z, ".", "_" and "-")". Anything else is not an ID and gets
-// the default - a value that needed escaping cannot be a valid one. The last
-// assignment wins, the way the shell that may source this file would read it.
-func idFrom(data []byte) string {
-	id := ""
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		key, value, found := strings.Cut(strings.TrimSpace(scanner.Text()), "=")
-		if found && key == "ID" {
-			id = unquoted(value)
-		}
-	}
-	if !validID(id) {
-		return fallbackDistribution
-	}
-	return id
-}
-
-// unquoted takes off one pair of matching quotes, which os-release(5) allows
-// around any value.
-func unquoted(value string) string {
-	if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') && value[len(value)-1] == value[0] {
-		return value[1 : len(value)-1]
-	}
-	return value
-}
-
-// validID reports whether a value is an ID as os-release(5) defines one. The
-// length bound is ours - an ID is a word, and a report should not carry a page.
-func validID(id string) bool {
-	if id == "" || len(id) > 64 {
-		return false
-	}
-	for _, r := range id {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-') {
-			return false
-		}
-	}
-	return true
-}
-
-// readAll is the one place this file turns the port into bytes.
-func readAll(source file.Source, path string) ([]byte, error) {
-	reader, err := source(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = reader.Close() }()
-	return io.ReadAll(reader)
 }

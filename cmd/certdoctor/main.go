@@ -495,7 +495,7 @@ func liveTrustProbes() map[string]trust.Probe {
 		// and only the second is repaired by importing anything. Left to itself
 		// crypto/x509 would read the clock behind the probe's back, which is the
 		// one thing that stops an assessment being reproducible from its input.
-		"git":  git.Probe(guarded, resolvePath, files, paths, gitEnv, time.Now),
+		"git":  git.Probe(guarded, resolvePath, files, probe.Run, paths, gitEnv, time.Now),
 		"java": java.Probe(guarded, resolvePath, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
 		"curl": curl.Probe(guarded, resolvePath, files, probe.Run, paths, curlEnv, time.Now),
 	}

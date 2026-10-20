@@ -18,6 +18,7 @@ import (
 	"testing/iotest"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/probe"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
@@ -133,7 +134,7 @@ func TestAGitWithNoConfigurationAtAllStillGetsARow(t *testing.T) {
 		t.Errorf("a config was claimed at %q, and this machine has none", found[0].SystemConfig)
 	}
 
-	stores, err := Probe(source, noLinks, noFiles, []string{"/usr/bin"}, Environment{}, atNoon)(t.Context(), [][]byte{{0x30}})
+	stores, err := Probe(source, noLinks, noFiles, nil, []string{"/usr/bin"}, Environment{}, atNoon)(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -355,7 +356,7 @@ func TestABundleHoldingTheAnchorTrustsTheChain(t *testing.T) {
 	anchorPEM, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": string(anchorPEM)})
 
-	store := storeFor(source, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin", Architecture: "x64"}, settingsFor("/bundle.crt"), Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin", Architecture: "x64"}, settingsFor("/bundle.crt"), Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("no verdict was reached: %s", store.NotAssessed)
@@ -378,7 +379,7 @@ func TestABundleWithoutTheAnchorDoesNotTrustTheChain(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": string(otherPEM)})
 
-	store := storeFor(source, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("an unrelated bundle produced no verdict: %s", store.NotAssessed)
@@ -397,7 +398,7 @@ func TestABundleWithoutTheAnchorDoesNotTrustTheChain(t *testing.T) {
 // here as exactly this row.
 func TestAnUnreadableBundleIsUnknownRatherThanDistrust(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
-	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/gone.crt"), Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: sourceOf(nil)}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/gone.crt"), Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("a bundle that could not be read produced a verdict about trust")
@@ -410,7 +411,7 @@ func TestAnUnreadableBundleIsUnknownRatherThanDistrust(t *testing.T) {
 func TestABundleWithNoCertificatesSaysSo(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": "not a certificate at all\n"})
-	store := storeFor(source, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("an empty bundle produced a verdict")
@@ -425,7 +426,7 @@ func TestABundleWithNoCertificatesSaysSo(t *testing.T) {
 func TestSchannelDefersToTheSystemStoreProbe(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "schannel", BackendLevel: "system"}
-	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: sourceOf(nil)}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("the git probe answered a question about the platform store")
@@ -438,7 +439,7 @@ func TestSchannelDefersToTheSystemStoreProbe(t *testing.T) {
 func TestAnUnknownBackendIsNamedRatherThanGuessed(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "nss", BackendLevel: "global"}
-	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: sourceOf(nil)}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("an unknown backend produced a verdict")
@@ -458,7 +459,7 @@ func TestAnUnknownBackendIsNamedRatherThanGuessed(t *testing.T) {
 // the bundle libcurl was compiled with, and the row says that instead.
 func TestNoBackendNamedIsTheOrdinaryCaseAndSaysSo(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
-	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, Settings{}, Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: sourceOf(nil)}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, Settings{}, Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("a git naming no backend produced a verdict about trust")
@@ -474,7 +475,7 @@ func TestNoBackendNamedIsTheOrdinaryCaseAndSaysSo(t *testing.T) {
 func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "openssl", BackendLevel: "system"}
-	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: sourceOf(nil)}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("openssl with no bundle named produced a verdict")
@@ -487,7 +488,7 @@ func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 // A runtime that is not here sits OUTSIDE the matrix - docs/20 rule 1 - and that
 // is not an error.
 func TestNoInstallFoundIsNotAnError(t *testing.T) {
-	probe := Probe(sourceOf(nil), noLinks, noFiles, nil, Environment{}, atNoon)
+	probe := Probe(sourceOf(nil), noLinks, noFiles, nil, nil, Environment{}, atNoon)
 	stores, err := probe(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("git not being installed came back as an error: %v", err)
@@ -504,7 +505,7 @@ func TestTheProbeProducesOneRowPerInstall(t *testing.T) {
 		"/bundle.crt":    string(anchorPEM),
 	})
 
-	stores, err := Probe(source, noLinks, noFiles, nil, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, noLinks, noFiles, nil, nil, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -536,7 +537,7 @@ func TestEveryGitOnPathGetsItsOwnRow(t *testing.T) {
 		"/bundle.crt": string(anchorPEM),
 	})
 
-	stores, err := Probe(source, noLinks, noFiles, []string{gitCmdDir, gitMingwDir}, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, noLinks, noFiles, nil, []string{gitCmdDir, gitMingwDir}, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -658,7 +659,7 @@ func TestGitSSLCAInfoWinsOverTheConfiguration(t *testing.T) {
 	anchorPEM, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/env.crt": string(anchorPEM), "/config.crt": "no certificate here"})
 
-	store := storeFor(source, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/config.crt"),
+	store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/config.crt"),
 		Environment{CAInfo: Variable{Value: "/env.crt", Set: true}}, [][]byte{leafDER}, atNoon())
 	if store.StorePath != filepath.Clean("/env.crt") || store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain {
 		t.Errorf("got %+v, want the verdict of the file GIT_SSL_CAINFO names", store)
@@ -669,7 +670,7 @@ func TestGitSSLCAInfoWinsOverTheConfiguration(t *testing.T) {
 // file is not what git reads - and what it reads instead was not established.
 func TestAnEmptyGitSSLCAInfoIsNotTheConfiguredFile(t *testing.T) {
 	anchorPEM, leafDER := anchorAndLeaf(t)
-	store := storeFor(sourceOf(map[string]string{"/config.crt": string(anchorPEM)}), noFiles,
+	store := storeFor(t.Context(), probe.Ports{Source: sourceOf(map[string]string{"/config.crt": string(anchorPEM)})}, noFiles,
 		Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/config.crt"),
 		Environment{CAInfo: Variable{Set: true}}, [][]byte{leafDER}, atNoon())
 	if store.TrustsPresentedChain != nil || store.StorePath != "" || !strings.Contains(store.NotAssessed, "set and empty") {
@@ -686,11 +687,11 @@ func TestADirectoryHandedToLibcurlLeavesTheRowUndetermined(t *testing.T) {
 	settings := settingsFor("/bundle.crt")
 	settings.CAPath, settings.CAPathLevel = "/config/certs", "global"
 
-	store := storeFor(source, noFiles, install, settings, Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, settings, Environment{}, [][]byte{leafDER}, atNoon())
 	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "http.sslCAPath") {
 		t.Errorf("configured directory: got %+v, want undetermined naming http.sslCAPath", store)
 	}
-	store = storeFor(source, noFiles, install, settings, Environment{CAPath: Variable{Value: "/env/certs", Set: true}},
+	store = storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, settings, Environment{CAPath: Variable{Value: "/env/certs", Set: true}},
 		[][]byte{leafDER}, atNoon())
 	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "GIT_SSL_CAPATH") {
 		t.Errorf("directory from the environment: got %+v, want undetermined naming GIT_SSL_CAPATH", store)
@@ -722,7 +723,7 @@ func TestVerificationSwitchedOffAsksNoStore(t *testing.T) {
 		"sslVerify with a suffix git stops on": {with("1k", "system"), Environment{}, "does not read as true or false"},
 	}
 	for name, c := range off {
-		store := storeFor(source, noFiles, install, c.settings, c.env, [][]byte{leafDER}, atNoon())
+		store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, c.settings, c.env, [][]byte{leafDER}, atNoon())
 		if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, c.want) {
 			t.Errorf("%s: got %+v, want undetermined saying %q", name, store, c.want)
 		}
@@ -730,7 +731,7 @@ func TestVerificationSwitchedOffAsksNoStore(t *testing.T) {
 	// THE TWIN: verification on, in any spelling git reads as true, leaves the
 	// file to decide.
 	for _, value := range []string{"true", "Yes", "on", "1", "-3"} {
-		store := storeFor(source, noFiles, install, with(value, "system"), Environment{}, [][]byte{leafDER}, atNoon())
+		store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, with(value, "system"), Environment{}, [][]byte{leafDER}, atNoon())
 		if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain {
 			t.Errorf("sslVerify %q: got %+v, want the bundle's verdict", value, store)
 		}
@@ -761,17 +762,59 @@ func TestAFileNamedWithNoBackendIsReadOnLinuxAlone(t *testing.T) {
 	install := Install{Instance: "/usr/bin/git", Root: "/usr/bin"}
 	settings := Settings{CAInfo: "/bundle.crt", CAInfoLevel: "system"}
 
-	store := storeFor(source, noFiles, install, settings, Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, settings, Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
 	if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain || store.StoreForm != report.StoreFile {
 		t.Errorf("on Linux: got %+v, want the file's verdict", store)
 	}
-	store = storeFor(source, noFiles, install, settings, Environment{Platform: "windows"}, [][]byte{leafDER}, atNoon())
+	store = storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, settings, Environment{Platform: "windows"}, [][]byte{leafDER}, atNoon())
 	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "libcurl") {
 		t.Errorf("on Windows: got %+v, want the row it always was", store)
 	}
-	store = storeFor(source, noFiles, install, Settings{}, Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
+	store = storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, Settings{}, Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
 	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "compiled into it") {
 		t.Errorf("nothing named on Linux: got %+v, want the build-time sentence", store)
+	}
+}
+
+// NOTHING NAMED ON LINUX, NO BACKEND NAMED: the distribution's own git defers to
+// the platform store - ADR110, measured by S26 for the Debian and Alpine
+// packages. An install found without a binary has no package to ask about, and
+// a NAMED backend never defers, even the one the library was built with.
+func TestTheDistributionsGitNamingNothingDefersToThePlatformStore(t *testing.T) {
+	source := sourceOf(map[string]string{
+		"/etc/os-release":                    "ID=debian\n",
+		"/var/lib/dpkg/info/git.list":        "/usr/bin/git\n",
+		"/etc/ssl/certs/ca-certificates.crt": "bundle",
+	})
+	ports := probe.Ports{Source: source}
+	linux := Environment{Platform: "linux"}
+	onPath := Install{Instance: "/usr/bin/git", Root: "/usr/bin", OnPath: true}
+
+	store := storeFor(t.Context(), ports, noFiles, onPath, Settings{}, linux, [][]byte{{0x30}}, atNoon())
+	want := report.StoreRef{Runtime: report.RuntimeSystemStore, Instance: "debian"}
+	if store.DefersTo == nil || *store.DefersTo != want || store.StorePath != "" || store.TrustsPresentedChain != nil {
+		t.Errorf("got %+v, want a row deferring to system-store debian", store)
+	}
+
+	byConfig := Install{Instance: "/", Root: "/", SystemConfig: "/etc/gitconfig"}
+	store = storeFor(t.Context(), ports, noFiles, byConfig, Settings{}, linux, [][]byte{{0x30}}, atNoon())
+	if store.DefersTo != nil || !strings.HasSuffix(store.NotAssessed, "no git binary was found for this install, so "+
+		"whether it is debian's own build was not established") {
+		t.Errorf("an install found by its configuration: got %q", store.NotAssessed)
+	}
+
+	named := Settings{Backend: "openssl", BackendLevel: "system"}
+	store = storeFor(t.Context(), ports, noFiles, onPath, named, linux, [][]byte{{0x30}}, atNoon())
+	if store.DefersTo != nil || !strings.HasPrefix(store.NotAssessed, "git is set to use openssl") {
+		t.Errorf("a named backend: got %q", store.NotAssessed)
+	}
+
+	// A DIRECTORY NAMED ALONE names something too, so the row says what it
+	// names rather than deferring.
+	directory := Environment{Platform: "linux", CAPath: Variable{Value: "/etc/ssl/certs", Set: true}}
+	store = storeFor(t.Context(), ports, noFiles, onPath, Settings{}, directory, [][]byte{{0x30}}, atNoon())
+	if store.DefersTo != nil || !strings.Contains(store.NotAssessed, "GIT_SSL_CAPATH names the directory") {
+		t.Errorf("a directory named: got %q", store.NotAssessed)
 	}
 }
 
@@ -786,12 +829,12 @@ func TestARefusalByTheNamedFileIsWeighedAgainstTheBuildsDirectories(t *testing.T
 	files := listOf(map[string][]string{"/etc/ssl/certs": {"/etc/ssl/certs/ours.pem"}})
 	install := Install{Instance: "/usr/bin/git", Root: "/usr/bin"}
 
-	store := storeFor(source, files, install, settingsFor("/bundle.crt"), Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: source}, files, install, settingsFor("/bundle.crt"), Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
 	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "/etc/ssl/certs") ||
 		!strings.Contains(store.NotAssessed, "http.sslCAInfo") {
 		t.Errorf("on Linux: got %+v, want undetermined naming the directory and the key", store)
 	}
-	store = storeFor(source, files, install, settingsFor("/bundle.crt"), Environment{Platform: "windows"}, [][]byte{leafDER}, atNoon())
+	store = storeFor(t.Context(), probe.Ports{Source: source}, files, install, settingsFor("/bundle.crt"), Environment{Platform: "windows"}, [][]byte{leafDER}, atNoon())
 	if store.TrustsPresentedChain == nil || *store.TrustsPresentedChain || store.TrustFailure != report.UnknownAuthority {
 		t.Errorf("on Windows: got %+v, want the file's refusal to stand", store)
 	}

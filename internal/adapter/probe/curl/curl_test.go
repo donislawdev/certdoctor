@@ -90,8 +90,8 @@ func TestOneBinaryReachedByTwoSpellingsIsOneRow(t *testing.T) {
 // and which row was measured with probe S25 on 2026-10-20: a root held in this
 // account's Root store alone was trusted by both builds on this machine.
 func TestASchannelBuildJudgesByThisAccountsStore(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, []string{"http://crl.test/a.crl"}, nil)},
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(schannelLine), Source: sourceOf()},
+		noFiles, Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, []string{"http://crl.test/a.crl"}, nil)},
 		Environment{}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
@@ -140,8 +140,8 @@ func leafNaming(t *testing.T, crl, ocsp []string) []byte {
 // refuses for itself and still names the store, so the signer line counts that
 // store once.
 func TestASchannelBuildRefusesALeafThatNamesNowhereToCheck(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, nil, nil)}, Environment{}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(schannelLine), Source: sourceOf()},
+		noFiles, Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, nil, nil)}, Environment{}, atNoon())
 
 	if store.TrustsPresentedChain == nil || *store.TrustsPresentedChain {
 		t.Fatalf("a leaf naming nowhere to check was not refused: %+v", store)
@@ -157,8 +157,8 @@ func TestASchannelBuildRefusesALeafThatNamesNowhereToCheck(t *testing.T) {
 // A JUDGEMENT, PINNED SO IT IS NOT CHANGED BY ACCIDENT: S25 served revocation
 // lists only, and a responder is taken to be an address too.
 func TestAnOCSPResponderCountsAsSomewhereToCheck(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, nil, []string{"http://ocsp.test"})}, Environment{}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(schannelLine), Source: sourceOf()},
+		noFiles, Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, nil, []string{"http://ocsp.test"})}, Environment{}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Errorf("a leaf naming a responder was judged here: %+v", store)
@@ -168,8 +168,8 @@ func TestAnOCSPResponderCountsAsSomewhereToCheck(t *testing.T) {
 // A certificate Go cannot read is not a certificate naming nowhere - nothing
 // was learned, so the row neither refuses nor takes a store's answer.
 func TestALeafThatCannotBeReadLeavesTheRowUnassessed(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(schannelLine), Source: sourceOf()},
+		noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
 		t.Errorf("an unreadable leaf still produced an answer or a store to take one from: %+v", store)
@@ -201,8 +201,8 @@ func TestTheSelectedBackendIsTheOneOutsideTheBrackets(t *testing.T) {
 func TestAConfigurationFileStopsTheRowTakingTheStoresAnswer(t *testing.T) {
 	profile := hostSpelling(`C:\Users\jdoe`)
 	curlrc := filepath.Join(profile, ".curlrc")
-	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(curlrc), noFiles, Install{Path: system32Curl}, [][]byte{leafNaming(t, nil, nil)},
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(schannelLine), Source: sourceOf(curlrc)},
+		noFiles, Install{Path: system32Curl}, [][]byte{leafNaming(t, nil, nil)},
 		Environment{Homes: map[string]string{"USERPROFILE": profile}}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
@@ -330,8 +330,8 @@ func TestTheCAVariablesAreReadInCurlsOwnOrder(t *testing.T) {
 // S26 in five images, curl 7.76.1 to 8.21.0 - and a bundle that cannot be read
 // says which variable named it.
 func TestSSLCertFileNamesTheBundleTheRowReads(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying(opensslLine),
-		sourceOf(), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CertFile: "/absent/file.pem"}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(opensslLine), Source: sourceOf()},
+		noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CertFile: "/absent/file.pem"}, atNoon())
 
 	if store.StoreForm != report.StoreFile || store.StorePath != "/absent/file.pem" {
 		t.Errorf("the row does not name the file SSL_CERT_FILE points at: %+v", store)
@@ -345,8 +345,8 @@ func TestSSLCertFileNamesTheBundleTheRowReads(t *testing.T) {
 // certificate there counts only under its hashed name - and the row says so
 // rather than reading the directory as a bundle.
 func TestSSLCertDirLeavesTheRowUndetermined(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying(opensslLine),
-		sourceOf("/certs/ours.pem"), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}},
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(opensslLine), Source: sourceOf("/certs/ours.pem")},
+		noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}},
 		Environment{CertDir: "/certs", CertFile: "/certs/ours.pem"}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.StorePath != "" || store.StoreForm != report.StoreSystem {
@@ -362,8 +362,8 @@ func TestSSLCertDirLeavesTheRowUndetermined(t *testing.T) {
 // the bundle a variable names.
 func TestAConfigurationFileStopsAFileReadingBuildToo(t *testing.T) {
 	curlrc := filepath.Join("/home/jdoe", ".curlrc")
-	store := storeFor(context.Background(), versionSaying(opensslLine),
-		sourceOf(curlrc, "/bundle.crt"), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}},
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(opensslLine), Source: sourceOf(curlrc, "/bundle.crt")},
+		noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}},
 		Environment{Platform: "linux", CABundle: "/bundle.crt", Homes: map[string]string{"HOME": "/home/jdoe"}}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.StorePath != "" {
@@ -424,7 +424,7 @@ func TestARefusalByTheNamedFileIsWeighedAgainstTheBuildsDirectories(t *testing.T
 		"/etc/ssl/certs/ours.pem": pemOf(ours),
 	}, map[string][]string{"/etc/ssl/certs": {"/etc/ssl/certs/ours.pem"}})
 
-	store := storeFor(context.Background(), versionSaying(opensslLine), source, files, Install{Path: "/usr/bin/curl"},
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(opensslLine), Source: source}, files, Install{Path: "/usr/bin/curl"},
 		[][]byte{ours}, Environment{Platform: "linux", CABundle: "/bundle.crt"}, atNoon())
 	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "/etc/ssl/certs") ||
 		!strings.Contains(store.NotAssessed, "CURL_CA_BUNDLE") {
@@ -434,7 +434,7 @@ func TestARefusalByTheNamedFileIsWeighedAgainstTheBuildsDirectories(t *testing.T
 		t.Errorf("the row stopped naming the file it read: %+v", store)
 	}
 
-	store = storeFor(context.Background(), versionSaying(opensslLine), source, files, Install{Path: "/usr/bin/curl"},
+	store = storeFor(context.Background(), probe.Ports{Run: versionSaying(opensslLine), Source: source}, files, Install{Path: "/usr/bin/curl"},
 		[][]byte{ours}, Environment{Platform: "windows", CABundle: "/bundle.crt"}, atNoon())
 	if store.TrustsPresentedChain == nil || *store.TrustsPresentedChain || store.TrustFailure != report.UnknownAuthority {
 		t.Errorf("on Windows: got %+v, want the file's refusal to stand", store)
@@ -475,7 +475,7 @@ func noFiles(string) ([]string, error) { return nil, fs.ErrNotExist }
 // machine leaves the row unassessed and naming no store - inviolable rule 16.
 func TestASchannelRowWithAConfigurationPlaceOffThisMachineIsUnassessed(t *testing.T) {
 	source := func(path string) (io.ReadCloser, error) { return nil, &file.RemotePath{Path: path} }
-	store := storeFor(context.Background(), versionSaying(schannelLine), source, noFiles, Install{Path: system32Curl},
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(schannelLine), Source: source}, noFiles, Install{Path: system32Curl},
 		[][]byte{leafNaming(t, nil, nil)}, Environment{Homes: map[string]string{"HOME": hostSpelling(`\\files\home\jdoe`)}}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
@@ -489,7 +489,7 @@ func TestASchannelRowWithAConfigurationPlaceOffThisMachineIsUnassessed(t *testin
 // No certificate means nothing to ask about revocation, and nothing for a store
 // to judge - the row says so rather than pointing at a store.
 func TestASchannelRowWithNoChainIsUnassessed(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying(schannelLine), sourceOf(), noFiles, Install{Path: `C:\curl.exe`},
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying(schannelLine), Source: sourceOf()}, noFiles, Install{Path: `C:\curl.exe`},
 		nil, Environment{}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
@@ -506,7 +506,7 @@ func TestACurlThatCannotBeStartedIsUnassessed(t *testing.T) {
 	run := func(context.Context, string, ...string) (probe.Output, error) {
 		return probe.Output{}, errors.New("the file is not an executable")
 	}
-	store := storeFor(context.Background(), run, sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: run, Source: sourceOf()}, noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.Backend != "" || store.TrustsPresentedChain != nil {
 		t.Fatalf("a curl that never ran produced a backend or a verdict: %+v", store)
@@ -525,8 +525,8 @@ func (failingReader) Read([]byte) (int, error) { return 0, errors.New("is a dire
 // about a file the build never opens. Nothing here measured which store such a
 // build reads, so it names none and says so.
 func TestAnotherPlatformBackendIsNotJudgedByABundle(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying("curl 8.21.0 (x86_64-apple-darwin) libcurl/8.21.0 SecureTransport"),
-		sourceOf("/bundle.crt"), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/bundle.crt"}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying("curl 8.21.0 (x86_64-apple-darwin) libcurl/8.21.0 SecureTransport"), Source: sourceOf("/bundle.crt")},
+		noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/bundle.crt"}, atNoon())
 
 	if store.StoreForm != report.StoreSystem || store.StorePath != "" {
 		t.Errorf("a platform build was pointed at the bundle in the environment: %+v", store)
@@ -543,8 +543,8 @@ func TestAnotherPlatformBackendIsNotJudgedByABundle(t *testing.T) {
 // one and generating a fix for it is how somebody runs a command that does
 // nothing while waiting for it to work.
 func TestAnUnknownBackendIsUnassessedRatherThanAssumed(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying("curl 9.0.0 libcurl/9.0.0 SomeNewTLS"),
-		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying("curl 9.0.0 libcurl/9.0.0 SomeNewTLS"), Source: sourceOf()},
+		noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.Backend != "" {
 		t.Errorf("an unrecognised backend was recorded as %q", store.Backend)
@@ -567,8 +567,8 @@ func TestAnUnknownBackendIsUnassessedRatherThanAssumed(t *testing.T) {
 // An OpenSSL build with no bundle named falls back to a build-time default this
 // program cannot read off disk, and saying so is better than guessing at it.
 func TestAnOpenSSLBuildWithNoBundleSaysSo(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"),
-		sourceOf(), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"), Source: sourceOf()},
+		noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.Backend != "openssl" {
 		t.Errorf("backend %q, want openssl", store.Backend)
@@ -578,12 +578,51 @@ func TestAnOpenSSLBuildWithNoBundleSaysSo(t *testing.T) {
 	}
 }
 
+// ON LINUX THE DISTRIBUTION'S OWN curl, NAMING NO FILE, DEFERS TO THE PLATFORM
+// STORE - ADR110, measured by S26. A curl that is not that build keeps its own
+// sentence with the reason after it, and elsewhere nothing was measured, so the
+// row stays as it was. The conditions themselves are asked in package probe.
+func TestADistributionsCurlNamingNoFileDefersToThePlatformStore(t *testing.T) {
+	source, list := diskOf(map[string][]byte{
+		"/etc/os-release":                    []byte("ID=debian\n"),
+		"/var/lib/dpkg/info/curl.list":       []byte("/usr/bin/curl\n"),
+		"/etc/ssl/certs/ca-certificates.crt": []byte("bundle"),
+	}, nil)
+	ports := probe.Ports{Run: versionSaying(opensslLine), Source: source, Resolve: noLinks}
+	linux := Environment{Platform: "linux"}
+
+	store := storeFor(context.Background(), ports, list, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, linux, atNoon())
+	want := report.StoreRef{Runtime: report.RuntimeSystemStore, Instance: "debian"}
+	if store.DefersTo == nil || *store.DefersTo != want || store.StorePath != "" || store.TrustsPresentedChain != nil {
+		t.Errorf("got %+v, want a row deferring to system-store debian", store)
+	}
+
+	store = storeFor(context.Background(), ports, list, Install{Path: "/usr/local/bin/curl"}, [][]byte{{0x30}}, linux, atNoon())
+	if store.DefersTo != nil || !strings.HasPrefix(store.NotAssessed, "this build reads a CA file and none of") ||
+		!strings.Contains(store.NotAssessed, " - dpkg does not list /usr/local/bin/curl") {
+		t.Errorf("a curl from no package: got %q", store.NotAssessed)
+	}
+
+	store = storeFor(context.Background(), ports, list, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}},
+		Environment{Platform: "darwin"}, atNoon())
+	if store.DefersTo != nil || strings.Contains(store.NotAssessed, " - ") {
+		t.Errorf("another platform: got %q", store.NotAssessed)
+	}
+
+	// A FILE NAMED BY A VARIABLE IS JUDGED, NEVER DEFERRED - condition 4.
+	store = storeFor(context.Background(), ports, list, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}},
+		Environment{Platform: "linux", CABundle: "/etc/ssl/certs/ca-certificates.crt"}, atNoon())
+	if store.DefersTo != nil || store.StorePath != "/etc/ssl/certs/ca-certificates.crt" {
+		t.Errorf("a named file: got %+v", store)
+	}
+}
+
 // With a bundle named, the row becomes a file store and goes through the SHARED
 // verifier - the same one git uses. A bundle that cannot be read is UNKNOWN with
 // a reason, never a failure to trust.
 func TestAnOpenSSLBuildWithAnUnreadableBundleIsUnassessed(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"),
-		sourceOf(), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/absent/bundle.crt"}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"), Source: sourceOf()},
+		noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/absent/bundle.crt"}, atNoon())
 
 	if store.StoreForm != report.StoreFile || store.StorePath != "/absent/bundle.crt" {
 		t.Errorf("the row does not name the bundle it was pointed at: %+v", store)
@@ -598,7 +637,7 @@ func TestACurlThatRefusesToReportIsUnassessed(t *testing.T) {
 	run := func(context.Context, string, ...string) (probe.Output, error) {
 		return probe.Output{ExitCode: 2, Stderr: "nie mozna uruchomic"}, nil
 	}
-	store := storeFor(context.Background(), run, sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: run, Source: sourceOf()}, noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.NotAssessed == "" {
 		t.Error("a curl that would not answer gave no reason")
@@ -642,8 +681,8 @@ func TestAMachineWithNoCurlIsNotAnError(t *testing.T) {
 // A bundle that reads fine goes through the SHARED verifier, and a chain the
 // bundle does not close is DISTRUST - a verdict, not a failure.
 func TestAReadableBundleProducesAVerdict(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"),
-		sourceOf("/bundle.crt"), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/bundle.crt"}, atNoon())
+	store := storeFor(context.Background(), probe.Ports{Run: versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"), Source: sourceOf("/bundle.crt")},
+		noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/bundle.crt"}, atNoon())
 
 	// The fixture bundle holds no PEM, so the verifier reports that rather than
 	// inventing a verdict - which is the honest answer for an empty store.

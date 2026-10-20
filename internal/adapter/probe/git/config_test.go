@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/donislawdev/certdoctor/internal/adapter/probe"
 )
 
 // These tests pin git's own reading of its configuration - config.c, path.c and
@@ -640,26 +642,26 @@ func TestAConditionLeavesTheRowWithoutAVerdict(t *testing.T) {
 	settings := settingsFor("/bundle.crt")
 	settings.Conditional = map[string]string{keyCAInfo: "a condition on the file"}
 
-	store := storeFor(source, noFiles, install, settings, Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, settings, Environment{}, [][]byte{leafDER}, atNoon())
 	if store.NotAssessed != "a condition on the file" || store.TrustsPresentedChain != nil {
 		t.Errorf("got %+v, want the condition", store)
 	}
 	env := Environment{CAInfo: Variable{Value: "/env.crt", Set: true}}
-	store = storeFor(source, noFiles, install, settings, env, [][]byte{leafDER}, atNoon())
+	store = storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, settings, env, [][]byte{leafDER}, atNoon())
 	if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain {
 		t.Errorf("GIT_SSL_CAINFO set: got %+v, want the file it names judged", store)
 	}
-	store = storeFor(source, noFiles, install, settings, Environment{NoVerify: true}, [][]byte{leafDER}, atNoon())
+	store = storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, settings, Environment{NoVerify: true}, [][]byte{leafDER}, atNoon())
 	if !strings.Contains(store.NotAssessed, "GIT_SSL_NO_VERIFY") {
 		t.Errorf("GIT_SSL_NO_VERIFY set: got %+v, want verification off", store)
 	}
 	settings.Conditional = map[string]string{keyCAPath: "a condition on the directory"}
-	store = storeFor(source, noFiles, install, settings, Environment{CAPath: Variable{Value: "/d", Set: true}}, [][]byte{leafDER}, atNoon())
+	store = storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, settings, Environment{CAPath: Variable{Value: "/d", Set: true}}, [][]byte{leafDER}, atNoon())
 	if !strings.Contains(store.NotAssessed, "GIT_SSL_CAPATH") {
 		t.Errorf("GIT_SSL_CAPATH set: got %+v, want the variable's directory, not the condition", store)
 	}
 	settings.Conditional = map[string]string{"": "a condition on anything"}
-	store = storeFor(source, noFiles, install, settings, env, [][]byte{leafDER}, atNoon())
+	store = storeFor(t.Context(), probe.Ports{Source: source}, noFiles, install, settings, env, [][]byte{leafDER}, atNoon())
 	if store.NotAssessed != "a condition on anything" {
 		t.Errorf("a condition on every key: got %+v", store)
 	}
@@ -679,7 +681,7 @@ func TestAnEmptyConfiguredValueIsNamedAsEmpty(t *testing.T) {
 		"backend":   {Settings{BackendLevel: "global"}, `http.sslBackend is "" at the global level`},
 	}
 	for name, c := range cases {
-		store := storeFor(sourceOf(nil), noFiles, install, c.settings, Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
+		store := storeFor(t.Context(), probe.Ports{Source: sourceOf(nil)}, noFiles, install, c.settings, Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
 		if !strings.Contains(store.NotAssessed, c.says) {
 			t.Errorf("%s: got %q, want %q", name, store.NotAssessed, c.says)
 		}
@@ -695,7 +697,7 @@ func TestWhereGitStopsTheRowSaysWhy(t *testing.T) {
 		"/home/jdoe/.gitconfig": "[http]\n\tsslCAInfo\n\tsslVerify = false\n",
 	})
 	env := withHome(func(e *Environment) { e.Platform = "linux" })
-	stores, err := Probe(source, noLinks, noFiles, []string{gitCmdDir}, env, atNoon)(t.Context(), [][]byte{{0x30}})
+	stores, err := Probe(source, noLinks, noFiles, nil, []string{gitCmdDir}, env, atNoon)(t.Context(), [][]byte{{0x30}})
 	if err != nil || len(stores) != 1 {
 		t.Fatalf("got %d rows and %v", len(stores), err)
 	}
