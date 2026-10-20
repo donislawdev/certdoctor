@@ -10,6 +10,20 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - a curl row it cannot assess says what that curl reads
+
+- **curl on GnuTLS, wolfSSL, mbedTLS or rustls** no longer says it reads the
+  platform's store and that the `system-store` row answers for it. Those
+  libraries read the CA file curl hands them - the one `CURL_CA_BUNDLE`,
+  `SSL_CERT_FILE` or `SSL_CERT_DIR` names, or the one the build was made with -
+  and the row now says so. curl on NSS or Secure Transport, two backends curl
+  has removed, says which release removed it. All of these rows stay
+  unassessed.
+- **curl on Windows reading a CA file**, with none of those variables set,
+  says it looks for a `curl-ca-bundle.crt` first - beside itself, in the
+  directory it runs in, in Windows's own directories and along `PATH` - where it
+  used to say only that it reads its build-time default.
+
 ### Fixed - a curl certdoctor starts no longer creates a key log file
 
 - **curl is started without `SSLKEYLOGFILE` and `OPENSSL_CONF`.** A curl built on

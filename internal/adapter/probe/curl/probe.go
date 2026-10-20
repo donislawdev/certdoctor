@@ -86,15 +86,50 @@ func storeFor(ctx context.Context, ports probe.Ports, files file.List, install I
 	}
 
 	if backend != "openssl" && backend != "libressl" && backend != "boringssl" {
-		// THE OTHER PLATFORM BACKENDS ASK THE PLATFORM TOO, and nothing here has
-		// measured which store any of them reads - so no row is named as their
-		// answer, and this one says it has none.
-		store.NotAssessed = fmt.Sprintf(
-			"this build uses %s, which reads the platform store rather than a file - the system-store probe answers for it", backend)
+		store.NotAssessed = unmeasured(backend)
 		return store
 	}
 	return judgedByAFile(ctx, store, ports, files, install, chain, env, now)
 }
+
+// removedBackends are the backends curl no longer builds, each with the release
+// that removed it - docs/DEPRECATE.md of curl 8.21.0, read 2026-10-21 at
+// https://github.com/curl/curl/blob/curl-8_21_0/docs/DEPRECATE.md
+var removedBackends = map[string]string{"nss": "8.3.0", "securetransport": "8.15.0"}
+
+// unmeasured is the sentence for a build on a backend nobody here measured -
+// OBS180. The row stays unassessed, and the sentence says what is known.
+//
+// THE OTHER FOUR READ A CA FILE, NOT THE PLATFORM'S STORE - curl 8.21.0, read
+// 2026-10-21 at https://github.com/curl/curl/tree/curl-8_21_0 : GnuTLS takes
+// CAfile and CApath in lib/vtls/gtls.c, wolfSSL in wolfssl.c, mbedTLS in
+// mbedtls.c and rustls the file in rustls.c, and each asks the platform only
+// when --ca-native is given. The file is the one curl's tool hands over, and
+// the tool reads CURL_CA_BUNDLE, SSL_CERT_DIR and SSL_CERT_FILE for every
+// backend but Schannel - cacertpaths in src/tool_operate.c. How each judges a
+// chain against that file - which entries end one - is not measured, so the row
+// names the file it would read rather than a verdict.
+func unmeasured(backend string) string {
+	if release, removed := removedBackends[backend]; removed {
+		return fmt.Sprintf("this build uses %s, which curl removed in %s, and which store it reads was not established",
+			backend, release)
+	}
+	return fmt.Sprintf("this build uses %s, which reads the CA file curl hands it - the one CURL_CA_BUNDLE, SSL_CERT_FILE "+
+		"or SSL_CERT_DIR names, or its build-time default - and how %s judges a chain against that file was not measured",
+		backend, backend)
+}
+
+// windowsSearch is what a build that reads a CA file does on Windows when
+// nothing names one - OBS180. curl's tool looks for curl-ca-bundle.crt first,
+// and only beside itself when it was built with CURL_CA_SEARCH_SAFE, or else
+// through SearchPath: its own directory, the directory it runs in, Windows's
+// system directories and PATH - cacertpaths in src/tool_operate.c and
+// FindWin32CACert in src/tool_doswin.c of curl 8.21.0, read 2026-10-21 at
+// https://github.com/curl/curl/tree/curl-8_21_0/src . The directory it runs in
+// is the person's, not this program's, so the search is named, not followed.
+const windowsSearch = "this build reads a CA file and none of CURL_CA_BUNDLE, SSL_CERT_FILE and SSL_CERT_DIR is set, " +
+	"so it reads a curl-ca-bundle.crt it finds - beside itself and, unless it was built to look only there, in the " +
+	"directory it runs in, in Windows's own directories and along PATH - or else its build-time default"
 
 // judgedByAFile writes the row of a build that reads a CA file - ADR110 part 1.
 //
@@ -125,8 +160,12 @@ func judgedByAFile(ctx context.Context, store report.TrustStore, ports probe.Por
 		// three variables were ruled out above, which is condition 4.
 		const compiledIn = "this build reads a CA file and none of CURL_CA_BUNDLE, SSL_CERT_FILE and SSL_CERT_DIR is " +
 			"set, so the bundle it reads is its build-time default"
-		if env.Platform == "linux" {
+		switch env.Platform {
+		case "linux":
 			return probe.DeferToThePlatform(ctx, store, ports, probe.LibcurlBuilds, install.Path, "curl", compiledIn)
+		case "windows":
+			store.NotAssessed = windowsSearch
+			return store
 		}
 		store.NotAssessed = compiledIn
 		return store

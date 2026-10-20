@@ -521,10 +521,10 @@ type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("is a directory") }
 
-// THE OTHER PLATFORM BACKENDS ASK THE PLATFORM TOO, and a bundle in the
-// environment does not change that - a row read from it would be a verdict
-// about a file the build never opens. Nothing here measured which store such a
-// build reads, so it names none and says so.
+// A BACKEND NOBODY HERE MEASURED IS NOT JUDGED BY A BUNDLE, whatever the
+// environment names - a row read from it would be a verdict about a file the
+// build may never open. Nothing here measured which store such a build reads,
+// so it names none and says so - OBS180 corrected what it says.
 func TestAnotherPlatformBackendIsNotJudgedByABundle(t *testing.T) {
 	store := storeFor(context.Background(), probe.Ports{Run: versionSaying("curl 8.21.0 (x86_64-apple-darwin) libcurl/8.21.0 SecureTransport"), Source: sourceOf("/bundle.crt")},
 		noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/bundle.crt"}, atNoon())
@@ -535,8 +535,8 @@ func TestAnotherPlatformBackendIsNotJudgedByABundle(t *testing.T) {
 	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
 		t.Errorf("a platform build nothing measured produced an answer: %+v", store)
 	}
-	if !strings.Contains(store.NotAssessed, "platform store") {
-		t.Errorf("the reason does not say the platform answers: %q", store.NotAssessed)
+	if !strings.Contains(store.NotAssessed, "which store it reads was not established") {
+		t.Errorf("the reason does not say the store was not established: %q", store.NotAssessed)
 	}
 }
 
@@ -719,3 +719,57 @@ func atNoon() time.Time { return time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC) }
 
 // noLinks is a resolver for a filesystem with no symbolic links on it.
 func noLinks(path string) (string, error) { return path, nil }
+
+// A BACKEND NOBODY HERE MEASURED SAYS WHAT IT READS - OBS180. GnuTLS, wolfSSL,
+// mbedTLS and rustls read the CA file curl hands them, never the platform's
+// store on their own, and NSS and Secure Transport are backends curl removed.
+// Each row stays unassessed and never claims a platform store answers for it.
+func TestABackendNobodyMeasuredSaysWhatItReads(t *testing.T) {
+	cases := []struct {
+		line string
+		says string
+	}{
+		{"curl 8.21.0 (x86_64-pc-linux-gnu) libcurl/8.21.0 GnuTLS/3.8.9 zlib/1.3",
+			"this build uses gnutls, which reads the CA file curl hands it - the one CURL_CA_BUNDLE, SSL_CERT_FILE or " +
+				"SSL_CERT_DIR names, or its build-time default - and how gnutls judges a chain against that file was not measured"},
+		{"curl 8.21.0 libcurl/8.21.0 wolfSSL/5.8.2", "this build uses wolfssl, which reads the CA file curl hands it"},
+		{"curl 8.21.0 libcurl/8.21.0 mbedTLS/3.6.4", "this build uses mbedtls, which reads the CA file curl hands it"},
+		{"curl 8.21.0 libcurl/8.21.0 rustls-ffi/0.15.0/rustls/0.23.31", "this build uses rustls, which reads the CA file"},
+		{"curl 7.76.1 (x86_64-redhat-linux-gnu) libcurl/7.76.1 NSS/3.67",
+			"this build uses nss, which curl removed in 8.3.0, and which store it reads was not established"},
+		{"curl 8.7.1 (x86_64-apple-darwin24.0) libcurl/8.7.1 SecureTransport",
+			"this build uses securetransport, which curl removed in 8.15.0, and which store it reads was not established"},
+	}
+	for _, c := range cases {
+		store := storeFor(context.Background(), probe.Ports{Run: versionSaying(c.line), Source: sourceOf()}, noFiles,
+			Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{Platform: "linux"}, atNoon())
+		if store.TrustsPresentedChain != nil || store.DefersTo != nil || !strings.HasPrefix(store.NotAssessed, c.says) {
+			t.Errorf("%s: got %+v, want no verdict and a reason starting %q", c.line, store, c.says)
+		}
+		if strings.Contains(store.NotAssessed, "platform store") {
+			t.Errorf("%s: the row still says a platform store answers for it: %q", c.line, store.NotAssessed)
+		}
+	}
+}
+
+// ON WINDOWS A BUILD THAT NAMES NO FILE LOOKS FOR curl-ca-bundle.crt FIRST, and
+// the row names that search rather than a build-time default it may never
+// reach - OBS180. Elsewhere off Linux nothing searches, and the row says what
+// it always said.
+func TestOnWindowsAFileBuildNamingNoFileSearchesForABundle(t *testing.T) {
+	ports := probe.Ports{Run: versionSaying("curl 8.21.0 (x86_64-w64-mingw32) libcurl/8.21.0 OpenSSL/3.5.7"), Source: sourceOf()}
+	store := storeFor(context.Background(), ports, noFiles, Install{Path: `C:\tools\curl.exe`}, [][]byte{{0x30}},
+		Environment{Platform: "windows"}, atNoon())
+	if store.NotAssessed != windowsSearch || store.TrustsPresentedChain != nil {
+		t.Errorf("windows: got %+v", store)
+	}
+	if !strings.Contains(windowsSearch, "curl-ca-bundle.crt") || !strings.Contains(windowsSearch, "along PATH") {
+		t.Errorf("the sentence does not name the file and where it is looked for: %q", windowsSearch)
+	}
+
+	store = storeFor(context.Background(), ports, noFiles, Install{Path: "/usr/local/bin/curl"}, [][]byte{{0x30}},
+		Environment{Platform: "darwin"}, atNoon())
+	if strings.Contains(store.NotAssessed, "curl-ca-bundle.crt") || !strings.HasSuffix(store.NotAssessed, "build-time default") {
+		t.Errorf("darwin: got %q", store.NotAssessed)
+	}
+}
