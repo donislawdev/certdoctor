@@ -12,6 +12,7 @@ package node
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
@@ -73,7 +74,53 @@ func storeFor(ctx context.Context, run probe.Runner, binary string, env Environm
 
 	probe.VerifySelfSignedAnchors(&store, a.bundle(a.Lists.Default), chain, now)
 	store.SelectedBy = selectedBy(a, flags, env)
+	store.PlatformListCloses = store.TrustFailure == report.UnknownAuthority && systemListCloses(a, flags, env, chain, now)
 	return store
+}
+
+// systemListCloses says NODE_USE_SYSTEM_CA=1 would make this node trust the
+// chain it refused - ADR111 part 7, the fact the first of its three commands is
+// chosen by.
+//
+// EACH CONDITION IS A WAY THE COMMAND WOULD CHANGE NOTHING. A --use-system-ca
+// in NODE_OPTIONS either turned the list on already or, as --no-use-system-ca,
+// beats the variable - measured with node v26.9.0 on 2026-10-20. A
+// NODE_USE_SYSTEM_CA already set holds somebody's value, and a command
+// overwriting it would be a change rather than an addition, so only an unset one
+// qualifies. A node that does not read the variable ignores it.
+//
+// A SYSTEM LIST ALREADY IN EFFECT, OR AN EMPTY ONE, NEEDS NO CONDITION: the
+// wider list is then the very list that refused, and closes nothing.
+//
+// THE WIDER LIST IS JUDGED BY THE SAME RULE, only self-signed anchors, so a
+// lone intermediate in the platform's store closes nothing here either.
+func systemListCloses(a answer, flags map[string]bool, env Environment, chain [][]byte, now time.Time) bool {
+	_, mentioned := flags[flagSystem]
+	if mentioned || env.UseSystemCA != "" || !knowsUseSystemCA(a.Node) {
+		return false
+	}
+	var widened report.TrustStore
+	probe.VerifySelfSignedAnchors(&widened, a.bundle(slices.Concat(a.Lists.Default, a.Lists.System)), chain, now)
+	return widened.TrustsPresentedChain != nil && *widened.TrustsPresentedChain
+}
+
+// knowsUseSystemCA says this node reads NODE_USE_SYSTEM_CA. The variable arrived
+// in v22.19.0 and v24.6.0, and the v23 line is not among them - Node.js
+// doc/api/cli.md of v26.x, read 2026-10-20 at
+// https://github.com/nodejs/node/blob/v26.x/doc/api/cli.md - so every line from
+// v25 on has it. A version this cannot read is one it does not vouch for.
+func knowsUseSystemCA(version string) bool {
+	var major, minor int
+	if _, err := fmt.Sscanf(version, "v%d.%d", &major, &minor); err != nil {
+		return false
+	}
+	switch major {
+	case 22:
+		return minor >= 19
+	case 24:
+		return minor >= 6
+	}
+	return major >= 25
 }
 
 // unjudged names why a list node did send is still not what it trusts, or

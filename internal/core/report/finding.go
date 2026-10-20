@@ -1042,6 +1042,18 @@ type TrustStore struct {
 	// issuer and the certificate expired" send a person to two different places,
 	// and only the first is something a trust store can be made to fix.
 	TrustFailure TrustFailure
+	// PlatformListCloses says this runtime has a switch of its own that adds the
+	// platform's certificates to the list it trusts, that the switch is off here
+	// with nothing set that would keep it off, and that with it on this chain
+	// would be trusted - ADR111 part 7. Only node fills it today, for
+	// NODE_USE_SYSTEM_CA, and only on a row that refused for an unknown authority.
+	//
+	// IT IS AN INPUT TO THE COMMAND AND NOT PART OF THE JSON - decided by the
+	// owner 2026-10-20. The command it selects, and that command's caveat, carry
+	// the fact to every surface, so no surface goes without it. Adding it to the
+	// schema later is a MINOR change, and taking it out after a release would
+	// not be.
+	PlatformListCloses bool
 	// Fix is the command that would make THIS store accept THIS chain, and is
 	// nil whenever there is nothing honest to say.
 	//
@@ -1288,6 +1300,11 @@ func (t *TrustStore) breach() string {
 		return "names a way of refusing the presented chain that it did not refuse"
 	case t.TrustFailure != "" && !t.TrustFailure.Valid():
 		return fmt.Sprintf("carries the trust failure %q, which is outside the registry", t.TrustFailure)
+	// A LIST THAT WOULD CLOSE THE CHAIN answers only an unknown authority. On a
+	// row that accepted, or refused another way, it would select a command that
+	// changes nothing.
+	case t.PlatformListCloses && t.TrustFailure != UnknownAuthority:
+		return "says the platform's list would close the chain, and only a chain refused for an unknown authority is one more certificates close"
 	}
 
 	if broken := t.deferralBreach(); broken != "" {

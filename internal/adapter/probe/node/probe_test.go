@@ -186,9 +186,10 @@ func TestNoNodeIsNoRow(t *testing.T) {
 	}
 }
 
-// THE PROCESS STARTS WITHOUT EXACTLY THE FOUR VARIABLES ADR111 part 2 NAMES,
-// and its arguments are the CA flags read out of NODE_OPTIONS and the constant
-// script - never NODE_OPTIONS itself, whose --require would run somebody's code.
+// THE PROCESS STARTS WITHOUT EXACTLY THE FIVE VARIABLES ADR111 part 2 AND OBS188
+// NAME, and its arguments are the CA flags read out of NODE_OPTIONS and the
+// constant script - never NODE_OPTIONS itself, whose --require would run
+// somebody's code, nor OPENSSL_CONF, whose provider module would.
 func TestNodeStartsWithoutTheNamedVariablesAndWithOnlyItsCAFlags(t *testing.T) {
 	b := newBench(t)
 	var calls []call
@@ -199,7 +200,7 @@ func TestNodeStartsWithoutTheNamedVariablesAndWithOnlyItsCAFlags(t *testing.T) {
 		context.Background(), [][]byte{b.leaf, b.inter}); err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
-	if want := []string{"NODE_OPTIONS", "NODE_V8_COVERAGE", "NODE_REDIRECT_WARNINGS", "NODE_COMPILE_CACHE"}; !slices.Equal(asked, want) {
+	if want := []string{"NODE_OPTIONS", "NODE_V8_COVERAGE", "NODE_REDIRECT_WARNINGS", "NODE_COMPILE_CACHE", "OPENSSL_CONF"}; !slices.Equal(asked, want) {
 		t.Errorf("withheld %q, want %q", asked, want)
 	}
 	if want := []string{"--use-system-ca", "-e", script}; len(calls) != 1 || !slices.Equal(calls[0].args, want) {
@@ -315,6 +316,56 @@ func TestSelectedByNamesWhatTheListShows(t *testing.T) {
 				c.env, [][]byte{b.leaf, b.inter})
 			if !slices.Equal(stores[0].SelectedBy, c.want) {
 				t.Errorf("selected by %q, want %q", stores[0].SelectedBy, c.want)
+			}
+		})
+	}
+}
+
+// THE PLATFORM'S LIST CLOSES THE CHAIN ONLY WHERE NODE_USE_SYSTEM_CA=1 WOULD
+// TURN IT ON - ADR111 part 7. Every case but the first is one way the command
+// it selects would change nothing. The default list holds only an unrelated
+// root, so each row refuses for an unknown authority unless the case says
+// otherwise.
+func TestThePlatformListClosesOnlyWhereTheVariableWouldTurnItOn(t *testing.T) {
+	b := newBench(t)
+	cases := []struct {
+		name    string
+		version string
+		env     Environment
+		trusted [][]byte
+		system  [][]byte
+		want    bool
+	}{
+		{"an unset variable on a node that reads it", "v26.9.0", Environment{}, nil, [][]byte{b.root}, true},
+		{"the first v22 that reads it", "v22.19.0", Environment{}, nil, [][]byte{b.root}, true},
+		{"the last v22 that does not", "v22.18.0", Environment{}, nil, [][]byte{b.root}, false},
+		{"a v23, which never read it", "v23.11.1", Environment{}, nil, [][]byte{b.root}, false},
+		{"the first v24 that reads it", "v24.6.0", Environment{}, nil, [][]byte{b.root}, true},
+		{"the last v24 that does not", "v24.5.0", Environment{}, nil, [][]byte{b.root}, false},
+		{"the first line that always read it", "v25.0.0", Environment{}, nil, [][]byte{b.root}, true},
+		// A major alone would vouch for the variable, so this shows an unread
+		// version is turned down rather than half read.
+		{"a version this cannot read", "v25", Environment{}, nil, [][]byte{b.root}, false},
+		{"the variable set to a value of somebody's", "v26.9.0", Environment{UseSystemCA: "true"}, nil,
+			[][]byte{b.root}, false},
+		{"an explicit off in NODE_OPTIONS, which beats the variable", "v26.9.0",
+			Environment{Options: "--no-use-system-ca"}, nil, [][]byte{b.root}, false},
+		{"an explicit on in NODE_OPTIONS", "v26.9.0", Environment{Options: "--use-system-ca"}, nil,
+			[][]byte{b.root}, false},
+		{"a system list already in effect", "v26.9.0", Environment{}, [][]byte{b.inter}, [][]byte{b.inter}, false},
+		{"an empty system list", "v26.9.0", Environment{}, nil, nil, false},
+		{"a system list holding only the intermediate", "v26.9.0", Environment{}, nil, [][]byte{b.inter}, false},
+		// The row trusts, so the fact would select a command for a store that is
+		// fine - and rowsFor checks the contract, which refuses that.
+		{"a row that trusts already", "v26.9.0", Environment{}, [][]byte{b.root}, [][]byte{b.other}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			trusted := append([][]byte{b.other}, c.trusted...)
+			stores, _ := rowsFor(t, probe.Output{Stdout: answerOf(t, c.version, trusted, c.system, nil)}, nil, c.env,
+				[][]byte{b.leaf, b.inter})
+			if got := stores[0].PlatformListCloses; got != c.want {
+				t.Errorf("the platform's list closes: %v, want %v (row %+v)", got, c.want, stores[0])
 			}
 		})
 	}

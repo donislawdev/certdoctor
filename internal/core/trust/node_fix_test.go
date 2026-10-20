@@ -24,6 +24,60 @@ func readingExtra() report.TrustStore {
 	return s
 }
 
+// closedByThePlatform is the row the probe writes when NODE_USE_SYSTEM_CA=1
+// would make this node trust the chain.
+func closedByThePlatform() report.TrustStore {
+	s := aNodeStore()
+	s.PlatformListCloses = true
+	return s
+}
+
+// WHERE THE PLATFORM'S LIST WOULD CLOSE THE CHAIN, THE COMMAND TURNS IT ON -
+// ADR111 part 7, command one - with nothing to fill in, and ahead of the file
+// NODE_EXTRA_CA_CERTS names even where node read that file.
+func TestNodeTurnsOnThePlatformListWhereItWouldClose(t *testing.T) {
+	windows := aMachine()
+	windows.NodeExtraCACerts = `C:\Users\jdoe\certs\extra.pem`
+	cases := []struct {
+		name    string
+		store   report.TrustStore
+		machine Machine
+		want    string
+	}{
+		{"on Windows", closedByThePlatform(), aMachine(), "setx NODE_USE_SYSTEM_CA 1"},
+		{"elsewhere", closedByThePlatform(), posix(), "export NODE_USE_SYSTEM_CA=1"},
+		{"ahead of the file node read", func() report.TrustStore {
+			s := closedByThePlatform()
+			s.SelectedBy = []string{"PATH", "NODE_EXTRA_CA_CERTS"}
+			return s
+		}(), windows, "setx NODE_USE_SYSTEM_CA 1"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			store := c.store
+			var why string
+			store.Fix, why = fixFor(store, true, false, c.machine)
+			if store.Fix == nil || store.Fix.Command != c.want || why != "" {
+				t.Fatalf("got %+v and %q, want %q", store.Fix, why, c.want)
+			}
+			if store.Fix.Placeholders == nil || len(store.Fix.Placeholders) != 0 || store.Fix.RequiresElevation {
+				t.Errorf("placeholders %v, elevated %v, want an empty list and no elevation", store.Fix.Placeholders,
+					store.Fix.RequiresElevation)
+			}
+			for _, says := range []string{"already running", "no v23", "v22.19.0"} {
+				if !strings.Contains(store.Fix.Caveat, says) {
+					t.Errorf("the caveat does not mention %q: %q", says, store.Fix.Caveat)
+				}
+			}
+			finding := report.Finding{Kind: report.FindingTrustStore, Summary: "node refused", Source: report.SourceDetected,
+				TrustStore: &store}
+			if broken := finding.Breach(); broken != "" {
+				t.Errorf("the contract refused it: %s", broken)
+			}
+		})
+	}
+}
+
 // WHERE NOTHING IS SET, THE COMMAND SETS THE VARIABLE - ADR111 part 7, command
 // three - spelled for the platform, with the placeholder quoted as everywhere.
 func TestNodeGetsTheVariableWhereNothingIsSet(t *testing.T) {
@@ -115,17 +169,19 @@ func TestAnExtraFileNameThisProgramCannotWriteGetsNoCommand(t *testing.T) {
 }
 
 // THE GATES IN FRONT STILL STAND, and a node row of another form - one the
-// distribution's build defers with - gets nothing from this template.
+// distribution's build defers with - gets nothing from this template. Each row
+// says the platform's list would close the chain, so the gates are shown to
+// stand ahead of that command too.
 func TestANodeRowPassesTheSameGates(t *testing.T) {
-	if fix, _ := fixFor(aNodeStore(), false, false, aMachine()); fix != nil {
+	if fix, _ := fixFor(closedByThePlatform(), false, false, aMachine()); fix != nil {
 		t.Error("a chain the server left incomplete earned a node command")
 	}
-	expired := aNodeStore()
+	expired := closedByThePlatform()
 	expired.TrustFailure = report.Expired
 	if fix, _ := fixFor(expired, true, false, aMachine()); fix != nil {
 		t.Error("an expired chain earned a node command")
 	}
-	system := aNodeStore()
+	system := closedByThePlatform()
 	system.StoreForm = report.StoreSystem
 	if fix, why := fixFor(system, true, false, aMachine()); fix != nil || why != "" {
 		t.Errorf("a node row on the platform's store got %+v %q", fix, why)

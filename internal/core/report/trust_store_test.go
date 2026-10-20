@@ -165,6 +165,17 @@ func TestNodesCompiledInListMayCarryARemediation(t *testing.T) {
 	}
 }
 
+// A refusal for an unknown authority may say that the platform's list would
+// close the chain - ADR111 part 7. The positive twin of the two cases in the
+// table below, for the reason OBS56 gives.
+func TestARefusalMaySayThePlatformListWouldCloseIt(t *testing.T) {
+	store := aRefusingStore()
+	store.PlatformListCloses = true
+	if got := store.breach(); got != "" {
+		t.Errorf("a refusal the platform's list would close was rejected: %q", got)
+	}
+}
+
 // A command with nothing to fill in is legitimate and must not be mistaken for
 // an incomplete one - the empty slice is the answer, the nil is the defect.
 func TestARemediationWithNothingToFillInIsAccepted(t *testing.T) {
@@ -284,6 +295,21 @@ func TestTheTrustStoreRefusesWhatItMustRefuse(t *testing.T) {
 			},
 			says: "outside the registry",
 		},
+		{
+			name:  "the platform's list closing a chain the store accepted",
+			spoil: func(s *TrustStore) { s.PlatformListCloses = true },
+			says:  "unknown authority",
+		},
+		{
+			// More certificates do not move a clock, so a list cannot close this.
+			name: "the platform's list closing an expired chain",
+			spoil: func(s *TrustStore) {
+				s.TrustsPresentedChain = trusts(false)
+				s.TrustFailure = Expired
+				s.PlatformListCloses = true
+			},
+			says: "unknown authority",
+		},
 	}
 
 	for _, c := range cases {
@@ -340,8 +366,8 @@ func TestTheContractRefusesARemediationThatWouldWasteSomebodysTime(t *testing.T)
 			says: "not a file",
 		},
 		{
-			// ADR111 part 7 gives Node commands of its own, and they arrive with
-			// their own exception. Until then the file rule refuses them.
+			// ADR111 part 7 gives Node's list an exception of its own, and only
+			// Node's - the same row under this store's runtime meets the file rule.
 			name: "a command for a compiled-in list",
 			spoil: func(s *TrustStore) {
 				s.StoreForm = StoreBuiltin

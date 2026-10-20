@@ -21,15 +21,18 @@ Barely diagnosable yet, and there has been no release.
 - **Only a self-signed certificate on that list ends a chain**, because that is
   what Node does - an intermediate alone in `NODE_EXTRA_CA_CERTS` does not make
   the server trusted, and the row no longer says it does.
-- **node is started without `NODE_OPTIONS`** and without the variables that make
-  it write files, so a `--require` there never runs inside the process
-  certdoctor starts. The certificate switches in `NODE_OPTIONS` are still read,
-  the way Node reads them, and passed on.
-- **A command where node refuses:** `setx NODE_EXTRA_CA_CERTS` on Windows or
-  `export NODE_EXTRA_CA_CERTS` elsewhere when the variable is not set, and an
-  append to the file it names when node read certificates from it. A variable
-  that is already set is never pointed at another file, because that would take
-  away whatever the first one gave.
+- **node is started without `NODE_OPTIONS`**, without the variables that make
+  it write files, and without `OPENSSL_CONF`, so neither a `--require` there nor
+  a module an OpenSSL configuration names runs inside the process certdoctor
+  starts. The certificate switches in `NODE_OPTIONS` are still read, the way
+  Node reads them, and passed on.
+- **A command where node refuses:** `setx NODE_USE_SYSTEM_CA 1` on Windows or
+  `export NODE_USE_SYSTEM_CA=1` elsewhere when the certificates this system
+  trusts would close the chain, the variable is not set and that node reads it.
+  Otherwise `setx NODE_EXTRA_CA_CERTS` or `export NODE_EXTRA_CA_CERTS` when that
+  variable is not set, and an append to the file it names when node read
+  certificates from it. A variable that is already set is never changed or
+  pointed at another file, because that would take away whatever it gave.
 - **A node built by a Linux distribution** trusts OpenSSL's store rather than
   its own list, so its row says it could not be assessed and names the build.
 - **`L0` reads `NODE_USE_SYSTEM_CA` and `NODE_OPTIONS`**, which makes 25

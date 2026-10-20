@@ -267,20 +267,24 @@ func distributionBundleFix(store report.TrustStore, m Machine) (*report.Fix, str
 }
 
 // nodeFix is the command for a node row - ADR111 part 7, decided by the owner
-// 2026-10-20. Two of the three commands live here: adding to the file
-// NODE_EXTRA_CA_CERTS names, and setting the variable where nothing is set. The
-// third, NODE_USE_SYSTEM_CA=1 where the platform's list would close the chain,
-// waits for the row to carry that fact, and until then such a row gets the
-// second, which adds too.
+// 2026-10-20. Three commands, asked in this order: turning on NODE_USE_SYSTEM_CA
+// where the platform's list would close the chain, adding to the file
+// NODE_EXTRA_CA_CERTS names, and setting that variable where nothing is set.
 //
-// BOTH ADD. NODE_EXTRA_CA_CERTS extends the list Node is built with and takes
-// nothing out of it - Node.js doc/api/cli.md of v26.x, read 2026-10-20 at
-// https://github.com/nodejs/node/blob/v26.x/doc/api/cli.md. Where the variable
-// already names a file the certificate goes INTO that file, because setting it
-// again would point Node at another file and drop every certificate the first
-// one gave it - the redirect this file refuses everywhere.
+// ALL THREE ADD. NODE_USE_SYSTEM_CA=1 puts the certificates the system trusts
+// beside the list Node is built with, and NODE_EXTRA_CA_CERTS extends that list,
+// and neither takes anything out of it - Node.js doc/api/cli.md of v26.x, read
+// 2026-10-20 at https://github.com/nodejs/node/blob/v26.x/doc/api/cli.md. Where
+// NODE_EXTRA_CA_CERTS already names a file the certificate goes INTO that file,
+// because setting it again would point Node at another file and drop every
+// certificate the first one gave it - the redirect this file refuses everywhere.
 //
-// NEITHER REACHES A node ALREADY RUNNING: Node reads the variable once, when it
+// THE PLATFORM'S LIST COMES FIRST, because on a machine whose root reaches every
+// account through the system's own store - a company's policy is the common case
+// - it needs no file at all, and the file a person would be sent to find is the
+// one they do not have.
+//
+// NONE REACHES A node ALREADY RUNNING: Node reads both variables once, when it
 // starts - the same document - and every caveat says so. setx writes the
 // account's environment, read by windows opened afterwards and not by the one
 // it ran in - setx, Windows Commands reference, read 2026-10-20 at
@@ -290,6 +294,9 @@ func distributionBundleFix(store report.TrustStore, m Machine) (*report.Fix, str
 func nodeFix(store report.TrustStore, m Machine) (*report.Fix, string) {
 	if store.StoreForm != report.StoreBuiltin {
 		return nil, ""
+	}
+	if store.PlatformListCloses {
+		return systemListFix(m), ""
 	}
 	if m.NodeExtraCACerts != "" {
 		return nodeExtraFileFix(store, m)
@@ -312,6 +319,36 @@ func nodeFix(store report.TrustStore, m Machine) (*report.Fix, string) {
 		Caveat: fullPath + " - export reaches this shell and what it starts from now on, so the line belongs in " +
 			"the shell's profile to stay, and a node already running keeps the old value",
 	}, ""
+}
+
+// systemListFix turns on the list of certificates the system trusts, which the
+// probe found would close the chain for this node.
+//
+// NOTHING IS LEFT TO FILL IN - the certificate is already where the system keeps
+// it, which is the whole point of this command. Node compares the value with
+// "1" and with nothing else - HandleEnvOptions in src/node_options.cc of v26.x,
+// read 2026-10-20 at https://github.com/nodejs/node/blob/v26.x/src/node_options.cc
+// - so the command spells exactly that.
+//
+// THE VARIABLE REACHES EVERY node, not just this row's, and the caveat says
+// which of them read it.
+func systemListFix(m Machine) *report.Fix {
+	const reach = "every node started afterwards that reads the variable - v22.19.0 and v24.6.0 onwards, and no v23 - " +
+		"adds the certificates this system trusts to its own list"
+	if m.OS == "windows" {
+		return &report.Fix{
+			Command:      "setx NODE_USE_SYSTEM_CA 1",
+			Placeholders: []string{},
+			Caveat: reach + ", and setx keeps it for this account and only windows opened afterwards read it, so a node " +
+				"already running, and this window, keep the old value",
+		}
+	}
+	return &report.Fix{
+		Command:      "export NODE_USE_SYSTEM_CA=1",
+		Placeholders: []string{},
+		Caveat: reach + ", and export reaches this shell and what it starts from now on, so the line belongs in the " +
+			"shell's profile to stay, and a node already running keeps the old value",
+	}
 }
 
 // nodeExtraFileFix adds the certificate to the file NODE_EXTRA_CA_CERTS names.

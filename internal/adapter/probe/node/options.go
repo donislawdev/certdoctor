@@ -38,7 +38,16 @@ func EnvironmentFrom(getenv func(string) string) Environment {
 //     NODE_REDIRECT_WARNINGS writes warnings into a file it creates, and
 //     NODE_COMPILE_CACHE keeps a module cache in a directory - inviolable rule
 //     14, which no child of this program may break on its behalf.
-var withheld = []string{"NODE_OPTIONS", "NODE_V8_COVERAGE", "NODE_REDIRECT_WARNINGS", "NODE_COMPILE_CACHE"}
+//   - OPENSSL_CONF names the OpenSSL configuration Node loads when it starts,
+//     and that file can name a provider module, which is native code loaded
+//     into the process - the class NODE_OPTIONS is withheld for. Decided by the
+//     owner 2026-10-20, OBS188. Measured with node v26.9.0 that day: a
+//     nodejs_conf section naming a module that does not exist stopped node with
+//     exit code 134, while an openssl_conf section alone was not read. Without
+//     the variable Node reads the default file the build names, which the
+//     environment cannot redirect. An EMPTY value would stop that file too, but
+//     it would hand the child a variable, and a child here only loses them.
+var withheld = []string{"NODE_OPTIONS", "NODE_V8_COVERAGE", "NODE_REDIRECT_WARNINGS", "NODE_COMPILE_CACHE", "OPENSSL_CONF"}
 
 // The three switches of Node's CA list, spelled as src/node_options.cc of
 // v26.x declares them.
