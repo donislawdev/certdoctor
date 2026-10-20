@@ -143,7 +143,7 @@ func noBackendNamed(ctx context.Context, store report.TrustStore, ports probe.Po
 	case env.Platform != "linux":
 		store.NotAssessed = compiledIn
 	case namesNothing(settings, env):
-		return probe.DeferToThePlatform(ctx, store, ports, binaryOf(install), "git", compiledIn)
+		return probe.DeferToThePlatform(ctx, store, ports, probe.LibcurlBuilds, binaryOf(install), "git", compiledIn)
 	default:
 		return judgedByAFile(store, ports.Source, files, settings, env, chain, now)
 	}

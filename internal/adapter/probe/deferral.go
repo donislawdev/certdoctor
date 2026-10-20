@@ -16,13 +16,14 @@ import (
 )
 
 // This file is where curl and git on Linux hand their answer to the platform's
-// own store - ADR110, decided by the owner 2026-10-20 after probe S26.
+// own store - ADR110, decided by the owner 2026-10-20 after probe S26 - and so
+// does node from a distribution's package, ADR111 part 6, after probe S27.
 //
 // A BUILD THAT NAMES NO CA FILE READS THE ONE IT WAS COMPILED WITH, and nothing
 // on disk says which that is. What can be said is narrower and checkable: the
-// binary came from the distribution's own package, the distribution builds its
-// libcurl to read a known file, and that file is the one the platform store's
-// row judged. When all of that holds the two rows are one store, and the row
+// binary came from the distribution's own package, the distribution builds the
+// library it reads through - libcurl, or OpenSSL itself - to read a known file,
+// and that file is the one the platform store's row judged. When all of that holds the two rows are one store, and the row
 // names the other instead of judging the same file a second time - the shape
 // curl on Schannel took in ADR108 part 4.
 //
@@ -38,10 +39,15 @@ type Ports struct {
 	Run     Runner
 }
 
+// Builds are what the packages of each distribution are known to do with one
+// library's CA file, keyed by the ID os-release gives - one table for each
+// library a tool reads its CA file through.
+type Builds map[string]distributionBuild
+
 // distributionBuild is what one distribution's packages are known to do.
 type distributionBuild struct {
-	// bundles are every CA file a release of this distribution builds libcurl
-	// to read, and every one of them has to be the platform store's file.
+	// bundles are every CA file a release of this distribution builds the
+	// library to read, and every one of them has to be the platform store's file.
 	bundles []string
 	// packages is how the distribution records which package installed a file.
 	packages packageDatabase
@@ -66,9 +72,10 @@ var (
 	redHatBundles = []string{"/etc/pki/tls/certs/ca-bundle.crt", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"}
 )
 
-// distributionBuilds are the distributions whose packages this program knows
-// the CA file of - ADR110, condition 2: an ID with a source behind it, and never
-// ID_LIKE, which would be a claim about derived distributions nobody measured.
+// LibcurlBuilds are the distributions whose packages this program knows the
+// CA file of libcurl for - ADR110, condition 2: an ID with a source behind it,
+// and never ID_LIKE, which would be a claim about derived distributions nobody
+// measured.
 //
 // SOURCES, inviolable rule 18 - each distribution's own recipe for libcurl, read
 // 2026-10-20:
@@ -100,7 +107,7 @@ var (
 // second - measured in RHEL 9.7 - so on an ordinary machine they are one file,
 // and where somebody broke that link nothing here can say which one this release
 // reads.
-var distributionBuilds = map[string]distributionBuild{
+var LibcurlBuilds = Builds{
 	"debian":    {bundles: debianBundle, packages: dpkg},
 	"ubuntu":    {bundles: debianBundle, packages: dpkg},
 	"alpine":    {bundles: debianBundle, packages: apk},
@@ -111,17 +118,65 @@ var distributionBuilds = map[string]distributionBuild{
 	"fedora":    {bundles: redHatBundles, packages: rpm},
 }
 
+// OpenSSLBuilds are the distributions whose packages this program knows the
+// default CA file of OpenSSL for - the file a program reads when it asks
+// OpenSSL for its default store, node from a distribution's package among them
+// (ADR111 part 6). It is OPENSSLDIR "/cert.pem", and SSL_CERT_FILE replaces it -
+// include/internal/common.h and crypto/x509/by_file.c of OpenSSL's openssl-3.5
+// branch, read 2026-10-20 at https://github.com/openssl/openssl/tree/openssl-3.5
+//
+// SOURCES, inviolable rule 18 - each distribution's own recipe for OpenSSL,
+// read 2026-10-20, and every one passes --openssldir:
+//   - debian: debian/rules of openssl 3.5.7-1~deb13u2 (trixie), /usr/lib/ssl, at
+//     https://sources.debian.org/data/main/o/openssl/3.5.7-1~deb13u2/debian/rules
+//   - ubuntu: debian/rules of openssl 3.5.5-1ubuntu3.7 (26.04), the same line, in
+//     https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/openssl/3.5.5-1ubuntu3.7/openssl_3.5.5-1ubuntu3.7.debian.tar.xz
+//   - alpine: main/openssl/APKBUILD of aports 3.24-stable (openssl 3.5.9),
+//     /etc/ssl, at https://gitlab.alpinelinux.org/alpine/aports/-/raw/3.24-stable/main/openssl/APKBUILD
+//   - rhel and centos: openssl.spec of CentOS Stream 9 and 10, /etc/pki/tls, at
+//     https://gitlab.com/redhat/centos-stream/rpms/openssl (c9s, c10s).
+//   - rocky: SPECS/openssl.spec of r9 and r10, https://git.rockylinux.org/staging/rpms/openssl
+//   - almalinux: SPECS/openssl.spec of a9 and openssl.spec of a10,
+//     https://git.almalinux.org/rpms/openssl
+//
+// MEASURED by S27 on 2026-10-20 in Debian 13, Ubuntu 26.04 and Alpine 3.24:
+// cert.pem there leads to /etc/ssl/certs/ca-certificates.crt, and a root
+// appended to that file was trusted by node from the package with nothing set.
+// In RHEL 9.8 the same day /etc/pki/tls/cert.pem led to the file the platform
+// store's row reads - the trust itself rests on the source there.
+//
+// FEDORA IS NOT HERE - measured by S27 in Fedora 44: its OpenSSL reads only a
+// directory of hashed names, and /etc/pki/tls/cert.pem is not there (OBS186).
+// The ca-certificates package of CentOS Stream 10 took that link away and
+// brought it back (RHEL-109484 in its changelog), which is why the file is
+// compared on the machine rather than assumed.
+var OpenSSLBuilds = Builds{
+	"debian":    {bundles: debianOpenSSL, packages: dpkg},
+	"ubuntu":    {bundles: debianOpenSSL, packages: dpkg},
+	"alpine":    {bundles: []string{"/etc/ssl/cert.pem"}, packages: apk},
+	"rhel":      {bundles: redHatOpenSSL, packages: rpm},
+	"centos":    {bundles: redHatOpenSSL, packages: rpm},
+	"rocky":     {bundles: redHatOpenSSL, packages: rpm},
+	"almalinux": {bundles: redHatOpenSSL, packages: rpm},
+}
+
+var (
+	debianOpenSSL = []string{"/usr/lib/ssl/cert.pem"}
+	redHatOpenSSL = []string{"/etc/pki/tls/cert.pem"}
+)
+
 // DeferToThePlatform writes the row of a tool on Linux that names no CA file:
 // it defers to the platform's own store when the tool is the distribution's own
-// build of a known distribution and reads that store's file, and otherwise says
-// which of those does not hold. compiledIn is what the row says about a build
-// left to its compiled-in file, and pkg is the package the distribution ships
-// the tool in.
+// build of a distribution in builds and reads that store's file, and otherwise
+// says which of those does not hold. compiledIn is what the row says about a
+// build left to its compiled-in file, and pkg is the package the distribution
+// ships the tool in.
 //
 // binary is empty when no binary was found for the install, and then nothing
 // can be said about its package.
-func DeferToThePlatform(ctx context.Context, store report.TrustStore, ports Ports, binary, pkg, compiledIn string) report.TrustStore {
-	instance, why := platformStoreOf(ctx, ports, binary, pkg)
+func DeferToThePlatform(ctx context.Context, store report.TrustStore, ports Ports, builds Builds, binary, pkg,
+	compiledIn string) report.TrustStore {
+	instance, why := platformStoreOf(ctx, ports, builds, binary, pkg)
 	if why != "" {
 		store.NotAssessed = compiledIn + " - " + why
 		return store
@@ -137,13 +192,13 @@ func DeferToThePlatform(ctx context.Context, store report.TrustStore, ports Port
 // THE INSTANCE IS THE ONE THE PLATFORM STORE'S ROW CARRIES, because it comes
 // from the same reader - a pointer at an instance no row has would be answered
 // "this run has no answer from that store".
-func platformStoreOf(ctx context.Context, ports Ports, binary, pkg string) (string, string) {
+func platformStoreOf(ctx context.Context, ports Ports, builds Builds, binary, pkg string) (string, string) {
 	id := Distribution(ports.Source, LinuxReleases)
-	build, known := distributionBuilds[id]
+	build, known := builds[id]
 	switch {
 	case !known:
 		return "", fmt.Sprintf("which file that is, this program knows only for the packages of %s, and this "+
-			"distribution is %q", knownDistributions(), id)
+			"distribution is %q", knownDistributions(builds), id)
 	case binary == "":
 		return "", fmt.Sprintf("no %s binary was found for this install, so whether it is %s's own build was not "+
 			"established", pkg, id)
@@ -187,10 +242,10 @@ func sameBundle(ports Ports, id string, bundles []string) string {
 	return ""
 }
 
-// knownDistributions names the table's distributions in a sentence, in a fixed
+// knownDistributions names a table's distributions in a sentence, in a fixed
 // order.
-func knownDistributions() string {
-	ids := slices.Sorted(maps.Keys(distributionBuilds))
+func knownDistributions(builds Builds) string {
+	ids := slices.Sorted(maps.Keys(builds))
 	return strings.Join(ids[:len(ids)-1], ", ") + " and " + ids[len(ids)-1]
 }
 

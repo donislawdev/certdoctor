@@ -17,15 +17,39 @@ type Environment struct {
 	// environment it inherits, so it is read here only to name what turned the
 	// system list on.
 	UseSystemCA string
+	// ExtraCACerts is NODE_EXTRA_CA_CERTS, and CertFileSet and CertDirSet say
+	// SSL_CERT_FILE and SSL_CERT_DIR are set. A node that trusts OpenSSL's
+	// default store trusts something other than that store's default file when
+	// any of them is - ADR111 part 6, condition 4.
+	ExtraCACerts            string
+	CertFileSet, CertDirSet bool
+	// Platform is the operating system this program runs on, as runtime.GOOS
+	// names it - only on Linux does a distribution's package say which file
+	// OpenSSL's default store is.
+	Platform string
 }
 
-// EnvironmentFrom reads the two variables. Unset and empty are one answer for
-// both: Node parses an empty NODE_OPTIONS into nothing, and compares
-// NODE_USE_SYSTEM_CA with "1" - HandleEnvOptions in src/node_options.cc of
-// v26.x, read 2026-10-20 at
-// https://github.com/nodejs/node/blob/v26.x/src/node_options.cc
-func EnvironmentFrom(getenv func(string) string) Environment {
-	return Environment{Options: getenv("NODE_OPTIONS"), UseSystemCA: getenv("NODE_USE_SYSTEM_CA")}
+// EnvironmentFrom reads the variables.
+//
+// UNSET AND EMPTY ARE ONE ANSWER FOR THE THREE NODE READS: it parses an empty
+// NODE_OPTIONS into nothing and compares NODE_USE_SYSTEM_CA with "1" -
+// HandleEnvOptions in src/node_options.cc of v26.x - and adds nothing for an
+// empty NODE_EXTRA_CA_CERTS - NewRootCertStore in src/crypto/crypto_context.cc
+// of v26.x, both read 2026-10-20 at https://github.com/nodejs/node/tree/v26.x/src
+//
+// NOT FOR THE TWO OPENSSL READS: a variable set to nothing still replaces the
+// default, and then names no file at all - by_file_ctrl and dir_ctrl in
+// crypto/x509 of OpenSSL's openssl-3.5 branch, read 2026-10-20 at
+// https://github.com/openssl/openssl/tree/openssl-3.5/crypto/x509
+func EnvironmentFrom(lookup func(string) (string, bool), platform string) Environment {
+	value := func(name string) string {
+		v, _ := lookup(name)
+		return v
+	}
+	_, certFile := lookup("SSL_CERT_FILE")
+	_, certDir := lookup("SSL_CERT_DIR")
+	return Environment{Options: value("NODE_OPTIONS"), UseSystemCA: value("NODE_USE_SYSTEM_CA"),
+		ExtraCACerts: value("NODE_EXTRA_CA_CERTS"), CertFileSet: certFile, CertDirSet: certDir, Platform: platform}
 }
 
 // withheld are the variables the node process starts without - ADR111 part 2,
@@ -57,8 +81,6 @@ const (
 	flagBundled = "use-bundled-ca"
 )
 
-// caFlags is the order the flags are handed to node in. Each is a separate
-// boolean, so the order changes nothing Node decides.
 var caFlags = []string{flagSystem, flagOpenSSL, flagBundled}
 
 var (
@@ -114,22 +136,25 @@ func splitOptions(options string) ([]string, error) {
 	return args, nil
 }
 
-// flagsIn is the final state of every CA flag the arguments mention, and a
-// flag they do not mention is absent rather than false - absent leaves Node to
-// its default and to NODE_USE_SYSTEM_CA, while false overrides that variable.
+// mentions is every CA flag the arguments mention, in their order, each
+// spelled back as node's own argument - what node is started with.
 //
 // THE RULES, each measured with node v26.9.0 on 2026-10-20 and the first stated
 // in cli.md: a word may be separated by an underscore as well as a dash, so
-// --use_system_ca is --use-system-ca. --no- in front turns a flag off, and the
-// last mention wins. A value after "=" is ignored - --use-system-ca=false turned
-// the system list ON. The name is case sensitive - --USE-SYSTEM-CA stopped node.
+// --use_system_ca is --use-system-ca. --no- in front turns a flag off. A value
+// after "=" is ignored - --use-system-ca=false turned the system list ON. The
+// name is case sensitive - --USE-SYSTEM-CA stopped node.
+//
+// EVERY MENTION, NOT THE STATE THEY LEAVE, because the order decides more than
+// each flag's own value - OBS190, see openSSLStore. Each one is spelled from
+// this file's constants, so nothing of the variable's own text reaches node.
 //
 // ONE SHAPE IS NOT READ, NAMED: a flag written as the value of the option
 // before it, like --title --use-system-ca, which Node takes as the title. Which
 // options take a value is Node's whole option table, and this reads three
 // names.
-func flagsIn(args []string) map[string]bool {
-	flags := map[string]bool{}
+func mentions(args []string) []string {
+	var said []string
 	for _, arg := range args {
 		name, isOption := strings.CutPrefix(arg, "--")
 		if !isOption {
@@ -139,29 +164,53 @@ func flagsIn(args []string) map[string]bool {
 		name = strings.ReplaceAll(name, "_", "-")
 		name, negated := strings.CutPrefix(name, "no-")
 		for _, flag := range caFlags {
-			if name == flag {
-				flags[flag] = !negated
+			switch {
+			case name != flag:
+			case negated:
+				said = append(said, "--no-"+flag)
+			default:
+				said = append(said, "--"+flag)
 			}
 		}
+	}
+	return said
+}
+
+// flagsIn is the final state of every CA flag mentioned - the last mention
+// wins, measured the same day - and a flag never mentioned is absent rather
+// than false: absent leaves Node to its default and to NODE_USE_SYSTEM_CA,
+// while false overrides that variable, as --no-use-system-ca beat it.
+func flagsIn(said []string) map[string]bool {
+	flags := map[string]bool{}
+	for _, mention := range said {
+		flag, negated := strings.CutPrefix(strings.TrimPrefix(mention, "--"), "no-")
+		flags[flag] = !negated
 	}
 	return flags
 }
 
-// arguments spells the final state back as node's own arguments, one per flag
-// mentioned. A flag that was turned off is passed turned off, so a
-// NODE_USE_SYSTEM_CA=1 that Node itself would have overridden stays overridden -
-// measured the same day: --no-use-system-ca beat the variable.
-func arguments(flags map[string]bool) []string {
-	var args []string
-	for _, flag := range caFlags {
-		on, mentioned := flags[flag]
-		switch {
-		case !mentioned:
-		case on:
-			args = append(args, "--"+flag)
-		default:
-			args = append(args, "--no-"+flag)
+// openSSLStore says this node trusts OpenSSL's default store rather than its
+// own lists. built is whether the build made that store its default - the
+// NODE_OPENSSL_CERT_STORE the script reads.
+//
+// A --no- DOES NOT TAKE THE STORE BACK - OBS190. --use-openssl-ca implies the
+// store and --use-bundled-ca implies the list, and the implications of a
+// negated option are looked up under its --no- name, where none is declared -
+// Implies and ImpliesNot in src/node_options.cc and OptionsParser::Parse in
+// src/node_options-inl.h of v26.x, read 2026-10-20 at
+// https://github.com/nodejs/node/tree/v26.x/src - so the last of the two turned
+// on decides. Measured with node v26.9.0 the same day: started with
+// --use-openssl-ca --no-use-openssl-ca, node listed its bundled roots and
+// trusted the root SSL_CERT_FILE named, which no list held.
+func openSSLStore(said []string, built bool) bool {
+	store := built
+	for _, mention := range said {
+		switch mention {
+		case "--" + flagOpenSSL:
+			store = true
+		case "--" + flagBundled:
+			store = false
 		}
 	}
-	return args
+	return store
 }

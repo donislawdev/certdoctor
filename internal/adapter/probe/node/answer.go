@@ -27,15 +27,19 @@ import (
 // THE BUILD FACTS COME FIRST because they decide whether the lists mean
 // anything: probe S27 found NODE_OPENSSL_CERT_STORE among the build's defines
 // in every distribution's package it measured, and OpenSSL's store rather than
-// these lists is what such a node trusts.
+// these lists is what such a node trusts. Each of those packages had
+// node_shared_openssl true as well - the distribution's own OpenSSL, whose
+// default file its recipe names - and so did RHEL 9.8's, measured 2026-10-20.
 const script = `'use strict';
 const tls = require('tls');
 const config = process.config || {};
 const defines = (config.target_defaults || {}).defines || [];
+const variables = config.variables || {};
 const answer = {
   node: process.version,
   cert_store: defines.includes('NODE_OPENSSL_CERT_STORE'),
-  system_ca_path: String((config.variables || {}).openssl_system_ca_path || ''),
+  shared_openssl: variables.node_shared_openssl === true,
+  system_ca_path: String(variables.openssl_system_ca_path || ''),
   lists: null,
   pem: [],
 };
@@ -55,10 +59,11 @@ process.stdout.write(JSON.stringify(answer));
 
 // answer is what the script prints.
 type answer struct {
-	Node         string `json:"node"`
-	CertStore    bool   `json:"cert_store"`
-	SystemCAPath string `json:"system_ca_path"`
-	Lists        *lists `json:"lists"`
+	Node          string `json:"node"`
+	CertStore     bool   `json:"cert_store"`
+	SharedOpenSSL bool   `json:"shared_openssl"`
+	SystemCAPath  string `json:"system_ca_path"`
+	Lists         *lists `json:"lists"`
 	// PEM holds every certificate once, and the lists point into it.
 	PEM []string `json:"pem"`
 }
@@ -70,9 +75,9 @@ type lists struct {
 }
 
 // ask runs the script and returns its answer, or the sentence a row says when
-// there is none.
-func ask(ctx context.Context, run probe.Runner, binary string, flags map[string]bool) (answer, string) {
-	args := arguments(flags)
+// there is none. args are the CA flags NODE_OPTIONS mentions, as mentions
+// spells them.
+func ask(ctx context.Context, run probe.Runner, binary string, args []string) (answer, string) {
 	out, err := run(ctx, binary, append(slices.Clone(args), "-e", script)...)
 	switch {
 	case err != nil:

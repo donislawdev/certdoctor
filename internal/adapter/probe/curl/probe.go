@@ -126,7 +126,7 @@ func judgedByAFile(ctx context.Context, store report.TrustStore, ports probe.Por
 		const compiledIn = "this build reads a CA file and none of CURL_CA_BUNDLE, SSL_CERT_FILE and SSL_CERT_DIR is " +
 			"set, so the bundle it reads is its build-time default"
 		if env.Platform == "linux" {
-			return probe.DeferToThePlatform(ctx, store, ports, install.Path, "curl", compiledIn)
+			return probe.DeferToThePlatform(ctx, store, ports, probe.LibcurlBuilds, install.Path, "curl", compiledIn)
 		}
 		store.NotAssessed = compiledIn
 		return store

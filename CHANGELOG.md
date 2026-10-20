@@ -43,11 +43,23 @@ Barely diagnosable yet, and there has been no release.
   certificates from it. A variable that is already set is never changed or
   pointed at another file, because that would take away whatever it gave.
 - **A node built by a Linux distribution** trusts OpenSSL's store rather than
-  its own list, so its row says it could not be assessed and names the build.
+  its own list. When it came with Debian, Ubuntu, Alpine, RHEL, CentOS, Rocky
+  or AlmaLinux and nothing points OpenSSL elsewhere, its row judges by
+  `system-store <distribution>` and carries that row's answer, like curl and
+  git - the file OpenSSL reads by default there is the one that row judges.
+  `SSL_CERT_FILE`, `SSL_CERT_DIR` or `NODE_EXTRA_CA_CERTS`, a node with an
+  OpenSSL of its own, and Fedora, whose OpenSSL does not read that file, each
+  leave the row unassessed with its own reason. With `--use-bundled-ca` such a
+  node trusts its compiled-in list again and is judged by it.
+- **`--use-openssl-ca` followed by `--no-use-openssl-ca`** leaves node on
+  OpenSSL's store, because the second does not take the first back. The row
+  used to judge the compiled-in list there and could refuse a chain node
+  trusts - it now says node trusts OpenSSL's store.
 - **`L0` reads `NODE_USE_SYSTEM_CA` and `NODE_OPTIONS`**, which makes 25
   variables.
 - **[contract] The schema version is now 2.2.** `store_form` has a third value,
   `builtin` - a list compiled into the program, with an empty `store_path`.
+  A node row whose node trusts OpenSSL's store carries `system` instead.
   Nothing is removed.
 
 ### Changed - curl and git on Linux take the answer of the system store

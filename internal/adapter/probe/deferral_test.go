@@ -64,14 +64,20 @@ const compiledIn = "the bundle it reads is its build-time default"
 // the contract, so no test below passes on a row the report would refuse.
 func deferOn(t *testing.T, m *machine, binary, pkg string) report.TrustStore {
 	t.Helper()
+	return deferWith(t, m, LibcurlBuilds, "curl", binary, pkg)
+}
+
+// deferWith is deferOn for any table and runtime.
+func deferWith(t *testing.T, m *machine, builds Builds, runtime, binary, pkg string) report.TrustStore {
+	t.Helper()
 	// An install found without a binary is named by its directory, the way the
 	// git probe names one found only by /etc/gitconfig.
 	instance := binary
 	if instance == "" {
 		instance = "/"
 	}
-	start := report.TrustStore{Runtime: "curl", Instance: instance, SelectedBy: []string{"PATH"}, StoreForm: report.StoreSystem}
-	store := DeferToThePlatform(t.Context(), start, m.ports(), binary, pkg, compiledIn)
+	start := report.TrustStore{Runtime: runtime, Instance: instance, SelectedBy: []string{"PATH"}, StoreForm: report.StoreSystem}
+	store := DeferToThePlatform(t.Context(), start, m.ports(), builds, binary, pkg, compiledIn)
 	finding := report.Finding{Kind: report.FindingTrustStore, Summary: "a row", Source: report.SourceDetected, TrustStore: &store}
 	if broken := finding.Breach(); broken != "" {
 		t.Errorf("the contract refuses this row: %s", broken)
@@ -136,11 +142,11 @@ func TestTheTableIsTheOneWithSources(t *testing.T) {
 		"debian": "dpkg", "ubuntu": "dpkg", "alpine": "apk",
 		"rhel": "rpm", "centos": "rpm", "rocky": "rpm", "almalinux": "rpm", "fedora": "rpm",
 	}
-	if len(distributionBuilds) != len(want) {
-		t.Errorf("%d distributions, want %d", len(distributionBuilds), len(want))
+	if len(LibcurlBuilds) != len(want) {
+		t.Errorf("%d distributions, want %d", len(LibcurlBuilds), len(want))
 	}
 	for id, db := range want {
-		build := distributionBuilds[id]
+		build := LibcurlBuilds[id]
 		if build.packages.name != db {
 			t.Errorf("%s: packages read by %q, want %q", id, build.packages.name, db)
 		}
@@ -152,7 +158,7 @@ func TestTheTableIsTheOneWithSources(t *testing.T) {
 			t.Errorf("%s: bundles %v, want %v", id, build.bundles, bundles)
 		}
 	}
-	if got := knownDistributions(); got != "almalinux, alpine, centos, debian, fedora, rhel, rocky and ubuntu" {
+	if got := knownDistributions(LibcurlBuilds); got != "almalinux, alpine, centos, debian, fedora, rhel, rocky and ubuntu" {
 		t.Errorf("the sentence names %q", got)
 	}
 }
@@ -319,5 +325,68 @@ func TestTheBuildsFileHasToBeThePlatformStoresFile(t *testing.T) {
 	if store := deferOn(t, fedora, "/usr/bin/curl", "curl"); store.DefersTo != nil ||
 		!strings.HasSuffix(store.NotAssessed, "which is not the same file as /etc/pki/tls/certs/ca-bundle.crt") {
 		t.Errorf("one name missing: got %q", store.NotAssessed)
+	}
+}
+
+// OPENSSL'S DEFAULT FILE IS A TABLE OF ITS OWN - ADR111 part 6: the file each
+// distribution builds OpenSSL to read, through the same package database as
+// the libcurl table, and no Fedora, whose OpenSSL does not read it (OBS186).
+func TestTheOpenSSLTableIsTheOneWithSources(t *testing.T) {
+	want := map[string]string{
+		"debian": "/usr/lib/ssl/cert.pem", "ubuntu": "/usr/lib/ssl/cert.pem", "alpine": "/etc/ssl/cert.pem",
+		"rhel": "/etc/pki/tls/cert.pem", "centos": "/etc/pki/tls/cert.pem", "rocky": "/etc/pki/tls/cert.pem",
+		"almalinux": "/etc/pki/tls/cert.pem",
+	}
+	if len(OpenSSLBuilds) != len(want) {
+		t.Errorf("%d distributions, want %d", len(OpenSSLBuilds), len(want))
+	}
+	for id, file := range want {
+		build := OpenSSLBuilds[id]
+		if !slices.Equal(build.bundles, []string{file}) {
+			t.Errorf("%s: files %v, want %s", id, build.bundles, file)
+		}
+		if build.packages.name != LibcurlBuilds[id].packages.name {
+			t.Errorf("%s: packages read by %q, want %q", id, build.packages.name, LibcurlBuilds[id].packages.name)
+		}
+	}
+	if got := knownDistributions(OpenSSLBuilds); got != "almalinux, alpine, centos, debian, rhel, rocky and ubuntu" {
+		t.Errorf("the sentence names %q", got)
+	}
+}
+
+// NODE FROM A DISTRIBUTION'S PACKAGE DEFERS THROUGH THE LINK OpenSSL's default
+// file is - measured by S27 in Ubuntu 26.04: /usr/lib/ssl/cert.pem leads to
+// the bundle the platform store's row reads, and dpkg lists the binary in
+// nodejs.list. In RHEL 9.8 /etc/pki/tls/cert.pem leads to the file
+// ca-bundle.crt leads to.
+func TestOpenSSLsDefaultFileDefersThroughItsLink(t *testing.T) {
+	ubuntu := newMachine("ubuntu").withBundle("/etc/ssl/certs/ca-certificates.crt")
+	ubuntu.links["/usr/lib/ssl/cert.pem"] = "/etc/ssl/certs/ca-certificates.crt"
+	ubuntu.files["/var/lib/dpkg/info/nodejs.list"] = []byte("/usr/bin/node\n/usr/bin/nodejs\n")
+	if store := deferWith(t, ubuntu, OpenSSLBuilds, "node", "/usr/bin/node", "nodejs"); !defersTo(store, "ubuntu") {
+		t.Errorf("ubuntu: got %+v", store)
+	}
+
+	rhel := newMachine("rhel").withBundle("/etc/pki/tls/certs/ca-bundle.crt")
+	rhel.links["/etc/pki/tls/certs/ca-bundle.crt"] = "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
+	rhel.links["/etc/pki/tls/cert.pem"] = "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
+	rhel.owned["/usr/bin/node"] = true
+	if store := deferWith(t, rhel, OpenSSLBuilds, "node", "/usr/bin/node", "nodejs"); !defersTo(store, "rhel") {
+		t.Errorf("rhel: got %+v", store)
+	}
+
+	// WITHOUT THE LINK - an image with libssl and no openssl package, which is
+	// the package that holds it in Debian and Ubuntu - the file is another one.
+	delete(ubuntu.links, "/usr/lib/ssl/cert.pem")
+	if store := deferWith(t, ubuntu, OpenSSLBuilds, "node", "/usr/bin/node", "nodejs"); store.DefersTo != nil ||
+		!strings.HasSuffix(store.NotAssessed, "which is not the same file as /usr/lib/ssl/cert.pem") {
+		t.Errorf("no link: got %q", store.NotAssessed)
+	}
+
+	fedora := newMachine("fedora").withBundle("/etc/pki/tls/certs/ca-bundle.crt")
+	fedora.owned["/usr/bin/node"] = true
+	if store := deferWith(t, fedora, OpenSSLBuilds, "node", "/usr/bin/node", "nodejs"); store.DefersTo != nil ||
+		!strings.HasSuffix(store.NotAssessed, `and this distribution is "fedora"`) {
+		t.Errorf("fedora: got %q", store.NotAssessed)
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"io/fs"
+	"maps"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -271,6 +273,10 @@ func TestEachRowWithoutAVerdictSaysWhy(t *testing.T) {
 			out: probe.Output{Stdout: `{"node":"v20.19.2","lists":null,"pem":[]}`}},
 		{name: "OpenSSL's store asked for", options: "--use-openssl-ca", out: probe.Output{Stdout: good},
 			says: "--use-openssl-ca"},
+		// OBS190: the list comes back whole, and node trusts OpenSSL's store all
+		// the same.
+		{name: "OpenSSL's store asked for and turned off again", options: "--use-openssl-ca --no-use-openssl-ca",
+			out: probe.Output{Stdout: good}, says: "--use-openssl-ca"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -394,4 +400,172 @@ func TestTheScriptRunsOnTheNodeThisMachineHas(t *testing.T) {
 		t.Errorf("%s %s listed no certificate it trusts", binaries[0], a.Node)
 	}
 	t.Logf("%s %s: %d certificates, cert_store %v", binaries[0], a.Node, len(a.PEM), a.CertStore)
+}
+
+// linuxPorts is a Linux machine made of files and links, whose node answers
+// out - the deferral reads os-release, dpkg's lists and the bundle through it.
+func linuxPorts(files, links map[string]string, out probe.Output, calls *[]call) probe.Ports {
+	source := func(path string) (io.ReadCloser, error) {
+		content, ok := files[path]
+		if !ok {
+			return nil, fs.ErrNotExist
+		}
+		return io.NopCloser(strings.NewReader(content)), nil
+	}
+	resolve := func(path string) (string, error) {
+		if real, ok := links[path]; ok {
+			return real, nil
+		}
+		return path, nil
+	}
+	return probe.Ports{Source: source, Resolve: resolve, Run: replying(out, nil, calls)}
+}
+
+// distributionAnswer is what node from a distribution's package prints - S27:
+// NODE_OPENSSL_CERT_STORE and the distribution's own OpenSSL - with edit
+// applied to it.
+func distributionAnswer(t *testing.T, trusted [][]byte, edit func(*answer)) string {
+	t.Helper()
+	var a answer
+	if err := json.Unmarshal([]byte(answerOf(t, "v22.22.1", trusted, nil, nil)), &a); err != nil {
+		t.Fatalf("no answer: %v", err)
+	}
+	a.CertStore, a.SharedOpenSSL = true, true
+	if edit != nil {
+		edit(&a)
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("no answer: %v", err)
+	}
+	return string(raw)
+}
+
+// ubuntu is Ubuntu 26.04 as S27 measured it: node in nodejs.list, and
+// OpenSSL's default file a link to the bundle the platform store reads.
+func ubuntu() (map[string]string, map[string]string) {
+	return map[string]string{
+		"/etc/os-release":                    "ID=ubuntu\n",
+		"/var/lib/dpkg/info/nodejs.list":     "/usr/bin/node\n/usr/bin/nodejs\n",
+		"/etc/ssl/certs/ca-certificates.crt": "bundle",
+	}, map[string]string{
+		"/usr/lib/ssl/cert.pem": "/etc/ssl/certs/ca-certificates.crt",
+	}
+}
+
+// distributionRow writes the row of /usr/bin/node on that machine, and checks
+// it against the contract, so no test below passes on a row the report would
+// refuse.
+func distributionRow(t *testing.T, b bench, files, links map[string]string, out string, env Environment) (report.TrustStore, []call) {
+	t.Helper()
+	var calls []call
+	store := storeFor(t.Context(), linuxPorts(files, links, probe.Output{Stdout: out}, &calls), "/usr/bin/node", env,
+		[][]byte{b.leaf, b.inter}, atNoon())
+	if broken := (report.Finding{Kind: report.FindingTrustStore, Summary: "one row", Source: report.SourceDetected,
+		TrustStore: &store}).Breach(); broken != "" {
+		t.Fatalf("the row breaks the contract: %s", broken)
+	}
+	return store, calls
+}
+
+// NODE FROM A DISTRIBUTION'S PACKAGE DEFERS TO THE PLATFORM'S OWN STORE -
+// ADR111 part 6, measured by S27: it trusts the OpenSSL default file, which on
+// Ubuntu is the bundle the platform store's row judges. Asked for explicitly,
+// that store is the same one, and Debian 13's node without any list defers too.
+// The conditions of the deferral itself are asked in package probe.
+func TestADistributionsNodeDefersToThePlatformStore(t *testing.T) {
+	files, links := ubuntu()
+	b := newBench(t)
+	linux := Environment{Platform: "linux"}
+	defers := func(store report.TrustStore) bool {
+		return store.DefersTo != nil && *store.DefersTo == report.StoreRef{Runtime: report.RuntimeSystemStore,
+			Instance: "ubuntu"} && store.StoreForm == report.StoreSystem && store.TrustsPresentedChain == nil
+	}
+	if store, _ := distributionRow(t, b, files, links, distributionAnswer(t, nil, nil), linux); !defers(store) {
+		t.Errorf("got %+v, want a row deferring to system-store ubuntu", store)
+	}
+
+	asked := Environment{Platform: "linux", Options: "--use-openssl-ca"}
+	store, calls := distributionRow(t, b, files, links, distributionAnswer(t, nil, nil), asked)
+	if !defers(store) {
+		t.Errorf("the store asked for: got %+v", store)
+	}
+	if want := []string{"--use-openssl-ca", "-e", script}; len(calls) != 1 || !slices.Equal(calls[0].args, want) {
+		t.Errorf("ran with %q, want the flag and the script", calls)
+	}
+
+	noLists := distributionAnswer(t, nil, func(a *answer) { a.Node, a.Lists, a.PEM = "v20.19.2", nil, nil })
+	if store, _ := distributionRow(t, b, files, links, noLists, linux); !defers(store) {
+		t.Errorf("a node with no lists: got %+v", store)
+	}
+}
+
+// EVERY WAY THE DEFAULT FILE IS NOT WHAT IT TRUSTS IS SAID ON ITS OWN, after
+// the sentence about the build - ADR111 part 6, condition 4 - and elsewhere
+// than Linux the build is named and nothing more.
+func TestADistributionsNodeThatTrustsMoreDoesNotDefer(t *testing.T) {
+	files, links := ubuntu()
+	b := newBench(t)
+	const builtTo = "this node was built with NODE_OPENSSL_CERT_STORE to trust OpenSSL's default store rather " +
+		"than its own lists, the way distributions build it"
+	cases := []struct {
+		name   string
+		env    Environment
+		edit   func(*answer)
+		fedora bool
+		says   string
+	}{
+		{"an OpenSSL of its own", Environment{Platform: "linux"}, func(a *answer) { a.SharedOpenSSL = false }, false,
+			builtTo + " - it carries an OpenSSL of its own"},
+		{"SSL_CERT_FILE, even empty", Environment{Platform: "linux", CertFileSet: true}, nil, false,
+			builtTo + " - SSL_CERT_FILE is set"},
+		{"SSL_CERT_DIR", Environment{Platform: "linux", CertDirSet: true}, nil, false, builtTo + " - SSL_CERT_DIR is set"},
+		{"NODE_EXTRA_CA_CERTS", Environment{Platform: "linux", ExtraCACerts: "/extra.pem"}, nil, false,
+			builtTo + " - NODE_EXTRA_CA_CERTS adds"},
+		{"a distribution outside the table", Environment{Platform: "linux"}, nil, true,
+			builtTo + " - which file that is, this program knows only for the packages of almalinux, alpine, " +
+				`centos, debian, rhel, rocky and ubuntu, and this distribution is "fedora"`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			machine := maps.Clone(files)
+			if c.fedora {
+				machine["/etc/os-release"] = "ID=fedora\n"
+			}
+			store, _ := distributionRow(t, b, machine, links, distributionAnswer(t, nil, c.edit), c.env)
+			if store.DefersTo != nil || store.TrustsPresentedChain != nil || store.StoreForm != report.StoreSystem ||
+				!strings.HasPrefix(store.NotAssessed, c.says) {
+				t.Errorf("got %+v, want no verdict and a reason starting %q", store, c.says)
+			}
+		})
+	}
+
+	store, _ := distributionRow(t, b, files, links, distributionAnswer(t, nil, nil), Environment{Platform: "darwin"})
+	if store.DefersTo != nil || store.NotAssessed != builtTo || store.StoreForm != report.StoreSystem {
+		t.Errorf("another platform: got %+v, want the sentence about the build alone", store)
+	}
+}
+
+// WITH --use-bundled-ca A DISTRIBUTION'S NODE IS JUDGED BY ITS LIST, like an
+// official build - decided by the owner 2026-10-21 on the measurement of S27:
+// the flag brings the compiled-in list back, and the list tells the truth
+// again. A --no- after it takes nothing back (OBS190). A file the build loads
+// itself still comes first.
+func TestADistributionsNodeToldToUseItsListIsJudgedByIt(t *testing.T) {
+	files, links := ubuntu()
+	b := newBench(t)
+	for _, options := range []string{"--use-bundled-ca", "--use-bundled-ca --no-use-bundled-ca"} {
+		store, _ := distributionRow(t, b, files, links, distributionAnswer(t, [][]byte{b.root}, nil),
+			Environment{Platform: "linux", Options: options})
+		if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain || store.StoreForm != report.StoreBuiltin ||
+			store.DefersTo != nil {
+			t.Errorf("%s: got %+v, want the list's own verdict", options, store)
+		}
+	}
+
+	ownPath := distributionAnswer(t, nil, func(a *answer) { a.SystemCAPath = "/etc/pki/tls/certs" })
+	if store, _ := distributionRow(t, b, files, links, ownPath, Environment{Platform: "linux"}); store.DefersTo != nil ||
+		!strings.Contains(store.NotAssessed, "/etc/pki/tls/certs, which this program does not follow") {
+		t.Errorf("a file the build loads itself: got %+v", store)
+	}
 }

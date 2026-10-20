@@ -36,17 +36,19 @@ func Probe(source file.Source, resolve file.Resolve, start func(withheld ...stri
 			// NOT AN ERROR - docs/20 rule 1. No node is not a fact about trust.
 			return nil, nil
 		}
-		run := start(withheld...)
+		// The deferral's rpm runs through the same runner and loses the same
+		// variables, which a child may always do.
+		ports := probe.Ports{Source: source, Resolve: resolve, Run: start(withheld...)}
 		stores := make([]report.TrustStore, 0, len(binaries))
 		for _, binary := range binaries {
-			stores = append(stores, storeFor(ctx, run, binary, env, chain, now()))
+			stores = append(stores, storeFor(ctx, ports, binary, env, chain, now()))
 		}
 		return stores, nil
 	}
 }
 
 // storeFor turns one binary into one row of the matrix.
-func storeFor(ctx context.Context, run probe.Runner, binary string, env Environment, chain [][]byte,
+func storeFor(ctx context.Context, ports probe.Ports, binary string, env Environment, chain [][]byte,
 	now time.Time) report.TrustStore {
 	store := report.TrustStore{
 		Runtime: report.RuntimeNode,
@@ -62,10 +64,14 @@ func storeFor(ctx context.Context, run probe.Runner, binary string, env Environm
 		store.NotAssessed = fmt.Sprintf("%v, which Node refuses to start with, so no list decides anything", err)
 		return store
 	}
-	flags := flagsIn(args)
-	a, why := ask(ctx, run, binary, flags)
+	said := mentions(args)
+	flags := flagsIn(said)
+	a, why := ask(ctx, ports.Run, binary, said)
+	if why == "" && a.SystemCAPath == "" && openSSLStore(said, a.CertStore) {
+		return judgedByOpenSSL(ctx, store, ports, binary, a, env)
+	}
 	if why == "" {
-		why = unjudged(a, flags)
+		why = unjudged(a)
 	}
 	if why != "" {
 		store.NotAssessed = why
@@ -127,25 +133,76 @@ func knowsUseSystemCA(version string) bool {
 // returns the empty string - ADR111 part 5. Each case is said on its own, so a
 // person reading the row knows what to look at.
 //
-// THE BUILD IS ASKED ABOUT BEFORE THE LISTS. A node built to read OpenSSL's
-// store does not trust these lists whatever they say, and Debian 13's v20.19.2
-// has no lists at all - S27 - so its row names the build rather than the
-// missing function.
-func unjudged(a answer, flags map[string]bool) string {
+// A FILE THE BUILD LOADS ITSELF COMES FIRST, whatever store is in use: Node
+// loads it into every store it makes - NewRootCertStore in
+// src/crypto/crypto_context.cc of v26.x, read 2026-10-20 at
+// https://github.com/nodejs/node/blob/v26.x/src/crypto/crypto_context.cc
+func unjudged(a answer) string {
 	switch {
-	case a.CertStore:
-		return "this node was built to trust OpenSSL's default store - NODE_OPENSSL_CERT_STORE, which is how " +
-			"distributions build it - so its own lists are not what it trusts"
 	case a.SystemCAPath != "":
 		return fmt.Sprintf("this node was built to read its system certificates from %s, which this program does not follow",
 			a.SystemCAPath)
 	case a.Lists == nil:
 		return fmt.Sprintf("node %s has no tls.getCACertificates, which arrived in v22.15.0 and v23.10.0, so the list it "+
 			"trusts cannot be read", a.Node)
-	case flags[flagOpenSSL]:
+	}
+	return ""
+}
+
+// judgedByOpenSSL writes the row of a node that trusts OpenSSL's default store
+// rather than its own lists - ADR111 parts 5 and 6. The store is the
+// platform's, so the row says so rather than "builtin".
+//
+// A DISTRIBUTION'S BUILD DEFERS TO THE PLATFORM'S OWN STORE: Node then calls
+// X509_STORE_set_default_paths (NewRootCertStore, the same file), which reads
+// OpenSSL's default file and directory, and on a distribution in
+// probe.OpenSSLBuilds that file is the one the platform store's row judges.
+// Its lists say nothing about it - S27 measured them wrong in both directions.
+//
+// AN OFFICIAL BUILD TOLD TO USE THAT STORE IS NOT ANSWERED: its OpenSSL is its
+// own, and which default file it reads no distribution's recipe says.
+func judgedByOpenSSL(ctx context.Context, store report.TrustStore, ports probe.Ports, binary string, a answer,
+	env Environment) report.TrustStore {
+	store.StoreForm = report.StoreSystem
+	if !a.CertStore {
 		// MEASURED with node v26.9.0 on 2026-10-20: with --use-openssl-ca the
 		// default list came back empty while Node trusted OpenSSL's store.
-		return "NODE_OPTIONS carries --use-openssl-ca, so node trusts OpenSSL's default store and the list it reports is empty"
+		store.NotAssessed = "NODE_OPTIONS carries --use-openssl-ca, so node trusts OpenSSL's default store rather than " +
+			"the list it reports"
+		return store
+	}
+	const builtTo = "this node was built with NODE_OPENSSL_CERT_STORE to trust OpenSSL's default store rather than " +
+		"its own lists, the way distributions build it"
+	if why := notTheDefaultFile(a, env); why != "" {
+		store.NotAssessed = builtTo + " - " + why
+		return store
+	}
+	if env.Platform != "linux" {
+		store.NotAssessed = builtTo
+		return store
+	}
+	return probe.DeferToThePlatform(ctx, store, ports, probe.OpenSSLBuilds, binary, "nodejs", builtTo)
+}
+
+// notTheDefaultFile names what makes this node trust something other than the
+// default file of the distribution's OpenSSL, or returns the empty string -
+// ADR111 part 6, condition 4, and each is said on its own.
+//
+// SSL_CERT_FILE AND SSL_CERT_DIR REPLACE THE DEFAULTS, even set to nothing -
+// EnvironmentFrom has the source. NODE_EXTRA_CA_CERTS adds to whatever store is
+// in use (NewRootCertStore again), so the platform's store alone is not what
+// such a node trusts.
+func notTheDefaultFile(a answer, env Environment) string {
+	switch {
+	case !a.SharedOpenSSL:
+		return "it carries an OpenSSL of its own rather than the distribution's, and which default file that one " +
+			"reads is not known"
+	case env.CertFileSet:
+		return "SSL_CERT_FILE is set, and OpenSSL reads the file it names in place of its default one"
+	case env.CertDirSet:
+		return "SSL_CERT_DIR is set, and OpenSSL looks in the directories it names in place of its default one"
+	case env.ExtraCACerts != "":
+		return "NODE_EXTRA_CA_CERTS adds the certificates of another file to that store"
 	}
 	return ""
 }

@@ -502,7 +502,7 @@ func liveTrustProbes() map[string]trust.Probe {
 		// withholds are named in its own package, beside their sources - ADR111
 		// and OBS189.
 		"curl":             curl.Probe(guarded, resolvePath, files, probe.Without, paths, curlEnv, time.Now),
-		report.RuntimeNode: node.Probe(guarded, resolvePath, probe.Without, paths, node.EnvironmentFrom(os.Getenv), time.Now),
+		report.RuntimeNode: node.Probe(guarded, resolvePath, probe.Without, paths, node.EnvironmentFrom(os.LookupEnv, runtime.GOOS), time.Now),
 	}
 	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - Windows by
 	// ADR103, Linux by ADR104. Elsewhere there is no probe rather than one
