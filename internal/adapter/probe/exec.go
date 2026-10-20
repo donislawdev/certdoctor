@@ -20,8 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -97,7 +101,8 @@ type Runner func(ctx context.Context, executable string, args ...string) (Output
 // happens ON THIS MACHINE, and a cleaned environment would answer a question
 // nobody asked - if JAVA_TOOL_OPTIONS changes what keytool does here, that is a
 // fact about this machine and belongs in the report rather than being tidied
-// away before it can be seen.
+// away before it can be seen. ONE PROBE NARROWS IT, AND ONLY BY TAKING AWAY -
+// Without, below, which is ADR111's exception and not a second rule.
 //
 // A NON-ZERO EXIT IS NOT AN ERROR. It is an answer, and often the interesting
 // one, so it comes back in Output.ExitCode. The error return is for the cases
@@ -108,11 +113,62 @@ type Runner func(ctx context.Context, executable string, args ...string) (Output
 // missing and the half a reader of the report actually met. See the context
 // check below.
 func Run(ctx context.Context, executable string, args ...string) (Output, error) {
+	return start(ctx, nil, executable, args...)
+}
+
+// Without returns a Runner that starts a program with this process's
+// environment LESS the variables named, and with nothing added.
+//
+// THE FIFTH NARROWING RULE - ADR111 part 2, decided by the owner 2026-10-20:
+// a child may LOSE variables and never gain one. It exists for node, where an
+// inherited NODE_OPTIONS can carry --require, which would run somebody else's
+// code inside the process this program started, and NODE_V8_COVERAGE writes a
+// file - inviolable rules 16 and 14. Run above keeps inheriting everything, and
+// that stays the rule for every other probe.
+//
+// NAMES ARE COMPARED THE WAY THE PLATFORM COMPARES THEM. Windows does not tell
+// Node_Options from NODE_OPTIONS, so neither does this, and a spelling that
+// slipped past would hand the child the variable this exists to withhold.
+func Without(names ...string) Runner {
+	withheld := slices.Clone(names)
+	return func(ctx context.Context, executable string, args ...string) (Output, error) {
+		return start(ctx, without(os.Environ(), withheld, runtime.GOOS == "windows"), executable, args...)
+	}
+}
+
+// without is environ less every entry whose name is withheld. It only ever
+// drops entries - the rule Without states - and keeps the rest in their order.
+func without(environ, withheld []string, foldCase bool) []string {
+	kept := make([]string, 0, len(environ))
+	for _, entry := range environ {
+		name := nameOf(entry)
+		if !slices.ContainsFunc(withheld, func(w string) bool { return w == name || foldCase && strings.EqualFold(w, name) }) {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
+}
+
+// nameOf is the name of one NAME=value entry. A NAME MAY START WITH "=" ON
+// WINDOWS, where the current directory of each drive travels as an entry like
+// "=C:=C:\work", so the separator is looked for after the first character.
+func nameOf(entry string) string {
+	if entry == "" {
+		return ""
+	}
+	name, _, _ := strings.Cut(entry[1:], "=")
+	return entry[:1] + name
+}
+
+// start runs one program with env as its environment, or with this process's
+// own when env is nil - the rules are on Run.
+func start(ctx context.Context, env []string, executable string, args ...string) (Output, error) {
 	if !filepath.IsAbs(executable) {
 		return Output{}, fmt.Errorf("%w: %q", ErrNotAbsolute, executable)
 	}
 
 	command := exec.CommandContext(ctx, executable, args...)
+	command.Env = env
 	var stdout, stderr cappedWriter
 	command.Stdout = &stdout
 	command.Stderr = &stderr

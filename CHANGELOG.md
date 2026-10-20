@@ -10,6 +10,34 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Added - node is judged by the list it trusts
+
+- **Every `node` on PATH gets a row.** Each is asked once, with a fixed script
+  and no network, for the certificates it trusts: the list compiled into that
+  binary, widened by the file `NODE_EXTRA_CA_CERTS` names and, when
+  `NODE_USE_SYSTEM_CA=1` or `--use-system-ca` turns it on, by the platform's
+  certificates as Node reads them. The row names which of those variables made
+  a difference.
+- **Only a self-signed certificate on that list ends a chain**, because that is
+  what Node does - an intermediate alone in `NODE_EXTRA_CA_CERTS` does not make
+  the server trusted, and the row no longer says it does.
+- **node is started without `NODE_OPTIONS`** and without the variables that make
+  it write files, so a `--require` there never runs inside the process
+  certdoctor starts. The certificate switches in `NODE_OPTIONS` are still read,
+  the way Node reads them, and passed on.
+- **A command where node refuses:** `setx NODE_EXTRA_CA_CERTS` on Windows or
+  `export NODE_EXTRA_CA_CERTS` elsewhere when the variable is not set, and an
+  append to the file it names when node read certificates from it. A variable
+  that is already set is never pointed at another file, because that would take
+  away whatever the first one gave.
+- **A node built by a Linux distribution** trusts OpenSSL's store rather than
+  its own list, so its row says it could not be assessed and names the build.
+- **`L0` reads `NODE_USE_SYSTEM_CA` and `NODE_OPTIONS`**, which makes 25
+  variables.
+- **[contract] The schema version is now 2.2.** `store_form` has a third value,
+  `builtin` - a list compiled into the program, with an empty `store_path`.
+  Nothing is removed.
+
 ### Changed - curl and git on Linux take the answer of the system store
 
 - **curl and git that came with the distribution, naming no CA file, now get

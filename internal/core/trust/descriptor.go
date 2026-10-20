@@ -212,6 +212,36 @@ var descriptors = []Descriptor{
 			"one it would get is the measured trap. Measured 2026-08-19 on the bench: curl 8.21.0 on OpenSSL 3.5.7 " +
 			"reading a 179359-byte bundle refused a private root, which is the row this fix is written for.",
 	},
+	{
+		ID:      report.RuntimeNode,
+		Runtime: report.RuntimeNode,
+		TrustSource: "the list compiled into each node binary - Mozilla's, as of that release - widened by the file " +
+			"NODE_EXTRA_CA_CERTS names and, when NODE_USE_SYSTEM_CA=1 or --use-system-ca asks for it, by the " +
+			"platform's store as Node itself reads it; read by asking that binary, and only a self-signed certificate " +
+			"on the list ends a chain",
+		Source: Measured,
+		Evidence: "Measured 2026-10-20 with probe S27 in eight places - the owner's machine with node v26.9.0, the " +
+			"node:26, node:26-alpine and node:22-alpine images, and Node from the Debian 13, Ubuntu 26.04, Alpine 3.24 " +
+			"and Fedora 44 packages - with a request over loopback as the signal. On the official builds " +
+			"tls.getCACertificates('default') was what Node trusted at every step, except under --use-openssl-ca, " +
+			"where it came back empty while Node trusted OpenSSL's store. Every distribution's build carried " +
+			"NODE_OPENSSL_CERT_STORE among its defines in process.config and trusted OpenSSL's store, which its list " +
+			"misstated both ways, and Debian's v20.19.2 has no getCACertificates. An intermediate alone in the list did " +
+			"not make a leaf it signed trusted in any of the eight. Read beside it in src/node_options.cc and " +
+			"doc/api/cli.md of v26.x at https://github.com/nodejs/node/tree/v26.x - NODE_OPTIONS is split on spaces " +
+			"with double quotes, NODE_USE_SYSTEM_CA counts only as 1, and an explicit flag wins over it, which node " +
+			"v26.9.0 confirmed the same day. The list is read from the binary with a constant script, under an " +
+			"environment without NODE_OPTIONS and the variables that make Node write files - ADR111.",
+		FixSource: Documentation,
+		FixEvidence: "Node.js doc/api/cli.md of v26.x, read 2026-10-20 at " +
+			"https://github.com/nodejs/node/blob/v26.x/doc/api/cli.md - NODE_EXTRA_CA_CERTS names a PEM file whose " +
+			"certificates extend the well known roots, read once when the process starts and ignored under setuid or " +
+			"file capabilities, and NODE_USE_SYSTEM_CA=1 adds the platform's store, since v24.6.0 and v22.19.0. So a " +
+			"command acts on node processes started after it, never on one already running. Measured beside it with " +
+			"probe S27: a root in the file NODE_EXTRA_CA_CERTS named was trusted by every official build, and on " +
+			"Linux, under NODE_USE_SYSTEM_CA=1, a root in the file the system list read was trusted too. Adding one " +
+			"to the Windows store was not measured, because that needs the owner at the machine.",
+	},
 }
 
 // All returns every declared descriptor, in declaration order.

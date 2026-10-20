@@ -225,7 +225,15 @@ import (
 // answer of the row defers_to names - system-store CurrentUser, measured with
 // probe S25 - so a consumer counting stores must count that row once, and a
 // consumer switching on trust_failure meets a value no store fix repairs.
-const SchemaVersion = "2.1"
+//
+// 2.2 ADDS ONE VALUE TO store_form, builtin - ADR111 part 4, decided by the
+// owner. A MINOR by rule 2: nothing removed, nothing renamed, no meaning changed.
+//
+// WHAT CHANGES FOR A CONSUMER THAT ALREADY SHIPPED. A machine with node on PATH
+// now has a node row whose store is the list compiled into that binary, so
+// store_path is empty on it as on a system row, and a consumer that read every
+// store without a path as the platform's own would count it there wrongly.
+const SchemaVersion = "2.2"
 
 // JSON renders the machine readable report.
 //

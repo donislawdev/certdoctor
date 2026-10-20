@@ -1180,11 +1180,17 @@ const (
 	StoreFile StoreForm = "file"
 	// StoreSystem - the platform's own store, which has no path to hand out.
 	StoreSystem StoreForm = "system"
+	// StoreBuiltin - a list compiled into the program itself - ADR111 part 4,
+	// decided by the owner 2026-10-20. Node's own copy of Mozilla's list is the
+	// first: it lives in the binary, so there is no file to name, and the
+	// platform's store is not what it is either.
+	StoreBuiltin StoreForm = "builtin"
 )
 
 var storeFormMeanings = map[StoreForm]string{
-	StoreFile:   "a file on this machine that holds the anchors",
-	StoreSystem: "the platform's own store, which has no path to point at",
+	StoreFile:    "a file on this machine that holds the anchors",
+	StoreSystem:  "the platform's own store, which has no path to point at",
+	StoreBuiltin: "a list compiled into the program, which has no path to point at",
 }
 
 // RuntimeSystemStore is the runtime a row carries when it answers for the
@@ -1198,6 +1204,13 @@ var storeFormMeanings = map[StoreForm]string{
 // and the generator that writes the command read the same constant, so the
 // three places cannot disagree about which runtime the exception is for.
 const RuntimeSystemStore = "system-store"
+
+// RuntimeNode is the runtime of a row judging the list compiled into a node
+// binary - ADR111. It is declared here for the same reason as the one above:
+// its commands name the variable Node reads, or the file that variable names,
+// and never the list itself, so the file rule makes an exception for it, and
+// the probe and the generator read the same constant.
+const RuntimeNode = "node"
 
 // The two instances of the Windows platform store, spelled as Windows spells
 // the two system store locations - CERT_SYSTEM_STORE_CURRENT_USER and
@@ -1237,6 +1250,10 @@ func (t *TrustStore) breach() string {
 		return fmt.Sprintf("carries the store form %q, which is outside the registry", t.StoreForm)
 	case t.StoreForm == StoreFile && t.StorePath == "":
 		return "calls the store a file and gives no path, and a path is the one thing a person needs to act"
+	// A PATH BESIDE A COMPILED-IN LIST would be the one thing a person acts on,
+	// and it would send them to edit a file the program never reads.
+	case t.StoreForm == StoreBuiltin && t.StorePath != "":
+		return "calls the store a list compiled into the program and gives a path, which no edit there would change"
 	case t.TrustAnchorCount < 0:
 		return fmt.Sprintf("reports %d trust anchors, which is not a count", t.TrustAnchorCount)
 	// NEVER nil, and an empty slice is the answer. A nil here would be a
@@ -1329,6 +1346,10 @@ func (t *TrustStore) remediationBreach() string {
 	// runtime on a platform store - curl on Schannel is the measured one - stays
 	// refused, because whatever it would be handed would be that trap.
 	platformOwn := t.Runtime == RuntimeSystemStore && t.StoreForm == StoreSystem
+	// NODE'S COMPILED-IN LIST IS THE SECOND EXCEPTION - ADR111 part 7. Its
+	// commands set NODE_EXTRA_CA_CERTS or add to the file it names, which the
+	// list rule above already keeps off StorePath.
+	pathless := platformOwn || t.Runtime == RuntimeNode && t.StoreForm == StoreBuiltin
 	switch {
 	case !refused:
 		return "carries a remediation command for a store that did not refuse the presented chain"
@@ -1338,9 +1359,9 @@ func (t *TrustStore) remediationBreach() string {
 			t.TrustFailure.Meaning())
 	case platformOwn && t.StorePath != "":
 		return "carries a remediation command for the platform's own store and a path beside it, and that store has no path to name"
-	case !platformOwn && t.StoreForm != StoreFile:
+	case !pathless && t.StoreForm != StoreFile:
 		return "carries a remediation command for a store that is not a file, so the command could only name a file nobody chose"
-	case !platformOwn && t.StorePath == "":
+	case !pathless && t.StorePath == "":
 		return "carries a remediation command for a store with no path, and docs/20 rule 6 is that the path is the real one"
 	}
 	if broken := t.Fix.breach(); broken != "" {

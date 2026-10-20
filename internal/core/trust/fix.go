@@ -2,6 +2,7 @@ package trust
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -53,6 +54,10 @@ type Machine struct {
 	// shared with every other account. Empty is allowed and answers "assume it
 	// is", which is the safe direction - see elevationFor.
 	Home string
+	// NodeExtraCACerts is the value of NODE_EXTRA_CA_CERTS, because the command
+	// for a node row adds to the file it names rather than naming another -
+	// nodeFix. Empty is unset.
+	NodeExtraCACerts string
 }
 
 // The two things this program cannot know, spelled the same way in every
@@ -105,6 +110,11 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 		// measured trap it exists for - ADR103. On Linux this store IS a file,
 		// and the function asks for its path itself - ADR104.
 		return platformStoreFix(store, m)
+	}
+	if store.Runtime == report.RuntimeNode {
+		// ASKED BEFORE THE FILE GATE TOO - ADR111 part 7. Node's list lives in
+		// the binary, so its commands name the variable Node reads, never a store.
+		return nodeFix(store, m)
 	}
 	if store.StoreForm != report.StoreFile || store.StorePath == "" {
 		return nil, ""
@@ -254,6 +264,95 @@ func distributionBundleFix(store report.TrustStore, m Machine) (*report.Fix, str
 			"/etc/pki/ca-trust/source/anchors, is what survives the rebuild, and programs that carry a store of their " +
 			"own - java among them - do not read this file",
 	}, ""
+}
+
+// nodeFix is the command for a node row - ADR111 part 7, decided by the owner
+// 2026-10-20. Two of the three commands live here: adding to the file
+// NODE_EXTRA_CA_CERTS names, and setting the variable where nothing is set. The
+// third, NODE_USE_SYSTEM_CA=1 where the platform's list would close the chain,
+// waits for the row to carry that fact, and until then such a row gets the
+// second, which adds too.
+//
+// BOTH ADD. NODE_EXTRA_CA_CERTS extends the list Node is built with and takes
+// nothing out of it - Node.js doc/api/cli.md of v26.x, read 2026-10-20 at
+// https://github.com/nodejs/node/blob/v26.x/doc/api/cli.md. Where the variable
+// already names a file the certificate goes INTO that file, because setting it
+// again would point Node at another file and drop every certificate the first
+// one gave it - the redirect this file refuses everywhere.
+//
+// NEITHER REACHES A node ALREADY RUNNING: Node reads the variable once, when it
+// starts - the same document - and every caveat says so. setx writes the
+// account's environment, read by windows opened afterwards and not by the one
+// it ran in - setx, Windows Commands reference, read 2026-10-20 at
+// https://learn.microsoft.com/windows-server/administration/windows-commands/setx
+// - and export reaches the commands this shell runs afterwards, IEEE Std
+// 1003.1-2024, export, at https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html
+func nodeFix(store report.TrustStore, m Machine) (*report.Fix, string) {
+	if store.StoreForm != report.StoreBuiltin {
+		return nil, ""
+	}
+	if m.NodeExtraCACerts != "" {
+		return nodeExtraFileFix(store, m)
+	}
+	// The placeholder is our own constant and holds nothing quoting refuses, so
+	// there is no refusal to handle - a branch here could never run.
+	certificate, _ := quoteFor(m.OS, certificatePlaceholder)
+	const fullPath = "put the certificate file's full path in place of " + certificatePlaceholder
+	if m.OS == "windows" {
+		return &report.Fix{
+			Command:      "setx NODE_EXTRA_CA_CERTS " + certificate,
+			Placeholders: []string{certificatePlaceholder},
+			Caveat: fullPath + " - setx keeps it for this account and only windows opened afterwards read it, " +
+				"so a node already running, and this window, keep the old value",
+		}, ""
+	}
+	return &report.Fix{
+		Command:      "export NODE_EXTRA_CA_CERTS=" + certificate,
+		Placeholders: []string{certificatePlaceholder},
+		Caveat: fullPath + " - export reaches this shell and what it starts from now on, so the line belongs in " +
+			"the shell's profile to stay, and a node already running keeps the old value",
+	}, ""
+}
+
+// nodeExtraFileFix adds the certificate to the file NODE_EXTRA_CA_CERTS names.
+//
+// ONLY A FILE THIS node READ IS ADDED TO. A name it read nothing from - a file
+// that is missing, or holds no certificate - says nothing about where Node
+// would look next, and setting the variable instead would drop the choice
+// somebody made. A relative name is looked up from wherever node starts, so it
+// names no one file either. Both say why on the row instead.
+func nodeExtraFileFix(store report.TrustStore, m Machine) (*report.Fix, string) {
+	switch {
+	case !slices.Contains(store.SelectedBy, "NODE_EXTRA_CA_CERTS"):
+		return nil, fmt.Sprintf("no command is offered for it: NODE_EXTRA_CA_CERTS names %s, from which this node "+
+			"read no certificate, and setting the variable again would drop the file it names", m.NodeExtraCACerts)
+	case !absoluteOn(m.OS, m.NodeExtraCACerts):
+		return nil, fmt.Sprintf("no command is offered for it: NODE_EXTRA_CA_CERTS names %s, a relative path that "+
+			"each node looks up from wherever it starts", m.NodeExtraCACerts)
+	}
+	command, ok := appendPEM(m.NodeExtraCACerts, m.OS)
+	if !ok {
+		return nil, unwritablePath
+	}
+	elevated, why := elevationFor(m.NodeExtraCACerts, m)
+	return &report.Fix{
+		Command:           command,
+		Placeholders:      []string{certificatePlaceholder},
+		RequiresElevation: elevated,
+		Elevation:         why,
+		Caveat:            "node reads this file when it starts, so a node already running does not see the certificate",
+	}, ""
+}
+
+// absoluteOn reports whether a path names one file wherever it is used from:
+// a drive and a separator, or a UNC name, on Windows, and a leading slash
+// elsewhere.
+func absoluteOn(platform, path string) bool {
+	if platform == "windows" {
+		drive := len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/')
+		return drive || strings.HasPrefix(path, `\\`)
+	}
+	return strings.HasPrefix(path, "/")
 }
 
 // appendPEM is the command that adds one certificate to a PEM bundle without

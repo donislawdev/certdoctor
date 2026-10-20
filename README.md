@@ -29,8 +29,8 @@ the URL that fails. It walks the whole path in one run - DNS, proxy and PAC scri
 then does the part no other tool does: it asks **each trust store on the machine**, one by one,
 whether it trusts what the server presented, and prints the command that would fix each store that
 does not, with the real paths from your machine in it. `curl -v` and `openssl s_client` answer for
-one program. certdoctor answers for the Windows store, every Java installation, every `git` and every
-`curl` it finds - and tells you whether the fault is on this machine at all.
+one program. certdoctor answers for the Windows store, every Java installation, every `git`, every
+`curl` and every `node` it finds - and tells you whether the fault is on this machine at all.
 
 ⭐ **If it ended a "works on my machine" argument, leave a star.** That is how the next person
 staring at `PKIX path building failed` finds out it exists.
@@ -232,7 +232,7 @@ it is several trust stores disagreeing.
 | `x509: certificate signed by unknown authority` | programs written in Go | the platform store - the Windows store, or the Linux CA bundle |
 | `407 Proxy Authentication Required` | anything going through a proxy | which proxy applies to this URL, and whether it wants credentials |
 | `certificate verify failed: unable to get local issuer certificate` | Python, `pip` | **coming next** - the Python and `pip` rows are being built |
-| `SELF_SIGNED_CERT_IN_CHAIN` | Node.js, `npm` | **coming next** - the Node.js and `npm` rows are being built |
+| `SELF_SIGNED_CERT_IN_CHAIN` | Node.js, `npm` | every `node` on PATH, by the list that binary trusts - `npm`'s own `cafile` is not read yet |
 
 ---
 
@@ -331,8 +331,8 @@ every schema it emits, so a log from six months ago still says what produced it.
 
 A tool that quietly fails to look at something is worse than one that says what it cannot do.
 
-- **The trust matrix knows four families today** - the platform store on Windows and Linux, Java,
-  `git` and `curl`. Node.js with `npm` and Python with `pip` come next, then OpenSSL, .NET and
+- **The trust matrix knows five families today** - the platform store on Windows and Linux, Java,
+  `git`, `curl` and Node.js. Python with `pip` comes next, then OpenSSL, .NET and
   PowerShell, Docker, Maven and Gradle, and apt. A family it does not know is not asked, and the
   report lists the families it asked - so a missing row means nobody looked, never that nothing is
   there.

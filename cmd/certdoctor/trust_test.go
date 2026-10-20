@@ -38,6 +38,28 @@ func TestTheTrustPortIsPassedThrough(t *testing.T) {
 	}
 }
 
+// NODE_EXTRA_CA_CERTS REACHES THE COMMAND GENERATOR through the seam L0 reads,
+// so a node command adds to the file Node reads rather than naming another -
+// ADR111 part 7. A run with no seam has nothing set.
+func TestTheFileNodeReadsReachesTheCommandGenerator(t *testing.T) {
+	env := environment{
+		trustProbes: func() map[string]trust.Probe { return map[string]trust.Probe{} },
+		lookupEnv: func(name string) (string, bool) {
+			if name == "NODE_EXTRA_CA_CERTS" {
+				return "/etc/ssl/extra.pem", true
+			}
+			return "", false
+		},
+	}
+	if got := trustInput(&options{}, env, &url.URL{Scheme: "https"}); got.Machine.NodeExtraCACerts != "/etc/ssl/extra.pem" {
+		t.Errorf("the generator was handed %q", got.Machine.NodeExtraCACerts)
+	}
+	env.lookupEnv = nil
+	if got := trustInput(&options{}, env, &url.URL{Scheme: "https"}); got.Machine.NodeExtraCACerts != "" {
+		t.Errorf("with no seam the generator was handed %q", got.Machine.NodeExtraCACerts)
+	}
+}
+
 // THE NOTE IS DERIVED FROM THE REGISTRY, WHICH IS THE WHOLE POINT. Its
 // predecessor said the matrix was absent while the binary printed one three
 // lines below - caught by running the program, not by a test. A note built from

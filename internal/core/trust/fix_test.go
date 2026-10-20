@@ -55,6 +55,9 @@ func aRefusedRowFor(descriptor Descriptor) report.TrustStore {
 	if descriptor.Runtime == report.RuntimeSystemStore {
 		return aPlatformStore(report.InstanceLocalMachine)
 	}
+	if descriptor.Runtime == report.RuntimeNode {
+		return aNodeStore()
+	}
 	return aRefusedStore(descriptor.Runtime, `C:\somewhere\install`, `C:\somewhere\install\store.crt`)
 }
 
@@ -159,8 +162,10 @@ func TestTheThreeGatesEachStopACommandOnTheirOwn(t *testing.T) {
 		{
 			name: "a runtime with a probe and no template",
 			store: func() report.TrustStore {
+				// A name no probe will ever take - node stood here until ADR111
+				// gave it a template, and the case went on passing through it.
 				s := aBundleStore()
-				s.Runtime = "node"
+				s.Runtime = "unheard-of"
 				return s
 			},
 			complete: true,
@@ -376,7 +381,7 @@ func TestElevationIsAnsweredAndSaysWhy(t *testing.T) {
 // concludes the tool was wrong the first time.
 func TestEveryCommandSaysWhatOutlivesIt(t *testing.T) {
 	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore(),
-		aPlatformStore(report.InstanceLocalMachine), aPlatformStore(report.InstanceCurrentUser)} {
+		aPlatformStore(report.InstanceLocalMachine), aPlatformStore(report.InstanceCurrentUser), aNodeStore()} {
 		fix, _ := fixFor(store, true, false, aMachine())
 		if fix == nil {
 			t.Fatalf("no command for %s", store.Runtime)
@@ -391,7 +396,7 @@ func TestEveryCommandSaysWhatOutlivesIt(t *testing.T) {
 // and the validator, which are in two packages and could drift apart.
 func TestAProducedCommandSatisfiesTheContract(t *testing.T) {
 	for _, store := range []report.TrustStore{aJavaStore(), aBundleStore(),
-		aPlatformStore(report.InstanceLocalMachine), aPlatformStore(report.InstanceCurrentUser)} {
+		aPlatformStore(report.InstanceLocalMachine), aPlatformStore(report.InstanceCurrentUser), aNodeStore()} {
 		store.Fix, _ = fixFor(store, true, false, aMachine())
 		if store.Fix == nil {
 			t.Fatalf("no command for %s %s, so the contract would be judging nothing", store.Runtime, store.Instance)

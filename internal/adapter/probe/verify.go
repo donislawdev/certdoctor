@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -32,31 +33,34 @@ import (
 // causes of the failure this product diagnoses, and it is one an imported
 // certificate does not repair.
 func Verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now time.Time) {
-	roots := x509.NewCertPool()
-	anchors := 0
-	rest := anchorsPEM
-	for {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
-		anchor, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			// One unreadable entry in somebody's store is not a reason to throw
-			// away the rest of it.
-			continue
-		}
-		roots.AddCert(anchor)
-		anchors++
-	}
+	verify(store, anchorsPEM, chain, now, false)
+}
+
+// VerifySelfSignedAnchors is Verify for a runtime that ends a chain only at a
+// self-signed certificate - ADR111 part 3, measured rather than chosen.
+//
+// NODE DOES NOT TREAT EVERY CERTIFICATE IT HOLDS AS AN ANCHOR. Measured with
+// probe S27 on 2026-10-20 in all eight environments: an intermediate alone in
+// NODE_EXTRA_CA_CERTS did not make a leaf signed by it trusted, because Node
+// sets no partial-chain flag for OpenSSL, while Verify above - every entry a
+// root - says it would. So the other entries of the store help build the path
+// and never end it, and the count of anchors counts only what can end one.
+func VerifySelfSignedAnchors(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now time.Time) {
+	verify(store, anchorsPEM, chain, now, true)
+}
+
+// verify is the one rule both functions above apply - selfSignedOnly is the
+// only thing that differs between them.
+func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now time.Time, selfSignedOnly bool) {
+	roots, held, anchors := anchorsIn(anchorsPEM, selfSignedOnly)
 	store.TrustAnchorCount = anchors
 
 	if anchors == 0 {
 		store.NotAssessed = "the store holds no certificate this program could read"
+		if selfSignedOnly {
+			store.NotAssessed = "the store holds no self-signed certificate this program could read, and only one of " +
+				"those ends a chain for this runtime"
+		}
 		return
 	}
 	if len(chain) == 0 {
@@ -71,7 +75,7 @@ func Verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now tim
 		store.TrustAnchorCount = 0
 		return
 	}
-	intermediates := x509.NewCertPool()
+	intermediates := held
 	for _, der := range chain[1:] {
 		if certificate, parseErr := x509.ParseCertificate(der); parseErr == nil {
 			intermediates.AddCert(certificate)
@@ -84,6 +88,57 @@ func Verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now tim
 	if !trusts {
 		store.TrustFailure = classify(verifyErr, now)
 	}
+}
+
+// anchorsIn reads a PEM bundle into the certificates that end a chain and the
+// ones that only help build it. With selfSignedOnly false every certificate is
+// an anchor and held stays empty.
+func anchorsIn(anchorsPEM []byte, selfSignedOnly bool) (roots, held *x509.CertPool, anchors int) {
+	roots, held = x509.NewCertPool(), x509.NewCertPool()
+	rest := anchorsPEM
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			return roots, held, anchors
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		certificate, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			// One unreadable entry in somebody's store is not a reason to throw
+			// away the rest of it.
+			continue
+		}
+		if selfSignedOnly && !selfSigned(certificate) {
+			held.AddCert(certificate)
+			continue
+		}
+		roots.AddCert(certificate)
+		anchors++
+	}
+}
+
+// selfSigned reports whether a certificate names itself as its issuer and its
+// own key verifies its signature - the rule probe S27 counted with.
+//
+// CheckSignature AND NOT CheckSignatureFrom, and the difference is measured.
+// CheckSignatureFrom refuses a SHA-1 signature and a certificate that may not
+// sign others, while CheckSignature accepts SHA-1 and asks nothing about the
+// certificate - crypto/x509 of Go 1.27, x509.go. On 2026-10-20 the 121 roots
+// node v26.9.0 is built with were all self-signed by this rule, and three of
+// them, SHA-1 roots, would not have been by the other.
+//
+// AN MD5 SIGNATURE FAILS EITHER WAY. The same day the system list on the
+// owner's machine held 133 distinct certificates: 77 self-signed by this rule,
+// 52 not, and three naming themselves with a signature Go refuses - two MD5
+// roots and one of an algorithm it does not know - which count as not ending a
+// chain. That no chain a server sends today ends at one of them is an
+// ASSESSMENT, not a measurement.
+func selfSigned(c *x509.Certificate) bool {
+	return bytes.Equal(c.RawSubject, c.RawIssuer) &&
+		c.CheckSignature(c.SignatureAlgorithm, c.RawTBSCertificate, c.Signature) == nil
 }
 
 // classify says WHICH WAY a store refused, because only one of the ways is

@@ -91,7 +91,7 @@ type result struct {
 // minimalEnvironment is what the program is started with unless a test adds to
 // it.
 //
-// IT IS MINIMAL ON PURPOSE AND THAT IS NOT TIDINESS. L0 reads twenty-three
+// IT IS MINIMAL ON PURPOSE AND THAT IS NOT TIDINESS. L0 reads twenty-five
 // environment variables and puts them in the report, so a developer with
 // HTTPS_PROXY set would get different output from one without - and the
 // repeatability check below would then be measuring the machine rather than the

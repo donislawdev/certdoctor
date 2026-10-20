@@ -341,3 +341,124 @@ func TestAFailureThisProgramDoesNotClassifyGetsNoGuess(t *testing.T) {
 			store.TrustFailure)
 	}
 }
+
+// TestAnIntermediateInTheStoreEndsNoChainForNode is the case probe S27 measured
+// in all eight environments on 2026-10-20 - ADR111 part 3. The server sends its
+// leaf alone, the store holds the intermediate that signed it beside an
+// unrelated root, and Node refuses. Verify, with every entry a root, says the
+// opposite, which is the false PASS this rule exists to prevent.
+func TestAnIntermediateInTheStoreEndsNoChainForNode(t *testing.T) {
+	rootDER, rootKey := mint(t, "certdoctor test root", 1, nil, nil, true, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	interDER, interKey := mint(t, "certdoctor test intermediate", 2, rootDER, rootKey, true, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	leafDER, _ := mint(t, "partner.test", 3, interDER, interKey, false, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	otherDER, _ := mint(t, "certdoctor unrelated root", 4, nil, nil, true, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	held := bundleOf(t, otherDER, interDER)
+
+	var node report.TrustStore
+	VerifySelfSignedAnchors(&node, held, [][]byte{leafDER}, atNoon())
+	if node.TrustsPresentedChain == nil || *node.TrustsPresentedChain {
+		t.Fatalf("an intermediate alone ended the chain: %s", node.NotAssessed)
+	}
+	if node.TrustFailure != report.UnknownAuthority {
+		t.Errorf("classified as %q, want %q", node.TrustFailure, report.UnknownAuthority)
+	}
+	if node.TrustAnchorCount != 1 {
+		t.Errorf("counted %d anchors, and only the unrelated root can end a chain", node.TrustAnchorCount)
+	}
+
+	// THE TWIN ON THE SAME BYTES: the rule every other runtime keeps.
+	var other report.TrustStore
+	Verify(&other, held, [][]byte{leafDER}, atNoon())
+	if other.TrustsPresentedChain == nil || !*other.TrustsPresentedChain {
+		t.Error("Verify refused a chain its store holds the issuer of, so the two rules no longer differ where S27 says they do")
+	}
+}
+
+// TestAnIntermediateInTheStoreStillBuildsThePath is the other half of the same
+// measurement: with the root beside it, the intermediate the server did not send
+// is taken from the store and Node trusts the leaf.
+func TestAnIntermediateInTheStoreStillBuildsThePath(t *testing.T) {
+	rootDER, rootKey := mint(t, "certdoctor test root", 1, nil, nil, true, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	interDER, interKey := mint(t, "certdoctor test intermediate", 2, rootDER, rootKey, true, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	leafDER, _ := mint(t, "partner.test", 3, interDER, interKey, false, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+
+	var store report.TrustStore
+	VerifySelfSignedAnchors(&store, bundleOf(t, interDER, rootDER), [][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain {
+		t.Fatalf("a store holding the root and the intermediate refused the leaf: %s %s", store.NotAssessed, store.TrustFailure)
+	}
+	if store.TrustAnchorCount != 1 {
+		t.Errorf("counted %d anchors, want the root alone", store.TrustAnchorCount)
+	}
+}
+
+// TestAStoreWithNothingSelfSignedIsNotJudged keeps the third state for a store
+// in which nothing can end a chain - and says why in this rule's own words.
+func TestAStoreWithNothingSelfSignedIsNotJudged(t *testing.T) {
+	rootDER, rootKey := mint(t, "certdoctor test root", 1, nil, nil, true, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	interDER, interKey := mint(t, "certdoctor test intermediate", 2, rootDER, rootKey, true, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+	leafDER, _ := mint(t, "partner.test", 3, interDER, interKey, false, atNoon().Add(-time.Hour), atNoon().Add(time.Hour))
+
+	var store report.TrustStore
+	VerifySelfSignedAnchors(&store, bundleOf(t, interDER), [][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "self-signed") {
+		t.Errorf("a store with no self-signed certificate was judged or said the wrong thing: %v %q",
+			store.TrustsPresentedChain, store.NotAssessed)
+	}
+}
+
+// TestSelfSignedAsksBothHalves: the name and the signature are two questions,
+// and a certificate failing either one does not end a chain.
+func TestSelfSignedAsksBothHalves(t *testing.T) {
+	at := atNoon()
+	rootDER, rootKey := mint(t, "certdoctor test root", 1, nil, nil, true, at.Add(-time.Hour), at.Add(time.Hour))
+	interDER, _ := mint(t, "certdoctor test intermediate", 2, rootDER, rootKey, true, at.Add(-time.Hour), at.Add(time.Hour))
+	// The root's own name over another key, signed by the root: the name says
+	// self-signed and the signature does not.
+	sameNameDER, _ := mint(t, "certdoctor test root", 3, rootDER, rootKey, true, at.Add(-time.Hour), at.Add(time.Hour))
+	// Its own key, and an issuer name that is not its own.
+	otherNameDER := signedByItselfUnderAnotherName(t)
+	// A self-signed leaf - CheckSignatureFrom would refuse it for not being an
+	// authority, and the rule S27 counted with does not ask.
+	leafDER, _ := mint(t, "self.test", 5, nil, nil, false, at.Add(-time.Hour), at.Add(time.Hour))
+
+	cases := []struct {
+		name string
+		der  []byte
+		want bool
+	}{
+		{"a root", rootDER, true},
+		{"an intermediate", interDER, false},
+		{"its own name over another key", sameNameDER, false},
+		{"its own key under another name", otherNameDER, false},
+		{"a self-signed leaf", leafDER, true},
+	}
+	for _, c := range cases {
+		certificate, err := x509.ParseCertificate(c.der)
+		if err != nil {
+			t.Fatalf("%s will not parse: %v", c.name, err)
+		}
+		if got := selfSigned(certificate); got != c.want {
+			t.Errorf("%s: selfSigned says %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// signedByItselfUnderAnotherName mints a certificate signed with its own key
+// whose issuer names somebody else.
+func signedByItselfUnderAnotherName(t *testing.T) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("no key: %v", err)
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(4), Subject: pkix.Name{CommonName: "certdoctor itself"},
+		NotBefore: atNoon().Add(-time.Hour), NotAfter: atNoon().Add(time.Hour), IsCA: true, BasicConstraintsValid: true,
+		KeyUsage: x509.KeyUsageCertSign}
+	parent := &x509.Certificate{Subject: pkix.Name{CommonName: "certdoctor somebody else"}}
+	der, err := x509.CreateCertificate(rand.Reader, template, parent, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("no certificate: %v", err)
+	}
+	return der
+}

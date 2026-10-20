@@ -231,6 +231,11 @@ var intraLayerEdges = map[string][]string{
 	// Neither carries a copy of either rule - one place, OBS50.
 	"internal/adapter/probe/java": {"internal/adapter/file", "internal/adapter/probe"},
 	"internal/adapter/probe/curl": {"internal/adapter/file", "internal/adapter/probe"},
+	// node consumes the same walk over PATH, the same process port and the same
+	// verifier, with the self-signed rule ADR111 part 3 added to it there rather
+	// than copied here. It opens nothing itself: the file port only finds the
+	// binaries.
+	"internal/adapter/probe/node": {"internal/adapter/file", "internal/adapter/probe"},
 	// The platform store on Linux is a bundle and the directories beside it -
 	// ADR104 - read through the same file port and judged by the same shared
 	// verifier as the three above. Windows asks crypt32 and uses neither.

@@ -76,6 +76,15 @@ func TestHelperProcess(t *testing.T) {
 		}
 		os.Stdout.WriteString("read " + string(buf[:n]))
 		os.Exit(0)
+	case "environment":
+		// Says which of the two test variables arrived, so a test can tell a
+		// variable that was taken away from one that was never set.
+		for _, name := range []string{"CERTDOCTOR_WITHHELD", "CERTDOCTOR_KEPT"} {
+			if value, set := os.LookupEnv(name); set {
+				os.Stdout.WriteString(name + "=" + value + "\n")
+			}
+		}
+		os.Exit(0)
 	}
 	os.Exit(0)
 }
@@ -296,5 +305,62 @@ func TestOutputIsCappedAsItArrives(t *testing.T) {
 	}
 	if !w.over {
 		t.Error("output dropped across many writes was not recorded as truncated")
+	}
+}
+
+// THE FIFTH NARROWING RULE, END TO END - ADR111 part 2. The named variable does
+// not reach the child, and the one beside it does: a child that lost its whole
+// environment would no longer be running on this machine's terms.
+func TestWithoutTakesAwayTheNamedVariableAndKeepsTheRest(t *testing.T) {
+	helper(t, "environment")
+	t.Setenv("CERTDOCTOR_WITHHELD", "--require ./elsewhere.js")
+	t.Setenv("CERTDOCTOR_KEPT", "kept")
+
+	out, err := Without("CERTDOCTOR_WITHHELD")(context.Background(), self(t), "-test.run=TestHelperProcess")
+	if err != nil {
+		t.Fatalf("the helper would not run: %v", err)
+	}
+	if strings.Contains(out.Stdout, "CERTDOCTOR_WITHHELD") {
+		t.Errorf("the withheld variable reached the child: %q", out.Stdout)
+	}
+	if !strings.Contains(out.Stdout, "CERTDOCTOR_KEPT=kept") {
+		t.Errorf("the variable beside it was lost: %q", out.Stdout)
+	}
+
+	// AND Run STILL INHERITS EVERYTHING, which is the rule for every other probe.
+	out, err = Run(context.Background(), self(t), "-test.run=TestHelperProcess")
+	if err != nil {
+		t.Fatalf("the helper would not run: %v", err)
+	}
+	if !strings.Contains(out.Stdout, "CERTDOCTOR_WITHHELD=") {
+		t.Errorf("Run withheld a variable nobody named: %q", out.Stdout)
+	}
+}
+
+// Names are compared the way the platform compares them, and an entry naming a
+// drive's current directory on Windows keeps its leading "=" as part of its name.
+func TestWithoutComparesNamesTheWayThePlatformDoes(t *testing.T) {
+	// The empty entry is kept: it names nothing, so nothing withheld is it.
+	environ := []string{"", `=C:=C:\work`, "Node_Options=--require x", "NODE_OPTIONS_EXTRA=1", "PATH=/bin", "NODE_OPTIONS=--inspect"}
+	cases := []struct {
+		name     string
+		withheld []string
+		foldCase bool
+		want     []string
+	}{
+		{"case folded, as on Windows", []string{"NODE_OPTIONS"}, true,
+			[]string{"", `=C:=C:\work`, "NODE_OPTIONS_EXTRA=1", "PATH=/bin"}},
+		{"case kept, as elsewhere", []string{"NODE_OPTIONS"}, false,
+			[]string{"", `=C:=C:\work`, "Node_Options=--require x", "NODE_OPTIONS_EXTRA=1", "PATH=/bin"}},
+		{"a name that starts with =", []string{"=C:"}, true,
+			[]string{"", "Node_Options=--require x", "NODE_OPTIONS_EXTRA=1", "PATH=/bin", "NODE_OPTIONS=--inspect"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := without(environ, c.withheld, c.foldCase)
+			if strings.Join(got, "|") != strings.Join(c.want, "|") {
+				t.Errorf("kept %q, want %q", got, c.want)
+			}
+		})
 	}
 }

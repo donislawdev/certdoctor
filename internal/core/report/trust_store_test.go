@@ -63,6 +63,22 @@ func TestTheSystemStoreNeedsNoPath(t *testing.T) {
 	}
 }
 
+// A list compiled into the program has no path either, and the row is whole
+// without one - ADR111 part 4.
+func TestACompiledInListNeedsNoPath(t *testing.T) {
+	store := aReadableStore()
+	store.Runtime = "node"
+	store.Instance = `C:\Program Files\nodejs\node.exe`
+	store.Variant = ""
+	store.Architecture = ""
+	store.StoreForm = StoreBuiltin
+	store.StorePath = ""
+	store.SelectedBy = []string{"PATH", "NODE_EXTRA_CA_CERTS"}
+	if got := store.breach(); got != "" {
+		t.Errorf("a compiled-in list was refused for having no path: %q", got)
+	}
+}
+
 // A runtime without variants leaves the field empty, and curl is one.
 func TestARuntimeWithNoVariantIsAccepted(t *testing.T) {
 	store := aReadableStore()
@@ -133,6 +149,22 @@ func TestARefusalMayCarryARemediation(t *testing.T) {
 	}
 }
 
+// NODE'S COMPILED-IN LIST TAKES A COMMAND WITH NO PATH ON THE ROW - ADR111
+// part 7 - and only Node's: the same row under another runtime is refused by
+// the file rule, in the table further down.
+func TestNodesCompiledInListMayCarryARemediation(t *testing.T) {
+	store := aRefusingStore()
+	store.Runtime = RuntimeNode
+	store.Instance = `C:\Program Files\nodejs\node.exe`
+	store.Variant = ""
+	store.StoreForm = StoreBuiltin
+	store.StorePath = ""
+	store.Fix = &Fix{Command: `setx NODE_EXTRA_CA_CERTS "<certificate.pem>"`, Placeholders: []string{"<certificate.pem>"}}
+	if got := store.breach(); got != "" {
+		t.Errorf("a command for node's own list was rejected: %q", got)
+	}
+}
+
 // A command with nothing to fill in is legitimate and must not be mistaken for
 // an incomplete one - the empty slice is the answer, the nil is the defect.
 func TestARemediationWithNothingToFillInIsAccepted(t *testing.T) {
@@ -190,6 +222,13 @@ func TestTheTrustStoreRefusesWhatItMustRefuse(t *testing.T) {
 			name:  "a file store with no path",
 			spoil: func(s *TrustStore) { s.StorePath = "" },
 			says:  "path",
+		},
+		{
+			// The path left over from the file store is the spoiling: Node's list
+			// lives in the binary, and a path would name a file it never reads.
+			name:  "a compiled-in list with a path",
+			spoil: func(s *TrustStore) { s.StoreForm = StoreBuiltin },
+			says:  "compiled into the program",
 		},
 		{
 			name:  "a negative anchor count",
@@ -296,6 +335,16 @@ func TestTheContractRefusesARemediationThatWouldWasteSomebodysTime(t *testing.T)
 			name: "a command for the platform store",
 			spoil: func(s *TrustStore) {
 				s.StoreForm = StoreSystem
+				s.StorePath = ""
+			},
+			says: "not a file",
+		},
+		{
+			// ADR111 part 7 gives Node commands of its own, and they arrive with
+			// their own exception. Until then the file rule refuses them.
+			name: "a command for a compiled-in list",
+			spoil: func(s *TrustStore) {
+				s.StoreForm = StoreBuiltin
 				s.StorePath = ""
 			},
 			says: "not a file",
@@ -451,7 +500,7 @@ func TestADeferringRowRefusesWhatItMustRefuse(t *testing.T) {
 // The registry of store forms, checked the same way every other closed list in
 // this package is: a value outside it is a defect in our translation, not news.
 func TestEveryStoreFormHasAMeaning(t *testing.T) {
-	for _, form := range []StoreForm{StoreFile, StoreSystem} {
+	for _, form := range []StoreForm{StoreFile, StoreSystem, StoreBuiltin} {
 		if !form.Valid() {
 			t.Errorf("%q is declared and not in the registry", form)
 		}

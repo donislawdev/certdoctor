@@ -15,10 +15,11 @@ import "strings"
 // THE ORDER IS THE REPORT ORDER and it is declared once here, so no renderer
 // sorts it and no map iteration shuffles it between runs.
 //
-// The list is twenty-one entries and it is APPROVED - D11. A variable is not
-// added here because it seems useful; it is added by a decision, and two that
-// turned up while these sources were being read were left out for exactly that
-// reason.
+// The list is APPROVED - D11 - and its length is pinned by a test rather than
+// by this sentence, which said twenty-one while the list held more. A variable
+// is not added here because it seems useful - it is added by a decision, and two
+// that turned up while these sources were being read were left out for exactly
+// that reason.
 var variables = []string{
 	// curl, manual page, section "Environment", read 2026-08-04:
 	// https://curl.se/docs/manpage.html
@@ -124,6 +125,25 @@ var variables = []string{
 	// move. That is a reason to report the setting and claim nothing about the
 	// effect, which is what this layer does with all of them.
 	"NODE_USE_ENV_PROXY",
+	// NODE_USE_SYSTEM_CA set to 1 makes Node trust the platform's store beside
+	// its own list, and --use-system-ca wins over it when both are given. Added
+	// in v24.6.0 and v22.19.0 - Node.js, doc/api/cli.md of v26.x, read
+	// 2026-10-20: https://github.com/nodejs/node/blob/v26.x/doc/api/cli.md
+	// Only the value 1 does it, compared as a string in HandleEnvOptions,
+	// src/node_options.cc of the same branch, read the same day.
+	//
+	// ADDED BY THE OWNER 2026-10-20 - ADR111 part 8, with the one below. Both
+	// decide what the node rows of L5 judge, and a report that showed the
+	// verdict without the switch would hide why two machines differ.
+	"NODE_USE_SYSTEM_CA",
+	// NODE_OPTIONS holds options Node reads before its own command line. The
+	// three that switch its list of authorities - --use-system-ca,
+	// --use-openssl-ca, --use-bundled-ca - are allowed in it, and so is
+	// --use-env-proxy - same document, same day.
+	//
+	// It is a COMPOUND value, like JAVA_TOOL_OPTIONS, so the whole of it goes
+	// through the masking rules.
+	"NODE_OPTIONS",
 
 	// JVM Tool Interface specification, section "JAVA_TOOL_OPTIONS", read
 	// 2026-08-04:

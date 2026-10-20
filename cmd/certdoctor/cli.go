@@ -1109,7 +1109,7 @@ func trustInput(o *options, env environment, parsed *url.URL) trust.Input {
 		// What a remediation command needs to know about where it will be run.
 		// Both values come from this environment rather than being read inside
 		// the layer, so an assessment stays reproducible from its input.
-		Machine: trust.Machine{OS: env.platform.OS, Home: env.home},
+		Machine: trust.Machine{OS: env.platform.OS, Home: env.home, NodeExtraCACerts: nodeExtraCACerts(env)},
 		// The clock and the per-probe cap, so that a probe running somebody
 		// else's process gets a SHARE of what this layer has left rather than all
 		// of it - R-5. Without them a spent budget came out as access_denied,
@@ -1117,6 +1117,17 @@ func trustInput(o *options, env environment, parsed *url.URL) trust.Input {
 		Now:      env.now,
 		PerProbe: budget(o.probeTimeout),
 	}
+}
+
+// nodeExtraCACerts is NODE_EXTRA_CA_CERTS as L0 sees it, for the one command
+// that adds to the file it names - ADR111 part 7. A run with no environment
+// seam has none set.
+func nodeExtraCACerts(env environment) string {
+	if env.lookupEnv == nil {
+		return ""
+	}
+	value, _ := env.lookupEnv("NODE_EXTRA_CA_CERTS")
+	return value
 }
 
 // trustCoverageNote says which runtimes this build is able to ask.
