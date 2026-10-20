@@ -10,6 +10,26 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
 
+// withheld are the variables every process this probe starts goes without -
+// OBS189, decided by the owner 2026-10-20, the rule ADR111 part 2 keeps for
+// node. Each one, from curl 8.21.0, read 2026-10-20 at
+// https://github.com/curl/curl/tree/curl-8_21_0/lib/vtls
+//   - SSLKEYLOGFILE names a file libcurl opens for appending as its OpenSSL
+//     backend starts - Curl_tls_keylog_open in keylog.c, called from ossl_init
+//     in openssl.c - so curl --version alone creates it. Measured the same day
+//     with curl 8.21.0 on OpenSSL 3.5.7 in an Alpine image: an empty file
+//     appeared, against inviolable rule 14. Both Schannel builds on the owner's
+//     machine left no file.
+//   - OPENSSL_CONF names the configuration OpenSSL loads when ossl_init asks it
+//     to, with OPENSSL_INIT_LOAD_CONFIG, and that file can name a provider
+//     module, native code inside the process this program started. That curl
+//     loads it was NOT measured - OpenSSL outside node passes over a missing
+//     module silently - so this one rests on the source alone.
+//
+// The deferral's rpm runs through the same runner and loses the same two,
+// which a child may always do.
+var withheld = []string{"SSLKEYLOGFILE", "OPENSSL_CONF"}
+
 // Probe builds the L5 probe for curl.
 //
 // env is read at the entry point and handed in, so this package touches no
@@ -17,14 +37,17 @@ import (
 // honour them - which is the whole point of reading the backend first - and the
 // home variables only to find the configuration file the tool would read. files
 // lists the directories a build may read beside its CA file.
-func Probe(source file.Source, resolve file.Resolve, files file.List, run probe.Runner, pathDirs []string, env Environment, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+//
+// start makes the runner from the variables to withhold, and this package names
+// them - probe.Without is what the entry point hands in, as for node.
+func Probe(source file.Source, resolve file.Resolve, files file.List, start func(withheld ...string) probe.Runner, pathDirs []string, env Environment, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
 		installs := find(source, resolve, pathDirs)
 		if len(installs) == 0 {
 			return nil, nil
 		}
 
-		ports := probe.Ports{Source: source, Resolve: resolve, Run: run}
+		ports := probe.Ports{Source: source, Resolve: resolve, Run: start(withheld...)}
 		stores := make([]report.TrustStore, 0, len(installs))
 		for _, install := range installs {
 			stores = append(stores, storeFor(ctx, ports, files, install, chain, env, now()))

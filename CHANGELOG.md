@@ -10,6 +10,15 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - a curl certdoctor starts no longer creates a key log file
+
+- **curl is started without `SSLKEYLOGFILE` and `OPENSSL_CONF`.** A curl built on
+  OpenSSL opens the file `SSLKEYLOGFILE` names as soon as it starts, so asking it
+  for its version created that file - a write certdoctor promises never to make.
+  The configuration `OPENSSL_CONF` names is loaded at the same moment and can
+  load a module into curl, so it is left out too. curl on Schannel, which is
+  every curl on a stock Windows, created no file before either.
+
 ### Added - node is judged by the list it trusts
 
 - **Every `node` on PATH gets a row.** Each is asked once, with a fixed script

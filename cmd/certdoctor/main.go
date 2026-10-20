@@ -498,9 +498,10 @@ func liveTrustProbes() map[string]trust.Probe {
 		// one thing that stops an assessment being reproducible from its input.
 		"git":  git.Probe(guarded, resolvePath, files, probe.Run, paths, gitEnv, time.Now),
 		"java": java.Probe(guarded, resolvePath, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
-		"curl": curl.Probe(guarded, resolvePath, files, probe.Run, paths, curlEnv, time.Now),
-		// node is the one probe started through probe.Without: the variables it
-		// withholds are named in its own package, beside their sources - ADR111.
+		// curl and node are started through probe.Without: the variables each
+		// withholds are named in its own package, beside their sources - ADR111
+		// and OBS189.
+		"curl":             curl.Probe(guarded, resolvePath, files, probe.Without, paths, curlEnv, time.Now),
 		report.RuntimeNode: node.Probe(guarded, resolvePath, probe.Without, paths, node.EnvironmentFrom(os.Getenv), time.Now),
 	}
 	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - Windows by

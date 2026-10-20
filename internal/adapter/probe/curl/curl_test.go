@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"math/big"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -647,11 +648,22 @@ func TestACurlThatRefusesToReportIsUnassessed(t *testing.T) {
 	}
 }
 
+// starting hands back run whatever is withheld, and records what was.
+func starting(run probe.Runner, asked *[]string) func(...string) probe.Runner {
+	return func(names ...string) probe.Runner {
+		*asked = append(*asked, names...)
+		return run
+	}
+}
+
 // THE WHOLE PROBE, END TO END. Measured shape on this machine: two binaries,
-// both Schannel, so two rows and no verdicts.
+// both Schannel, so two rows and no verdicts. Every process it starts goes
+// without the two variables OBS189 names - SSLKEYLOGFILE, which made curl
+// --version create a file, and OPENSSL_CONF, which can load a module.
 func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
 	source := sourceOf(system32Curl, hostSpelling(`C:\git\bin\curl.exe`))
-	stores, err := Probe(source, noLinks, noFiles, versionSaying("curl 8.21.0 libcurl/8.21.0 Schannel"),
+	var asked []string
+	stores, err := Probe(source, noLinks, noFiles, starting(versionSaying("curl 8.21.0 libcurl/8.21.0 Schannel"), &asked),
 		[]string{winSystem32, winSystem32Loud, hostSpelling(`C:\git\bin`), hostSpelling(`C:\empty`)}, Environment{}, atNoon)(context.Background(), [][]byte{{0x30}})
 
 	if err != nil {
@@ -665,11 +677,15 @@ func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
 			t.Errorf("row does not describe a schannel curl: %+v", store)
 		}
 	}
+	if want := []string{"SSLKEYLOGFILE", "OPENSSL_CONF"}; !slices.Equal(asked, want) {
+		t.Errorf("withheld %q, want %q", asked, want)
+	}
 }
 
 // NO curl IS NOT AN ERROR - docs/20 rule 1.
 func TestAMachineWithNoCurlIsNotAnError(t *testing.T) {
-	stores, err := Probe(sourceOf(), noLinks, noFiles, nil, []string{`C:\empty`}, Environment{}, atNoon)(context.Background(), nil)
+	var asked []string
+	stores, err := Probe(sourceOf(), noLinks, noFiles, starting(nil, &asked), []string{`C:\empty`}, Environment{}, atNoon)(context.Background(), nil)
 	if err != nil {
 		t.Errorf("a machine without curl produced an error: %v", err)
 	}

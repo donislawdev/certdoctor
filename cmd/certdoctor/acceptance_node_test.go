@@ -51,7 +51,7 @@ func TestTheShippedBinaryStartsNodeWithoutNodeOptions(t *testing.T) {
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("the preload ran inside the node process this program started")
 	}
-	if len(nodeRowsIn(t, r.stdout)) == 0 {
+	if len(trustRowsIn(t, r.stdout, "node")) == 0 {
 		t.Fatalf("no node row in the report, so node was never asked and the marker proves nothing:\n%s", r.stdout)
 	}
 }
@@ -90,7 +90,7 @@ func TestTheShippedBinaryStartsNodeWithoutOpenSSLConf(t *testing.T) {
 	}
 
 	r := startProgram(t, invocation{env: []string{setting}}, aLoopbackTarget(t), "--json")
-	rows := nodeRowsIn(t, r.stdout)
+	rows := trustRowsIn(t, r.stdout, "node")
 	if len(rows) == 0 {
 		t.Fatalf("no node row in the report, so node was never asked and nothing is proven:\n%s", r.stdout)
 	}
@@ -101,9 +101,9 @@ func TestTheShippedBinaryStartsNodeWithoutOpenSSLConf(t *testing.T) {
 	}
 }
 
-// nodeRowsIn is the not_assessed of every row of the node probe in a report,
-// empty for a row with a verdict.
-func nodeRowsIn(t *testing.T, stdout string) []string {
+// trustRowsIn is the not_assessed of every trust row of one runtime in a
+// report, empty for a row with a verdict.
+func trustRowsIn(t *testing.T, stdout, runtime string) []string {
 	t.Helper()
 	var document struct {
 		Layers []struct {
@@ -121,7 +121,7 @@ func nodeRowsIn(t *testing.T, stdout string) []string {
 	var reasons []string
 	for _, layer := range document.Layers {
 		for _, finding := range layer.Findings {
-			if store := finding.TrustStore; store != nil && store.Runtime == "node" {
+			if store := finding.TrustStore; store != nil && store.Runtime == runtime {
 				reason := ""
 				if store.NotAssessed != nil {
 					reason = *store.NotAssessed
