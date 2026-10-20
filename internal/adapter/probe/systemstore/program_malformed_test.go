@@ -30,6 +30,14 @@ func TestAListMalformedAtAnyLevelIsRefused(t *testing.T) {
 	nameProperty := asn1.RawValue{FullBytes: mustMarshal(t, oid(t, propertyPrefix+subjectNameMD5Property))}
 	contentType := asn1.RawValue{FullBytes: mustMarshal(t, certificateTrustList)}
 	signedType := asn1.RawValue{FullBytes: mustMarshal(t, signedData)}
+	// broken is a well-formed outer value whose inside claims five bytes and
+	// holds one - the shape of a list cut short, one level down from the top.
+	broken := func(tag int) asn1.RawValue {
+		return asn1.RawValue{Tag: tag, IsCompound: true, Bytes: []byte{asn1.TagOctetString, 5, 1}}
+	}
+	entries := func(entry asn1.RawValue) []byte {
+		return trustList(t, usage, date, algorithm, raw(t, asn1.TagSequence, entry))
+	}
 
 	cases := []struct {
 		name string
@@ -57,6 +65,22 @@ func TestAListMalformedAtAnyLevelIsRefused(t *testing.T) {
 			attribute(nameProperty, raw(t, asn1.TagSet)), "carries no value"},
 		{"an attribute whose type is not an identifier",
 			attribute(asn1.RawValue{FullBytes: mustMarshal(t, 5)}, raw(t, asn1.TagSet)), "could not be read"},
+		{"an envelope whose type is not an identifier",
+			encoded(t, raw(t, asn1.TagSequence, asn1.RawValue{FullBytes: mustMarshal(t, 5)}, explicit(nil))),
+			"not a signed PKCS #7 message"},
+		{"a trust list cut short inside", envelope(t, broken(asn1.TagSequence),
+			listOptions{outer: signedData, content: certificateTrustList}), "could not be read"},
+		{"an entry cut short inside", entries(broken(asn1.TagSequence)), "could not be read"},
+		{"an entry whose attributes are not a set",
+			entries(raw(t, asn1.TagSequence, identifier, raw(t, asn1.TagSequence))), "not a set"},
+		{"an entry whose attributes are cut short", entries(raw(t, asn1.TagSequence, identifier, broken(asn1.TagSet))),
+			"could not be read"},
+		{"an attribute cut short inside",
+			entries(raw(t, asn1.TagSequence, identifier, raw(t, asn1.TagSet, broken(asn1.TagSequence)))), "could not be read"},
+		{"an attribute with no set of values",
+			entries(raw(t, asn1.TagSequence, identifier, raw(t, asn1.TagSet, raw(t, asn1.TagSequence, nameProperty)))),
+			"no set of values"},
+		{"a property whose values are cut short", attribute(nameProperty, broken(asn1.TagSet)), "could not be read"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
