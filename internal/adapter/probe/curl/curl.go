@@ -106,23 +106,66 @@ func withoutBracketed(line string) string {
 	return b.String()
 }
 
-// Environment is what this package reads from the environment, handed in by the
-// entry point so the package reads none of its own.
+// Environment is what this package is handed by the entry point, so the package
+// reads nothing of its own.
 type Environment struct {
-	// CABundle is CURL_CA_BUNDLE, which only a build reading a file honours.
-	CABundle string
+	// Platform is the platform this program runs on, as runtime.GOOS spells it.
+	// It decides where curl's tool looks for its configuration file and which
+	// directories a build may read beside its CA file.
+	Platform string
+	// CABundle, CertFile and CertDir are CURL_CA_BUNDLE, SSL_CERT_FILE and
+	// SSL_CERT_DIR, which only a build reading a file honours.
+	//
+	// EMPTY IS UNSET, AS IT IS TO curl - lib/getenv.c of 8.21.0 hands back
+	// nothing for an empty value on every platform, and S26 measured it on
+	// 2026-10-20: an empty CURL_CA_BUNDLE left SSL_CERT_FILE in charge.
+	CABundle, CertFile, CertDir string
 	// Homes holds the variables curl's own tool reads to find its configuration
 	// file, by name - homeVariables lists them.
 	Homes map[string]string
+	// Account is the home directory the user database gives the account this
+	// program runs as - the last place curl's tool looks outside Windows. Empty
+	// when it could not be established, and then that place is not asked.
+	Account string
 }
 
 // EnvironmentFrom reads every variable this package needs, through getenv.
-func EnvironmentFrom(getenv func(string) string) Environment {
-	env := Environment{CABundle: getenv("CURL_CA_BUNDLE"), Homes: map[string]string{}}
+func EnvironmentFrom(getenv func(string) string, platform, account string) Environment {
+	env := Environment{
+		Platform: platform,
+		CABundle: getenv("CURL_CA_BUNDLE"),
+		CertFile: getenv("SSL_CERT_FILE"),
+		CertDir:  getenv("SSL_CERT_DIR"),
+		Homes:    map[string]string{},
+		Account:  account,
+	}
 	for _, name := range homeVariables {
 		env.Homes[name] = getenv(name)
 	}
 	return env
+}
+
+// caNamed is what the environment points a file-reading build at, in the order
+// curl's own tool reads it - and the variable that named it.
+//
+// SOURCE, inviolable rule 18: src/tool_operate.c, cacertpaths, curl 8.21.0 and
+// 7.76.1, read 2026-10-20 at https://github.com/curl/curl/tree/curl-8_21_0/src
+// and the curl-7_76_1 tag. CURL_CA_BUNDLE wins and the other two are not read at
+// all. Without it 8.21.0 takes SSL_CERT_DIR and SSL_CERT_FILE together, and
+// 7.76.1 takes SSL_CERT_FILE only when SSL_CERT_DIR is unset - measured the same
+// day by S26 on RHEL 9.7, where an empty directory in SSL_CERT_DIR made curl
+// ignore the root SSL_CERT_FILE named. Asking for the directory before the file
+// is right for both: either way a directory is in play.
+func caNamed(env Environment) (variable, path string) {
+	switch {
+	case env.CABundle != "":
+		return "CURL_CA_BUNDLE", env.CABundle
+	case env.CertDir != "":
+		return "SSL_CERT_DIR", env.CertDir
+	case env.CertFile != "":
+		return "SSL_CERT_FILE", env.CertFile
+	}
+	return "", ""
 }
 
 // errExitedNonZero is the one failure this package names for itself.

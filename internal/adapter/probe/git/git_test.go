@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"io/fs"
 	"math/big"
 	"path/filepath"
 	"strings"
@@ -131,7 +132,7 @@ func TestAGitWithNoConfigurationAtAllStillGetsARow(t *testing.T) {
 		t.Errorf("a config was claimed at %q, and this machine has none", found[0].SystemConfig)
 	}
 
-	stores, err := Probe(source, noLinks, nil, []string{"/usr/bin"}, atNoon)(t.Context(), [][]byte{{0x30}})
+	stores, err := Probe(source, noLinks, noFiles, nil, []string{"/usr/bin"}, Environment{}, atNoon)(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -345,7 +346,7 @@ func TestABundleHoldingTheAnchorTrustsTheChain(t *testing.T) {
 	anchorPEM, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": string(anchorPEM)})
 
-	store := storeFor(source, Install{Instance: "/usr/bin/git", Root: "/usr/bin", Architecture: "x64"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
+	store := storeFor(source, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin", Architecture: "x64"}, settingsFor("/bundle.crt"), Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("no verdict was reached: %s", store.NotAssessed)
@@ -368,7 +369,7 @@ func TestABundleWithoutTheAnchorDoesNotTrustTheChain(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": string(otherPEM)})
 
-	store := storeFor(source, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
+	store := storeFor(source, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain == nil {
 		t.Fatalf("an unrelated bundle produced no verdict: %s", store.NotAssessed)
@@ -387,7 +388,7 @@ func TestABundleWithoutTheAnchorDoesNotTrustTheChain(t *testing.T) {
 // here as exactly this row.
 func TestAnUnreadableBundleIsUnknownRatherThanDistrust(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
-	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/gone.crt"), [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/gone.crt"), Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("a bundle that could not be read produced a verdict about trust")
@@ -400,7 +401,7 @@ func TestAnUnreadableBundleIsUnknownRatherThanDistrust(t *testing.T) {
 func TestABundleWithNoCertificatesSaysSo(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	source := sourceOf(map[string]string{"/bundle.crt": "not a certificate at all\n"})
-	store := storeFor(source, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), [][]byte{leafDER}, atNoon())
+	store := storeFor(source, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("an empty bundle produced a verdict")
@@ -415,7 +416,7 @@ func TestABundleWithNoCertificatesSaysSo(t *testing.T) {
 func TestSchannelDefersToTheSystemStoreProbe(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "schannel", BackendLevel: "system"}
-	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("the git probe answered a question about the platform store")
@@ -428,7 +429,7 @@ func TestSchannelDefersToTheSystemStoreProbe(t *testing.T) {
 func TestAnUnknownBackendIsNamedRatherThanGuessed(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "nss", BackendLevel: "global"}
-	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("an unknown backend produced a verdict")
@@ -448,7 +449,7 @@ func TestAnUnknownBackendIsNamedRatherThanGuessed(t *testing.T) {
 // the bundle libcurl was compiled with, and the row says that instead.
 func TestNoBackendNamedIsTheOrdinaryCaseAndSaysSo(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
-	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, Settings{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, Settings{}, Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("a git naming no backend produced a verdict about trust")
@@ -464,7 +465,7 @@ func TestNoBackendNamedIsTheOrdinaryCaseAndSaysSo(t *testing.T) {
 func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "openssl", BackendLevel: "system"}
-	store := storeFor(sourceOf(nil), Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, [][]byte{leafDER}, atNoon())
+	store := storeFor(sourceOf(nil), noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("openssl with no bundle named produced a verdict")
@@ -477,7 +478,7 @@ func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 // A runtime that is not here sits OUTSIDE the matrix - docs/20 rule 1 - and that
 // is not an error.
 func TestNoInstallFoundIsNotAnError(t *testing.T) {
-	probe := Probe(sourceOf(nil), noLinks, nil, nil, atNoon)
+	probe := Probe(sourceOf(nil), noLinks, noFiles, nil, nil, Environment{}, atNoon)
 	stores, err := probe(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("git not being installed came back as an error: %v", err)
@@ -494,7 +495,7 @@ func TestTheProbeProducesOneRowPerInstall(t *testing.T) {
 		"/bundle.crt":    string(anchorPEM),
 	})
 
-	stores, err := Probe(source, noLinks, nil, nil, atNoon)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, noLinks, noFiles, nil, nil, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -526,7 +527,7 @@ func TestEveryGitOnPathGetsItsOwnRow(t *testing.T) {
 		"/bundle.crt": string(anchorPEM),
 	})
 
-	stores, err := Probe(source, noLinks, nil, []string{gitCmdDir, gitMingwDir}, atNoon)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, noLinks, noFiles, nil, []string{gitCmdDir, gitMingwDir}, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -621,3 +622,184 @@ func TestAConfigThatCouldNotBeReadToTheEndIsNotReadAsEmpty(t *testing.T) {
 		t.Errorf("a config that does not exist reported %v", err)
 	}
 }
+
+// THE PORT IS A LOOKUP BECAUSE SET-AND-EMPTY IS AN ANSWER - http.c of git 2.54.0
+// acts on getenv returning anything at all, and S26 measured an empty
+// GIT_SSL_NO_VERIFY switching verification off.
+func TestTheEnvironmentIsReadThroughTheLookupItIsHanded(t *testing.T) {
+	asked := map[string]bool{}
+	env := EnvironmentFrom(func(name string) (string, bool) {
+		asked[name] = true
+		switch name {
+		case "GIT_SSL_NO_VERIFY", "GIT_SSL_CAINFO":
+			return "", true
+		}
+		return "", false
+	}, "linux")
+	if !env.NoVerify || env.CAInfo != (Variable{Set: true}) || env.CAPath.Set || env.Platform != "linux" {
+		t.Errorf("read %+v, want empty-and-set told apart from unset", env)
+	}
+	if len(asked) != 3 {
+		t.Errorf("the lookup was asked for %d variables, want the three git reads: %v", len(asked), asked)
+	}
+}
+
+// GIT_SSL_CAINFO WINS OVER http.sslCAInfo - the defect ADR110 part 1 found: Git
+// for Windows with sslBackend=openssl and a CA file in its configuration got a
+// verdict about that file while GIT_SSL_CAINFO sent git to another one.
+func TestGitSSLCAInfoWinsOverTheConfiguration(t *testing.T) {
+	anchorPEM, leafDER := anchorAndLeaf(t)
+	source := sourceOf(map[string]string{"/env.crt": string(anchorPEM), "/config.crt": "no certificate here"})
+
+	store := storeFor(source, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/config.crt"),
+		Environment{CAInfo: Variable{Value: "/env.crt", Set: true}}, [][]byte{leafDER}, atNoon())
+	if store.StorePath != filepath.Clean("/env.crt") || store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain {
+		t.Errorf("got %+v, want the verdict of the file GIT_SSL_CAINFO names", store)
+	}
+}
+
+// An empty GIT_SSL_CAINFO is handed to libcurl as a file name, so the configured
+// file is not what git reads - and what it reads instead was not established.
+func TestAnEmptyGitSSLCAInfoIsNotTheConfiguredFile(t *testing.T) {
+	anchorPEM, leafDER := anchorAndLeaf(t)
+	store := storeFor(sourceOf(map[string]string{"/config.crt": string(anchorPEM)}), noFiles,
+		Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/config.crt"),
+		Environment{CAInfo: Variable{Set: true}}, [][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain != nil || store.StorePath != "" || !strings.Contains(store.NotAssessed, "set and empty") {
+		t.Errorf("got %+v, want undetermined saying the variable is empty", store)
+	}
+}
+
+// A DIRECTORY HANDED TO libcurl LEAVES THE ROW WITHOUT A VERDICT, and the
+// environment names it over the configuration.
+func TestADirectoryHandedToLibcurlLeavesTheRowUndetermined(t *testing.T) {
+	anchorPEM, leafDER := anchorAndLeaf(t)
+	source := sourceOf(map[string]string{"/bundle.crt": string(anchorPEM)})
+	install := Install{Instance: "/usr/bin/git", Root: "/usr/bin"}
+	settings := settingsFor("/bundle.crt")
+	settings.CAPath, settings.CAPathLevel = "/config/certs", "global"
+
+	store := storeFor(source, noFiles, install, settings, Environment{}, [][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "http.sslCAPath") {
+		t.Errorf("configured directory: got %+v, want undetermined naming http.sslCAPath", store)
+	}
+	store = storeFor(source, noFiles, install, settings, Environment{CAPath: Variable{Value: "/env/certs", Set: true}},
+		[][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "GIT_SSL_CAPATH") {
+		t.Errorf("directory from the environment: got %+v, want undetermined naming GIT_SSL_CAPATH", store)
+	}
+}
+
+// A GIT THAT DOES NOT VERIFY ASKS NO STORE, whichever backend it names, and a
+// value git would stop on is said to be unread rather than guessed.
+func TestVerificationSwitchedOffAsksNoStore(t *testing.T) {
+	anchorPEM, leafDER := anchorAndLeaf(t)
+	source := sourceOf(map[string]string{"/bundle.crt": string(anchorPEM)})
+	install := Install{Instance: "/usr/bin/git", Root: "/usr/bin"}
+	with := func(value, level string) Settings {
+		s := settingsFor("/bundle.crt")
+		s.Verify, s.VerifyLevel = value, level
+		return s
+	}
+	off := map[string]struct {
+		settings Settings
+		env      Environment
+		want     string
+	}{
+		"GIT_SSL_NO_VERIFY":                    {settingsFor("/bundle.crt"), Environment{NoVerify: true}, "GIT_SSL_NO_VERIFY"},
+		"GIT_SSL_NO_VERIFY on schannel":        {Settings{Backend: "schannel"}, Environment{NoVerify: true}, "does not verify"},
+		"sslVerify false":                      {with("false", "global"), Environment{}, "does not verify"},
+		"sslVerify empty":                      {with("", "system"), Environment{}, "does not verify"},
+		"sslVerify zero":                       {with("0", "system"), Environment{}, "does not verify"},
+		"sslVerify Off":                        {with("Off", "system"), Environment{}, "does not verify"},
+		"sslVerify with a suffix git stops on": {with("1k", "system"), Environment{}, "does not read as true or false"},
+	}
+	for name, c := range off {
+		store := storeFor(source, noFiles, install, c.settings, c.env, [][]byte{leafDER}, atNoon())
+		if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, c.want) {
+			t.Errorf("%s: got %+v, want undetermined saying %q", name, store, c.want)
+		}
+	}
+	// THE TWIN: verification on, in any spelling git reads as true, leaves the
+	// file to decide.
+	for _, value := range []string{"true", "Yes", "on", "1", "-3"} {
+		store := storeFor(source, noFiles, install, with(value, "system"), Environment{}, [][]byte{leafDER}, atNoon())
+		if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain {
+			t.Errorf("sslVerify %q: got %+v, want the bundle's verdict", value, store)
+		}
+	}
+}
+
+// A key standing alone is true to git, so it overrides an earlier false.
+func TestAKeyStandingAloneIsTrue(t *testing.T) {
+	source := sourceOf(map[string]string{
+		"/etc/gitconfig":        "[http]\n\tsslVerify = false\n",
+		"/home/jdoe/.gitconfig": "[http]\n\tsslVerify\n",
+	})
+	settings := readSettings(source, "/etc/gitconfig", []string{"/home/jdoe/.gitconfig"})
+	if settings.Verify != "true" || settings.VerifyLevel != "global" {
+		t.Errorf("sslVerify %q at %q, want the bare global key read as true", settings.Verify, settings.VerifyLevel)
+	}
+	if why := verificationOff(settings, Environment{}); why != "" {
+		t.Errorf("verification reported off: %q", why)
+	}
+}
+
+// NO BACKEND NAMED AND A FILE NAMED: on Linux the file is read, measured by S26
+// for git on GnuTLS and on OpenSSL. Elsewhere nothing was measured, and the row
+// stays what it was.
+func TestAFileNamedWithNoBackendIsReadOnLinuxAlone(t *testing.T) {
+	anchorPEM, leafDER := anchorAndLeaf(t)
+	source := sourceOf(map[string]string{"/bundle.crt": string(anchorPEM)})
+	install := Install{Instance: "/usr/bin/git", Root: "/usr/bin"}
+	settings := Settings{CAInfo: "/bundle.crt", CAInfoLevel: "system"}
+
+	store := storeFor(source, noFiles, install, settings, Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain || store.StoreForm != report.StoreFile {
+		t.Errorf("on Linux: got %+v, want the file's verdict", store)
+	}
+	store = storeFor(source, noFiles, install, settings, Environment{Platform: "windows"}, [][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "libcurl") {
+		t.Errorf("on Windows: got %+v, want the row it always was", store)
+	}
+	store = storeFor(source, noFiles, install, Settings{}, Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "compiled into it") {
+		t.Errorf("nothing named on Linux: got %+v, want the build-time sentence", store)
+	}
+}
+
+// A REFUSAL BY THE NAMED FILE IS WEIGHED AGAINST THE BUILD'S DIRECTORIES -
+// decided by the owner 2026-10-20 on S26: git from the Debian and Alpine
+// packages trusted a root kept only in /etc/ssl/certs while http.sslCAInfo named
+// a file without it. On Windows nothing was measured, so the refusal stands.
+func TestARefusalByTheNamedFileIsWeighedAgainstTheBuildsDirectories(t *testing.T) {
+	ours, leafDER := anchorAndLeaf(t)
+	other, _ := anchorAndLeaf(t)
+	source := sourceOf(map[string]string{"/bundle.crt": string(other), "/etc/ssl/certs/ours.pem": string(ours)})
+	files := listOf(map[string][]string{"/etc/ssl/certs": {"/etc/ssl/certs/ours.pem"}})
+	install := Install{Instance: "/usr/bin/git", Root: "/usr/bin"}
+
+	store := storeFor(source, files, install, settingsFor("/bundle.crt"), Environment{Platform: "linux"}, [][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "/etc/ssl/certs") ||
+		!strings.Contains(store.NotAssessed, "http.sslCAInfo") {
+		t.Errorf("on Linux: got %+v, want undetermined naming the directory and the key", store)
+	}
+	store = storeFor(source, files, install, settingsFor("/bundle.crt"), Environment{Platform: "windows"}, [][]byte{leafDER}, atNoon())
+	if store.TrustsPresentedChain == nil || *store.TrustsPresentedChain || store.TrustFailure != report.UnknownAuthority {
+		t.Errorf("on Windows: got %+v, want the file's refusal to stand", store)
+	}
+}
+
+// listOf is the directory port over a fixed set of directories.
+func listOf(dirs map[string][]string) func(string) ([]string, error) {
+	return func(path string) ([]string, error) {
+		names, ok := dirs[path]
+		if !ok {
+			return nil, fs.ErrNotExist
+		}
+		return names, nil
+	}
+}
+
+// noFiles is a machine with no directory a build could read beside its file.
+func noFiles(string) ([]string, error) { return nil, fs.ErrNotExist }

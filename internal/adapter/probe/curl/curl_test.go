@@ -1,14 +1,17 @@
 package curl
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"io"
+	"io/fs"
 	"math/big"
 	"path/filepath"
 	"strings"
@@ -88,7 +91,7 @@ func TestOneBinaryReachedByTwoSpellingsIsOneRow(t *testing.T) {
 // account's Root store alone was trusted by both builds on this machine.
 func TestASchannelBuildJudgesByThisAccountsStore(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, []string{"http://crl.test/a.crl"}, nil)},
+		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, []string{"http://crl.test/a.crl"}, nil)},
 		Environment{}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
@@ -138,7 +141,7 @@ func leafNaming(t *testing.T, crl, ocsp []string) []byte {
 // store once.
 func TestASchannelBuildRefusesALeafThatNamesNowhereToCheck(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, nil, nil)}, Environment{}, atNoon())
+		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, nil, nil)}, Environment{}, atNoon())
 
 	if store.TrustsPresentedChain == nil || *store.TrustsPresentedChain {
 		t.Fatalf("a leaf naming nowhere to check was not refused: %+v", store)
@@ -155,7 +158,7 @@ func TestASchannelBuildRefusesALeafThatNamesNowhereToCheck(t *testing.T) {
 // lists only, and a responder is taken to be an address too.
 func TestAnOCSPResponderCountsAsSomewhereToCheck(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, nil, []string{"http://ocsp.test"})}, Environment{}, atNoon())
+		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{leafNaming(t, nil, []string{"http://ocsp.test"})}, Environment{}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Errorf("a leaf naming a responder was judged here: %+v", store)
@@ -166,7 +169,7 @@ func TestAnOCSPResponderCountsAsSomewhereToCheck(t *testing.T) {
 // was learned, so the row neither refuses nor takes a store's answer.
 func TestALeafThatCannotBeReadLeavesTheRowUnassessed(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
+		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
 		t.Errorf("an unreadable leaf still produced an answer or a store to take one from: %+v", store)
@@ -199,7 +202,7 @@ func TestAConfigurationFileStopsTheRowTakingTheStoresAnswer(t *testing.T) {
 	profile := hostSpelling(`C:\Users\jdoe`)
 	curlrc := filepath.Join(profile, ".curlrc")
 	store := storeFor(context.Background(), versionSaying(schannelLine),
-		sourceOf(curlrc), Install{Path: system32Curl}, [][]byte{leafNaming(t, nil, nil)},
+		sourceOf(curlrc), noFiles, Install{Path: system32Curl}, [][]byte{leafNaming(t, nil, nil)},
 		Environment{Homes: map[string]string{"USERPROFILE": profile}}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
@@ -218,7 +221,7 @@ func TestTheConfigurationFileIsLookedForInCurlsOwnOrder(t *testing.T) {
 	home, profile, data, xdg := hostSpelling(`C:\h`), hostSpelling(`C:\p`), hostSpelling(`C:\a`), hostSpelling(`C:\x`)
 	binary := gitBinCurl
 
-	withoutXDG := configCandidates(map[string]string{"HOME": home, "USERPROFILE": profile, "APPDATA": data}, binary)
+	withoutXDG := configCandidates(windowsConfigOrder, map[string]string{"HOME": home, "USERPROFILE": profile, "APPDATA": data}, "", binary)
 	wantWithout := []string{
 		j(home, ".curlrc"), j(home, "_curlrc"),
 		j(profile, ".curlrc"), j(profile, "_curlrc"),
@@ -231,7 +234,7 @@ func TestTheConfigurationFileIsLookedForInCurlsOwnOrder(t *testing.T) {
 		t.Errorf("without XDG_CONFIG_HOME:\n got %v\nwant %v", withoutXDG, wantWithout)
 	}
 
-	withXDG := configCandidates(map[string]string{"XDG_CONFIG_HOME": xdg, "HOME": home, "USERPROFILE": profile, "APPDATA": ""}, binary)
+	withXDG := configCandidates(windowsConfigOrder, map[string]string{"XDG_CONFIG_HOME": xdg, "HOME": home, "USERPROFILE": profile, "APPDATA": ""}, "", binary)
 	wantWith := []string{
 		j(xdg, "curlrc"),
 		j(home, ".curlrc"),
@@ -251,7 +254,7 @@ func TestAConfigurationFileOnAnotherMachineIsNotLookedPast(t *testing.T) {
 	source := func(path string) (io.ReadCloser, error) {
 		return nil, &file.RemotePath{Path: path}
 	}
-	found, unreadable := configFile(source, configCandidates(map[string]string{"HOME": share}, system32Curl))
+	found, unreadable := configFile(source, configCandidates(windowsConfigOrder, map[string]string{"HOME": share}, "", system32Curl))
 	if found != "" || !strings.Contains(unreadable, "not on this machine") {
 		t.Errorf("a place on another machine was looked past: found %q, said %q", found, unreadable)
 	}
@@ -272,7 +275,7 @@ func TestADirectoryNamedLikeTheFileIsPassedOver(t *testing.T) {
 		}
 		return nil, errors.New("no such file")
 	}
-	found, _ := configFile(source, configCandidates(map[string]string{"USERPROFILE": profile}, system32Curl))
+	found, _ := configFile(source, configCandidates(windowsConfigOrder, map[string]string{"USERPROFILE": profile}, "", system32Curl))
 	if found != beside {
 		t.Errorf("found %q, want the empty file beside the binary - a directory is not a configuration file", found)
 	}
@@ -286,25 +289,193 @@ func TestTheEnvironmentIsReadThroughTheGetterItIsHanded(t *testing.T) {
 	env := EnvironmentFrom(func(name string) string {
 		asked[name] = true
 		return "value of " + name
-	})
-	if env.CABundle != "value of CURL_CA_BUNDLE" {
-		t.Errorf("CABundle is %q", env.CABundle)
+	}, "linux", "/home/jdoe")
+	if env.CABundle != "value of CURL_CA_BUNDLE" || env.CertFile != "value of SSL_CERT_FILE" || env.CertDir != "value of SSL_CERT_DIR" {
+		t.Errorf("the CA variables read %q, %q and %q", env.CABundle, env.CertFile, env.CertDir)
 	}
 	for _, name := range homeVariables {
 		if env.Homes[name] != "value of "+name {
 			t.Errorf("%s reads %q", name, env.Homes[name])
 		}
 	}
-	if len(asked) != len(homeVariables)+1 {
-		t.Errorf("the getter was asked for %d variables, want %d: %v", len(asked), len(homeVariables)+1, asked)
+	if len(asked) != len(homeVariables)+3 {
+		t.Errorf("the getter was asked for %d variables, want %d: %v", len(asked), len(homeVariables)+3, asked)
+	}
+	if env.Platform != "linux" || env.Account != "/home/jdoe" {
+		t.Errorf("platform %q and account %q were not carried through", env.Platform, env.Account)
 	}
 }
+
+// curl's own order for the CA variables - src/tool_operate.c, cacertpaths, in
+// 8.21.0 and 7.76.1. CURL_CA_BUNDLE silences the other two, and a directory
+// comes before a file because both versions then have a directory in play.
+func TestTheCAVariablesAreReadInCurlsOwnOrder(t *testing.T) {
+	cases := []struct {
+		env                Environment
+		variable, wantPath string
+	}{
+		{Environment{CABundle: "/a.pem", CertDir: "/d", CertFile: "/f.pem"}, "CURL_CA_BUNDLE", "/a.pem"},
+		{Environment{CertDir: "/d", CertFile: "/f.pem"}, "SSL_CERT_DIR", "/d"},
+		{Environment{CertFile: "/f.pem"}, "SSL_CERT_FILE", "/f.pem"},
+		{Environment{}, "", ""},
+	}
+	for _, c := range cases {
+		if variable, path := caNamed(c.env); variable != c.variable || path != c.wantPath {
+			t.Errorf("%+v named %q by %q, want %q by %q", c.env, path, variable, c.wantPath, c.variable)
+		}
+	}
+}
+
+// SSL_CERT_FILE names the bundle exactly as CURL_CA_BUNDLE does - measured by
+// S26 in five images, curl 7.76.1 to 8.21.0 - and a bundle that cannot be read
+// says which variable named it.
+func TestSSLCertFileNamesTheBundleTheRowReads(t *testing.T) {
+	store := storeFor(context.Background(), versionSaying(opensslLine),
+		sourceOf(), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CertFile: "/absent/file.pem"}, atNoon())
+
+	if store.StoreForm != report.StoreFile || store.StorePath != "/absent/file.pem" {
+		t.Errorf("the row does not name the file SSL_CERT_FILE points at: %+v", store)
+	}
+	if !strings.Contains(store.NotAssessed, "SSL_CERT_FILE") {
+		t.Errorf("the reason does not name the variable: %q", store.NotAssessed)
+	}
+}
+
+// A DIRECTORY IN SSL_CERT_DIR IS NOT JUDGED, because S26 measured that a
+// certificate there counts only under its hashed name - and the row says so
+// rather than reading the directory as a bundle.
+func TestSSLCertDirLeavesTheRowUndetermined(t *testing.T) {
+	store := storeFor(context.Background(), versionSaying(opensslLine),
+		sourceOf("/certs/ours.pem"), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}},
+		Environment{CertDir: "/certs", CertFile: "/certs/ours.pem"}, atNoon())
+
+	if store.TrustsPresentedChain != nil || store.StorePath != "" || store.StoreForm != report.StoreSystem {
+		t.Errorf("a directory in play still produced a file row: %+v", store)
+	}
+	if !strings.Contains(store.NotAssessed, "SSL_CERT_DIR") || !strings.Contains(store.NotAssessed, "hashed") {
+		t.Errorf("the reason does not say what would have to be known: %q", store.NotAssessed)
+	}
+}
+
+// A file-reading build reads the configuration file too, and outside Windows
+// the tool looks in its own places - so a .curlrc in HOME stops the row reading
+// the bundle a variable names.
+func TestAConfigurationFileStopsAFileReadingBuildToo(t *testing.T) {
+	curlrc := filepath.Join("/home/jdoe", ".curlrc")
+	store := storeFor(context.Background(), versionSaying(opensslLine),
+		sourceOf(curlrc, "/bundle.crt"), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}},
+		Environment{Platform: "linux", CABundle: "/bundle.crt", Homes: map[string]string{"HOME": "/home/jdoe"}}, atNoon())
+
+	if store.TrustsPresentedChain != nil || store.StorePath != "" {
+		t.Fatalf("a row with a configuration file in reach still read a bundle: %+v", store)
+	}
+	if !strings.Contains(store.NotAssessed, curlrc) {
+		t.Errorf("the reason does not name the file: %q", store.NotAssessed)
+	}
+}
+
+// curl's order outside Windows - src/tool_findfile.c of 8.21.0, where
+// CURLRC_DOTSCORE is 1: no "_curlrc", none of the three Windows places, no
+// binary directory, and the account's home from the user database last.
+func TestTheConfigurationFileIsLookedForInCurlsOwnOrderOutsideWindows(t *testing.T) {
+	j := filepath.Join
+	curlHome, home, xdg, account := "/c", "/h", "/x", "/acct"
+	every := map[string]string{"CURL_HOME": curlHome, "HOME": home, "USERPROFILE": "/p", "APPDATA": "/a"}
+
+	got := configCandidates(otherConfigOrder, every, account, "/usr/bin/curl")
+	want := []string{j(curlHome, ".curlrc"), j(home, ".curlrc"), j(curlHome, ".config", "curlrc"), j(account, ".curlrc")}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("without XDG_CONFIG_HOME:\n got %v\nwant %v", got, want)
+	}
+
+	got = configCandidates(otherConfigOrder, map[string]string{"XDG_CONFIG_HOME": xdg, "HOME": home}, account, "/usr/bin/curl")
+	want = []string{j(xdg, "curlrc"), j(home, ".curlrc"), j(account, ".curlrc")}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("with XDG_CONFIG_HOME:\n got %v\nwant %v", got, want)
+	}
+
+	got = configCandidates(otherConfigOrder, map[string]string{"HOME": home}, "", "/usr/bin/curl")
+	want = []string{j(home, ".curlrc"), j(home, ".config", "curlrc")}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("with HOME alone and no account:\n got %v\nwant %v", got, want)
+	}
+}
+
+// The platform picks the order, and only Windows gets the Windows one.
+func TestEachPlatformGetsItsOwnConfigurationOrder(t *testing.T) {
+	if order := configOrderOn("windows"); order.dotscore != 2 || !order.besideBinary || order.account {
+		t.Errorf("windows got %+v, want curl's Windows order", order)
+	}
+	for _, platform := range []string{"linux", "darwin", ""} {
+		if order := configOrderOn(platform); order.dotscore != 1 || order.besideBinary || !order.account {
+			t.Errorf("%q got %+v, want the order outside Windows", platform, order)
+		}
+	}
+}
+
+// A REFUSAL BY THE NAMED FILE IS WEIGHED AGAINST THE BUILD'S DIRECTORIES -
+// decided by the owner 2026-10-20 on S26: the Debian, Ubuntu and Alpine packages
+// trusted a root kept only in /etc/ssl/certs while CURL_CA_BUNDLE named a file
+// without it. On Windows nothing was measured, so the refusal stands there.
+func TestARefusalByTheNamedFileIsWeighedAgainstTheBuildsDirectories(t *testing.T) {
+	ours, other := leafNaming(t, nil, nil), leafNaming(t, nil, nil)
+	source, files := diskOf(map[string][]byte{
+		"/bundle.crt":             pemOf(other),
+		"/etc/ssl/certs/ours.pem": pemOf(ours),
+	}, map[string][]string{"/etc/ssl/certs": {"/etc/ssl/certs/ours.pem"}})
+
+	store := storeFor(context.Background(), versionSaying(opensslLine), source, files, Install{Path: "/usr/bin/curl"},
+		[][]byte{ours}, Environment{Platform: "linux", CABundle: "/bundle.crt"}, atNoon())
+	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "/etc/ssl/certs") ||
+		!strings.Contains(store.NotAssessed, "CURL_CA_BUNDLE") {
+		t.Errorf("on Linux: got %+v, want undetermined naming the directory and the variable", store)
+	}
+	if store.StorePath != "/bundle.crt" {
+		t.Errorf("the row stopped naming the file it read: %+v", store)
+	}
+
+	store = storeFor(context.Background(), versionSaying(opensslLine), source, files, Install{Path: "/usr/bin/curl"},
+		[][]byte{ours}, Environment{Platform: "windows", CABundle: "/bundle.crt"}, atNoon())
+	if store.TrustsPresentedChain == nil || *store.TrustsPresentedChain || store.TrustFailure != report.UnknownAuthority {
+		t.Errorf("on Windows: got %+v, want the file's refusal to stand", store)
+	}
+}
+
+// opensslLine is a version line of a file-reading build.
+const opensslLine = "curl 8.21.0 (x86_64-pc-linux-gnu) libcurl/8.21.0 OpenSSL/3.5.7 zlib/1.3.2"
+
+// pemOf wraps one certificate for a bundle.
+func pemOf(der []byte) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+// diskOf is a disk holding exactly these files and directories.
+func diskOf(files map[string][]byte, dirs map[string][]string) (file.Source, file.List) {
+	source := func(path string) (io.ReadCloser, error) {
+		data, ok := files[path]
+		if !ok {
+			return nil, fs.ErrNotExist
+		}
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+	list := func(path string) ([]string, error) {
+		names, ok := dirs[path]
+		if !ok {
+			return nil, fs.ErrNotExist
+		}
+		return names, nil
+	}
+	return source, list
+}
+
+// noFiles is a machine with no directory a build could read beside its file.
+func noFiles(string) ([]string, error) { return nil, fs.ErrNotExist }
 
 // Through the whole row, not only through configFile: a place on another
 // machine leaves the row unassessed and naming no store - inviolable rule 16.
 func TestASchannelRowWithAConfigurationPlaceOffThisMachineIsUnassessed(t *testing.T) {
 	source := func(path string) (io.ReadCloser, error) { return nil, &file.RemotePath{Path: path} }
-	store := storeFor(context.Background(), versionSaying(schannelLine), source, Install{Path: system32Curl},
+	store := storeFor(context.Background(), versionSaying(schannelLine), source, noFiles, Install{Path: system32Curl},
 		[][]byte{leafNaming(t, nil, nil)}, Environment{Homes: map[string]string{"HOME": hostSpelling(`\\files\home\jdoe`)}}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
@@ -318,7 +489,7 @@ func TestASchannelRowWithAConfigurationPlaceOffThisMachineIsUnassessed(t *testin
 // No certificate means nothing to ask about revocation, and nothing for a store
 // to judge - the row says so rather than pointing at a store.
 func TestASchannelRowWithNoChainIsUnassessed(t *testing.T) {
-	store := storeFor(context.Background(), versionSaying(schannelLine), sourceOf(), Install{Path: `C:\curl.exe`},
+	store := storeFor(context.Background(), versionSaying(schannelLine), sourceOf(), noFiles, Install{Path: `C:\curl.exe`},
 		nil, Environment{}, atNoon())
 
 	if store.TrustsPresentedChain != nil || store.DefersTo != nil {
@@ -335,7 +506,7 @@ func TestACurlThatCannotBeStartedIsUnassessed(t *testing.T) {
 	run := func(context.Context, string, ...string) (probe.Output, error) {
 		return probe.Output{}, errors.New("the file is not an executable")
 	}
-	store := storeFor(context.Background(), run, sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
+	store := storeFor(context.Background(), run, sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.Backend != "" || store.TrustsPresentedChain != nil {
 		t.Fatalf("a curl that never ran produced a backend or a verdict: %+v", store)
@@ -355,7 +526,7 @@ func (failingReader) Read([]byte) (int, error) { return 0, errors.New("is a dire
 // build reads, so it names none and says so.
 func TestAnotherPlatformBackendIsNotJudgedByABundle(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 8.21.0 (x86_64-apple-darwin) libcurl/8.21.0 SecureTransport"),
-		sourceOf("/bundle.crt"), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/bundle.crt"}, atNoon())
+		sourceOf("/bundle.crt"), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/bundle.crt"}, atNoon())
 
 	if store.StoreForm != report.StoreSystem || store.StorePath != "" {
 		t.Errorf("a platform build was pointed at the bundle in the environment: %+v", store)
@@ -373,7 +544,7 @@ func TestAnotherPlatformBackendIsNotJudgedByABundle(t *testing.T) {
 // nothing while waiting for it to work.
 func TestAnUnknownBackendIsUnassessedRatherThanAssumed(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 9.0.0 libcurl/9.0.0 SomeNewTLS"),
-		sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
+		sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.Backend != "" {
 		t.Errorf("an unrecognised backend was recorded as %q", store.Backend)
@@ -397,7 +568,7 @@ func TestAnUnknownBackendIsUnassessedRatherThanAssumed(t *testing.T) {
 // program cannot read off disk, and saying so is better than guessing at it.
 func TestAnOpenSSLBuildWithNoBundleSaysSo(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"),
-		sourceOf(), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{}, atNoon())
+		sourceOf(), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.Backend != "openssl" {
 		t.Errorf("backend %q, want openssl", store.Backend)
@@ -412,7 +583,7 @@ func TestAnOpenSSLBuildWithNoBundleSaysSo(t *testing.T) {
 // a reason, never a failure to trust.
 func TestAnOpenSSLBuildWithAnUnreadableBundleIsUnassessed(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"),
-		sourceOf(), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/absent/bundle.crt"}, atNoon())
+		sourceOf(), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/absent/bundle.crt"}, atNoon())
 
 	if store.StoreForm != report.StoreFile || store.StorePath != "/absent/bundle.crt" {
 		t.Errorf("the row does not name the bundle it was pointed at: %+v", store)
@@ -427,7 +598,7 @@ func TestACurlThatRefusesToReportIsUnassessed(t *testing.T) {
 	run := func(context.Context, string, ...string) (probe.Output, error) {
 		return probe.Output{ExitCode: 2, Stderr: "nie mozna uruchomic"}, nil
 	}
-	store := storeFor(context.Background(), run, sourceOf(), Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
+	store := storeFor(context.Background(), run, sourceOf(), noFiles, Install{Path: `C:\curl.exe`}, [][]byte{{0x30}}, Environment{}, atNoon())
 
 	if store.NotAssessed == "" {
 		t.Error("a curl that would not answer gave no reason")
@@ -441,7 +612,7 @@ func TestACurlThatRefusesToReportIsUnassessed(t *testing.T) {
 // both Schannel, so two rows and no verdicts.
 func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
 	source := sourceOf(system32Curl, hostSpelling(`C:\git\bin\curl.exe`))
-	stores, err := Probe(source, noLinks, versionSaying("curl 8.21.0 libcurl/8.21.0 Schannel"),
+	stores, err := Probe(source, noLinks, noFiles, versionSaying("curl 8.21.0 libcurl/8.21.0 Schannel"),
 		[]string{winSystem32, winSystem32Loud, hostSpelling(`C:\git\bin`), hostSpelling(`C:\empty`)}, Environment{}, atNoon)(context.Background(), [][]byte{{0x30}})
 
 	if err != nil {
@@ -459,7 +630,7 @@ func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
 
 // NO curl IS NOT AN ERROR - docs/20 rule 1.
 func TestAMachineWithNoCurlIsNotAnError(t *testing.T) {
-	stores, err := Probe(sourceOf(), noLinks, nil, []string{`C:\empty`}, Environment{}, atNoon)(context.Background(), nil)
+	stores, err := Probe(sourceOf(), noLinks, noFiles, nil, []string{`C:\empty`}, Environment{}, atNoon)(context.Background(), nil)
 	if err != nil {
 		t.Errorf("a machine without curl produced an error: %v", err)
 	}
@@ -472,7 +643,7 @@ func TestAMachineWithNoCurlIsNotAnError(t *testing.T) {
 // bundle does not close is DISTRUST - a verdict, not a failure.
 func TestAReadableBundleProducesAVerdict(t *testing.T) {
 	store := storeFor(context.Background(), versionSaying("curl 8.21.0 libcurl/8.21.0 OpenSSL/3.0"),
-		sourceOf("/bundle.crt"), Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/bundle.crt"}, atNoon())
+		sourceOf("/bundle.crt"), noFiles, Install{Path: "/usr/bin/curl"}, [][]byte{{0x30}}, Environment{CABundle: "/bundle.crt"}, atNoon())
 
 	// The fixture bundle holds no PEM, so the verifier reports that rather than
 	// inventing a verdict - which is the honest answer for an empty store.

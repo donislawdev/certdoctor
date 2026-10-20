@@ -119,10 +119,12 @@ var descriptors = []Descriptor{
 			"Windows' security warning, it was declined, and nothing was added.",
 	},
 	{
-		ID:          "git",
-		Runtime:     "git",
-		TrustSource: "http.sslBackend decides: schannel uses the Windows store, openssl uses the file named by http.sslCAInfo",
-		Source:      Measured,
+		ID:      "git",
+		Runtime: "git",
+		TrustSource: "http.sslBackend decides: schannel uses the Windows store, openssl the file GIT_SSL_CAINFO or " +
+			"http.sslCAInfo names - and on Linux a git naming no backend reads that file too, and may read " +
+			"/etc/ssl/certs beside it",
+		Source: Measured,
 		Evidence: "Measured on the owner's machine 2026-08-18: git 2.55.0.windows.3 reports http.sslbackend=openssl and " +
 			"http.sslcainfo pointing at its own bundle, both from the SYSTEM level - so adding a CA to the Windows " +
 			"store fixes a browser and does not fix git clone. That bundle held 229042 bytes then and 185311 on " +
@@ -132,7 +134,14 @@ var descriptors = []Descriptor{
 			"installation: the CONFIGURATION is optional - git 2.54.0 in a Debian based image has none at any level - " +
 			"so a binary on PATH is the proof, and a configuration only says which store that binary reads. Both " +
 			"git.exe on PATH here answered git config --list --show-origin --system with the same file, one directory " +
-			"above the cmd folder and two above the mingw64 one.",
+			"above the cmd folder and two above the mingw64 one. Measured 2026-10-20 with probe S26 in a Debian 13 " +
+			"image (git 2.47.3 on libcurl over GnuTLS) and an Alpine 3.24 one (git 2.54.0 on libcurl over OpenSSL), " +
+			"with no backend named: GIT_SSL_CAINFO, GIT_SSL_CAPATH and http.sslCAInfo were followed and curl's own " +
+			"variables were not, an empty GIT_SSL_NO_VERIFY and http.sslVerify=false switched verification off, and " +
+			"a root kept only as a hashed link in /etc/ssl/certs was trusted while the named file lacked it. Read " +
+			"beside it in http.c and parse.c of git 2.54.0 at https://github.com/git/git/tree/v2.54.0 - the " +
+			"environment is read after the configuration and wins, each variable acts by being set at all, and a key " +
+			"standing alone is true.",
 		FixSource: Documentation,
 		FixEvidence: "git-config, Documentation/config/http.adoc, read 2026-08-19 at " +
 			"https://git-scm.com/docs/git-config - http.sslCAInfo is \"File containing the certificates to verify the " +
@@ -162,7 +171,8 @@ var descriptors = []Descriptor{
 		ID:      "curl",
 		Runtime: "curl",
 		TrustSource: "decided by the TLS backend: a Schannel build judges by this account's Windows store and takes the " +
-			"answer of system-store CurrentUser, OpenSSL builds read a file",
+			"answer of system-store CurrentUser, OpenSSL builds read the file CURL_CA_BUNDLE or SSL_CERT_FILE names - " +
+			"and on Linux may read /etc/ssl/certs beside it",
 		Source: Measured,
 		Evidence: "Measured on the owner machine 2026-08-18: TWO curl.exe on PATH, the system one and the one shipped " +
 			"inside the Git installation, and BOTH are Schannel - the second was expected to be OpenSSL and is not. " +
@@ -173,7 +183,14 @@ var descriptors = []Descriptor{
 			"revocation address failed with CRYPT_E_NO_REVOCATION_CHECK. Read beside it in curl 8.21.0, " +
 			"lib/vtls/schannel.c and src/tool_operate.c at https://github.com/curl/curl/tree/curl-8_21_0 - with no " +
 			"--cacert Schannel validates by itself with SCH_CRED_REVOCATION_CHECK_CHAIN, and on Schannel the tool " +
-			"ignores CURL_CA_BUNDLE, SSL_CERT_FILE, SSL_CERT_DIR and curl-ca-bundle.crt.",
+			"ignores CURL_CA_BUNDLE, SSL_CERT_FILE, SSL_CERT_DIR and curl-ca-bundle.crt. Measured 2026-10-20 with " +
+			"probe S26, curl 7.76.1 to 8.21.0 in Debian, Ubuntu, Alpine and RHEL images: CURL_CA_BUNDLE, " +
+			"SSL_CERT_FILE and SSL_CERT_DIR are each followed, an empty value counts as unset, CURL_CA_BUNDLE " +
+			"silences SSL_CERT_DIR, and the Debian, Ubuntu and Alpine packages trusted a root kept only as a hashed " +
+			"link in /etc/ssl/certs while the named file lacked it - RHEL and the curlimages build did not. Read " +
+			"beside it in src/tool_operate.c, src/tool_findfile.c, lib/getenv.c and lib/vtls/vtls_config.c of " +
+			"8.21.0 and src/tool_operate.c of 7.76.1. Not looked at: the configuration file in the home directory " +
+			"of an account known only to a directory service, which a release build without cgo cannot ask for.",
 		FixSource: Documentation,
 		FixEvidence: "curl manual page, section Environment and the --cacert entry, read 2026-08-04 at " +
 			"https://curl.se/docs/manpage.html - CURL_CA_BUNDLE supplies the value of --cacert, which names the file " +

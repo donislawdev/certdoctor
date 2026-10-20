@@ -38,20 +38,18 @@ type layout struct {
 	// that exists is the store.
 	bundles []string
 	// directories are read only when the bundle refused for want of a signer.
-	directories []string
+	directories probe.CADirectories
 	// releases name the distribution, in precedence order.
 	releases []string
-	// entryCeiling and byteCeiling bound the directory pass - how many entries
-	// one directory may hold, and how many bytes the pass may read in all.
-	entryCeiling, byteCeiling int
 }
 
 // linuxLayout is Go's own list, so the row reads exactly what a Go program on
 // the machine reads.
 //
 // SOURCE, inviolable rule 18: src/crypto/x509/root_linux.go of Go 1.27.2, read
-// 2026-10-15 - certFiles ("stop after finding one") and certDirectories ("all
-// will be read"), in that order. The two release files and their precedence are
+// 2026-10-15 - certFiles ("stop after finding one"), in that order. The
+// directories are Go's too, and live in package probe because curl and git weigh
+// the same ones. The two release files and their precedence are
 // os-release(5): "/etc/os-release takes precedence over /usr/lib/os-release",
 // read the same day at https://man7.org/linux/man-pages/man5/os-release.5.html
 var linuxLayout = layout{
@@ -63,21 +61,9 @@ var linuxLayout = layout{
 		"/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
 		"/etc/ssl/cert.pem",
 	},
-	directories:  []string{"/etc/ssl/certs", "/etc/pki/tls/certs"},
-	releases:     []string{"/etc/os-release", "/usr/lib/os-release"},
-	entryCeiling: directoryEntryCeiling,
-	byteCeiling:  directoryByteCeiling,
+	directories: probe.LinuxCADirectories,
+	releases:    []string{"/etc/os-release", "/usr/lib/os-release"},
 }
-
-// The two ceilings on the directory pass. Measured by S24 on 2026-10-15: the
-// largest directory held 301 entries, and everything read from both came to
-// well under a megabyte. Each ceiling is more than ten times that and still
-// finite, which is the only property that matters - past it the row says it did
-// not look rather than pretending it did.
-const (
-	directoryEntryCeiling = 4096
-	directoryByteCeiling  = 64 << 20
-)
 
 // fallbackDistribution is the instance when nothing names the distribution. It
 // is os-release(5)'s own default: "If not set, a default of ID=linux may be
@@ -146,9 +132,7 @@ func assess(store *report.TrustStore, source file.Source, files file.List, l lay
 		return
 	}
 	probe.Verify(store, bundle, chain, at)
-	if refusedForWantOfASigner(store) {
-		weighDirectories(store, source, files, l, bundle, chain, at)
-	}
+	probe.WeighDirectories(store, source, files, l.directories, bundle, chain, at, directorySentences)
 }
 
 // firstBundle returns the first candidate that exists, with its bytes or the
@@ -164,12 +148,6 @@ func firstBundle(source file.Source, candidates []string) (string, []byte, error
 	return "", nil, nil
 }
 
-// refusedForWantOfASigner is the one refusal a directory could overturn.
-func refusedForWantOfASigner(store *report.TrustStore) bool {
-	return store.TrustsPresentedChain != nil && !*store.TrustsPresentedChain &&
-		store.TrustFailure == report.UnknownAuthority
-}
-
 // The sentences a row carries when the directories stop a refusal from being
 // proven - decided by the owner 2026-10-15.
 const (
@@ -182,66 +160,8 @@ const (
 		"certificate there closes it is undetermined"
 )
 
-// weighDirectories reads the directories the way Go does and turns the
-// refusal into undetermined when they close what the bundle did not.
-//
-// MEASURED, IN ORDINARY USE THEY ADD NOTHING - S24, eight images out of eight
-// with a store: the directories held no certificate the bundle lacked. What
-// they CAN add is a certificate copied in by hand without the distribution's
-// tool, which Go reads and OpenSSL reads through its hashed links while every
-// program reading only the bundle refuses. A FAIL there would be true of the
-// file this row names and false of half the programs on the machine.
-//
-// IT RUNS ONLY ON A REFUSAL, because a directory can add a signer and never take
-// one away - so a bundle that trusts the chain is already the answer.
-func weighDirectories(store *report.TrustStore, source file.Source, files file.List, l layout,
-	bundle []byte, chain [][]byte, at time.Time) {
-	anchors := bytes.Clone(bundle)
-	for _, directory := range l.directories {
-		names, err := files(directory)
-		switch {
-		case errors.Is(err, fs.ErrNotExist):
-			continue
-		case err != nil:
-			undetermined(store, fmt.Sprintf(directoryUnreadable, directory, err))
-			return
-		case len(names) > l.entryCeiling:
-			undetermined(store, fmt.Sprintf(directoryTooLarge, directory))
-			return
-		}
-		for _, name := range names {
-			data, err := readAll(source, name)
-			if errors.Is(err, fs.ErrNotExist) {
-				// A dangling link is an ordinary leftover there and holds nothing.
-				continue
-			}
-			if err != nil {
-				undetermined(store, fmt.Sprintf(directoryUnreadable, directory, err))
-				return
-			}
-			if len(anchors)+1+len(data) > l.byteCeiling {
-				undetermined(store, fmt.Sprintf(directoryTooLarge, directory))
-				return
-			}
-			anchors = append(append(anchors, '\n'), data...)
-		}
-		var trial report.TrustStore
-		probe.Verify(&trial, anchors, chain, at)
-		if trial.TrustsPresentedChain != nil && *trial.TrustsPresentedChain {
-			undetermined(store, fmt.Sprintf(directoryCloses, directory))
-			return
-		}
-	}
-}
-
-// undetermined turns a row into one without a verdict. The count goes with the
-// verdict - the contract refuses a row that could not assess a store and still
-// counts what is in it.
-func undetermined(store *report.TrustStore, why string) {
-	store.TrustsPresentedChain = nil
-	store.TrustFailure = ""
-	store.TrustAnchorCount = 0
-	store.NotAssessed = why
+var directorySentences = probe.DirectorySentences{
+	Closes: directoryCloses, Unreadable: directoryUnreadable, TooLarge: directoryTooLarge,
 }
 
 // distribution is the ID os-release gives, or the fallback.

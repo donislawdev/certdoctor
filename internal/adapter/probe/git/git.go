@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
@@ -62,8 +63,8 @@ var systemConfigs = []string{
 	"/opt/homebrew/etc/gitconfig",
 }
 
-// Settings are the two values that decide which store git uses, plus where each
-// came from.
+// Settings are the values in git's configuration that decide which store git
+// uses and whether it asks one at all, plus where each came from.
 //
 // LEVEL IS CARRIED BECAUSE IT CHANGES THE ADVICE. Measured: on this machine both
 // values come from the SYSTEM level, chosen when git was installed - so on a
@@ -75,6 +76,14 @@ type Settings struct {
 	BackendLevel string
 	CAInfo       string
 	CAInfoLevel  string
+	// CAPath is http.sslCAPath - a directory git hands its libcurl beside the
+	// file, ADR110 part 1.
+	CAPath      string
+	CAPathLevel string
+	// Verify is http.sslVerify as written, and VerifyLevel says it was written at
+	// all - an empty value is an answer here, because git reads it as false.
+	Verify      string
+	VerifyLevel string
 	// Unreadable names a config file this program could not read to the end -
 	// P3-1. bufio.Scanner stops on a line longer than its buffer and reports it
 	// only if somebody asks, and nobody did: a config whose reading stopped
@@ -83,6 +92,47 @@ type Settings struct {
 	// default, and a remediation command could name the wrong file - all from a
 	// read that never finished. Empty means every file was read to the end.
 	Unreadable string
+}
+
+// Environment is what this package is handed by the entry point, so the package
+// reads nothing of its own - ADR110 part 1.
+type Environment struct {
+	// Platform is the platform this program runs on, as runtime.GOOS spells it.
+	Platform string
+	// CAInfo and CAPath are GIT_SSL_CAINFO and GIT_SSL_CAPATH, and they win over
+	// the configuration whenever they are SET - an empty value included.
+	CAInfo, CAPath Variable
+	// NoVerify is GIT_SSL_NO_VERIFY being set at all, whatever its value.
+	NoVerify bool
+}
+
+// Variable is one environment variable, where being set is an answer of its own.
+type Variable struct {
+	Value string
+	Set   bool
+}
+
+// EnvironmentFrom reads every variable this package needs, through lookup.
+//
+// SOURCE, inviolable rule 18: http.c of git 2.54.0, http_init and set_from_env,
+// read 2026-10-20 at https://github.com/git/git/blob/v2.54.0/http.c - the three
+// are read after the configuration and override it, and each acts on getenv
+// returning anything at all. Measured by S26 the same day in three images: an
+// empty GIT_SSL_NO_VERIFY switched verification off, and GIT_SSL_CAINFO and
+// GIT_SSL_CAPATH were followed while curl's own variables were not. Which is why
+// the port is a lookup and not a getter - a getter cannot tell empty from unset.
+func EnvironmentFrom(lookup func(string) (string, bool), platform string) Environment {
+	variable := func(name string) Variable {
+		value, set := lookup(name)
+		return Variable{Value: value, Set: set}
+	}
+	_, noVerify := lookup("GIT_SSL_NO_VERIFY")
+	return Environment{
+		Platform: platform,
+		CAInfo:   variable("GIT_SSL_CAINFO"),
+		CAPath:   variable("GIT_SSL_CAPATH"),
+		NoVerify: noVerify,
+	}
 }
 
 // find returns every git installation this machine has.
@@ -229,8 +279,36 @@ func (s *Settings) apply(source file.Source, path, level string) {
 			s.Backend, s.BackendLevel = value, level
 		case "http.sslcainfo":
 			s.CAInfo, s.CAInfoLevel = value, level
+		case "http.sslcapath":
+			s.CAPath, s.CAPathLevel = value, level
+		case "http.sslverify":
+			s.Verify, s.VerifyLevel = value, level
 		}
 	}
+}
+
+// boolean reads a value the way git reads a boolean, and says whether git reads
+// it at all.
+//
+// SOURCE, inviolable rule 18: parse.c of git 2.54.0, git_parse_maybe_bool_text
+// and git_parse_maybe_bool, read 2026-10-20 at
+// https://github.com/git/git/blob/v2.54.0/parse.c - true, yes and on are true,
+// false, no, off and the empty string are false, in any case, and an integer is
+// true unless it is zero. Anything else stops git with an error. git also takes
+// an integer with a k, m or g after it, and that one this program does not read -
+// the row says so rather than guessing which way it goes.
+func boolean(value string) (on, read bool) {
+	switch strings.ToLower(value) {
+	case "true", "yes", "on":
+		return true, true
+	case "", "false", "no", "off":
+		return false, true
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return false, false
+	}
+	return n != 0, true
 }
 
 // parse reads the [http] section of one config file into lower-cased keys.
@@ -238,7 +316,7 @@ func (s *Settings) apply(source file.Source, path, level string) {
 // IT READS ONLY WHAT IT UNDERSTANDS AND SAYS SO. git's config format has more in
 // it than this - subsections, includes, multi-valued keys - and a parser that
 // guessed at the rest would produce a confident wrong answer, which is worse
-// here than no answer. The two keys this needs are plain scalars in the [http]
+// here than no answer. The keys this needs are plain scalars in the [http]
 // section on every machine measured.
 func parse(source file.Source, path string) (map[string]string, error) {
 	values := map[string]string{}
@@ -261,9 +339,15 @@ func parse(source file.Source, path string) (map[string]string, error) {
 			section = strings.ToLower(strings.Trim(line, "[]"))
 			continue
 		}
-		key, value, found := strings.Cut(line, "=")
-		if !found || section == "" {
+		if section == "" {
 			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			// A KEY STANDING ALONE IS TRUE TO GIT - parse.c of 2.54.0 reads a
+			// value that is not there as true. Skipping it would let an earlier
+			// "sslVerify = false" stand where git verifies again.
+			value = "true"
 		}
 		values[section+"."+strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(value)
 	}

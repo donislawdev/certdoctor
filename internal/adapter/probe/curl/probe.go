@@ -13,10 +13,11 @@ import (
 // Probe builds the L5 probe for curl.
 //
 // env is read at the entry point and handed in, so this package touches no
-// environment of its own. CABundle is used ONLY for backends that honour it -
-// which is the whole point of reading the backend first - and Homes only to find
-// the configuration file a Schannel build would read.
-func Probe(source file.Source, resolve file.Resolve, run probe.Runner, pathDirs []string, env Environment, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+// environment of its own. The CA variables are used ONLY for backends that
+// honour them - which is the whole point of reading the backend first - and the
+// home variables only to find the configuration file the tool would read. files
+// lists the directories a build may read beside its CA file.
+func Probe(source file.Source, resolve file.Resolve, files file.List, run probe.Runner, pathDirs []string, env Environment, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
 		installs := find(source, resolve, pathDirs)
 		if len(installs) == 0 {
@@ -25,13 +26,13 @@ func Probe(source file.Source, resolve file.Resolve, run probe.Runner, pathDirs 
 
 		stores := make([]report.TrustStore, 0, len(installs))
 		for _, install := range installs {
-			stores = append(stores, storeFor(ctx, run, source, install, chain, env, now()))
+			stores = append(stores, storeFor(ctx, run, source, files, install, chain, env, now()))
 		}
 		return stores, nil
 	}
 }
 
-func storeFor(ctx context.Context, run probe.Runner, source file.Source, install Install, chain [][]byte, env Environment, now time.Time) report.TrustStore {
+func storeFor(ctx context.Context, run probe.Runner, source file.Source, files file.List, install Install, chain [][]byte, env Environment, now time.Time) report.TrustStore {
 	store := report.TrustStore{
 		Runtime:  "curl",
 		Instance: install.Path,
@@ -57,7 +58,7 @@ func storeFor(ctx context.Context, run probe.Runner, source file.Source, install
 	store.Backend = backend
 
 	if backend == "schannel" {
-		return judgedByThisAccount(store, source, install, chain, env.Homes)
+		return judgedByThisAccount(store, source, install, chain, env)
 	}
 
 	if backend != "openssl" && backend != "libressl" && backend != "boringssl" {
@@ -68,24 +69,69 @@ func storeFor(ctx context.Context, run probe.Runner, source file.Source, install
 			"this build uses %s, which reads the platform store rather than a file - the system-store probe answers for it", backend)
 		return store
 	}
+	return judgedByAFile(store, source, files, install, chain, env, now)
+}
 
-	if env.CABundle == "" {
-		// An OpenSSL build with no bundle named falls back to whatever it was
-		// compiled with, and that is not something this program can read off
-		// disk without guessing.
-		store.NotAssessed = "this build uses a file store and CURL_CA_BUNDLE is not set, so the bundle it would read is its build-time default"
+// judgedByAFile writes the row of a build that reads a CA file - ADR110 part 1.
+//
+// THE FILE IS THE ONE curl'S TOOL WOULD HAND ITS LIBRARY, in the tool's own
+// order: the configuration file first, because a line in it wins over every
+// variable, then the variables as caNamed reads them.
+//
+// A REFUSAL IS WEIGHED AGAINST THE DIRECTORIES THE BUILD MAY ALSO READ, decided
+// by the owner 2026-10-20 on the measurement under probe.CADirectoriesOn: the
+// Debian, Ubuntu and Alpine packages trusted a root kept only in /etc/ssl/certs
+// while the named file lacked it, so a FAIL there would be false.
+func judgedByAFile(store report.TrustStore, source file.Source, files file.List, install Install, chain [][]byte, env Environment, now time.Time) report.TrustStore {
+	if stopped := configFileStops(&store, source, configOrderOn(env.Platform), install, env); stopped {
+		return store
+	}
+	variable, path := caNamed(env)
+	switch variable {
+	case "":
+		// Nothing named falls back to whatever the build was compiled with,
+		// and that is not something this program can read off disk without
+		// guessing.
+		store.NotAssessed = "this build reads a CA file and none of CURL_CA_BUNDLE, SSL_CERT_FILE and SSL_CERT_DIR is set, " +
+			"so the bundle it reads is its build-time default"
+		return store
+	case "SSL_CERT_DIR":
+		// MEASURED BY S26 ON 2026-10-20: a root in that directory counted only
+		// under its hashed file name, and the same root under any other name did
+		// not. Which names a directory holds is not something this program
+		// checks, so the row says what it would have to know.
+		store.NotAssessed = fmt.Sprintf("SSL_CERT_DIR names the directory %s, which this build reads beside its CA file, "+
+			"and whether a certificate there counts depends on its hashed file name, which this program does not check", path)
 		return store
 	}
 
 	store.StoreForm = report.StoreFile
-	store.StorePath = env.CABundle
-	bundle, err := readAll(source, env.CABundle)
+	store.StorePath = path
+	bundle, err := readAll(source, path)
 	if err != nil {
-		store.NotAssessed = fmt.Sprintf("the bundle named by CURL_CA_BUNDLE could not be read: %v", err)
+		store.NotAssessed = fmt.Sprintf("the bundle named by %s could not be read: %v", variable, err)
 		return store
 	}
 	probe.Verify(&store, bundle, chain, now)
+	probe.WeighDirectories(&store, source, files, probe.CADirectoriesOn(env.Platform), bundle, chain, now,
+		probe.LibcurlDirectorySentences(variable, "curl"))
 	return store
+}
+
+// configFileStops writes the row of a build whose configuration file this
+// program could not rule out, and reports whether it did.
+func configFileStops(store *report.TrustStore, source file.Source, order configOrder, install Install, env Environment) bool {
+	found, unreadable := configFile(source, configCandidates(order, env.Homes, env.Account, install.Path))
+	switch {
+	case unreadable != "":
+		store.NotAssessed = unreadable
+		return true
+	case found != "":
+		store.NotAssessed = fmt.Sprintf("curl reads the configuration file %s on every run, and a line in it can name "+
+			"a CA file or switch a certificate check off - this program does not read it", found)
+		return true
+	}
+	return false
 }
 
 // judgedByThisAccount writes the row of a Schannel build - ADR108 part 4.
@@ -100,17 +146,14 @@ func storeFor(ctx context.Context, run probe.Runner, source file.Source, install
 // WHAT ONLY THIS PROBE KNOWS IS SETTLED HERE: whether a configuration file could
 // change all of that, and whether the server's certificate names anywhere to
 // check its revocation - without which curl refuses it whatever the store says.
-func judgedByThisAccount(store report.TrustStore, source file.Source, install Install, chain [][]byte, homes map[string]string) report.TrustStore {
-	found, unreadable := configFile(source, configCandidates(homes, install.Path))
-	switch {
-	case unreadable != "":
-		store.NotAssessed = unreadable
+//
+// THE CONFIGURATION FILE IS LOOKED FOR IN THE WINDOWS ORDER WHATEVER THE
+// PLATFORM, because Schannel exists only there.
+func judgedByThisAccount(store report.TrustStore, source file.Source, install Install, chain [][]byte, env Environment) report.TrustStore {
+	if stopped := configFileStops(&store, source, windowsConfigOrder, install, env); stopped {
 		return store
-	case found != "":
-		store.NotAssessed = fmt.Sprintf("curl reads the configuration file %s on every run, and it can name a CA file "+
-			"or turn revocation checks off - this program does not read it", found)
-		return store
-	case len(chain) == 0 || len(chain[0]) == 0:
+	}
+	if len(chain) == 0 || len(chain[0]) == 0 {
 		store.NotAssessed = "no chain was presented, so there was nothing for this build to judge"
 		return store
 	}

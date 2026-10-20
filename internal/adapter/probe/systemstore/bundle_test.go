@@ -214,7 +214,7 @@ func TestARefusalStandsWhenTheDirectoriesCloseNothing(t *testing.T) {
 	if store.TrustAnchorCount != 1 {
 		t.Errorf("%d anchors counted, want the bundle's 1 - the directories are evidence, not the store", store.TrustAnchorCount)
 	}
-	if !slices.Equal(d.listed, linuxLayout.directories) {
+	if !slices.Equal(d.listed, linuxLayout.directories.Paths) {
 		t.Errorf("listed %v, want both of Go's directories in order", d.listed)
 	}
 }
@@ -224,7 +224,7 @@ func TestARefusalStandsWhenTheDirectoriesCloseNothing(t *testing.T) {
 // 2026-10-15, because some programs here trust that chain and some do not.
 func TestACertificateOnlyADirectoryHoldsLeavesTheAnswerToTheProgram(t *testing.T) {
 	ours, other := anAuthority(t, "ours"), anAuthority(t, "other")
-	for _, directory := range linuxLayout.directories {
+	for _, directory := range linuxLayout.directories.Paths {
 		t.Run(directory, func(t *testing.T) {
 			d := newDisk()
 			d.files[debianBundle] = pemOf(other.certificate)
@@ -268,7 +268,7 @@ func TestADirectoryThatCannotBeReadLeavesTheRefusalUnproven(t *testing.T) {
 func TestADirectoryPastItsCeilingIsNotRead(t *testing.T) {
 	ours, other := anAuthority(t, "ours"), anAuthority(t, "other")
 	small := linuxLayout
-	small.entryCeiling, small.byteCeiling = 2, 4096
+	small.directories.EntryCeiling, small.directories.ByteCeiling = 2, 4096
 
 	d := newDisk()
 	d.files[debianBundle] = pemOf(other.certificate)
@@ -412,13 +412,13 @@ func TestTheLinuxLayoutIsGosOwnList(t *testing.T) {
 	if !slices.Equal(linuxLayout.bundles, bundles) {
 		t.Errorf("bundles %v, want Go's %v", linuxLayout.bundles, bundles)
 	}
-	if !slices.Equal(linuxLayout.directories, []string{certsDir, pkiDir}) {
-		t.Errorf("directories %v", linuxLayout.directories)
+	if !slices.Equal(linuxLayout.directories.Paths, []string{certsDir, pkiDir}) {
+		t.Errorf("directories %v", linuxLayout.directories.Paths)
 	}
 	if !slices.Equal(linuxLayout.releases, []string{"/etc/os-release", "/usr/lib/os-release"}) {
 		t.Errorf("releases %v, want os-release(5)'s precedence", linuxLayout.releases)
 	}
-	if linuxLayout.entryCeiling != 4096 || linuxLayout.byteCeiling != 64<<20 {
-		t.Errorf("ceilings %d and %d", linuxLayout.entryCeiling, linuxLayout.byteCeiling)
+	if linuxLayout.directories.EntryCeiling != 4096 || linuxLayout.directories.ByteCeiling != 64<<20 {
+		t.Errorf("ceilings %d and %d", linuxLayout.directories.EntryCeiling, linuxLayout.directories.ByteCeiling)
 	}
 }

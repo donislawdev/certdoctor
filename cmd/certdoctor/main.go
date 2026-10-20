@@ -17,8 +17,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/dial"
@@ -483,23 +485,25 @@ const caBundleLimit = 8 << 20
 func liveTrustProbes() map[string]trust.Probe {
 	source, resolvePath := file.Live()
 	guarded := file.Guarded(source, resolvePath, caBundleLimit, nil)
+	files := file.GuardedList(file.LiveFiles(), resolvePath, nil)
 	paths := pathDirectories()
+	gitEnv := git.EnvironmentFrom(os.LookupEnv, runtime.GOOS)
+	curlEnv := curl.EnvironmentFrom(os.Getenv, runtime.GOOS, accountHome())
 	probes := map[string]trust.Probe{
 		// THE CLOCK GOES IN because "this certificate is out of date" and "nobody
 		// here signed it" are two different answers with two different remedies,
 		// and only the second is repaired by importing anything. Left to itself
 		// crypto/x509 would read the clock behind the probe's back, which is the
 		// one thing that stops an assessment being reproducible from its input.
-		"git":  git.Probe(guarded, resolvePath, globalGitConfigs(), paths, time.Now),
+		"git":  git.Probe(guarded, resolvePath, files, globalGitConfigs(), paths, gitEnv, time.Now),
 		"java": java.Probe(guarded, resolvePath, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
-		"curl": curl.Probe(guarded, resolvePath, probe.Run, paths, curl.EnvironmentFrom(os.Getenv), time.Now),
+		"curl": curl.Probe(guarded, resolvePath, files, probe.Run, paths, curlEnv, time.Now),
 	}
 	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - Windows by
 	// ADR103, Linux by ADR104. Elsewhere there is no probe rather than one
 	// finding nothing, because that store is never absent, and the coverage note
 	// names only what is wired. On Linux the store is a bundle and the
 	// directories beside it, read through the same guarded ports as git's.
-	files := file.GuardedList(file.LiveFiles(), resolvePath, nil)
 	if platform := systemstore.Probe(guarded, files, time.Now); platform != nil {
 		probes[report.RuntimeSystemStore] = platform
 	}
@@ -522,6 +526,26 @@ func globalGitConfigs() []string {
 		filepath.Join(home, ".gitconfig"),
 		filepath.Join(home, ".config", "git", "config"),
 	}
+}
+
+// accountHome is the home directory the user database gives the account this
+// program runs as - the last place curl's tool looks for its configuration file
+// outside Windows, getpwuid(geteuid()) in src/tool_findfile.c of curl 8.21.0.
+//
+// IT IS ASKED HERE AND HANDED IN, like PATH and the git config paths, so the
+// probe reads nothing of its own. Not established is an empty answer, and that
+// place is then not asked: a release build has no cgo, so os/user reads
+// /etc/passwd alone, and an account known only to a directory service is not in
+// it. The curl descriptor names that gap.
+func accountHome() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	account, err := user.LookupId(strconv.Itoa(os.Geteuid()))
+	if err != nil {
+		return ""
+	}
+	return account.HomeDir
 }
 
 // pathDirectories splits PATH into the directories a typed command searches.

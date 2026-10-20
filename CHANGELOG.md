@@ -10,6 +10,33 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - curl and git are judged by the file they actually read
+
+- **git follows `GIT_SSL_CAINFO` and `GIT_SSL_CAPATH`.** git reads them after
+  its configuration, so a row judged by `http.sslCAInfo` while `GIT_SSL_CAINFO`
+  pointed elsewhere spoke about a file git did not read - and offered to add
+  the certificate to it. The row now reads the file the variable names, and a
+  directory named by `GIT_SSL_CAPATH` or `http.sslCAPath` leaves the row
+  without a verdict and says why.
+- **git with certificate checks switched off is not judged by any store.**
+  `GIT_SSL_NO_VERIFY`, set to anything at all, or `http.sslVerify` set to false
+  makes git accept any certificate, and the row now says so.
+- **curl follows `SSL_CERT_FILE` and `SSL_CERT_DIR`** as well as
+  `CURL_CA_BUNDLE`, in curl's own order: `CURL_CA_BUNDLE` wins, a file named by
+  `SSL_CERT_FILE` is read the same way, and a directory named by
+  `SSL_CERT_DIR` leaves the row without a verdict.
+- **A curl that reads a CA file looks for its configuration file too**, in the
+  places curl itself looks on that platform, and a row that finds one names it
+  and is not assessed.
+- **On Linux, a refusal by the named file is checked against
+  `/etc/ssl/certs`.** curl and git as Debian, Ubuntu and Alpine build them read
+  that directory as well as the file they are given, so when a certificate
+  there completes the chain the row says the answer depends on how the tool was
+  built, instead of a refusal that may be false.
+- **On Linux, git that names no TLS backend is judged by the file
+  `GIT_SSL_CAINFO` or `http.sslCAInfo` names**, where it used to say it could
+  not be assessed.
+
 ### Changed - the terminal report fits a window 100 columns wide
 
 - **Long sentences wrap.** A layer's rows were padded to its longest one, so a
