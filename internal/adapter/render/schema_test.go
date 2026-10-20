@@ -809,7 +809,8 @@ func TestEveryKindOfFindingReachesBothSurfaces(t *testing.T) {
 			t.Errorf("%q: the terminal renderer failed: %v", kind, err)
 			continue
 		}
-		if !strings.Contains(page.String(), finding.Summary) {
+		// Folded, because a long summary now wraps - see containsEscaped.
+		if !strings.Contains(oneLine(page.String()), oneLine(finding.Summary)) {
 			t.Errorf("%q: the summary never reaches the terminal page", kind)
 		}
 	}

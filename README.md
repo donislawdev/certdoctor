@@ -98,21 +98,31 @@ certdoctor https://expired.badssl.com/
 The second one is where the trust matrix earns its place. Every store refuses, and every store that
 can be given the root carries the command that would add it there, with this machine's paths in it.
 curl built on Schannel judges by this account's Windows store, so its rows point at that store's
-command rather than carrying one of their own. An excerpt from a Windows machine, with the column
-padding taken out:
+command rather than carrying one of their own. An excerpt from a Windows machine, as printed:
 
 ```
-system-store LocalMachine does NOT trust the presented chain (90 anchors)
-  needs elevated rights: the LocalMachine store is read by every account and every service on this machine, so changing it needs administrator rights
-  run: certutil -addstore Root "<certificate.pem>"
-  replace first: <certificate.pem>
-git C:\Program Files\Git\mingw64\bin\git.exe does NOT trust the presented chain (121 anchors)
-  needs elevated rights: this store is outside this account's own files, so it belongs to every account on the machine
-  run: cmd /c copy /b "C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt"+"<certificate.pem>" "C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt"
-java C:\Program Files\OpenJDK\jdk-21.0.2 does NOT trust the presented chain (106 anchors)
-  needs elevated rights: this store is outside this account's own files, so it belongs to every account on the machine
-  run: "C:\Program Files\OpenJDK\jdk-21.0.2\bin\keytool" -importcert -trustcacerts -keystore "C:\Program Files\OpenJDK\jdk-21.0.2\lib\security\cacerts" -storepass changeit -alias "<alias>" -file "<certificate.pem>"
+      system-store LocalMachine does NOT trust the presented chain (90 anchors)  detected
+        needs elevated rights: the LocalMachine store is read by every account and every service on
+                               this machine, so changing it needs administrator rights
+        run: certutil -addstore Root "<certificate.pem>"
+        replace first: <certificate.pem>
+        note: programs that carry a store of their own - git and java among them - do not read this
+              one, so their rows need their own commands
+      java C:\Program Files\OpenJDK\jdk-21.0.2 does NOT trust the presented chain (106
+        anchors)  detected
+        needs elevated rights: this store is outside this account's own files, so it belongs to
+                               every account on the machine
+        run: "C:\Program Files\OpenJDK\jdk-21.0.2\bin\keytool" -importcert -trustcacerts -keystore "C:\Program Files\OpenJDK\jdk-21.0.2\lib\security\cacerts" -storepass changeit -alias "<alias>" -file "<certificate.pem>"
+        replace first: <alias>, <certificate.pem>
+        note: installing a newer build of this runtime brings its own store and does not carry this
+              certificate across
+      curl C:\Windows\system32\curl.exe does NOT trust the presented chain (90 anchors) - it judges
+        by system-store CurrentUser, which refuses it  detected
 ```
+
+The report is laid out 100 columns wide. Sentences wrap at their spaces. A command, a fingerprint, a
+certificate's name and a value read off the machine are never broken - a command broken over two
+lines would be pasted as two, so a line that runs past the edge is one meant to be copied whole.
 
 **Do not run those for badssl.com.** That root is untrusted on purpose, and trusting it would make
 every store on your machine accept a certificate nobody vouches for. The commands are there for the

@@ -262,11 +262,29 @@ func TestNoSurfaceInventsAVerdictWord(t *testing.T) {
 // somebody adds a fixture holding a "&", the failure without this would be a
 // renderer reported as LOSING a value it escaped correctly, and the obvious fix
 // for that reading is to remove the escaping.
+//
+// THE WHITESPACE HALF ARRIVED WITH THE PAGE WIDTH - OBS165, a decision of the
+// owner's on 2026-10-20. The terminal now wraps a long sentence onto a second
+// line, so a summary that is on the page is no longer one substring of it. Both
+// sides are compared with their runs of spaces and line breaks folded to one
+// space: the test still renders the real page, and the only thing it stopped
+// seeing is how much whitespace stands between two words. That wrapping loses,
+// adds and reorders no word is a property of its own, asserted in wrap_test.go.
 func containsEscaped(surface, value string) bool {
 	strip := func(s string) string {
-		return strings.ReplaceAll(html.UnescapeString(s), `\`, "")
+		return oneLine(strings.ReplaceAll(html.UnescapeString(s), `\`, ""))
 	}
 	return strings.Contains(strip(surface), strip(value))
+}
+
+// oneLine folds every run of spaces and line breaks into a single space, which
+// is how a page reads once the wrapping is taken out of it.
+//
+// ONLY THOSE TWO CHARACTERS, and that is narrower than strings.Fields on
+// purpose: Fields would also fold a no-break space, which the page never breaks
+// at, so a value that lost one would still be reported present.
+func oneLine(s string) string {
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == '\n' }), " ")
 }
 
 // parityReport is one report carrying one finding, and everything else a report

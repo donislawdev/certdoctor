@@ -10,6 +10,21 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - the terminal report fits a window 100 columns wide
+
+- **Long sentences wrap.** A layer's rows were padded to its longest one, so a
+  single long sentence in the trust matrix made every row of it hundreds of
+  characters wide. Rows are now padded into columns only when the whole layer
+  fits in 100 columns, and otherwise each row is written as text, wrapped
+  under itself.
+- **What is meant to be copied is never broken.** A repair command, a
+  fingerprint, a certificate's name, a value read off the machine and each
+  entry of a list stay whole on one line, even when that line runs past 100
+  columns - a command broken in two would be pasted as two. Lists wrap between
+  their entries.
+- Only the terminal report changed. `--json`, `--format md`, `--format html`
+  and the exit codes are as they were.
+
 ### Changed - curl on Schannel is judged by this account's Windows store
 
 - **[contract] curl built on Schannel now gets an answer.** Its rows said on

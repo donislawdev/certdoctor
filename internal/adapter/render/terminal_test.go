@@ -151,14 +151,18 @@ x Failures in 2 of 6 diagnostic layers.
 exit 4 DIAGNOSIS
 
 LAYERS
-  x FAIL     L0  Context          unrecognized_output  the presented chain does not reach any trust anchor this runtime knows about, and the issuer is local to this machine
+  x FAIL     L0  Context          unrecognized_output  the presented chain does not reach any trust
+                                  anchor this runtime knows about, and the issuer is local to this
+                                  machine
       HTTPS_PROXY is set and carries credentials  detected  http://[redacted]@proxy.corp:8080
       SSL_CERT_FILE is not set                    default
   ! WARN     L1  Name resolution  access_denied  one of the configured resolvers could not be read
   ? UNKNOWN  L2  Proxy            probe_error  not implemented
   + PASS     L3  TCP
       nothing was found
-  x FAIL     L4  TLS              unrecognized_output  the presented chain does not reach any trust anchor this runtime knows about, and the issuer is local to this machine
+  x FAIL     L4  TLS              unrecognized_output  the presented chain does not reach any trust
+                                  anchor this runtime knows about, and the issuer is local to this
+                                  machine
   ! WARN     L5  Trust matrix     access_denied  one of the configured resolvers could not be read
 
 NOTES

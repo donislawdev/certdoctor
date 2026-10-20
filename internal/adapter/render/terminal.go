@@ -68,8 +68,23 @@ func (t Terminal) writeHeading(b *strings.Builder, r report.Report) {
 		r.Run.Duration.Round(time.Millisecond))
 }
 
+// writeVerdict prints the sentence the whole report exists for, and the exit
+// code under it.
+//
+// EVERY LINE OF A WRAPPED SENTENCE IS PAINTED ON ITS OWN. A colour that opens on
+// one line and closes on the next is a colour some pagers and log viewers drop
+// at the line break, and the second half of the verdict would then lose the
+// status it belongs to.
 func (t Terminal) writeVerdict(b *strings.Builder, r report.Report) {
-	fmt.Fprintf(b, "\n%s %s\n", t.badge(r.Verdict.Status), Paint(r.Verdict.Status, t.Color, visible(r.Verdict.Sentence)))
+	indent := widthOf(Of(r.Verdict.Status).Marker(t.Glyph)) + 1
+	b.WriteString("\n")
+	for i, line := range lines(prose(visible(r.Verdict.Sentence)), pageWidth-indent, pageWidth-indent) {
+		lead := strings.Repeat(" ", indent)
+		if i == 0 {
+			lead = t.badge(r.Verdict.Status) + " "
+		}
+		writeTrimmed(b, lead+Paint(r.Verdict.Status, t.Color, line))
+	}
 	fmt.Fprintf(b, "exit %d %s\n", r.Verdict.ExitCode.Int(), r.Verdict.ExitCode.Name())
 }
 
@@ -79,6 +94,9 @@ func (t Terminal) writeVerdict(b *strings.Builder, r report.Report) {
 // right on the author's machine and truncates the first path longer than the
 // one they happened to test with, and paths are the part of this report nobody
 // can guess the length of.
+//
+// THE DETAIL WRAPS UNDER ITSELF. A continuation that went back to the left edge
+// would sit in the status column, where the eye looks for the next layer.
 func (t Terminal) writeLayers(b *strings.Builder, r report.Report) {
 	b.WriteString("\nLAYERS\n")
 
@@ -90,19 +108,22 @@ func (t Terminal) writeLayers(b *strings.Builder, r report.Report) {
 	}
 
 	for _, row := range r.Layers {
-		var line strings.Builder
-		fmt.Fprintf(&line, "  %s %s  %s  %s",
+		lead := fmt.Sprintf("  %s %s  %s  %s",
 			t.badge(row.Status),
 			Paint(row.Status, t.Color, pad(Label(row.Status), labelWidth)),
 			pad(row.ID.String(), idWidth),
 			pad(row.ID.Name(), nameWidth))
+		leadWidth := 2 + widthOf(Of(row.Status).Marker(t.Glyph)) + 1 + labelWidth + 2 + idWidth + 2 + nameWidth
+
+		var pieces []piece
 		if row.Reason != "" {
-			fmt.Fprintf(&line, "  %s", visible(string(row.Reason)))
+			pieces = append(pieces, piece{text: visible(string(row.Reason)), gap: 2})
 		}
-		if row.Detail != "" {
-			fmt.Fprintf(&line, "  %s", visible(row.Detail))
+		if detail := prose(visible(row.Detail)); len(detail) > 0 {
+			detail[0].gap += 2
+			pieces = append(pieces, detail...)
 		}
-		writeTrimmed(b, line.String())
+		writeFlow(b, lead, leadWidth, leadWidth+2, pieces)
 		t.writeFindings(b, row)
 	}
 }
@@ -273,30 +294,97 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 		return
 	}
 
-	// Widths are measured on the ESCAPED text, not on the raw. A value carrying
-	// control bytes gets longer when they become visible, and measuring before
-	// escaping would set every column too narrow for the row that needed it most.
-	summaryWidth, sourceWidth := 0, 0
+	columns := measureFindings(row.Findings)
 	for _, finding := range row.Findings {
-		summaryWidth = max(summaryWidth, widthOf(visible(finding.Summary)))
-		sourceWidth = max(sourceWidth, widthOf(visible(finding.Source.String())))
-	}
-
-	for _, finding := range row.Findings {
-		var line strings.Builder
-		fmt.Fprintf(&line, "      %s  %s",
-			pad(visible(finding.Summary), summaryWidth),
-			pad(visible(finding.Source.String()), sourceWidth))
-		if value := visible(findingValue(finding)); value != "" {
-			fmt.Fprintf(&line, "  %s", value)
-		}
-		writeTrimmed(b, line.String())
+		writeFindingRow(b, finding, columns)
 		writeChain(b, finding)
 		writeFix(b, finding)
 		writeAuthority(b, finding)
 		writeCaveats(b, finding)
 		writeAsked(b, finding)
 	}
+}
+
+// findingIndent is where a finding's row starts, under its layer.
+const findingIndent = "      "
+
+// findingColumns is how wide the summary and source columns of one layer are,
+// and whether the layer is laid out as a table at all.
+type findingColumns struct {
+	table   bool
+	summary int
+	source  int
+}
+
+// measureFindings decides between a table and running text for one layer.
+//
+// A TABLE ONLY WHEN EVERY ROW OF IT FITS ON THE PAGE - OBS165. Padding every
+// summary to the longest is what makes the source and the value readable down a
+// column, and it is also what turned one long sentence in the trust matrix into
+// thirteen rows four hundred characters wide, most of it spaces. So the columns
+// are still measured, and then the measurement is checked against the page: a
+// layer that fits is a table, and a layer that does not is written as text,
+// each row as long as it needs and wrapped where it has to be. Half a table -
+// some rows padded and some not - would line up nothing and look like a defect.
+//
+// Widths are measured on the ESCAPED text, not on the raw. A value carrying
+// control bytes gets longer when they become visible, and measuring before
+// escaping would set every column too narrow for the row that needed it most.
+func measureFindings(findings []report.Finding) findingColumns {
+	columns := findingColumns{table: true}
+	for _, finding := range findings {
+		columns.summary = max(columns.summary, widthOf(visible(finding.Summary)))
+		columns.source = max(columns.source, widthOf(visible(finding.Source.String())))
+	}
+	for _, finding := range findings {
+		width := widthOf(findingIndent) + columns.summary + 2 + columns.source
+		if value := visible(findingValue(finding)); value != "" {
+			width += 2 + widthOf(value)
+		}
+		if width > pageWidth {
+			columns.table = false
+		}
+	}
+	return columns
+}
+
+// writeFindingRow prints one finding's own line: what it says, where that came
+// from, and the value when its kind has one.
+//
+// AS TEXT, THE SUMMARY WRAPS AND THE VALUE DOES NOT. The summary is a sentence
+// and wraps like one; a value is an address, a proxy or a variable as the
+// machine holds it, and broken at a space it would be copied as something else.
+// Two spaces in front of the source and the value keep them apart from the
+// words, the way the columns of a table would.
+//
+// THE SOURCE TRAVELS WITH THE LAST WORD OF THE SUMMARY. On its own it is one
+// word saying how a sentence was established, and the first prototype of this
+// page, on the owner's machine, left "detected" alone on a line under nine of
+// the thirteen trust rows - a line that reads as a finding of its own.
+func writeFindingRow(b *strings.Builder, finding report.Finding, columns findingColumns) {
+	summary := visible(finding.Summary)
+	source := visible(finding.Source.String())
+	value := visible(findingValue(finding))
+
+	if columns.table {
+		line := findingIndent + pad(summary, columns.summary) + "  " + pad(source, columns.source)
+		if value != "" {
+			line += "  " + value
+		}
+		writeTrimmed(b, line)
+		return
+	}
+
+	pieces := prose(summary)
+	if last := len(pieces) - 1; last >= 0 {
+		pieces[last].text += "  " + source
+	} else {
+		pieces = []piece{{text: source}}
+	}
+	if value != "" {
+		pieces = append(pieces, piece{text: value, gap: 2})
+	}
+	writeFlow(b, findingIndent, widthOf(findingIndent), widthOf(findingIndent)+2, pieces)
 }
 
 // writeCaveats prints what a row does not settle, under the row.
@@ -322,7 +410,7 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 // escaped and deciding case by case is how one gets missed.
 func writeCaveats(b *strings.Builder, finding report.Finding) {
 	for _, caveat := range caveatsOf(finding) {
-		writeTrimmed(b, fmt.Sprintf("        note: %s", visible(caveat)))
+		writeLabelled(b, "note:", prose(visible(caveat)))
 	}
 }
 
@@ -405,12 +493,15 @@ func writeAuthority(b *strings.Builder, finding report.Finding) {
 		return
 	}
 	authority := finding.SigningAuthority
-	writeTrimmed(b, fmt.Sprintf("        evidence: leaf fingerprint %s", visible(authority.LeafFingerprint)))
+	writeLabelled(b, "evidence:", append(prose("leaf fingerprint"), piece{text: visible(authority.LeafFingerprint), gap: 1}))
+	// ONE STORE IS ONE PIECE, and a list of them wraps between stores. A store is
+	// a runtime and a path, and on this machine half the paths have a space in
+	// them - broken there, one store would read as two.
 	if len(authority.TrustingStores) > 0 {
-		writeTrimmed(b, fmt.Sprintf("        held by: %s", visible(strings.Join(authority.TrustingStores, ", "))))
+		writeLabelled(b, "held by:", items(visibleAll(authority.TrustingStores)))
 	}
 	if len(authority.RefusingStores) > 0 {
-		writeTrimmed(b, fmt.Sprintf("        not held by: %s", visible(strings.Join(authority.RefusingStores, ", "))))
+		writeLabelled(b, "not held by:", items(visibleAll(authority.RefusingStores)))
 	}
 	// WHERE THE NAME CAME FROM, ON THE SURFACE WHERE SOMEBODY DECIDES WHETHER TO
 	// BE ALARMED. The summary already says the product; this line says which part
@@ -420,10 +511,20 @@ func writeAuthority(b *strings.Builder, finding report.Finding) {
 	// the day one of them stops being ours is not a day anybody will remember
 	// this line.
 	if authority.Inspection != nil {
-		writeTrimmed(b, fmt.Sprintf("        inspection product: %s, named in the issuer's %s",
-			visible(authority.Inspection.Product), visible(authority.Inspection.MatchedAttribute)))
+		writeLabelled(b, "inspection product:", prose(fmt.Sprintf("%s, named in the issuer's %s",
+			visible(authority.Inspection.Product), visible(authority.Inspection.MatchedAttribute))))
 	}
-	writeTrimmed(b, fmt.Sprintf("        note: %s", visible(authority.Caveat)))
+	writeLabelled(b, "note:", prose(visible(authority.Caveat)))
+}
+
+// visibleAll is visible applied to every entry of a list, for the places that
+// wrap a list between its entries and so can no longer escape it joined.
+func visibleAll(list []string) []string {
+	shown := make([]string, 0, len(list))
+	for _, entry := range list {
+		shown = append(shown, visible(entry))
+	}
+	return shown
 }
 
 // writeFix prints the command that would repair one row, underneath it.
@@ -447,16 +548,19 @@ func writeFix(b *strings.Builder, finding report.Finding) {
 	}
 	fix := finding.TrustStore.Fix
 	if fix.RequiresElevation {
-		writeTrimmed(b, fmt.Sprintf("        needs elevated rights: %s", visible(fix.Elevation)))
+		writeLabelled(b, "needs elevated rights:", prose(visible(fix.Elevation)))
 	}
-	writeTrimmed(b, fmt.Sprintf("        run: %s", visible(fix.Command)))
+	// THE COMMAND IS ONE PIECE, so it is the one line on this page allowed to run
+	// past the page's width - and it is the line that has to. A command broken
+	// over two lines is pasted as two commands.
+	writeLabelled(b, "run:", []piece{{text: visible(fix.Command)}})
 	if len(fix.Placeholders) > 0 {
 		// NAMED RATHER THAN COUNTED. "Two things to replace" makes somebody hunt;
 		// the words themselves can be searched for in the line above.
-		writeTrimmed(b, fmt.Sprintf("        replace first: %s", visible(strings.Join(fix.Placeholders, ", "))))
+		writeLabelled(b, "replace first:", items(visibleAll(fix.Placeholders)))
 	}
 	if fix.Caveat != "" {
-		writeTrimmed(b, fmt.Sprintf("        note: %s", visible(fix.Caveat)))
+		writeLabelled(b, "note:", prose(visible(fix.Caveat)))
 	}
 }
 
@@ -499,7 +603,15 @@ func writeChain(b *strings.Builder, finding report.Finding) {
 		}
 		writeTrimmed(b, fmt.Sprintf("        %s  %s", pad(fmt.Sprintf("%d", i+1), indexWidth), subject))
 		if names := namesLine(certificate); names != "" {
-			writeTrimmed(b, fmt.Sprintf("        %s  names      %s", blank, names))
+			// THE ONE LIST IN A CHAIN WITH NO LIMIT. A certificate shared by a
+			// content network names a hundred hosts and more, so this wraps
+			// between names and lines up under the first one.
+			pieces := []piece{{text: names}}
+			if len(certificate.DNSNames) > 0 {
+				pieces = items(visibleAll(certificate.DNSNames))
+			}
+			lead := fmt.Sprintf("%s%s  names      ", subIndent, blank)
+			writeFlow(b, lead, widthOf(lead), widthOf(lead), pieces)
 		}
 		writeTrimmed(b, fmt.Sprintf("        %s  issued by  %s", blank, visible(certificate.Issuer)))
 		writeTrimmed(b, fmt.Sprintf("        %s  sha256     %s", blank, visible(certificate.FingerprintSHA256)))
@@ -761,14 +873,20 @@ func (t Terminal) writeNotes(b *strings.Builder, r report.Report) {
 		return
 	}
 	for _, note := range r.Notes {
-		b.WriteString("  - ")
+		var pieces []piece
 		if note.Layer != "" {
-			fmt.Fprintf(b, "%s ", visible(string(note.Layer)))
+			pieces = append(pieces, piece{text: visible(string(note.Layer)), gap: 1})
 		}
 		if note.Field != "" {
-			fmt.Fprintf(b, "%s ", visible(note.Field))
+			pieces = append(pieces, piece{text: visible(note.Field), gap: 1})
 		}
-		fmt.Fprintf(b, "[%s] %s\n", visible(string(note.Kind)), visible(note.Detail))
+		pieces = append(pieces, piece{text: "[" + visible(string(note.Kind)) + "]", gap: 1})
+		if detail := prose(visible(note.Detail)); len(detail) > 0 {
+			detail[0].gap++
+			pieces = append(pieces, detail...)
+		}
+		pieces[0].gap = 0
+		writeFlow(b, "  - ", 4, 4, pieces)
 	}
 }
 
