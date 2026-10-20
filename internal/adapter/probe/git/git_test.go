@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -67,7 +68,7 @@ func sourceOf(files map[string]string) func(string) (io.ReadCloser, error) {
 	return func(path string) (io.ReadCloser, error) {
 		body, ok := cleaned[key(path)]
 		if !ok {
-			return nil, errors.New("no such file")
+			return nil, &fs.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
 		}
 		return io.NopCloser(strings.NewReader(body)), nil
 	}
@@ -132,7 +133,7 @@ func TestAGitWithNoConfigurationAtAllStillGetsARow(t *testing.T) {
 		t.Errorf("a config was claimed at %q, and this machine has none", found[0].SystemConfig)
 	}
 
-	stores, err := Probe(source, noLinks, noFiles, nil, []string{"/usr/bin"}, Environment{}, atNoon)(t.Context(), [][]byte{{0x30}})
+	stores, err := Probe(source, noLinks, noFiles, []string{"/usr/bin"}, Environment{}, atNoon)(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestAConfigFoundNextToABinaryIsReportedAtSystemLevel(t *testing.T) {
 	if len(found) != 1 || found[0].SystemConfig != config {
 		t.Fatalf("got %+v, want the config one directory up", found)
 	}
-	settings := readSettings(source, found[0].SystemConfig, nil)
+	settings := readSettings(source, found[0].SystemConfig, Environment{})
 	if settings.Backend != "openssl" || settings.BackendLevel != "system" {
 		t.Errorf("backend %q at %q, want openssl at system", settings.Backend, settings.BackendLevel)
 	}
@@ -242,7 +243,14 @@ func TestTheConfigParserReadsOnlyWhatItUnderstands(t *testing.T) {
 	sslBackend = openssl
 	sslCAInfo = C:/bundle.crt
 `
-	values, _ := parse(sourceOf(map[string]string{"cfg": config}), "cfg")
+	entries, _, err := parseConfig([]byte(config))
+	if err != nil {
+		t.Fatalf("an ordinary config was refused: %v", err)
+	}
+	values := map[string]string{}
+	for _, e := range entries {
+		values[e.key] = e.value
+	}
 	if values["http.sslbackend"] != "openssl" {
 		t.Errorf("backend %q, want openssl - keys are lower cased so case in the file cannot change the answer", values["http.sslbackend"])
 	}
@@ -258,8 +266,9 @@ func TestTheConfigParserReadsOnlyWhatItUnderstands(t *testing.T) {
 }
 
 func TestAMissingConfigIsNotAnError(t *testing.T) {
-	if got, _ := parse(sourceOf(nil), "absent"); len(got) != 0 {
-		t.Errorf("a missing file produced %v", got)
+	settings := readSettings(sourceOf(nil), "/absent", Environment{Home: Variable{Value: "/home/jdoe", Set: true}})
+	if settings.Unreadable != "" || settings.CAInfoLevel != "" {
+		t.Errorf("missing files produced %+v", settings)
 	}
 }
 
@@ -277,7 +286,7 @@ func TestGlobalConfigOverridesSystemAndTheLevelIsRecorded(t *testing.T) {
 		"/home/jdoe/.gitconfig": "[http]\n\tsslCAInfo = C:/mine.crt\n",
 	})
 
-	settings := readSettings(source, system, []string{"/home/jdoe/.gitconfig"})
+	settings := readSettings(source, system, Environment{Home: Variable{Value: "/home/jdoe", Set: true}})
 	if settings.Backend != "openssl" || settings.BackendLevel != "system" {
 		t.Errorf("backend %q at %q, want openssl at system", settings.Backend, settings.BackendLevel)
 	}
@@ -478,7 +487,7 @@ func TestOpensslWithNoBundleNamedSaysWhatItWouldRead(t *testing.T) {
 // A runtime that is not here sits OUTSIDE the matrix - docs/20 rule 1 - and that
 // is not an error.
 func TestNoInstallFoundIsNotAnError(t *testing.T) {
-	probe := Probe(sourceOf(nil), noLinks, noFiles, nil, nil, Environment{}, atNoon)
+	probe := Probe(sourceOf(nil), noLinks, noFiles, nil, Environment{}, atNoon)
 	stores, err := probe(t.Context(), [][]byte{{0x30}})
 	if err != nil {
 		t.Fatalf("git not being installed came back as an error: %v", err)
@@ -495,7 +504,7 @@ func TestTheProbeProducesOneRowPerInstall(t *testing.T) {
 		"/bundle.crt":    string(anchorPEM),
 	})
 
-	stores, err := Probe(source, noLinks, noFiles, nil, nil, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, noLinks, noFiles, nil, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -527,7 +536,7 @@ func TestEveryGitOnPathGetsItsOwnRow(t *testing.T) {
 		"/bundle.crt": string(anchorPEM),
 	})
 
-	stores, err := Probe(source, noLinks, noFiles, nil, []string{gitCmdDir, gitMingwDir}, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
+	stores, err := Probe(source, noLinks, noFiles, []string{gitCmdDir, gitMingwDir}, Environment{}, atNoon)(t.Context(), [][]byte{leafDER})
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
@@ -593,33 +602,23 @@ func noLinks(path string) (string, error) { return path, nil }
 // built-in default, and a remediation command could name the wrong file, all
 // from a read that never finished.
 func TestAConfigThatCouldNotBeReadToTheEndIsNotReadAsEmpty(t *testing.T) {
-	// One line longer than bufio.Scanner's own buffer.
-	huge := "[http]\n\tsslCAInfo = " + strings.Repeat("x", 80*1024) + "\n"
-	source := sourceOf(map[string]string{"/etc/gitconfig": huge})
-
-	values, err := parse(source, "/etc/gitconfig")
-	if err == nil {
-		t.Fatal("a line this program could not read came back as a config with nothing in it")
+	const config = "[http]\n\tsslCAInfo = /a.crt\n"
+	source := func(path string) (io.ReadCloser, error) {
+		if filepath.Clean(path) != filepath.Clean("/etc/gitconfig") {
+			return nil, &fs.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
+		}
+		return io.NopCloser(io.MultiReader(strings.NewReader(config), iotest.ErrReader(errors.New("device gone")))), nil
 	}
-	if len(values) != 0 {
-		t.Errorf("the half-read config still produced %d value(s)", len(values))
+	settings := readSettings(source, "/etc/gitconfig", Environment{})
+	if !strings.Contains(settings.Unreadable, "device gone") || settings.CAInfoLevel != "" {
+		t.Errorf("a read that stopped halfway came back as %+v", settings)
 	}
 
-	// THE TWIN. An ordinary config still parses and still reports no error, or
+	// THE TWIN. An ordinary config still reads and reports nothing wrong, or
 	// this rule would turn every machine's git into an unassessed row.
-	ordinary := sourceOf(map[string]string{"/etc/gitconfig": "[http]\n\tsslBackend = openssl\n"})
-	values, err = parse(ordinary, "/etc/gitconfig")
-	if err != nil {
-		t.Fatalf("an ordinary config reported %v", err)
-	}
-	if values["http.sslbackend"] != "openssl" {
-		t.Errorf("an ordinary config parsed to %v", values)
-	}
-
-	// AND A FILE THAT IS NOT THERE IS STILL NOT A FAILURE TO READ ONE. Absence is
-	// the ordinary state of a global gitconfig.
-	if _, err = parse(sourceOf(nil), "/nowhere"); err != nil {
-		t.Errorf("a config that does not exist reported %v", err)
+	settings = readSettings(sourceOf(map[string]string{"/etc/gitconfig": config}), "/etc/gitconfig", Environment{})
+	if settings.Unreadable != "" || settings.CAInfo != "/a.crt" {
+		t.Errorf("an ordinary config read as %+v", settings)
 	}
 }
 
@@ -639,8 +638,16 @@ func TestTheEnvironmentIsReadThroughTheLookupItIsHanded(t *testing.T) {
 	if !env.NoVerify || env.CAInfo != (Variable{Set: true}) || env.CAPath.Set || env.Platform != "linux" {
 		t.Errorf("read %+v, want empty-and-set told apart from unset", env)
 	}
-	if len(asked) != 3 {
-		t.Errorf("the lookup was asked for %d variables, want the three git reads: %v", len(asked), asked)
+	want := []string{"GIT_SSL_NO_VERIFY", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH", "HOME", "HOMEDRIVE", "HOMEPATH",
+		"USERPROFILE", "SystemRoot", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM",
+		"GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS"}
+	for _, name := range want {
+		if !asked[name] {
+			t.Errorf("the lookup was never asked for %s", name)
+		}
+	}
+	if len(asked) != len(want) {
+		t.Errorf("the lookup was asked for %d variables, want the %d git reads: %v", len(asked), len(want), asked)
 	}
 }
 
@@ -736,7 +743,7 @@ func TestAKeyStandingAloneIsTrue(t *testing.T) {
 		"/etc/gitconfig":        "[http]\n\tsslVerify = false\n",
 		"/home/jdoe/.gitconfig": "[http]\n\tsslVerify\n",
 	})
-	settings := readSettings(source, "/etc/gitconfig", []string{"/home/jdoe/.gitconfig"})
+	settings := readSettings(source, "/etc/gitconfig", Environment{Home: Variable{Value: "/home/jdoe", Set: true}})
 	if settings.Verify != "true" || settings.VerifyLevel != "global" {
 		t.Errorf("sslVerify %q at %q, want the bare global key read as true", settings.Verify, settings.VerifyLevel)
 	}

@@ -97,25 +97,6 @@ func TestWithNoProbesTheNoteSaysTheMatrixIsEmpty(t *testing.T) {
 	}
 }
 
-// The user-level config paths are COMPUTED HERE AND HANDED IN, so the probe
-// itself reads no environment and an assessment stays reproducible from its
-// input - the same rule redact follows.
-func TestTheGlobalGitConfigsAreNamedInPrecedenceOrder(t *testing.T) {
-	paths := globalGitConfigs()
-	if len(paths) == 0 {
-		t.Skip("this machine has no home directory, which the function reports by returning nothing")
-	}
-	if len(paths) != 2 {
-		t.Fatalf("%d global config path(s), want 2", len(paths))
-	}
-	if !strings.HasSuffix(paths[0], ".gitconfig") {
-		t.Errorf("the first path is %q, and git reads ~/.gitconfig first", paths[0])
-	}
-	if !strings.Contains(paths[1], "git") {
-		t.Errorf("the second path is %q, and git reads ~/.config/git/config", paths[1])
-	}
-}
-
 // liveEnvironment builds the real ports. Asking it for the probes proves the
 // wiring exists at all - without this the binary could ship with L5 wired to
 // nothing and every test above would still pass.

@@ -141,7 +141,16 @@ var descriptors = []Descriptor{
 			"a root kept only as a hashed link in /etc/ssl/certs was trusted while the named file lacked it. Read " +
 			"beside it in http.c and parse.c of git 2.54.0 at https://github.com/git/git/tree/v2.54.0 - the " +
 			"environment is read after the configuration and wins, each variable acts by being set at all, and a key " +
-			"standing alone is true.",
+			"standing alone is true. Which configuration git reads is read in config.c and path.c of the same tag " +
+			"and in compat/mingw.c of Git for Windows 2.55.0.windows.5, and measured the same day by S26 round 3, " +
+			"thirty steps in both images, each as the source predicts: ~/.gitconfig is read after the XDG file and " +
+			"wins over it, GIT_CONFIG_GLOBAL replaces both, GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM name and skip " +
+			"the system file, GIT_CONFIG_COUNT pairs win over every file, an include applies where it stands, a " +
+			"section for one URL beats the general key, and a syntax error stops git before it connects. Not " +
+			"followed, and the row says so: an [includeIf] or a URL section that sets one of the four keys, because " +
+			"which repository or address it applies to is not this probe's question, GIT_CONFIG_PARAMETERS, and on " +
+			"Windows a home directory that HOMEDRIVE and HOMEPATH put somewhere other than USERPROFILE, because " +
+			"telling which one git takes means looking at what may be a network share.",
 		FixSource: Documentation,
 		FixEvidence: "git-config, Documentation/config/http.adoc, read 2026-08-19 at " +
 			"https://git-scm.com/docs/git-config - http.sslCAInfo is \"File containing the certificates to verify the " +

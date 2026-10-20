@@ -13,12 +13,12 @@ import (
 
 // Probe builds the L5 probe for git.
 //
-// globalConfigs are the user-level config files, in git's precedence order. They
-// and env are passed in rather than derived here because this package must not
-// read the environment: the same rule redact follows, and for the same reason -
-// an assessment has to be reproducible from its input. files lists the
-// directories a build may read beside its CA file.
-func Probe(source file.Source, resolve file.Resolve, files file.List, globalConfigs []string, pathDirs []string, env Environment, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+// env is passed in rather than read here because this package must not read the
+// environment: the same rule redact follows, and for the same reason - an
+// assessment has to be reproducible from its input. Which configuration files
+// git reads is worked out from it, OBS179. files lists the directories a build
+// may read beside its CA file.
+func Probe(source file.Source, resolve file.Resolve, files file.List, pathDirs []string, env Environment, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(_ context.Context, chain [][]byte) ([]report.TrustStore, error) {
 		installs := find(source, resolve, systemConfigs, pathDirs)
 		if len(installs) == 0 {
@@ -30,7 +30,7 @@ func Probe(source file.Source, resolve file.Resolve, files file.List, globalConf
 
 		stores := make([]report.TrustStore, 0, len(installs))
 		for _, install := range installs {
-			store := storeFor(source, files, install, readSettings(source, install.SystemConfig, globalConfigs), env, chain, now())
+			store := storeFor(source, files, install, readSettings(source, install.SystemConfig, env), env, chain, now())
 			store.SelectedBy = selectedBy(install, pathDirs)
 			stores = append(stores, store)
 		}
@@ -59,6 +59,15 @@ func storeFor(source file.Source, files file.List, install Install, settings Set
 			settings.Unreadable
 		return store
 	}
+	// A KEY SET UNDER A CONDITION THIS PROGRAM DOES NOT EVALUATE DECIDES
+	// NOTHING EITHER - OBS179, decided by the owner 2026-10-20. Whether an
+	// [includeIf] holds depends on a repository and whether an [http "<url>"]
+	// section applies depends on the address, so the general value beside it is
+	// not known to be the one git uses.
+	if why := conditional(settings, env); why != "" {
+		store.NotAssessed = why
+		return store
+	}
 	// A GIT THAT DOES NOT VERIFY ASKS NO STORE, whichever backend it names -
 	// ADR110 part 1. Any store's answer here would be about a check git skips.
 	if why := verificationOff(settings, env); why != "" {
@@ -66,18 +75,18 @@ func storeFor(source file.Source, files file.List, install Install, settings Set
 		return store
 	}
 
-	switch settings.Backend {
-	case "openssl":
+	switch {
+	case settings.Backend == "openssl":
 		return judgedByAFile(store, source, files, settings, env, chain, now,
 			"git is set to use openssl and neither http.sslCAInfo nor GIT_SSL_CAINFO names a file, so the bundle it would "+
 				"read is its build-time default")
-	case "schannel":
+	case settings.Backend == "schannel":
 		// THE ANSWER BELONGS TO ANOTHER PROBE AND SAYING SO IS THE HONEST ROW.
 		// Reporting "trusted" here would mean this probe silently answered a
 		// question about the Windows store, which is system-store's job. Claiming
 		// failure would be worse.
 		store.NotAssessed = "this install is configured to use the platform store, which the system-store probe answers"
-	case "":
+	case settings.BackendLevel == "":
 		// NAMING NO BACKEND IS THE ORDINARY CASE, NOT AN ODD ONE, and saying
 		// otherwise was reporting our ignorance as news about somebody's machine
 		// - the shape OBS67 records, where a rule written to catch OUR mistake
@@ -103,11 +112,30 @@ func storeFor(source file.Source, files file.List, install Install, settings Set
 		}
 		store.NotAssessed = compiledIn
 	default:
+		// AN EMPTY BACKEND IS NAMED TOO - http.c hands it to
+		// curl_global_sslset, which knows no backend called that, and git stops.
 		store.NotAssessed = fmt.Sprintf(
 			"http.sslBackend is %q at the %s level, which this program does not know how to follow",
-			settings.Backend, level(settings.BackendLevel))
+			settings.Backend, settings.BackendLevel)
 	}
 	return store
+}
+
+// conditional names the first key set under a condition that would change what
+// this row says, or returns the empty string when none would. A git that does
+// not verify asks no store whatever the condition, and a variable git reads
+// after its configuration makes the configured key beside it irrelevant.
+func conditional(settings Settings, env Environment) string {
+	if env.NoVerify || len(settings.Conditional) == 0 {
+		return ""
+	}
+	overridden := map[string]bool{keyCAInfo: env.CAInfo.Set, keyCAPath: env.CAPath.Set}
+	for _, key := range decisiveKeys {
+		if why, present := settings.Conditional[key]; present && !overridden[key] {
+			return why
+		}
+	}
+	return settings.Conditional[""]
 }
 
 // verificationOff names what switched git's certificate check off, or returns
@@ -125,10 +153,10 @@ func verificationOff(settings Settings, env Environment) string {
 	switch {
 	case !read:
 		return fmt.Sprintf("http.sslVerify is %q at the %s level, which this program does not read as true or false",
-			settings.Verify, level(settings.VerifyLevel))
+			settings.Verify, settings.VerifyLevel)
 	case !on:
 		return fmt.Sprintf("http.sslVerify is false at the %s level, so git does not verify the server's certificate "+
-			"at all and no store decides what it makes of the chain", level(settings.VerifyLevel))
+			"at all and no store decides what it makes of the chain", settings.VerifyLevel)
 	}
 	return ""
 }
@@ -147,6 +175,11 @@ func verificationOff(settings Settings, env Environment) string {
 func judgedByAFile(store report.TrustStore, source file.Source, files file.List, settings Settings, env Environment,
 	chain [][]byte, now time.Time, nothingNamed string) report.TrustStore {
 	if named, directory := caDirectory(settings, env); named != "" {
+		if directory == "" {
+			store.NotAssessed = fmt.Sprintf("%s is set and empty, which git hands its libcurl as the name of a "+
+				"directory, and what the library then reads was not established", named)
+			return store
+		}
 		store.NotAssessed = fmt.Sprintf("%s names the directory %s, which git hands its libcurl beside any CA file, and "+
 			"which certificates there count depends on the TLS library it was built with, which this program does not check",
 			named, directory)
@@ -158,8 +191,8 @@ func judgedByAFile(store report.TrustStore, source file.Source, files file.List,
 		store.NotAssessed = nothingNamed
 		return store
 	case path == "":
-		store.NotAssessed = "GIT_SSL_CAINFO is set and empty, which git hands its libcurl as the name of a file, and " +
-			"what the library then reads was not established"
+		store.NotAssessed = fmt.Sprintf("%s is set and empty, which git hands its libcurl as the name of a file, and "+
+			"what the library then reads was not established", named)
 		return store
 	}
 
@@ -180,12 +213,14 @@ func judgedByAFile(store report.TrustStore, source file.Source, files file.List,
 	return store
 }
 
-// caFile is the file git hands its libcurl, and what named it.
+// caFile is the file git hands its libcurl, and what named it. A key written
+// with an empty value is set - git hands libcurl the empty name - so the level
+// says whether it was written, not the value.
 func caFile(settings Settings, env Environment) (named, path string) {
 	switch {
 	case env.CAInfo.Set:
 		return "GIT_SSL_CAINFO", env.CAInfo.Value
-	case settings.CAInfo != "":
+	case settings.CAInfoLevel != "":
 		return "http.sslCAInfo", settings.CAInfo
 	}
 	return "", ""
@@ -196,17 +231,10 @@ func caDirectory(settings Settings, env Environment) (named, path string) {
 	switch {
 	case env.CAPath.Set:
 		return "GIT_SSL_CAPATH", env.CAPath.Value
-	case settings.CAPath != "":
+	case settings.CAPathLevel != "":
 		return "http.sslCAPath", settings.CAPath
 	}
 	return "", ""
-}
-
-func level(l string) string {
-	if l == "" {
-		return "default"
-	}
-	return l
 }
 
 // selectedBy names what points at THIS installation, and an empty slice is an

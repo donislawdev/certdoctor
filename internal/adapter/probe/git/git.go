@@ -14,7 +14,6 @@
 package git
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -84,14 +83,17 @@ type Settings struct {
 	// all - an empty value is an answer here, because git reads it as false.
 	Verify      string
 	VerifyLevel string
-	// Unreadable names a config file this program could not read to the end -
-	// P3-1. bufio.Scanner stops on a line longer than its buffer and reports it
-	// only if somebody asks, and nobody did: a config whose reading stopped
-	// halfway came out as a config that simply does not set anything. The store
-	// path would then be missing, the row would say git uses its built-in
-	// default, and a remediation command could name the wrong file - all from a
-	// read that never finished. Empty means every file was read to the end.
+	// Unreadable says where git stops reading its configuration, or where this
+	// program cannot follow it - P3-1 and OBS179. A config whose reading stopped
+	// halfway once came out as a config that simply does not set anything: the
+	// store path was then missing, the row said git uses its built-in default,
+	// and a remediation command could name the wrong file - all from a read
+	// that never finished. Empty means everything git reads was read.
 	Unreadable string
+	// Conditional names, per key, the first place that sets it under a condition
+	// this program does not evaluate - an [includeIf] or an [http "<url>"]
+	// section, OBS179. The empty key stands for every key at once.
+	Conditional map[string]string
 }
 
 // Environment is what this package is handed by the entry point, so the package
@@ -104,12 +106,33 @@ type Environment struct {
 	CAInfo, CAPath Variable
 	// NoVerify is GIT_SSL_NO_VERIFY being set at all, whatever its value.
 	NoVerify bool
+
+	// The variables that decide WHICH configuration git reads - OBS179, sources
+	// on readSettings and gitHome. HomeDrive, HomePath, UserProfile and
+	// SystemRoot matter on Windows alone, where git computes its HOME from them.
+	Home, HomeDrive, HomePath, UserProfile, SystemRoot Variable
+	// XDGConfigHome counts only when it is not empty, as in path.c.
+	XDGConfigHome string
+	// GlobalConfig, SystemConfig and NoSystem are GIT_CONFIG_GLOBAL,
+	// GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM.
+	GlobalConfig, SystemConfig, NoSystem Variable
+	// Commands are the GIT_CONFIG_COUNT pairs in git's order, and CommandsBroken
+	// says where git stops reading them.
+	Commands       []Command
+	CommandsBroken string
+	// Parameters is GIT_CONFIG_PARAMETERS.
+	Parameters string
 }
 
 // Variable is one environment variable, where being set is an answer of its own.
 type Variable struct {
 	Value string
 	Set   bool
+}
+
+// Command is one GIT_CONFIG_KEY_<n> and GIT_CONFIG_VALUE_<n> pair, as written.
+type Command struct {
+	Key, Value string
 }
 
 // EnvironmentFrom reads every variable this package needs, through lookup.
@@ -127,12 +150,62 @@ func EnvironmentFrom(lookup func(string) (string, bool), platform string) Enviro
 		return Variable{Value: value, Set: set}
 	}
 	_, noVerify := lookup("GIT_SSL_NO_VERIFY")
+	xdg, _ := lookup("XDG_CONFIG_HOME")
+	parameters, _ := lookup("GIT_CONFIG_PARAMETERS")
+	commands, broken := commandsFrom(lookup)
 	return Environment{
-		Platform: platform,
-		CAInfo:   variable("GIT_SSL_CAINFO"),
-		CAPath:   variable("GIT_SSL_CAPATH"),
-		NoVerify: noVerify,
+		Platform:       platform,
+		CAInfo:         variable("GIT_SSL_CAINFO"),
+		CAPath:         variable("GIT_SSL_CAPATH"),
+		NoVerify:       noVerify,
+		Home:           variable("HOME"),
+		HomeDrive:      variable("HOMEDRIVE"),
+		HomePath:       variable("HOMEPATH"),
+		UserProfile:    variable("USERPROFILE"),
+		SystemRoot:     variable("SystemRoot"),
+		XDGConfigHome:  xdg,
+		GlobalConfig:   variable("GIT_CONFIG_GLOBAL"),
+		SystemConfig:   variable("GIT_CONFIG_SYSTEM"),
+		NoSystem:       variable("GIT_CONFIG_NOSYSTEM"),
+		Commands:       commands,
+		CommandsBroken: broken,
+		Parameters:     parameters,
 	}
+}
+
+// commandsFrom reads the GIT_CONFIG_COUNT pairs the way
+// git_config_from_parameters does, in config.c of git 2.54.0: the count is a
+// decimal number no larger than INT_MAX, and a pair missing its key or its value
+// stops git - S26 measured a count of two with one pair stopping git before it
+// connected. The walk ends at the first missing variable, so it is bounded by
+// the environment, whatever the count says.
+//
+// A count this program reads differently from strtoul - a sign other than a
+// plus, white space after the digits - is reported as stopping git, which
+// costs a verdict and never invents one.
+func commandsFrom(lookup func(string) (string, bool)) ([]Command, string) {
+	raw, set := lookup("GIT_CONFIG_COUNT")
+	if !set {
+		return nil, ""
+	}
+	digits := strings.TrimPrefix(strings.TrimLeft(raw, " \t\n\v\f\r"), "+")
+	count := uint64(0)
+	if raw != "" {
+		var err error
+		if count, err = strconv.ParseUint(digits, 10, 31); err != nil {
+			return nil, fmt.Sprintf("GIT_CONFIG_COUNT is %q, which git does not read as a count, and it stops there", raw)
+		}
+	}
+	var commands []Command
+	for i := uint64(0); i < count; i++ {
+		key, hasKey := lookup(fmt.Sprintf("GIT_CONFIG_KEY_%d", i))
+		value, hasValue := lookup(fmt.Sprintf("GIT_CONFIG_VALUE_%d", i))
+		if !hasKey || !hasValue {
+			return nil, fmt.Sprintf("GIT_CONFIG_COUNT is %d and pair %d of it is not set, and git stops there", count, i)
+		}
+		commands = append(commands, Command{Key: key, Value: value})
+	}
+	return commands, ""
 }
 
 // find returns every git installation this machine has.
@@ -233,60 +306,6 @@ func architectureOf(path string) string {
 	return "x64"
 }
 
-// readSettings applies the config files in git's own precedence order.
-//
-// SYSTEM FIRST, THEN GLOBAL, and later wins - which is git's documented order
-// and the reason the level travels with the value. Measured on this machine:
-// system sets sslBackend and sslCAInfo, the user's ~/.gitconfig sets only
-// http.postBuffer, so system is what actually decides.
-//
-// WHAT THIS DOES NOT READ, said here rather than discovered later. Repository
-// level config, because a probe answers about the MACHINE and there is no
-// repository in the question. Conditional includes and [http "<url>"] subsection
-// overrides, which can both change the answer for one specific remote - the
-// report says what the general setting is, and a subsection aimed at one host
-// would not show up. Neither is silent: both are named in the descriptor.
-// THE SYSTEM CONFIG ARRIVES NAMED RATHER THAN RECOGNISED, and that is a defect
-// removed rather than a tidier signature. The level used to be decided by
-// asking whether a path was in systemConfigs, which stopped being true the
-// moment a config could be found NEXT TO A BINARY: C:\Program Files\Git\mingw64
-// \etc\gitconfig is a system config that list has never heard of, and it would
-// have been reported at global level - in the one field that decides whether a
-// colleague needs the same fix or the opposite one.
-func readSettings(source file.Source, systemConfig string, globals []string) Settings {
-	var s Settings
-	if systemConfig != "" {
-		s.apply(source, systemConfig, "system")
-	}
-	for _, path := range globals {
-		s.apply(source, path, "global")
-	}
-	return s
-}
-
-// apply folds one config file into the settings, at the level it was read from.
-func (s *Settings) apply(source file.Source, path, level string) {
-	values, err := parse(source, path)
-	if err != nil && s.Unreadable == "" {
-		// THE FIRST ONE, AND IT DOES NOT STOP THE WALK. The later files may
-		// still be readable, and what they set is worth reading - what is not
-		// worth doing is concluding anything from what was NOT found.
-		s.Unreadable = fmt.Sprintf("%s could not be read to the end: %v", path, err)
-	}
-	for key, value := range values {
-		switch key {
-		case "http.sslbackend":
-			s.Backend, s.BackendLevel = value, level
-		case "http.sslcainfo":
-			s.CAInfo, s.CAInfoLevel = value, level
-		case "http.sslcapath":
-			s.CAPath, s.CAPathLevel = value, level
-		case "http.sslverify":
-			s.Verify, s.VerifyLevel = value, level
-		}
-	}
-}
-
 // boolean reads a value the way git reads a boolean, and says whether git reads
 // it at all.
 //
@@ -309,53 +328,6 @@ func boolean(value string) (on, read bool) {
 		return false, false
 	}
 	return n != 0, true
-}
-
-// parse reads the [http] section of one config file into lower-cased keys.
-//
-// IT READS ONLY WHAT IT UNDERSTANDS AND SAYS SO. git's config format has more in
-// it than this - subsections, includes, multi-valued keys - and a parser that
-// guessed at the rest would produce a confident wrong answer, which is worse
-// here than no answer. The keys this needs are plain scalars in the [http]
-// section on every machine measured.
-func parse(source file.Source, path string) (map[string]string, error) {
-	values := map[string]string{}
-	reader, err := source(path)
-	if err != nil {
-		// A FILE THAT IS NOT THERE IS NOT A FAILURE TO READ ONE. Absence is the
-		// ordinary state of a global gitconfig, and it says nothing was set.
-		return values, nil
-	}
-	defer func() { _ = reader.Close() }()
-
-	section := ""
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
-			continue
-		}
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section = strings.ToLower(strings.Trim(line, "[]"))
-			continue
-		}
-		if section == "" {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			// A KEY STANDING ALONE IS TRUE TO GIT - parse.c of 2.54.0 reads a
-			// value that is not there as true. Skipping it would let an earlier
-			// "sslVerify = false" stand where git verifies again.
-			value = "true"
-		}
-		values[section+"."+strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(value)
-	}
-	// P3-1. Scan returning false means "no more lines" OR "I stopped" - a line
-	// longer than the buffer, or a read that failed - and the two are told apart
-	// only by asking. Unasked, a config read halfway looks like a config that
-	// sets nothing.
-	return values, scanner.Err()
 }
 
 // readAll is the one place this package turns a port into bytes.

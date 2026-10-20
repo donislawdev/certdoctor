@@ -10,6 +10,28 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - git is judged by the configuration it actually reads
+
+- **`~/.gitconfig` wins over `~/.config/git/config`.** git reads the second
+  one first, so where both set the same key the row now judges the value git
+  uses - it used to judge the other one.
+- **git's other configuration channels are followed:** `GIT_CONFIG_GLOBAL`,
+  `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_NOSYSTEM`, `XDG_CONFIG_HOME`, the
+  `GIT_CONFIG_COUNT` pairs, and on Windows the home directory git computes from
+  `HOMEDRIVE` and `HOMEPATH` before `USERPROFILE`.
+- **The configuration is read the way git reads it** - a key on its section's
+  line, a comment after a value, quoted values and escapes, an `[include]`
+  applied where it stands, `~/` and `:(optional)` in a path. A file git stops
+  on - a syntax error, a CA path with no value, includes nested past ten -
+  leaves the row without a verdict, where it used to read as setting nothing.
+- **What this program does not follow is named instead of skipped:** an
+  `[includeIf]` or an `[http "<url>"]` section that sets `http.sslBackend`,
+  `http.sslCAInfo`, `http.sslCAPath` or `http.sslVerify`, and
+  `GIT_CONFIG_PARAMETERS`.
+- **An empty `http.sslCAInfo` or `http.sslCAPath` is reported as set and
+  empty**, as an empty `GIT_SSL_CAINFO` already was, rather than as nothing
+  named.
+
 ### Fixed - curl and git are judged by the file they actually read
 
 - **git follows `GIT_SSL_CAINFO` and `GIT_SSL_CAPATH`.** git reads them after

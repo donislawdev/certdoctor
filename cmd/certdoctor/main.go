@@ -495,7 +495,7 @@ func liveTrustProbes() map[string]trust.Probe {
 		// and only the second is repaired by importing anything. Left to itself
 		// crypto/x509 would read the clock behind the probe's back, which is the
 		// one thing that stops an assessment being reproducible from its input.
-		"git":  git.Probe(guarded, resolvePath, files, globalGitConfigs(), paths, gitEnv, time.Now),
+		"git":  git.Probe(guarded, resolvePath, files, paths, gitEnv, time.Now),
 		"java": java.Probe(guarded, resolvePath, probe.Run, javaCandidates(), os.Getenv("JAVA_HOME"), paths, time.Now),
 		"curl": curl.Probe(guarded, resolvePath, files, probe.Run, paths, curlEnv, time.Now),
 	}
@@ -510,29 +510,11 @@ func liveTrustProbes() map[string]trust.Probe {
 	return probes
 }
 
-// globalGitConfigs names the user-level git config files, in git's own
-// precedence order.
-//
-// THEY ARE COMPUTED HERE AND HANDED IN because the probe reads no environment -
-// the same rule redact follows, so an assessment stays reproducible from its
-// input. A home directory that cannot be determined yields no paths rather than
-// a guess, and the probe then reports what the system level alone decides.
-func globalGitConfigs() []string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
-	}
-	return []string{
-		filepath.Join(home, ".gitconfig"),
-		filepath.Join(home, ".config", "git", "config"),
-	}
-}
-
 // accountHome is the home directory the user database gives the account this
 // program runs as - the last place curl's tool looks for its configuration file
 // outside Windows, getpwuid(geteuid()) in src/tool_findfile.c of curl 8.21.0.
 //
-// IT IS ASKED HERE AND HANDED IN, like PATH and the git config paths, so the
+// IT IS ASKED HERE AND HANDED IN, like PATH and git's environment, so the
 // probe reads nothing of its own. Not established is an empty answer, and that
 // place is then not asked: a release build has no cgo, so os/user reads
 // /etc/passwd alone, and an account known only to a directory service is not in
@@ -550,7 +532,7 @@ func accountHome() string {
 
 // pathDirectories splits PATH into the directories a typed command searches.
 //
-// IT IS READ HERE AND HANDED IN, like the git config paths beside it, so the
+// IT IS READ HERE AND HANDED IN, like git's environment beside it, so the
 // probe reads no environment of its own and an assessment stays reproducible
 // from its input. An empty PATH yields no directories rather than a guess, and
 // every install then reports that nothing selects it - which is true.
