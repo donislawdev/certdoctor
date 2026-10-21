@@ -64,6 +64,9 @@ type Hit struct {
 	Path string
 	// Name is which of the names it carries.
 	Name string
+	// Package is the package an app execution alias belongs to, and empty for a
+	// file - see OnPathOrAliases.
+	Package string
 }
 
 // OnPath is the walk Binaries consumes, without its folding: every readable file
@@ -76,14 +79,40 @@ type Hit struct {
 // name reaches which interpreter is part of that probe's answer. The walk stays
 // here, once, for the reason Binaries gives.
 func OnPath(open func(string) (io.ReadCloser, error), pathDirs []string, names ...string) []Hit {
+	return walk(open, nil, pathDirs, names)
+}
+
+// OnPathOrAliases is OnPath that also keeps Windows' app execution aliases, in
+// the place PATH reaches them - ADR112, decided by the owner 2026-10-21.
+//
+// AN ALIAS IS A FILE NOTHING CAN READ, so OnPath leaves it out, and on a machine
+// where Python came from the Microsoft Store it is the only python on PATH. alias
+// is asked only about a path that gave up no byte, and names the package behind
+// it - which program it starts is for the probe to learn, because the alias names
+// a file inside a package this program may not read. Every other probe keeps
+// OnPath: none of them was measured on an alias.
+func OnPathOrAliases(open func(string) (io.ReadCloser, error), alias func(string) (string, error), pathDirs []string,
+	names ...string) []Hit {
+	return walk(open, alias, pathDirs, names)
+}
+
+// walk is the one walk both of them make. A nil alias asks nothing.
+func walk(open func(string) (io.ReadCloser, error), alias func(string) (string, error), pathDirs, names []string) []Hit {
 	var hits []Hit
 	for _, dir := range pathDirs {
 		for _, name := range names {
 			path := filepath.Clean(filepath.Join(dir, name))
-			if !readableFile(open, path) {
+			if readableFile(open, path) {
+				hits = append(hits, Hit{Path: path, Name: name})
 				continue
 			}
-			hits = append(hits, Hit{Path: path, Name: name})
+			if alias == nil {
+				continue
+			}
+			// A package with no name would make the hit look like a file.
+			if pkg, err := alias(path); err == nil && pkg != "" {
+				hits = append(hits, Hit{Path: path, Name: name, Package: pkg})
+			}
 		}
 	}
 	return hits

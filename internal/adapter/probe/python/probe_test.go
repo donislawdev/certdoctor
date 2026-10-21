@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
@@ -174,10 +175,22 @@ type world struct {
 	errs     map[string]error
 	calls    []call
 	withheld []string
+	// aliases are app execution aliases, path to package. The disk does not
+	// hold them, as Windows does not let them be read.
+	aliases map[string]string
 }
 
 func newWorld(platform string) *world {
-	return &world{disk: newDisk(), platform: platform, replies: map[string]probe.Output{}, errs: map[string]error{}}
+	return &world{disk: newDisk(), platform: platform, replies: map[string]probe.Output{}, errs: map[string]error{},
+		aliases: map[string]string{}}
+}
+
+// alias is the alias port over the world's aliases.
+func (w *world) alias(path string) (string, error) {
+	if pkg, ok := w.aliases[filepath.Clean(path)]; ok {
+		return pkg, nil
+	}
+	return "", errors.New("not an app execution alias")
 }
 
 // rows runs the probe and checks every row against the contract.
@@ -191,7 +204,7 @@ func (w *world) rows(t *testing.T, chain [][]byte) []report.TrustStore {
 		w.withheld = append(w.withheld, names...)
 		return run
 	}
-	stores, err := Probe(w.disk.source, w.disk.resolve, w.disk.list, start, w.path, w.platform, atNoon)(
+	stores, err := Probe(w.disk.source, w.disk.resolve, w.alias, w.disk.list, start, w.path, w.platform, atNoon)(
 		context.Background(), chain)
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
@@ -287,12 +300,12 @@ func TestEveryInterpreterIsOneRowWhateverLeadsToIt(t *testing.T) {
 	}
 }
 
-// NO PYTHON IS NO ROW, NOT A FAILURE - docs/20 rule 1.
+// NO PYTHON IS NO ROW, NOT A FAILURE - docs/20 rule 1 - and nothing is started.
 func TestNoPythonIsNoRow(t *testing.T) {
 	w := newWorld("linux")
 	w.path = []string{abs("/usr/bin")}
-	if stores := w.rows(t, nil); stores != nil || len(w.withheld) != 0 {
-		t.Errorf("a machine without python gave %v and started %v", stores, w.withheld)
+	if stores := w.rows(t, nil); stores != nil || len(w.calls) != 0 {
+		t.Errorf("a machine without python gave %v and started %v", stores, w.calls)
 	}
 }
 
@@ -406,6 +419,136 @@ func TestOnWindowsAliasesAndLaunchersLeadToTheirInterpreter(t *testing.T) {
 	}
 	if stores[0].StoreForm != report.StoreSystem || stores[0].StorePath != "" {
 		t.Errorf("python on Windows reads the platform's stores, got %s %q", stores[0].StoreForm, stores[0].StorePath)
+	}
+}
+
+// The Windows machine the alias tests share: WindowsApps, the install manager's
+// own directory, and the runtime both lead to.
+var (
+	windowsApps   = abs("/Users/jdoe/AppData/Local/Microsoft/WindowsApps")
+	managerBin    = abs("/Users/jdoe/AppData/Local/Python/bin")
+	managerCore   = abs("/Users/jdoe/AppData/Local/Python/pythoncore-3.15-64/python.exe")
+	pythonManager = "PythonSoftwareFoundation.PythonManager_qbz5n2kfra8p0"
+)
+
+// started is the answer of an interpreter that says where it was started from.
+func started(executable string, a answer) answer {
+	a.Executable = executable
+	return a
+}
+
+// AN APP EXECUTION ALIAS IS ASKED WHICH INTERPRETER IT STARTS, AND THE ANSWER IS
+// KEPT - ADR112, decided by the owner. Measured on the owner's machine: the
+// install manager's python.exe in WindowsApps started pythoncore-3.15-64, the
+// interpreter its own python.exe names in .__target__. So the aliases and the
+// manager's files are one row, the interpreter is not asked a third time, and a
+// pip alias - never started - still takes its name from the pip behind it.
+func TestAnAppAliasIsAskedWhichInterpreterItIs(t *testing.T) {
+	b := newBench(t)
+	w := newWorld("windows")
+	w.path = []string{windowsApps, managerBin}
+	for _, name := range []string{"python.exe", "python3.exe", "pip.exe"} {
+		w.aliases[filepath.Join(windowsApps, name)] = pythonManager
+		w.replies[filepath.Join(windowsApps, name)] = replyOf(t, started(managerCore, listing(0x8000, b.root)))
+	}
+	for _, name := range []string{"python.exe", "pip.exe"} {
+		w.disk.put(filepath.Join(managerBin, name), "MZ")
+		w.disk.put(filepath.Join(managerBin, name)+".__target__", managerCore+"\r\n")
+	}
+	w.disk.put(managerCore, "MZ")
+
+	stores := w.rows(t, b.chain())
+	if len(stores) != 1 || stores[0].Instance != managerCore ||
+		!slices.Equal(stores[0].SelectedBy, []string{"PATH", "python", "python3"}) {
+		t.Fatalf("got %+v", stores)
+	}
+	if got := trustOf(stores[0]); got != "trusted" {
+		t.Errorf("the row is %s (%q)", got, stores[0].NotAssessed)
+	}
+	var ran []string
+	for _, c := range w.calls {
+		ran = append(ran, filepath.Base(c.binary))
+		if !slices.Equal(c.args, arguments) {
+			t.Errorf("%s was started with %v", c.binary, c.args)
+		}
+	}
+	if !slices.Equal(ran, []string{"python.exe", "python3.exe"}) || filepath.Dir(w.calls[0].binary) != windowsApps {
+		t.Errorf("started %+v", w.calls)
+	}
+}
+
+// AN INTERPRETER FOUND BEFORE ITS ALIAS IS NOT ASKED TWICE - the order of PATH
+// on the owner's machine, where the install manager's directory comes first.
+func TestAnInterpreterFoundBeforeItsAliasIsAskedOnce(t *testing.T) {
+	b := newBench(t)
+	w := newWorld("windows")
+	w.path = []string{managerBin, windowsApps}
+	w.disk.put(filepath.Join(managerBin, "python.exe"), "MZ")
+	w.disk.put(filepath.Join(managerBin, "python.exe")+".__target__", managerCore)
+	w.disk.put(managerCore, "MZ")
+	alias := filepath.Join(windowsApps, "python3.exe")
+	w.aliases[alias] = pythonManager
+	w.replies[alias] = replyOf(t, started(managerCore, listing(0x8000, b.root)))
+
+	stores := w.rows(t, b.chain())
+	if len(stores) != 1 || !slices.Equal(stores[0].SelectedBy, []string{"PATH", "python", "python3"}) {
+		t.Fatalf("got %+v", stores)
+	}
+	if got := trustOf(stores[0]); got != "trusted" {
+		t.Errorf("the row is %s (%q)", got, stores[0].NotAssessed)
+	}
+	if len(w.calls) != 1 || w.calls[0].binary != alias {
+		t.Errorf("started %+v", w.calls)
+	}
+}
+
+// THE STORE'S STAND-IN IS NEVER STARTED, AND IT KEEPS ITS NAME - typing python
+// on that machine reaches the stand-in, not the Python later on PATH. The package
+// is compared as Windows compares it, without case.
+func TestTheStoresStandInIsNeverStarted(t *testing.T) {
+	b := newBench(t)
+	w := newWorld("windows")
+	real := filepath.Join(abs("/Python313"), "python.exe")
+	w.path = []string{windowsApps, filepath.Dir(real)}
+	w.aliases[filepath.Join(windowsApps, "python.exe")] = strings.ToLower(storeStandIn)
+	w.aliases[filepath.Join(windowsApps, "python3.exe")] = storeStandIn
+	w.disk.put(real, "MZ")
+	w.replies[real] = replyOf(t, listing(0x8000, b.root))
+
+	stores := w.rows(t, b.chain())
+	if len(stores) != 1 || stores[0].Instance != real || !slices.Equal(stores[0].SelectedBy, []string{"PATH"}) {
+		t.Fatalf("got %+v", stores)
+	}
+	if len(w.calls) != 1 || w.calls[0].binary != real {
+		t.Errorf("started %+v", w.calls)
+	}
+}
+
+// AN ALIAS THAT DOES NOT SAY WHICH INTERPRETER IT IS GETS ONE ROW PER PACKAGE -
+// a failed start says so on the row, and an answer without sys.executable is
+// judged as it came. Two packages are two rows.
+func TestAnAliasThatDoesNotSayWhichItIsIsOneRowPerPackage(t *testing.T) {
+	b := newBench(t)
+	w := newWorld("windows")
+	w.path = []string{windowsApps, abs("/Other/WindowsApps")}
+	failing, silent := filepath.Join(windowsApps, "python.exe"), filepath.Join(abs("/Other/WindowsApps"), "python.exe")
+	w.aliases[failing] = pythonManager
+	w.aliases[filepath.Join(windowsApps, "python3.exe")] = strings.ToUpper(pythonManager)
+	w.replies[failing] = probe.Output{ExitCode: 1}
+	w.replies[filepath.Join(windowsApps, "python3.exe")] = probe.Output{ExitCode: 1}
+	w.aliases[silent] = "Someone.Python_1234567890abc"
+	w.replies[silent] = replyOf(t, started("python.exe", listing(0x8000, b.root)))
+
+	stores := w.rows(t, b.chain())
+	if len(stores) != 2 {
+		t.Fatalf("got %d rows: %+v", len(stores), stores)
+	}
+	if stores[0].Instance != failing || !slices.Equal(stores[0].SelectedBy, []string{"PATH", "python", "python3"}) ||
+		stores[0].NotAssessed != "python exited with 1 when asked for its certificate list" {
+		t.Errorf("the failing alias gave %+v", stores[0])
+	}
+	if stores[1].Instance != silent || trustOf(stores[1]) != "trusted" {
+		t.Errorf("the alias with no executable gave %+v", stores[1])
 	}
 }
 
@@ -661,22 +804,26 @@ func TestPythonStartsWithoutTheNamedVariablesAndRunsOnlyTheScript(t *testing.T) 
 // reads. A script whose output drifted from the struct would pass every test
 // above. It is skipped where no Python is on PATH.
 func TestTheScriptRunsOnThePythonThisMachineHas(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	open := func(path string) (io.ReadCloser, error) { return os.Open(path) }
-	found := interpreters(open, nil, filepath.SplitList(os.Getenv("PATH")), runtime.GOOS)
+	m := machine{source: open, alias: file.LiveAppAlias(), run: probe.Without(withheld...), platform: runtime.GOOS}
+	found := m.interpreters(ctx, filepath.SplitList(os.Getenv("PATH")))
 	if len(found) == 0 {
 		t.Skip("no python on PATH, so there is nothing to ask")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	a, why := ask(ctx, probe.Without(withheld...), found[0].path)
+	a, why := found[0].reply, found[0].why
+	if !found[0].asked {
+		a, why = ask(ctx, m.run, found[0].path)
+	}
 	if why != "" {
 		t.Fatalf("%s did not answer: %s", found[0].path, why)
 	}
-	if strings.Count(a.Version, ".") != 2 {
-		t.Errorf("the version is %q", a.Version)
+	if strings.Count(a.Version, ".") != 2 || !filepath.IsAbs(a.Executable) {
+		t.Errorf("the version is %q and the executable %q", a.Version, a.Executable)
 	}
-	t.Logf("%s %s: flags %#x, %d certificates, file %v, directory %q", found[0].path, a.Version, *a.Flags, len(a.DER),
-		a.CAFile != nil, a.DirDefault)
+	t.Logf("%s %s at %s: flags %#x, %d certificates, file %v, directory %q", found[0].path, a.Version, a.Executable,
+		*a.Flags, len(a.DER), a.CAFile != nil, a.DirDefault)
 }
 
 // A FILE THAT IS GONE BY THE TIME IT IS READ LEADS NOWHERE - the walk opened it,

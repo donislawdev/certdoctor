@@ -163,6 +163,46 @@ func TestTheWalkKeepsEverySpellingWithItsName(t *testing.T) {
 	}
 }
 
+// AN ALIAS TAKES ITS PLACE ON PATH, AND ONLY A FILE THAT GAVE NO BYTE IS ASKED
+// ABOUT - ADR112. A readable file is never taken for an alias, a path the alias
+// port refuses or names no package for is no hit, and OnPath asks nothing.
+func TestTheWalkKeepsAnAliasWherePathReachesIt(t *testing.T) {
+	apps := hostSpelling(`C:\Users\jdoe\AppData\Local\Microsoft\WindowsApps`)
+	python := hostSpelling(`C:\Python313\python.exe`)
+	source := sourceOf(map[string]string{python: "MZ"})
+	var asked []string
+	alias := func(path string) (string, error) {
+		asked = append(asked, path)
+		switch filepath.Base(path) {
+		case "python.exe":
+			return "PythonSoftwareFoundation.PythonManager_qbz5n2kfra8p0", nil
+		case "pip.exe":
+			return "", nil
+		}
+		return "", errors.New("not an alias")
+	}
+	dirs := []string{apps, filepath.Dir(python)}
+	hits := OnPathOrAliases(source, alias, dirs, "python.exe", "python3.exe", "pip.exe")
+	want := []Hit{
+		{Path: filepath.Join(apps, "python.exe"), Name: "python.exe", Package: "PythonSoftwareFoundation.PythonManager_qbz5n2kfra8p0"},
+		{Path: python, Name: "python.exe"},
+	}
+	if len(hits) != len(want) || hits[0] != want[0] || hits[1] != want[1] {
+		t.Errorf("got %v, want %v", hits, want)
+	}
+	for _, path := range asked {
+		if path == python {
+			t.Errorf("a readable file was asked about as an alias")
+		}
+	}
+	if len(asked) != 5 {
+		t.Errorf("asked about %v", asked)
+	}
+	if hits := OnPath(source, dirs, "python.exe"); len(hits) != 1 || hits[0].Path != python {
+		t.Errorf("OnPath found %v", hits)
+	}
+}
+
 // A DIRECTORY IS NOT A BINARY, AND OPENING IT DOES NOT SAY SO. Measured on both
 // platforms 2026-09-02: os.Open succeeds on a directory and only the read tells
 // them apart. Without the byte, a directory named git inside a PATH entry would

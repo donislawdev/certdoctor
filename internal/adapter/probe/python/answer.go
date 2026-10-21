@@ -31,11 +31,16 @@ import (
 // https://github.com/openssl/openssl/blob/openssl-3.5/crypto/x509/by_dir.c -
 // while get_default_verify_paths keeps the variable only when it names one
 // directory that exists. So the variable itself is sent.
+//
+// THE INTERPRETER ALSO SAYS WHICH FILE IT IS, because an app execution alias
+// names only the package that answers it - ADR112 - and sys.executable is the
+// interpreter's own word for where it was started from.
 const script = `import base64, json, os, ssl, sys
 c = ssl.create_default_context()
 p = ssl.get_default_verify_paths()
 sys.stdout.write(json.dumps({
     'version': '%d.%d.%d' % tuple(sys.version_info[:3]),
+    'executable': sys.executable,
     'flags': int(c.verify_flags),
     'cafile': p.cafile,
     'dir_env': os.environ.get(p.openssl_capath_env),
@@ -67,6 +72,11 @@ const (
 // answer is what the script prints.
 type answer struct {
 	Version string `json:"version"`
+	// Executable is sys.executable - empty, or None and so empty here, when
+	// Python cannot tell where it was started from: the sys module's
+	// documentation, read 2026-10-21 at
+	// https://docs.python.org/3/library/sys.html#sys.executable
+	Executable string `json:"executable"`
 	// Flags is a pointer so that an answer without it is told from a context
 	// with no flags at all.
 	Flags *int64 `json:"flags"`

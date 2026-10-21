@@ -8,12 +8,13 @@ import (
 
 // Live returns the real plumbing behind the two ports in this package.
 //
-// THIS IS THE ONLY FILE IN THIS PACKAGE THAT TOUCHES A DISK, and the package
-// comment in file.go says the rest of it does not. Both statements have to stay
-// true together: the rule lives there and is a pure function of what it is
-// handed, the plumbing lives here and is named on the file allowlist in
-// reach_test.go. Keeping them apart is what makes the number of places in this
-// program able to turn a path into bytes something a person can count.
+// THIS IS THE ONLY FILE IN THIS PACKAGE THAT TOUCHES A DISK, with its Windows
+// half in live_windows.go, and the package comment in file.go says the rest of
+// it does not. Both statements have to stay true together: the rule lives there
+// and is a pure function of what it is handed, the plumbing lives here and is
+// named on the file allowlist in reach_test.go. Keeping them apart is what makes
+// the number of places in this program able to turn a path into bytes something
+// a person can count.
 //
 // NEITHER FUNCTION CHECKS ANYTHING. That is deliberate and it is the whole
 // shape: Guarded judges the path as written, resolves links, judges what they
@@ -32,6 +33,11 @@ func LiveList() List { return liveList }
 // that is not a directory. L5 needs it for the certificate directories a Linux
 // distribution keeps beside its bundle - ADR104.
 func LiveFiles() List { return liveFiles }
+
+// LiveAppAlias is the port for Windows' app execution aliases, which Source
+// cannot open - ADR112. Its plumbing is in live_windows.go, and elsewhere it
+// refuses every path.
+func LiveAppAlias() AppAlias { return liveAppAlias }
 
 // liveSource opens a path for reading and nothing else.
 //

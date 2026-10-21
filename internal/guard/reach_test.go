@@ -180,6 +180,13 @@ var fileReadAllowlist = map[string]bool{
 	// the count of places able to turn a path into bytes goes up by one and stays
 	// readable.
 	"internal/adapter/file/live.go": true,
+
+	// Its Windows half, added 2026-10-21 with ADR112: an app execution alias
+	// cannot be opened as a file, so its reparse point is read through syscall.
+	// The path comes from PATH - somebody else's configuration - and reaches this
+	// file only through GuardedAppAlias, which judges it as live.go's paths are
+	// judged.
+	"internal/adapter/file/live_windows.go": true,
 }
 
 // fileReachingCalls are the standard library calls that make a path touch a
@@ -212,6 +219,20 @@ var fileReachingCalls = map[string]map[string]bool{
 		"Walk":         true,
 		"WalkDir":      true,
 		"Glob":         true,
+	},
+	// syscall IS THE THIRD ENTRY, added 2026-10-21 before the first call to it
+	// that opens a path - the app execution alias port of ADR112. CreateFile on a
+	// UNC name is the same connection os.Open makes, and until this entry the
+	// scanner would not have seen it. The others are the remaining calls of the
+	// package that take a path and go and look.
+	"syscall": {
+		"CreateFile":          true,
+		"Open":                true,
+		"Stat":                true,
+		"Lstat":               true,
+		"GetFileAttributes":   true,
+		"GetFileAttributesEx": true,
+		"FindFirstFile":       true,
 	},
 }
 
@@ -317,6 +338,9 @@ func TestTheReachGuardsCanFail(t *testing.T) {
 	// code: the file port's resolver is built on this exact call, and until
 	// 2026-08-05 this scanner could not see it.
 	requireViolation(t, violations, "filepath.EvalSymlinks")
+	// The fourth was added with the first call of its kind, 2026-10-21: the alias
+	// port reads a reparse point with syscall.CreateFile.
+	requireViolation(t, violations, "syscall.CreateFile")
 
 	// The widening guard, added 2026-09-03. Its canary matters more than the
 	// other two, not less: the list it consults has a single entry and the check

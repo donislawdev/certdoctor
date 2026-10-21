@@ -35,16 +35,17 @@ var withheld = []string{"SSLKEYLOGFILE", "OPENSSL_CONF"}
 // start makes the runner from the variables to withhold, and this package names
 // them, as for curl and node. platform decides the names on PATH, the form of the
 // store and the separator SSL_CERT_DIR is split by. files lists the hashed
-// directory.
-func Probe(source file.Source, resolve file.Resolve, files file.List, start func(withheld ...string) probe.Runner,
-	pathDirs []string, platform string, now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
+// directory, and alias reads Windows' app execution aliases.
+func Probe(source file.Source, resolve file.Resolve, alias file.AppAlias, files file.List,
+	start func(withheld ...string) probe.Runner, pathDirs []string, platform string,
+	now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
-		found := interpreters(source, resolve, pathDirs, platform)
+		host := machine{source: source, resolve: resolve, alias: alias, files: files, run: start(withheld...), platform: platform}
+		found := host.interpreters(ctx, pathDirs)
 		if len(found) == 0 {
 			// NOT AN ERROR - docs/20 rule 1. No Python is not a fact about trust.
 			return nil, nil
 		}
-		host := machine{source: source, resolve: resolve, files: files, run: start(withheld...), platform: platform}
 		stores := make([]report.TrustStore, 0, len(found))
 		for _, in := range found {
 			stores = append(stores, host.storeFor(ctx, in, chain, now()))
@@ -57,6 +58,7 @@ func Probe(source file.Source, resolve file.Resolve, files file.List, start func
 type machine struct {
 	source   file.Source
 	resolve  file.Resolve
+	alias    file.AppAlias
 	files    file.List
 	run      probe.Runner
 	platform string
@@ -72,7 +74,10 @@ func (m machine) storeFor(ctx context.Context, in interpreter, chain [][]byte, n
 		SelectedBy: in.selectedBy,
 		StoreForm:  report.StoreSystem,
 	}
-	a, why := ask(ctx, m.run, in.path)
+	a, why := in.reply, in.why
+	if !in.asked {
+		a, why = ask(ctx, m.run, in.path)
+	}
 	if why != "" {
 		store.NotAssessed = why
 		return store

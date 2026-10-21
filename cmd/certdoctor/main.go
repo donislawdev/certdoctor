@@ -504,9 +504,11 @@ func liveTrustProbes() map[string]trust.Probe {
 		// and OBS189.
 		"curl":             curl.Probe(guarded, resolvePath, files, probe.Without, paths, curlEnv, time.Now),
 		report.RuntimeNode: node.Probe(guarded, resolvePath, probe.Without, paths, node.EnvironmentFrom(os.LookupEnv, runtime.GOOS), time.Now),
-		// python is started through probe.Without too, and reads its hashed
-		// directory through the same listing port as git and curl - ADR112.
-		report.RuntimePython: python.Probe(guarded, resolvePath, files, probe.Without, paths, runtime.GOOS, time.Now),
+		// python is started through probe.Without too, reads its hashed directory
+		// through the same listing port as git and curl, and Windows' app
+		// execution aliases through a port of their own - ADR112.
+		report.RuntimePython: python.Probe(guarded, resolvePath, file.GuardedAppAlias(file.LiveAppAlias(), resolvePath, nil),
+			files, probe.Without, paths, runtime.GOOS, time.Now),
 	}
 	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - Windows by
 	// ADR103, Linux by ADR104. Elsewhere there is no probe rather than one

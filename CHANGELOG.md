@@ -43,8 +43,13 @@ Barely diagnosable yet, and there has been no release.
 - **The interpreter runs none of your code.** It is started with `-I -S -B`, so
   `PYTHONPATH`, `.pth` files and `sitecustomize` are not read and no bytecode is
   written, and without `SSLKEYLOGFILE` and `OPENSSL_CONF`.
-- A Python reachable only through the Microsoft Store's app alias in
-  `WindowsApps` is not found yet.
+- **A Python started through an app alias in `WindowsApps` is found too.** The
+  alias is started with the same script and the interpreter says which one it
+  is, so it shares a row with that interpreter wherever else PATH reaches it.
+  The stand-in that offers to install Python from the Microsoft Store is never
+  started, and neither is an alias of pip - both still take the command name,
+  since typing it reaches them first. Measured with the Python install manager,
+  not with Python from the Microsoft Store.
 
 ### Changed - a curl row it cannot assess says what that curl reads
 

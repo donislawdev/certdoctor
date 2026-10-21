@@ -3,6 +3,7 @@ package python
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"io"
 	"path/filepath"
@@ -19,6 +20,11 @@ type interpreter struct {
 	path string
 	// selectedBy is PATH, then each command whose first hit on PATH leads here.
 	selectedBy []string
+	// asked says the interpreter was already asked, through an app execution
+	// alias, and reply and why are what it said - so it is not asked twice.
+	asked bool
+	reply answer
+	why   string
 }
 
 // commands are the four names a person types, as they sit on disk here. pip
@@ -44,30 +50,84 @@ func commands(platform string) []string {
 // A later hit is shadowed - a person typing the command never reaches it - so its
 // interpreter keeps the row and not the name. A first hit this cannot follow
 // still takes the name, so no later hit claims it.
-func interpreters(source file.Source, resolve file.Resolve, pathDirs []string, platform string) []interpreter {
+func (m machine) interpreters(ctx context.Context, pathDirs []string) []interpreter {
 	var found []interpreter
 	at := map[string]int{}
 	typed := map[string]bool{}
-	for _, hit := range probe.OnPath(source, pathDirs, commands(platform)...) {
+	for _, hit := range probe.OnPathOrAliases(m.source, m.alias, pathDirs, commands(m.platform)...) {
 		command := strings.TrimSuffix(hit.Name, ".exe")
 		first := !typed[command]
 		typed[command] = true
-		target := leadsTo(source, pathDirs, platform, hit)
-		if target == "" {
+		in, key := m.follow(ctx, pathDirs, hit)
+		if in.path == "" {
 			continue
 		}
-		key := identity(source, resolve, target)
 		i, known := at[key]
-		if !known {
+		switch {
+		case !known:
 			i = len(found)
 			at[key] = i
-			found = append(found, interpreter{path: target, selectedBy: []string{"PATH"}})
+			in.selectedBy = []string{"PATH"}
+			found = append(found, in)
+		case in.asked && !found[i].asked:
+			// Found before and not yet asked, and an alias leading to it just was.
+			found[i].asked, found[i].reply, found[i].why = true, in.reply, in.why
 		}
 		if first {
 			found[i].selectedBy = append(found[i].selectedBy, command)
 		}
 	}
 	return found
+}
+
+// follow is the interpreter one hit leads to and the key it is told apart by, or
+// an interpreter with no path when that cannot be learned.
+func (m machine) follow(ctx context.Context, pathDirs []string, hit probe.Hit) (interpreter, string) {
+	if hit.Package != "" {
+		return m.appAlias(ctx, hit)
+	}
+	target := leadsTo(m.source, pathDirs, m.platform, hit)
+	if target == "" {
+		return interpreter{}, ""
+	}
+	return interpreter{path: target}, identity(m.source, m.resolve, target)
+}
+
+// storeStandIn is the package behind the python and python3 a Windows with no
+// Python has: App Installer's PythonRedirector - the manifest of App Installer
+// 1.29.380.0, read on the owner's machine 2026-10-21, declares both aliases for
+// it, and lets an installed Python take them over.
+const storeStandIn = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe"
+
+// appAlias is the interpreter an app execution alias starts - ADR112, decided by
+// the owner 2026-10-21.
+//
+// WHAT AN ALIAS STARTS CANNOT BE READ OFF THE DISK, so the interpreter is asked
+// and names itself in sys.executable. The alias names a file inside the package
+// behind it, and for the Python install manager that file is the manager's own
+// launcher, which starts whichever runtime is its default - measured with probe
+// S28 on the owner's machine: python.exe of PythonManager 26.4 named its own
+// python.exe, and started pythoncore-3.15-64. An alias that gives no answer, or
+// no absolute path, is told apart by its package, so the aliases of one package
+// that says nothing are one row and not one per name.
+//
+// THE STORE'S STAND-IN IS NOT STARTED: on every run it would give a row for a
+// Python that is not there, and what it does with arguments is known only from
+// forums - ADR112. Nor is an alias of pip, which starts pip and would hand the
+// script's arguments to pip's code - ADR112 part 6. Both still take the name,
+// because a person typing it reaches them and nothing later on PATH. Python from
+// the Microsoft Store was not measured.
+func (m machine) appAlias(ctx context.Context, hit probe.Hit) (interpreter, string) {
+	if strings.EqualFold(hit.Package, storeStandIn) || !strings.HasPrefix(hit.Name, "python") {
+		return interpreter{}, ""
+	}
+	a, why := ask(ctx, m.run, hit.Path)
+	in := interpreter{path: hit.Path, asked: true, reply: a, why: why}
+	if why != "" || !filepath.IsAbs(a.Executable) {
+		return in, "\x00" + strings.ToLower(hit.Package)
+	}
+	in.path = a.Executable
+	return in, identity(m.source, m.resolve, a.Executable)
 }
 
 // leadsTo is the interpreter one hit starts, or the empty string when that

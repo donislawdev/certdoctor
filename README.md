@@ -334,8 +334,9 @@ A tool that quietly fails to look at something is worse than one that says what 
 
 - **The trust matrix knows six families today** - the platform store on Windows and Linux, Java,
   `git`, `curl`, Node.js and Python. `pip` comes next, then OpenSSL, .NET and
-  PowerShell, Docker, Maven and Gradle, and apt. A Python that only the Microsoft Store's app
-  alias starts is not found yet. A family it does not know is not asked, and the
+  PowerShell, Docker, Maven and Gradle, and apt. A Python started through an app alias in
+  `WindowsApps` was measured with the Python install manager, not with Python from the Microsoft
+  Store. A family it does not know is not asked, and the
   report lists the families it asked - so a missing row means nobody looked, never that nothing is
   there.
 - **On macOS the system keychain is not read yet**, so the platform store has no row there.
