@@ -233,7 +233,19 @@ import (
 // now has a node row whose store is the list compiled into that binary, so
 // store_path is empty on it as on a system row, and a consumer that read every
 // store without a path as the platform's own would count it there wrongly.
-const SchemaVersion = "2.2"
+//
+// 2.3 ADDS ONE VALUE TO trust_failure, nonconforming_certificate - ADR112 part 3,
+// decided by the owner. A MINOR by rule 2: nothing removed, nothing renamed, no
+// meaning changed. Which certificate and which rule travel in the row's summary,
+// not in a key of their own - the owner's decision too.
+//
+// WHAT CHANGES FOR A CONSUMER THAT ALREADY SHIPPED. A python row of 3.13 or later
+// with OpenSSL 3 used to come back with trusts_presented_chain null wherever it
+// would have trusted, because OpenSSL's strict rules were not applied. It now
+// carries a verdict, and a chain that breaks one of those rules - an
+// intermediate without an authority key identifier, one whose basic constraints
+// are not critical - is a false with this value, which no store fix repairs.
+const SchemaVersion = "2.3"
 
 // JSON renders the machine readable report.
 //

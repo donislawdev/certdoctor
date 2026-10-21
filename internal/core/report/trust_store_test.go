@@ -199,6 +199,18 @@ func TestARefusalMaySayThePlatformListWouldCloseIt(t *testing.T) {
 	}
 }
 
+// A refusal may say which certificate and which rule it was about - ADR112. The
+// positive twin of the case in the table below, for the reason OBS56 gives.
+func TestARefusalMaySayWhatItWasAbout(t *testing.T) {
+	store := aRefusingStore()
+	store.TrustFailure = NonconformingCertificate
+	store.Fix = nil
+	store.RefusalDetail = "the intermediate CN=Bench has no authority key identifier"
+	if got := store.breach(); got != "" {
+		t.Errorf("a refusal saying what it was about was rejected: %q", got)
+	}
+}
+
 // A command with nothing to fill in is legitimate and must not be mistaken for
 // an incomplete one - the empty slice is the answer, the nil is the defect.
 func TestARemediationWithNothingToFillInIsAccepted(t *testing.T) {
@@ -215,7 +227,8 @@ func TestARemediationWithNothingToFillInIsAccepted(t *testing.T) {
 // The registry of trust failures, checked the same way every other closed list
 // in this package is.
 func TestEveryTrustFailureHasAMeaning(t *testing.T) {
-	for _, failure := range []TrustFailure{UnknownAuthority, Expired, NotYetValid, OtherFailure, NoRevocationInfo} {
+	for _, failure := range []TrustFailure{UnknownAuthority, Expired, NotYetValid, OtherFailure, NoRevocationInfo,
+		NonconformingCertificate} {
 		if !failure.Valid() {
 			t.Errorf("%q is declared and does not report itself valid", failure)
 		}
@@ -309,6 +322,11 @@ func TestTheTrustStoreRefusesWhatItMustRefuse(t *testing.T) {
 			name:  "a way of refusing named by a store that accepted",
 			spoil: func(s *TrustStore) { s.TrustFailure = UnknownAuthority },
 			says:  "did not refuse",
+		},
+		{
+			name:  "a refusal explained by a store that accepted",
+			spoil: func(s *TrustStore) { s.RefusalDetail = "the intermediate has no authority key identifier" },
+			says:  "did not make",
 		},
 		{
 			name: "a trust failure outside the registry",

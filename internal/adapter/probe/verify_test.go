@@ -53,6 +53,14 @@ func mint(t *testing.T, commonName string, serial int64, parentDER []byte, paren
 	if err != nil {
 		t.Fatalf("no key for %s: %v", commonName, err)
 	}
+	return mintFor(t, key, commonName, serial, parentDER, parentKey, isCA, notBefore, notAfter, tweak...), key
+}
+
+// mintFor is mint for a key the caller already holds - two certificates for one
+// key and one name are how an authority signed by two others looks.
+func mintFor(t *testing.T, key *ecdsa.PrivateKey, commonName string, serial int64, parentDER []byte,
+	parentKey *ecdsa.PrivateKey, isCA bool, notBefore, notAfter time.Time, tweak ...func(*x509.Certificate)) []byte {
+	t.Helper()
 	template := &x509.Certificate{
 		SerialNumber:          big.NewInt(serial),
 		Subject:               pkix.Name{CommonName: commonName},
@@ -85,7 +93,7 @@ func mint(t *testing.T, commonName string, serial int64, parentDER []byte, paren
 	if err != nil {
 		t.Fatalf("no certificate for %s: %v", commonName, err)
 	}
-	return der, key
+	return der
 }
 
 // bundleOf writes certificates out the way a trust store on disk holds them.

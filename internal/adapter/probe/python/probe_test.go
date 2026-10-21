@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -32,7 +33,8 @@ func atNoon() time.Time { return time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC) 
 
 // mint makes one certificate under parent, or a self-signed one when parent is
 // nil.
-func mint(t *testing.T, name string, serial int64, parentDER []byte, parentKey *ecdsa.PrivateKey, isCA bool) ([]byte, *ecdsa.PrivateKey) {
+func mint(t *testing.T, name string, serial int64, parentDER []byte, parentKey *ecdsa.PrivateKey, isCA bool,
+	tweak ...func(*x509.Certificate)) ([]byte, *ecdsa.PrivateKey) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -45,6 +47,9 @@ func mint(t *testing.T, name string, serial int64, parentDER []byte, parentKey *
 		template.DNSNames = []string{name}
 		template.KeyUsage = x509.KeyUsageDigitalSignature
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	}
+	for _, apply := range tweak {
+		apply(template)
 	}
 	parent, signer := template, key
 	if parentDER != nil {
@@ -154,9 +159,10 @@ func flags(v int64) *int64 { return &v }
 
 func text(s string) *string { return &s }
 
-// listing is an answer holding these certificates, verified with these flags.
+// listing is an answer holding these certificates, verified with these flags, by
+// a Python built with OpenSSL 3.5.4.
 func listing(f int64, ders ...[]byte) answer {
-	return answer{Version: "3.13.15", Flags: flags(f), DER: ders}
+	return answer{Version: "3.13.15", OpenSSL: []int{3, 5, 0, 4, 0}, Flags: flags(f), DER: ders}
 }
 
 // call is one run the probe asked for.
@@ -608,16 +614,71 @@ func TestTheAnchorRuleFollowsTheFlags(t *testing.T) {
 	}
 }
 
-// STRICT ONLY TAKES AWAY, so until its rules are applied here a trust is not
-// proven and a refusal stands - ADR112 part 3.
-func TestStrictLeavesATrustUnprovenAndARefusalStanding(t *testing.T) {
+// withoutKeyID is a root and the chain a server sends under it, whose
+// intermediate carries an authority key identifier with no key identifier in it -
+// port 8445 of the S28 bench.
+func withoutKeyID(t *testing.T) (root []byte, chain [][]byte) {
+	t.Helper()
+	rootDER, rootKey := mint(t, "certdoctor test root", 1, nil, nil, true)
+	interDER, interKey := mint(t, "certdoctor test intermediate", 2, rootDER, rootKey, true, func(c *x509.Certificate) {
+		c.ExtraExtensions = []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 35}, Value: []byte{0x30, 0x00}}}
+	})
+	leafDER, _ := mint(t, "partner.test", 3, interDER, interKey, false)
+	return rootDER, [][]byte{leafDER, interDER}
+}
+
+// STRICT ONLY TAKES AWAY - ADR112 part 3. With OpenSSL 3 its rules are applied
+// here, so a chain keeping to them is trusted and one breaking them is refused
+// with the rule and the certificate - measured by S28, an intermediate without an
+// authority key identifier refused by every Python from 3.13 on.
+func TestStrictRulesAreAppliedWithOpenSSL3(t *testing.T) {
 	b := newBench(t)
-	store := one(t, "linux", listing(0x88020, b.root), b.chain(), nil)
-	if trustOf(store) != "undetermined" || !strings.Contains(store.NotAssessed, "VERIFY_X509_STRICT") {
-		t.Errorf("a trust under STRICT came out %s: %q", trustOf(store), store.NotAssessed)
+	if got := trustOf(one(t, "linux", listing(0x88020, b.root), b.chain(), nil)); got != "trusted" {
+		t.Errorf("a chain keeping to the strict rules came out %s", got)
 	}
 	if got := trustOf(one(t, "linux", listing(0x88020, b.other), b.chain(), nil)); got != "refused unknown_authority" {
 		t.Errorf("a refusal under STRICT came out %s", got)
+	}
+
+	root, chain := withoutKeyID(t)
+	store := one(t, "windows", listing(0x88020, root), chain, nil)
+	if trustOf(store) != "refused nonconforming_certificate" || store.Fix != nil ||
+		!strings.Contains(store.RefusalDetail, "the intermediate CN=certdoctor test intermediate does not name the key") {
+		t.Errorf("an intermediate breaking a strict rule came out %s, %q, fix %v", trustOf(store), store.RefusalDetail, store.Fix)
+	}
+}
+
+// OPENSSL 1.1.1 HOLDS A CHAIN TO FAR FEWER STRICT RULES than OpenSSL 3, whose
+// rules are the ones applied here - so under any other OpenSSL a trust is not
+// proven, and a refusal stands.
+func TestStrictUnderAnotherOpenSSLLeavesATrustUnproven(t *testing.T) {
+	b := newBench(t)
+	cases := map[string]struct {
+		version []int
+		says    string
+	}{
+		"OpenSSL 1.1.1":       {[]int{1, 1, 1, 20, 15}, "an OpenSSL reporting version 1.1.1.20.15"},
+		"no version reported": {nil, "an OpenSSL whose version it did not report"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			a := listing(0x88020, b.root)
+			a.OpenSSL = c.version
+			store := one(t, "linux", a, b.chain(), nil)
+			if trustOf(store) != "undetermined" || !strings.Contains(store.NotAssessed, c.says) {
+				t.Errorf("a trust came out %s: %q", trustOf(store), store.NotAssessed)
+			}
+			a.DER = [][]byte{b.other}
+			if got := trustOf(one(t, "linux", a, b.chain(), nil)); got != "refused unknown_authority" {
+				t.Errorf("a refusal came out %s", got)
+			}
+			// A rule of OpenSSL 3 that another OpenSSL may not have refuses nothing.
+			root, chain := withoutKeyID(t)
+			a.DER = [][]byte{root}
+			if got := trustOf(one(t, "linux", a, chain, nil)); got != "undetermined" {
+				t.Errorf("a chain breaking a rule of OpenSSL 3 came out %s", got)
+			}
+		})
 	}
 }
 
@@ -819,11 +880,11 @@ func TestTheScriptRunsOnThePythonThisMachineHas(t *testing.T) {
 	if why != "" {
 		t.Fatalf("%s did not answer: %s", found[0].path, why)
 	}
-	if strings.Count(a.Version, ".") != 2 || !filepath.IsAbs(a.Executable) {
-		t.Errorf("the version is %q and the executable %q", a.Version, a.Executable)
+	if strings.Count(a.Version, ".") != 2 || !filepath.IsAbs(a.Executable) || len(a.OpenSSL) != 5 {
+		t.Errorf("the version is %q, the executable %q and OpenSSL %v", a.Version, a.Executable, a.OpenSSL)
 	}
-	t.Logf("%s %s at %s: flags %#x, %d certificates, file %v, directory %q", found[0].path, a.Version, a.Executable,
-		*a.Flags, len(a.DER), a.CAFile != nil, a.DirDefault)
+	t.Logf("%s %s at %s with OpenSSL %v: flags %#x, %d certificates, file %v, directory %q", found[0].path, a.Version,
+		a.Executable, a.OpenSSL, *a.Flags, len(a.DER), a.CAFile != nil, a.DirDefault)
 }
 
 // A FILE THAT IS GONE BY THE TIME IT IS READ LEADS NOWHERE - the walk opened it,

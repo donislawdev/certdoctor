@@ -50,8 +50,10 @@ func VerifySelfSignedAnchors(store *report.TrustStore, anchorsPEM []byte, chain 
 }
 
 // verify is the one rule both functions above apply - selfSignedOnly is the
-// only thing that differs between them.
-func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now time.Time, selfSignedOnly bool) {
+// only thing that differs between them. It hands back the chains it built and
+// every certificate the store holds, for a runtime that judges those further.
+func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now time.Time,
+	selfSignedOnly bool) (built [][]*x509.Certificate, stored []*x509.Certificate) {
 	roots, held, stored, anchors := anchorsIn(anchorsPEM, selfSignedOnly)
 	store.TrustAnchorCount = anchors
 
@@ -61,19 +63,19 @@ func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now tim
 			store.NotAssessed = "the store holds no self-signed certificate this program could read, and only one of " +
 				"those ends a chain for this runtime"
 		}
-		return
+		return nil, nil
 	}
 	if len(chain) == 0 {
 		store.NotAssessed = "no chain was presented, so this store had nothing to judge"
 		store.TrustAnchorCount = 0
-		return
+		return nil, nil
 	}
 
 	leaf, err := x509.ParseCertificate(chain[0])
 	if err != nil {
 		store.NotAssessed = fmt.Sprintf("the presented leaf could not be parsed: %v", err)
 		store.TrustAnchorCount = 0
-		return
+		return nil, nil
 	}
 	intermediates := held
 	seen := append([]*x509.Certificate{leaf}, stored...)
@@ -84,7 +86,7 @@ func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now tim
 		}
 	}
 
-	_, verifyErr := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, CurrentTime: now})
+	built, verifyErr := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, CurrentTime: now})
 	trusts := verifyErr == nil
 	var failure report.TrustFailure
 	if !trusts {
@@ -100,10 +102,11 @@ func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now tim
 	if failure == report.OtherFailure && carriesKeyGoRefuses(seen) {
 		store.NotAssessed = refusedByGo
 		store.TrustAnchorCount = 0
-		return
+		return nil, nil
 	}
 	store.TrustsPresentedChain = &trusts
 	store.TrustFailure = failure
+	return built, stored
 }
 
 // anchorsIn reads a PEM bundle into the certificates that end a chain and the

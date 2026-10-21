@@ -35,12 +35,16 @@ import (
 // THE INTERPRETER ALSO SAYS WHICH FILE IT IS, because an app execution alias
 // names only the package that answers it - ADR112 - and sys.executable is the
 // interpreter's own word for where it was started from.
+//
+// AND WHICH OpenSSL IT IS BUILT WITH, as numbers, because the strict rules differ
+// between OpenSSL 1.1.1 and 3 - ADR112 part 3.
 const script = `import base64, json, os, ssl, sys
 c = ssl.create_default_context()
 p = ssl.get_default_verify_paths()
 sys.stdout.write(json.dumps({
     'version': '%d.%d.%d' % tuple(sys.version_info[:3]),
     'executable': sys.executable,
+    'openssl': list(ssl.OPENSSL_VERSION_INFO),
     'flags': int(c.verify_flags),
     'cafile': p.cafile,
     'dir_env': os.environ.get(p.openssl_capath_env),
@@ -61,14 +65,6 @@ sys.stdout.write(json.dumps({
 // the owner's machine.
 var arguments = []string{"-I", "-S", "-B", "-c", script}
 
-// The flags of OpenSSL's verifier that decide which certificate ends a chain -
-// include/openssl/x509_vfy.h.in of OpenSSL's openssl-3.5 branch, read 2026-10-21.
-// ssl.VERIFY_X509_STRICT and ssl.VERIFY_X509_PARTIAL_CHAIN are these values.
-const (
-	flagStrict       = 0x20
-	flagPartialChain = 0x80000
-)
-
 // answer is what the script prints.
 type answer struct {
 	Version string `json:"version"`
@@ -77,6 +73,14 @@ type answer struct {
 	// documentation, read 2026-10-21 at
 	// https://docs.python.org/3/library/sys.html#sys.executable
 	Executable string `json:"executable"`
+	// OpenSSL is ssl.OPENSSL_VERSION_INFO, five integers about the library -
+	// the ssl module's documentation, read 2026-10-21 at
+	// https://docs.python.org/3/library/ssl.html - which Modules/_ssl.c of
+	// CPython's 3.15 branch, read the same day, parses out of
+	// OpenSSL_version_num(), the major first. LibreSSL defines that number as
+	// 0x20000000 (src/lib/libcrypto/opensslv.h of libressl/openbsd, read the same
+	// day), so it reads as major 2 here.
+	OpenSSL []int `json:"openssl"`
 	// Flags is a pointer so that an answer without it is told from a context
 	// with no flags at all.
 	Flags *int64 `json:"flags"`
@@ -114,13 +118,13 @@ func ask(ctx context.Context, run probe.Runner, interpreter string) (answer, str
 	return a, ""
 }
 
-// partialChain says every certificate on the list ends a chain, as it does from
-// Python 3.13 on - measured by S28. Without it only a self-signed one does.
-func (a answer) partialChain() bool { return *a.Flags&flagPartialChain != 0 }
+// flags are the flags the default context verifies with - ssl.VERIFY_X509_STRICT
+// and ssl.VERIFY_X509_PARTIAL_CHAIN are OpenSSL's own values.
+func (a answer) flags() probe.OpenSSLFlags { return probe.OpenSSLFlags(*a.Flags) }
 
-// strict says OpenSSL checks each certificate of the chain against its strict
-// rules, which can refuse a chain the verifier here accepts - measured by S28.
-func (a answer) strict() bool { return *a.Flags&flagStrict != 0 }
+// openSSL3 says the interpreter is built with OpenSSL 3, the only one whose
+// strict rules this program applies.
+func (a answer) openSSL3() bool { return len(a.OpenSSL) > 0 && a.OpenSSL[0] == 3 }
 
 // bundle is the list and the directory's certificates as one PEM bundle, each
 // certificate once - the directory of a distribution holds the very certificates

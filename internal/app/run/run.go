@@ -617,6 +617,10 @@ func maskTrustStore(r *redact.Redaction, finding *report.Finding) {
 	store.StorePath = r.Text(store.StorePath)
 	store.Instance = r.Text(store.Instance)
 	store.NotAssessed = r.Text(store.NotAssessed)
+	// THE DETAIL OF A REFUSAL NAMES A CERTIFICATE out of somebody else's chain,
+	// and a subject is where a host name lives when it is not in a URL - the
+	// reason maskTLSHandshake masks the subjects of the chain.
+	store.RefusalDetail = r.Text(store.RefusalDetail)
 	// THE COMMAND CARRIES THE PATH, so masking the path and not the command would
 	// leave the same directory in the document twice, once masked and once not -
 	// and the unmasked copy would be in the line most likely to be pasted into a

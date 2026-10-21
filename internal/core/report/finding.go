@@ -1042,6 +1042,17 @@ type TrustStore struct {
 	// issuer and the certificate expired" send a person to two different places,
 	// and only the first is something a trust store can be made to fix.
 	TrustFailure TrustFailure
+	// RefusalDetail says, in words, WHICH certificate and WHICH rule a refusal
+	// was about, where the failure alone does not - ADR112, decided by the owner
+	// 2026-10-21. Only nonconforming_certificate fills it today: the failure says
+	// the chain broke one of OpenSSL's strict rules, and a person fixing it needs
+	// to know which rule and which certificate. It is set only on a row that
+	// refused, and it may be empty on one.
+	//
+	// IT IS NOT PART OF THE JSON, as PlatformListCloses is not. The row's summary
+	// carries it to every surface. It is masked under --redact like a subject in
+	// L4, because it names a certificate out of somebody else's chain.
+	RefusalDetail string
 	// PlatformListCloses says this runtime has a switch of its own that adds the
 	// platform's certificates to the list it trusts, that the switch is off here
 	// with nothing set that would keep it off, and that with it on this chain
@@ -1096,14 +1107,23 @@ const (
 	// connected to the same server once the leaf named a revocation list.
 	// Importing a certificate does not repair it.
 	NoRevocationInfo TrustFailure = "no_revocation_info"
+	// NonconformingCertificate - the store holds the signer and the runtime still
+	// refuses, because a certificate in the chain breaks a rule OpenSSL checks
+	// under X509_V_FLAG_X509_STRICT - ADR112 part 3. Measured with probe S28 on
+	// 2026-10-21: Python 3.13 and later refused an intermediate without an
+	// authority key identifier, and one whose basic constraints were not marked
+	// critical, in every environment measured. Importing a certificate does not
+	// repair it - the certificate has to be issued again.
+	NonconformingCertificate TrustFailure = "nonconforming_certificate"
 )
 
 var trustFailureMeanings = map[TrustFailure]string{
-	UnknownAuthority: "the store holds no certificate that signed what the server sent",
-	Expired:          "a certificate in the path is past its validity",
-	NotYetValid:      "a certificate in the path is not valid yet",
-	OtherFailure:     "the path could not be built, for a reason this program does not classify",
-	NoRevocationInfo: "the server's certificate names nowhere to check whether it was revoked, and this runtime refuses what it cannot check",
+	UnknownAuthority:         "the store holds no certificate that signed what the server sent",
+	Expired:                  "a certificate in the path is past its validity",
+	NotYetValid:              "a certificate in the path is not valid yet",
+	OtherFailure:             "the path could not be built, for a reason this program does not classify",
+	NoRevocationInfo:         "the server's certificate names nowhere to check whether it was revoked, and this runtime refuses what it cannot check",
+	NonconformingCertificate: "a certificate in the chain breaks a rule of OpenSSL's strict checking, which this runtime applies",
 }
 
 // StoreRef points at another row of the trust matrix by the two fields that
@@ -1305,6 +1325,8 @@ func (t *TrustStore) breach() string {
 		return "refuses the presented chain and does not say in which way, and only one of those ways is fixable"
 	case !refused && t.TrustFailure != "":
 		return "names a way of refusing the presented chain that it did not refuse"
+	case !refused && t.RefusalDetail != "":
+		return "explains a refusal of the presented chain that it did not make"
 	case t.TrustFailure != "" && !t.TrustFailure.Valid():
 		return fmt.Sprintf("carries the trust failure %q, which is outside the registry", t.TrustFailure)
 	// A LIST THAT WOULD CLOSE THE CHAIN answers only an unknown authority. On a

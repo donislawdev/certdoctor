@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -95,23 +96,42 @@ func (m machine) storeFor(ctx context.Context, in interpreter, chain [][]byte, n
 	case err != nil && !trusted(store):
 		undetermined(&store, fmt.Sprintf("this python also reads the directory %s, which could not be read in full "+
 			"(%v), so what it makes of the chain is undetermined", stopped, err))
-	case a.strict() && trusted(store):
-		// STRICT ONLY TAKES AWAY - ADR112 part 3. Until its rules are applied
-		// here a trust is not proven, and a refusal stands as it is.
-		undetermined(&store, "this python checks a chain against OpenSSL's strict rules (VERIFY_X509_STRICT, on from "+
-			"3.13), which can refuse a chain this program accepts, and those rules are not applied here yet")
+	case a.flags().Strict() && !a.openSSL3() && trusted(store):
+		// STRICT ONLY TAKES AWAY - ADR112 part 3. Its rules are applied here as
+		// OpenSSL 3 has them, and OpenSSL 1.1.1 has far fewer, so a trust under
+		// any other OpenSSL is not proven, and a refusal stands as it is.
+		undetermined(&store, fmt.Sprintf("this python checks a chain against the strict rules (VERIFY_X509_STRICT) of "+
+			"%s, and this program applies those of OpenSSL 3 alone", openSSLName(a.OpenSSL)))
 	}
 	return store
 }
 
-// judge applies the anchor rule this interpreter's flags name - ADR112 part 2.
-// A flag and not a version number, because the flag is what is seen.
+// judge applies the anchor rule this interpreter's flags name - ADR112 part 2 -
+// and with OpenSSL 3 the strict rules they name - part 3. A flag and not a
+// version number, because the flag is what is seen.
 func judge(store *report.TrustStore, a answer, anchors []byte, chain [][]byte, now time.Time) {
-	if a.partialChain() {
+	switch flags := a.flags(); {
+	case flags.Strict() && a.openSSL3():
+		probe.VerifyStrictly(store, anchors, chain, now, flags)
+	case flags.PartialChain():
 		probe.Verify(store, anchors, chain, now)
-		return
+	default:
+		probe.VerifySelfSignedAnchors(store, anchors, chain, now)
 	}
-	probe.VerifySelfSignedAnchors(store, anchors, chain, now)
+}
+
+// openSSLName names the OpenSSL the interpreter reported, by the five numbers it
+// reported - spelled as they came, since OpenSSL 3 puts its patch fourth and
+// LibreSSL reports a 2 of its own.
+func openSSLName(version []int) string {
+	if len(version) == 0 {
+		return "an OpenSSL whose version it did not report"
+	}
+	numbers := make([]string, len(version))
+	for i, n := range version {
+		numbers[i] = strconv.Itoa(n)
+	}
+	return "an OpenSSL reporting version " + strings.Join(numbers, ".")
 }
 
 // place writes the form of the store this interpreter reads - ADR112 part 2.

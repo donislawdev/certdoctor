@@ -233,6 +233,7 @@ it is several trust stores disagreeing.
 | `x509: certificate signed by unknown authority` | programs written in Go | the platform store - the Windows store, or the Linux CA bundle |
 | `407 Proxy Authentication Required` | anything going through a proxy | which proxy applies to this URL, and whether it wants credentials |
 | `certificate verify failed: unable to get local issuer certificate` | Python, `pip` | every Python on PATH, by the list its `ssl` module trusts - `pip`'s own row is coming next |
+| `certificate verify failed: Missing Authority Key Identifier`, `Basic Constraints of CA cert not marked critical` | Python 3.13 and newer | which certificate in the chain breaks which of OpenSSL's strict rules, which Python 3.13 turned on |
 | `SELF_SIGNED_CERT_IN_CHAIN` | Node.js, `npm` | every `node` on PATH, by the list that binary trusts - `npm`'s own `cafile` is not read yet |
 
 ---
@@ -336,7 +337,8 @@ A tool that quietly fails to look at something is worse than one that says what 
   `git`, `curl`, Node.js and Python. `pip` comes next, then OpenSSL, .NET and
   PowerShell, Docker, Maven and Gradle, and apt. A Python started through an app alias in
   `WindowsApps` was measured with the Python install manager, not with Python from the Microsoft
-  Store. A family it does not know is not asked, and the
+  Store. OpenSSL's strict rules are applied as OpenSSL 3 has them, and two of them were measured
+  against Python - the rest are read from OpenSSL's source. A family it does not know is not asked, and the
   report lists the families it asked - so a missing row means nobody looked, never that nothing is
   there.
 - **On macOS the system keychain is not read yet**, so the platform store has no row there.

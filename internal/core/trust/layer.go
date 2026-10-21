@@ -386,6 +386,11 @@ func summaryOf(store report.TrustStore) string {
 		return fmt.Sprintf("%s %s could not be assessed: %s", store.Runtime, store.Instance, store.NotAssessed)
 	case *store.TrustsPresentedChain:
 		return fmt.Sprintf("%s %s trusts the presented chain (%d anchors)", store.Runtime, store.Instance, store.TrustAnchorCount)
+	case store.RefusalDetail != "":
+		// THE DETAIL REACHES EVERY SURFACE THROUGH THIS LINE - it is not a key of
+		// the JSON, decided by the owner 2026-10-21 (ADR112).
+		return fmt.Sprintf("%s %s does NOT trust the presented chain (%d anchors) - %s", store.Runtime, store.Instance,
+			store.TrustAnchorCount, store.RefusalDetail)
 	default:
 		return fmt.Sprintf("%s %s does NOT trust the presented chain (%d anchors)", store.Runtime, store.Instance, store.TrustAnchorCount)
 	}

@@ -329,6 +329,18 @@ func TestTheSummarySaysWhichOfTheThreeStatesThisIs(t *testing.T) {
 	}
 }
 
+// The detail of a refusal is not a key of the JSON, so the summary is the only
+// way it reaches anybody - ADR112, decided by the owner.
+func TestTheSummaryOfARefusalSaysWhatItWasAbout(t *testing.T) {
+	store := aStore("python", "a", yes(false), "")
+	store.TrustFailure = report.NonconformingCertificate
+	store.RefusalDetail = "the intermediate CN=Bench has no authority key identifier"
+	got := summaryOf(store)
+	if !strings.HasPrefix(got, "python a does NOT trust the presented chain") || !strings.HasSuffix(got, " - "+store.RefusalDetail) {
+		t.Errorf("the summary does not carry the refusal's detail after the verdict: %q", got)
+	}
+}
+
 // TestTheMatrixIsSummarisedByOneRowSayingWhoSigned is the seam between the walk
 // and the one place allowed to judge what the walk found.
 //

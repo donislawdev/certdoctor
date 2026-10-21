@@ -92,6 +92,32 @@ func TestTheReasonAStoreCouldNotBeReadIsMaskedToo(t *testing.T) {
 	}
 }
 
+// The detail of a refusal names a certificate out of somebody else's chain, and a
+// subject is where a host name lives when it is not in a URL - so it is masked as
+// L4 masks the subjects of the chain.
+func TestTheDetailOfARefusalIsMaskedToo(t *testing.T) {
+	redaction := redact.New(redact.Everything, redact.Host("intranet.example.test"))
+	refused := false
+	store := report.TrustStore{
+		Runtime:              "python",
+		Instance:             "/usr/bin/python3",
+		StoreForm:            report.StoreSystem,
+		TrustsPresentedChain: &refused,
+		TrustFailure:         report.NonconformingCertificate,
+		RefusalDetail:        "the intermediate CN=intranet.example.test has no authority key identifier",
+		SelectedBy:           []string{},
+	}
+	finding := report.Finding{Kind: report.FindingTrustStore, Summary: "python", Source: report.SourceDetected, TrustStore: &store}
+
+	Options{Redaction: redaction}.maskFinding(&finding)
+	if strings.Contains(finding.TrustStore.RefusalDetail, "intranet") {
+		t.Errorf("the host survived in the detail of the refusal: %q", finding.TrustStore.RefusalDetail)
+	}
+	if store.RefusalDetail == finding.TrustStore.RefusalDetail {
+		t.Error("masking wrote through the pointer into the layer's own evidence")
+	}
+}
+
 // The boundary carries four fields across unchanged - it grades nothing and
 // masks nothing, which is what keeps ADR7 and ADR18 true at this seam.
 func TestTheTrustBoundaryCarriesTheAnswerUnchanged(t *testing.T) {

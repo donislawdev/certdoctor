@@ -37,9 +37,17 @@ Barely diagnosable yet, and there has been no release.
   is the same file. On Windows it is `certutil -user -addstore Root`, the store
   Python's list comes from. A Python reading only the hashed directory gets no
   command.
-- **Python 3.13 and newer is left unassessed where it would trust**, because it
-  checks the chain against OpenSSL's strict rules, which certdoctor does not
-  apply yet. A refusal is still reported as one.
+- **Python 3.13 and newer is held to OpenSSL's strict rules**, as it holds the
+  chain itself. A chain that breaks one - an intermediate that does not name the
+  key that signed it, a certificate authority whose basic constraints are not
+  marked critical, and the other rules of `VERIFY_X509_STRICT` - is refused
+  with `trust_failure` `nonconforming_certificate`, and the row's summary names
+  the certificate and the rule. No command comes with it, because adding a
+  certificate to a store does not reissue one. The rules are OpenSSL 3's, so a
+  Python built with another OpenSSL is left unassessed where it would trust. A
+  refusal is still reported as one.
+- **[contract] The schema version is now 2.3.** `trust_failure` has a sixth
+  value, `nonconforming_certificate`. Nothing is removed.
 - **The interpreter runs none of your code.** It is started with `-I -S -B`, so
   `PYTHONPATH`, `.pth` files and `sitecustomize` are not read and no bytecode is
   written, and without `SSLKEYLOGFILE` and `OPENSSL_CONF`.
