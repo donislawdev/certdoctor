@@ -206,6 +206,38 @@ func TestAPlatformStoreIsCountedByItsInstance(t *testing.T) {
 	}
 }
 
+// PYTHON ON THE WINDOWS STORES IS THIS ACCOUNT'S STORE, NOT A SECOND ONE -
+// ADR112 part 2. Two interpreters and the platform's own row for this account
+// are one opinion, and the row for the machine stays a second.
+func TestPythonOnThePlatformsStoresIsCountedAsThisAccountsStore(t *testing.T) {
+	python := func(instance string) report.TrustStore {
+		store := refuser(report.RuntimePython, instance, "")
+		store.StoreForm = report.StoreSystem
+		return store
+	}
+	platform := func(instance string) report.TrustStore {
+		store := refuser(report.RuntimeSystemStore, instance, "")
+		store.StoreForm = report.StoreSystem
+		return store
+	}
+	stores := []report.TrustStore{platform(report.InstanceCurrentUser), platform(report.InstanceLocalMachine),
+		python(`C:\Python313\python.exe`), python(`C:\Python312\python.exe`)}
+	finding := authorityOf(aSignedLeaf(), stores)
+	if named := finding.SigningAuthority.RefusingStores; len(named) != 2 {
+		t.Errorf("two platform stores and two interpreters reading one of them produced %d entries: %v", len(named), named)
+	}
+
+	// THE POSITIVE TWIN: an interpreter reading a file beside the stores is
+	// counted by that file, or this would pass on a rule that folded every python
+	// row into one - measured, SSL_CERT_FILE made a Python trust what this
+	// account's store refused.
+	stores[3].StorePath = `C:\certs\extra.pem`
+	finding = authorityOf(aSignedLeaf(), stores)
+	if named := finding.SigningAuthority.RefusingStores; len(named) != 3 {
+		t.Errorf("an interpreter reading a file of its own produced %d entries: %v", len(named), named)
+	}
+}
+
 // TestNothingAssessedProducesNoRowAtAll is inviolable rule 15 in this file.
 //
 // A machine where every store was unreadable has measured NOTHING about any

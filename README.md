@@ -30,7 +30,8 @@ then does the part no other tool does: it asks **each trust store on the machine
 whether it trusts what the server presented, and prints the command that would fix each store that
 does not, with the real paths from your machine in it. `curl -v` and `openssl s_client` answer for
 one program. certdoctor answers for the Windows store, every Java installation, every `git`, every
-`curl` and every `node` it finds - and tells you whether the fault is on this machine at all.
+`curl`, every `node` and every Python it finds - and tells you whether the fault is on this machine
+at all.
 
 ⭐ **If it ended a "works on my machine" argument, leave a star.** That is how the next person
 staring at `PKIX path building failed` finds out it exists.
@@ -41,7 +42,7 @@ staring at `PKIX path building failed` finds out it exists.
   intermediate certificate is named as the server's fault, with the evidence to paste into a ticket.
 - **One row per trust store, not per runtime** - the Windows store as your account sees it and as
   services see it, the Linux CA bundle, every JDK and JRE separately, every `git` and `curl` it
-  finds. On the machine it was built on, one run reads thirteen stores.
+  finds. On the machine it was built on, one run reads seventeen stores.
 - **Print the command that fixes each store** - `certutil`, `keytool` with the real `cacerts` path of
   that JDK, an append to git's own bundle - and say when it needs administrator rights. It prints
   them. It never runs them.
@@ -231,7 +232,7 @@ it is several trust stores disagreeing.
 | `SSL certificate problem: ...` | `curl`, and `git` over HTTPS | every `git` and `curl` it finds, and which store each of them reads |
 | `x509: certificate signed by unknown authority` | programs written in Go | the platform store - the Windows store, or the Linux CA bundle |
 | `407 Proxy Authentication Required` | anything going through a proxy | which proxy applies to this URL, and whether it wants credentials |
-| `certificate verify failed: unable to get local issuer certificate` | Python, `pip` | **coming next** - the Python and `pip` rows are being built |
+| `certificate verify failed: unable to get local issuer certificate` | Python, `pip` | every Python on PATH, by the list its `ssl` module trusts - `pip`'s own row is coming next |
 | `SELF_SIGNED_CERT_IN_CHAIN` | Node.js, `npm` | every `node` on PATH, by the list that binary trusts - `npm`'s own `cafile` is not read yet |
 
 ---
@@ -331,9 +332,10 @@ every schema it emits, so a log from six months ago still says what produced it.
 
 A tool that quietly fails to look at something is worse than one that says what it cannot do.
 
-- **The trust matrix knows five families today** - the platform store on Windows and Linux, Java,
-  `git`, `curl` and Node.js. Python with `pip` comes next, then OpenSSL, .NET and
-  PowerShell, Docker, Maven and Gradle, and apt. A family it does not know is not asked, and the
+- **The trust matrix knows six families today** - the platform store on Windows and Linux, Java,
+  `git`, `curl`, Node.js and Python. `pip` comes next, then OpenSSL, .NET and
+  PowerShell, Docker, Maven and Gradle, and apt. A Python that only the Microsoft Store's app
+  alias starts is not found yet. A family it does not know is not asked, and the
   report lists the families it asked - so a missing row means nobody looked, never that nothing is
   there.
 - **On macOS the system keychain is not read yet**, so the platform store has no row there.

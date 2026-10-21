@@ -116,6 +116,12 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 		// the binary, so its commands name the variable Node reads, never a store.
 		return nodeFix(store, m)
 	}
+	if store.Runtime == report.RuntimePython {
+		// AND BEFORE IT FOR PYTHON - ADR112 part 4. On Windows its list is the
+		// platform's stores, which have no path, and on Linux the probe names
+		// the file only when Python reads one.
+		return pythonFix(store, m)
+	}
 	if store.StoreForm != report.StoreFile || store.StorePath == "" {
 		return nil, ""
 	}
@@ -124,28 +130,7 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 
 	switch store.Runtime {
 	case "java":
-		// EVERY PIECE GOES THROUGH THE SAME QUOTING, THE PLACEHOLDERS INCLUDED.
-		// A person substitutes their own path into <certificate.pem>, and a space
-		// in it is ordinary - ADR59. The angle brackets are a redirection in both
-		// shells this command can land in, so they need the quotes even before
-		// anybody has substituted anything.
-		keytool, keytoolOK := quoteFor(m.OS, keytoolBeside(store))
-		storePath, pathOK := quoteFor(m.OS, store.StorePath)
-		alias, aliasOK := quoteFor(m.OS, aliasPlaceholder)
-		certificate, certificateOK := quoteFor(m.OS, certificatePlaceholder)
-		if !keytoolOK || !pathOK || !aliasOK || !certificateOK {
-			return nil, unwritablePath
-		}
-		return &report.Fix{
-			Command: fmt.Sprintf(`%s -importcert -trustcacerts -keystore %s -storepass changeit -alias %s -file %s`,
-				keytool, storePath, alias, certificate),
-			Placeholders:      []string{aliasPlaceholder, certificatePlaceholder},
-			RequiresElevation: elevated,
-			Elevation:         why,
-			// The password is the default one this store was just READ with, so
-			// it is measured rather than assumed - and it is not a secret.
-			Caveat: "installing a newer build of this runtime brings its own store and does not carry this certificate across",
-		}, ""
+		return javaFix(store, m, elevated, why)
 	case "curl", "git":
 		command, ok := appendPEM(store.StorePath, m.OS)
 		if !ok {
@@ -163,6 +148,33 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 	// A runtime with a probe and no template gets NO command rather than a
 	// guessed one. The registry test refuses to let that state ship.
 	return nil, ""
+}
+
+// javaFix is keytool importing into the store this row read, with the keytool
+// of that same installation - keytoolBeside says why.
+func javaFix(store report.TrustStore, m Machine, elevated bool, why string) (*report.Fix, string) {
+	// EVERY PIECE GOES THROUGH THE SAME QUOTING, THE PLACEHOLDERS INCLUDED. A
+	// person substitutes their own path into <certificate.pem>, and a space in it
+	// is ordinary - ADR59. The angle brackets are a redirection in both shells
+	// this command can land in, so they need the quotes even before anybody has
+	// substituted anything.
+	keytool, keytoolOK := quoteFor(m.OS, keytoolBeside(store))
+	storePath, pathOK := quoteFor(m.OS, store.StorePath)
+	alias, aliasOK := quoteFor(m.OS, aliasPlaceholder)
+	certificate, certificateOK := quoteFor(m.OS, certificatePlaceholder)
+	if !keytoolOK || !pathOK || !aliasOK || !certificateOK {
+		return nil, unwritablePath
+	}
+	return &report.Fix{
+		Command: fmt.Sprintf(`%s -importcert -trustcacerts -keystore %s -storepass changeit -alias %s -file %s`,
+			keytool, storePath, alias, certificate),
+		Placeholders:      []string{aliasPlaceholder, certificatePlaceholder},
+		RequiresElevation: elevated,
+		Elevation:         why,
+		// The password is the default one this store was just READ with, so it
+		// is measured rather than assumed - and it is not a secret.
+		Caveat: "installing a newer build of this runtime brings its own store and does not carry this certificate across",
+	}, ""
 }
 
 // platformStoreFix is the command that adds one root to the Windows store this
@@ -216,15 +228,67 @@ func platformStoreFix(store report.TrustStore, m Machine) (*report.Fix, string) 
 				"so their rows need their own commands",
 		}, ""
 	case report.InstanceCurrentUser:
+		return thisAccountsRootFix(certificate, "Windows asks for confirmation in a dialog before it adds a root to "+
+			"this account's store, and services running as other accounts do not read it - the LocalMachine command "+
+			"reaches them too"), ""
+	}
+	return nil, ""
+}
+
+// thisAccountsRootFix adds one root to this account's Root store. Two rows are
+// given it - the platform's own row for this account, and python reading the
+// Windows stores - so the command is written once, and each row says its own
+// caveat.
+func thisAccountsRootFix(certificate, caveat string) *report.Fix {
+	return &report.Fix{
+		Command:      "certutil -user -addstore Root " + certificate,
+		Placeholders: []string{certificatePlaceholder},
+		// THIS ACCOUNT'S OWN STORE, so no administrator is needed - and Windows
+		// asks the person to confirm instead, which every caveat says before it
+		// surprises anybody.
+		RequiresElevation: false,
+		Caveat:            caveat,
+	}
+}
+
+// pythonFix is the command for a python row - ADR112 part 4, decided by the owner
+// 2026-10-21.
+//
+// ON WINDOWS IT IS THIS ACCOUNT'S Root STORE. Python's list there is what the CA
+// and ROOT stores hold, gathered each time a program makes a default context -
+// load_default_certs and _load_windows_store_certs in Lib/ssl.py of CPython
+// 3.15.0, read 2026-10-21 - and the stores it enumerates are this account's and
+// the machine's, so a root added for this account is on the list of every
+// interpreter it starts. Pointing Python at a file instead was rejected in ADR112:
+// SSL_CERT_FILE is read by every program on OpenSSL, not by Python alone.
+//
+// ON LINUX IT IS THE APPEND, to the one file Python reads. The probe names that
+// file only when Python reported reading it, spelled as the platform store's row
+// spells it when it is the same file, so the two rows hand a person one command.
+// A Python reading only the platform's hashed directory gets none: a certificate
+// counts there only under the hash of its subject, which this program does not
+// compute - OBS186.
+func pythonFix(store report.TrustStore, m Machine) (*report.Fix, string) {
+	switch {
+	case store.StoreForm == report.StoreSystem && m.OS == "windows":
+		// The placeholder is our own constant and holds nothing quoting refuses.
+		certificate, _ := quoteFor(m.OS, certificatePlaceholder)
+		return thisAccountsRootFix(certificate, "Windows asks for confirmation in a dialog before it adds a root to "+
+			"this account's store, and a Python program reads the stores again each time it makes a TLS context"), ""
+	case store.StoreForm == report.StoreFile && store.StorePath != "":
+		command, ok := appendPEM(store.StorePath, m.OS)
+		if !ok {
+			return nil, unwritablePath
+		}
+		elevated, why := elevationFor(store.StorePath, m)
 		return &report.Fix{
-			Command:      "certutil -user -addstore Root " + certificate,
-			Placeholders: []string{certificatePlaceholder},
-			// THIS ACCOUNT'S OWN STORE, so no administrator is needed - and
-			// Windows asks the person to confirm instead, which the caveat says
-			// before it surprises anybody.
-			RequiresElevation: false,
-			Caveat: "Windows asks for confirmation in a dialog before it adds a root to this account's store, and services " +
-				"running as other accounts do not read it - the LocalMachine command reaches them too",
+			Command:           command,
+			Placeholders:      []string{certificatePlaceholder},
+			RequiresElevation: elevated,
+			Elevation:         why,
+			Caveat: "every program reading this file trusts the certificate too, and whatever maintains it - " +
+				"update-ca-certificates or update-ca-trust, when it is the distribution's bundle - rewrites the file " +
+				"and drops a certificate appended here",
 		}, ""
 	}
 	return nil, ""

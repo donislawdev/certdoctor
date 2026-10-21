@@ -10,6 +10,33 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Added - Python is judged by the list its ssl module trusts
+
+- **Every Python interpreter that `python`, `python3`, `pip` or `pip3` on PATH
+  leads to gets a row** - one row per interpreter, however many names reach it.
+  A virtual environment is a row of its own, and `selected_by` names the
+  commands that reach each interpreter first. Each is asked once, with a fixed
+  script and no network, for the certificates its default context holds, and
+  the chain is judged by the rule that interpreter's own flags set: from Python
+  3.13 every certificate on its list ends a chain, before that only a
+  self-signed one does.
+- **The hashed certificate directory counts.** Python does not list it, and on
+  Fedora it is all Python reads, so certdoctor reads the files OpenSSL would
+  open there - `SSL_CERT_DIR` when it is set, the default directory when not.
+- **A row that refuses gets a command.** On Linux it appends the certificate to
+  the file Python reads, spelled as the platform store's row spells it when it
+  is the same file. On Windows it is `certutil -user -addstore Root`, the store
+  Python's list comes from. A Python reading only the hashed directory gets no
+  command.
+- **Python 3.13 and newer is left unassessed where it would trust**, because it
+  checks the chain against OpenSSL's strict rules, which certdoctor does not
+  apply yet. A refusal is still reported as one.
+- **The interpreter runs none of your code.** It is started with `-I -S -B`, so
+  `PYTHONPATH`, `.pth` files and `sitecustomize` are not read and no bytecode is
+  written, and without `SSLKEYLOGFILE` and `OPENSSL_CONF`.
+- A Python reachable only through the Microsoft Store's app alias in
+  `WindowsApps` is not found yet.
+
 ### Changed - a curl row it cannot assess says what that curl reads
 
 - **curl on GnuTLS, wolfSSL, mbedTLS or rustls** no longer says it reads the

@@ -236,6 +236,11 @@ var intraLayerEdges = map[string][]string{
 	// than copied here. It opens nothing itself: the file port only finds the
 	// binaries.
 	"internal/adapter/probe/node": {"internal/adapter/file", "internal/adapter/probe"},
+	// python consumes the walk without its folding, the same process port, both
+	// anchor rules of the shared verifier and the hashed-directory reader beside
+	// the platform store's directories - ADR112. It opens files through the port
+	// it is handed, to follow a script or an alias to its interpreter.
+	"internal/adapter/probe/python": {"internal/adapter/file", "internal/adapter/probe"},
 	// The platform store on Linux is a bundle and the directories beside it -
 	// ADR104 - read through the same file port and judged by the same shared
 	// verifier as the three above. Windows asks crypt32 and uses neither.

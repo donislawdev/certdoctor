@@ -242,6 +242,38 @@ var descriptors = []Descriptor{
 			"Linux, under NODE_USE_SYSTEM_CA=1, a root in the file the system list read was trusted too. Adding one " +
 			"to the Windows store was not measured, because that needs the owner at the machine.",
 	},
+	{
+		ID:      report.RuntimePython,
+		Runtime: report.RuntimePython,
+		TrustSource: "what each interpreter's ssl module trusts by default, as the interpreter lists it - the file " +
+			"OpenSSL reads by default or the one SSL_CERT_FILE names, and on Windows the CA and ROOT stores beside it - " +
+			"plus the certificates in OpenSSL's hashed directory, which the list leaves out; read by asking that " +
+			"interpreter, and since 3.13 every certificate on the list ends a chain, before it only a self-signed one",
+		Source: Measured,
+		Evidence: "Measured 2026-10-21 with probe S28 on the owner's machine, seven interpreters from 3.10 to 3.15, and " +
+			"in nine images - python:3.15-slim, 3.14-slim, 3.12-slim and 3.15-alpine, and Python from the Debian 13, " +
+			"Ubuntu 26.04, Alpine 3.24, Fedora 44 and RHEL 9.8 packages - with a request over loopback as the signal. " +
+			"The default context's verify_flags were 0x88020 from 3.13 on and 0x8000 before: an intermediate alone in " +
+			"SSL_CERT_FILE made a leaf trusted on every 3.13 and newer and on nothing older, and a chain whose " +
+			"intermediate lacked an authority key identifier, or carried basicConstraints not marked critical, was " +
+			"refused by every 3.13 and newer and trusted by everything older and by Go. get_ca_certs listed the file " +
+			"and the Windows stores and never the hashed directory: on Fedora it listed nothing, while Python trusted " +
+			"the directory. SSL_CERT_FILE replaced the default file on Linux and added to the stores on Windows. Read " +
+			"beside it in Lib/ssl.py of CPython 3.15.0 - create_default_context, load_default_certs and the stores " +
+			"CA and ROOT - and in crypto/x509/by_dir.c of OpenSSL's openssl-3.5 branch, which reads SSL_CERT_DIR in " +
+			"place of the default directory and opens only files named by a subject hash. The interpreter is started " +
+			"with -I -S -B, so it runs nothing from site-packages, the user's directory or PYTHONSTARTUP and writes no " +
+			"bytecode, and without SSLKEYLOGFILE and OPENSSL_CONF - ADR112; that it still lists the same certificates " +
+			"was measured the same day in all nine images and with all seven interpreters.",
+		FixSource: Documentation,
+		FixEvidence: "certutil, Windows Commands reference, read 2026-10-14 at " +
+			"https://learn.microsoft.com/windows-server/administration/windows-commands/certutil - -addstore adds a " +
+			"certificate to the named store and -user aims it at this account's store, the ROOT store Lib/ssl.py " +
+			"enumerates for this account. On Linux the certificate is appended to the file Python reads, which " +
+			"OpenSSL loads whole each time a context is made - measured with probe S28: a root appended to the " +
+			"distribution's bundle was trusted by the standard library in every image whose Python reads that " +
+			"bundle. Adding one to the Windows store was not measured, because that needs the owner at the machine.",
+	},
 }
 
 // All returns every declared descriptor, in declaration order.

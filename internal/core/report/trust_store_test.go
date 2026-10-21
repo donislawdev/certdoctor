@@ -165,6 +165,29 @@ func TestNodesCompiledInListMayCarryARemediation(t *testing.T) {
 	}
 }
 
+// PYTHON ON THE PLATFORM'S STORES TAKES A COMMAND WITH NO PATH TOO - ADR112 part
+// 4 - and only on those stores: the same runtime on a compiled-in list meets the
+// file rule, in the table further down.
+func TestPythonOnThePlatformsStoresMayCarryARemediation(t *testing.T) {
+	store := aRefusingStore()
+	store.Runtime = RuntimePython
+	store.Instance = `C:\Python313\python.exe`
+	store.Variant = ""
+	store.StoreForm = StoreSystem
+	store.StorePath = ""
+	store.Fix = &Fix{Command: `certutil -user -addstore Root "<certificate.pem>"`, Placeholders: []string{"<certificate.pem>"}}
+	if got := store.breach(); got != "" {
+		t.Errorf("a command for python on the platform's stores was rejected: %q", got)
+	}
+
+	// THE EXCEPTION IS FOR THOSE STORES, not for python on every store that is
+	// not a file: on a compiled-in list the file rule refuses it.
+	store.StoreForm = StoreBuiltin
+	if got := store.breach(); !strings.Contains(got, "not a file") {
+		t.Errorf("a command for python on a compiled-in list came out %q", got)
+	}
+}
+
 // A refusal for an unknown authority may say that the platform's list would
 // close the chain - ADR111 part 7. The positive twin of the two cases in the
 // table below, for the reason OBS56 gives.

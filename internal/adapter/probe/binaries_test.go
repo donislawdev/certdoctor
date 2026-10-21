@@ -140,6 +140,29 @@ func TestOneFileReachedByTwoSpellingsIsFoundOnce(t *testing.T) {
 	}
 }
 
+// THE WALK ITSELF KEEPS EVERY SPELLING, WITH THE NAME IT CARRIES - ADR112. Two
+// spellings of one file are two hits, in PATH order, so a probe telling them apart
+// by more than where they lead can still ask which command reaches which.
+func TestTheWalkKeepsEverySpellingWithItsName(t *testing.T) {
+	system := hostSpelling(`C:\Windows\system32\curl.exe`)
+	source := sourceOf(map[string]string{system: "MZ", toolsGitExe: "MZ"}, toolsGitDir)
+	hits := OnPath(source, []string{hostSpelling(`C:\Windows\system32`), hostSpelling(`C:\WINDOWS\system32`), toolsDir},
+		"curl.exe", "git.exe", "git")
+	want := []Hit{
+		{Path: system, Name: "curl.exe"},
+		{Path: hostSpelling(`C:\WINDOWS\system32\curl.exe`), Name: "curl.exe"},
+		{Path: toolsGitExe, Name: "git.exe"},
+	}
+	if len(hits) != len(want) {
+		t.Fatalf("got %v, want %v", hits, want)
+	}
+	for i := range want {
+		if hits[i] != want[i] {
+			t.Errorf("hit %d is %v, want %v", i, hits[i], want[i])
+		}
+	}
+}
+
 // A DIRECTORY IS NOT A BINARY, AND OPENING IT DOES NOT SAY SO. Measured on both
 // platforms 2026-09-02: os.Open succeeds on a directory and only the read tells
 // them apart. Without the byte, a directory named git inside a PATH entry would

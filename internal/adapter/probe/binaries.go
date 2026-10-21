@@ -47,21 +47,46 @@ func Binaries(open func(string) (io.ReadCloser, error), resolve func(string) (st
 	var found []string
 	seen := map[string]bool{}
 
+	for _, hit := range OnPath(open, pathDirs, names...) {
+		key := IdentityKey(resolve, hit.Path)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		found = append(found, hit.Path)
+	}
+	return found
+}
+
+// Hit is one file on PATH carrying one of the names a probe asked for.
+type Hit struct {
+	// Path is the file as PATH reached it, the spelling a typed command runs.
+	Path string
+	// Name is which of the names it carries.
+	Name string
+}
+
+// OnPath is the walk Binaries consumes, without its folding: every readable file
+// on PATH carrying one of names, in the order a typed command would search them,
+// with two spellings of one file kept as two hits.
+//
+// IT EXISTS FOR THE PROBE THAT TELLS TWO FILES APART BY MORE THAN WHERE THEY
+// LEAD - ADR112. A virtual environment's python is a link to the interpreter it
+// was made from and is a different environment all the same, and which command
+// name reaches which interpreter is part of that probe's answer. The walk stays
+// here, once, for the reason Binaries gives.
+func OnPath(open func(string) (io.ReadCloser, error), pathDirs []string, names ...string) []Hit {
+	var hits []Hit
 	for _, dir := range pathDirs {
 		for _, name := range names {
 			path := filepath.Clean(filepath.Join(dir, name))
 			if !readableFile(open, path) {
 				continue
 			}
-			key := IdentityKey(resolve, path)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			found = append(found, path)
+			hits = append(hits, Hit{Path: path, Name: name})
 		}
 	}
-	return found
+	return hits
 }
 
 // IdentityKey is what two paths are told apart by: the file or directory a
@@ -100,6 +125,13 @@ func Resolved(resolve func(string) (string, error), path string) string {
 // nobody ships, while mixed spellings in a Windows PATH are measured and here.
 func PathKey(path string) string {
 	return strings.ToLower(filepath.Clean(path))
+}
+
+// Readable reports whether this path is a file this program can read from - the
+// test every hit of the walk passed, for a probe checking a file the walk did not
+// find itself, such as the interpreter a script names.
+func Readable(open func(string) (io.ReadCloser, error), path string) bool {
+	return readableFile(open, path)
 }
 
 // readableFile reports whether this path is a file this program can read from.

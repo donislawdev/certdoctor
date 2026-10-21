@@ -2,6 +2,7 @@ package probe
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -255,5 +256,85 @@ func TestTheLibcurlSentencesNameWhatNamedTheFile(t *testing.T) {
 	}
 	if !strings.Contains(fmt.Sprintf(say.Closes, certsDir), "a git built to read that directory") {
 		t.Errorf("the closing sentence does not name the tool: %q", say.Closes)
+	}
+}
+
+// ONLY A NAME OPENSSL OPENS IS READ - ADR112 part 2. A certificate under any
+// other name is one OpenSSL never finds, so counting it would be a false PASS. A
+// revocation list, a directory that is not there and a dangling link add nothing,
+// and the directories are read in the order given.
+func TestOnlyHashedNamesAreReadFromAHashedDirectory(t *testing.T) {
+	ours, _ := anchorAndLeaf(t)
+	other, _ := anchorAndLeaf(t)
+	d := newDisk()
+	d.dirs[certsDir] = []string{certsDir + "/ca-certificates.crt", certsDir + "/0a1b2c3d.0", certsDir + "/0a1b2c3d.r0",
+		certsDir + "/deadbeef.1", certsDir + "/0A1B2C3D.0", certsDir + "/0a1b2c3.0", certsDir + "/0a1b2c3d.", certsDir + "/0a1b2c3d.0x"}
+	d.files[certsDir+"/ca-certificates.crt"] = other
+	d.files[certsDir+"/0a1b2c3d.0"] = ours
+	d.files[certsDir+"/0a1b2c3d.r0"] = other
+	d.files[certsDir+"/0A1B2C3D.0"] = other
+	d.files[certsDir+"/0a1b2c3.0"] = other
+	d.files[certsDir+"/0a1b2c3d."] = other
+	d.files[certsDir+"/0a1b2c3d.0x"] = other
+	dirs := CADirectories{Paths: []string{"/nowhere", certsDir}, EntryCeiling: 16, ByteCeiling: 1 << 20}
+
+	anchors, stopped, err := HashedAnchors(d.source, d.list, dirs)
+	if err != nil || stopped != "" {
+		t.Fatalf("stopped at %q: %v", stopped, err)
+	}
+	if want := append([]byte{'\n'}, ours...); !bytes.Equal(anchors, want) {
+		t.Errorf("read %q, want only the certificate under a hashed name", anchors)
+	}
+	if !slices.Equal(d.listed, dirs.Paths) {
+		t.Errorf("listed %v, want %v in order", d.listed, dirs.Paths)
+	}
+	if want := []string{certsDir + "/0a1b2c3d.0", certsDir + "/deadbeef.1"}; !slices.Equal(d.reads, want) {
+		t.Errorf("opened %v, want only the hashed names %v", d.reads, want)
+	}
+}
+
+// A DIRECTORY THAT CANNOT BE READ IN FULL IS NAMED, AND SO IS WHY - the row has to
+// say it did not see all of the store rather than judge the part it saw.
+func TestAHashedDirectoryThatStopsSaysWhereAndWhy(t *testing.T) {
+	ours, _ := anchorAndLeaf(t)
+	denied := errors.New("permission denied")
+	cases := []struct {
+		name string
+		set  func(d *disk)
+		dirs CADirectories
+		want error
+	}{
+		{"a directory that cannot be listed", func(d *disk) { d.dirErrs[pkiDir] = denied },
+			CADirectories{Paths: []string{certsDir, pkiDir}, EntryCeiling: 4, ByteCeiling: 1 << 20}, denied},
+		{"a file in it that cannot be read", func(d *disk) {
+			d.dirs[pkiDir] = []string{pkiDir + "/0a1b2c3d.0"}
+			d.errs[pkiDir+"/0a1b2c3d.0"] = denied
+		}, CADirectories{Paths: []string{certsDir, pkiDir}, EntryCeiling: 4, ByteCeiling: 1 << 20}, denied},
+		{"more entries than the ceiling", func(d *disk) {
+			d.dirs[pkiDir] = []string{pkiDir + "/a", pkiDir + "/b", pkiDir + "/c"}
+		}, CADirectories{Paths: []string{certsDir, pkiDir}, EntryCeiling: 2, ByteCeiling: 1 << 20}, ErrDirectoryTooLarge},
+		{"more bytes than the ceiling", func(d *disk) {
+			d.dirs[pkiDir] = []string{pkiDir + "/0a1b2c3d.0"}
+			d.files[pkiDir+"/0a1b2c3d.0"] = ours
+		}, CADirectories{Paths: []string{certsDir, pkiDir}, EntryCeiling: 4, ByteCeiling: len(ours)}, ErrDirectoryTooLarge},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := newDisk()
+			c.set(d)
+			anchors, stopped, err := HashedAnchors(d.source, d.list, c.dirs)
+			if !errors.Is(err, c.want) || stopped != pkiDir || anchors != nil {
+				t.Errorf("got %q, %q, %v - want the directory %s and %v", anchors, stopped, err, pkiDir, c.want)
+			}
+		})
+	}
+
+	// THE POSITIVE TWIN OF BOTH CEILINGS: exactly at each, the directory is read.
+	d := newDisk()
+	d.dirs[pkiDir] = []string{pkiDir + "/0a1b2c3d.0", pkiDir + "/b"}
+	d.files[pkiDir+"/0a1b2c3d.0"] = ours
+	at := CADirectories{Paths: []string{pkiDir}, EntryCeiling: 2, ByteCeiling: len(ours) + 1}
+	if _, stopped, err := HashedAnchors(d.source, d.list, at); err != nil || stopped != "" {
+		t.Errorf("a directory exactly at both ceilings stopped at %q: %v", stopped, err)
 	}
 }

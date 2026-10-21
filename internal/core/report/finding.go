@@ -1224,6 +1224,13 @@ const RuntimeSystemStore = "system-store"
 // the probe and the generator read the same constant.
 const RuntimeNode = "node"
 
+// RuntimePython is the runtime of a row judging what one Python interpreter's
+// ssl module trusts - ADR112. It is declared here for the same reason as the two
+// above: on Windows that list is read from the platform's stores, so its command
+// names the store this account owns rather than a file, and the file rule makes
+// an exception for it that the probe and the generator read in one place.
+const RuntimePython = "python"
+
 // The two instances of the Windows platform store, spelled as Windows spells
 // the two system store locations - CERT_SYSTEM_STORE_CURRENT_USER and
 // CERT_SYSTEM_STORE_LOCAL_MACHINE, documented under CertOpenStore. They are
@@ -1366,7 +1373,12 @@ func (t *TrustStore) remediationBreach() string {
 	// NODE'S COMPILED-IN LIST IS THE SECOND EXCEPTION - ADR111 part 7. Its
 	// commands set NODE_EXTRA_CA_CERTS or add to the file it names, which the
 	// list rule above already keeps off StorePath.
-	pathless := platformOwn || t.Runtime == RuntimeNode && t.StoreForm == StoreBuiltin
+	//
+	// PYTHON ON THE PLATFORM'S STORES IS THE THIRD - ADR112 part 4. Its list is
+	// the one the Windows stores gave it, so its command adds to this account's
+	// store by the platform's name for it, as the platform's own row does.
+	pathless := platformOwn || t.Runtime == RuntimeNode && t.StoreForm == StoreBuiltin ||
+		t.Runtime == RuntimePython && t.StoreForm == StoreSystem
 	switch {
 	case !refused:
 		return "carries a remediation command for a store that did not refuse the presented chain"

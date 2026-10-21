@@ -1,0 +1,153 @@
+//go:build acceptance
+
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// TestTheShippedBinaryStartsPythonWithoutPythonPath is ADR112 part 6 asked of
+// the program as it ships, the half -I answers. A module named like one the
+// probe's script imports, put in a directory PYTHONPATH names, is imported in its
+// place - the twin below shows Python doing exactly that here - so the
+// interpreter this program starts must not see the variable. Only the running
+// binary can answer this: the arguments are the probe's and the runner is
+// main's, and a wrong one in either passes every test in the probe's own package.
+//
+// Skipped where no Python is on PATH, because then there is nothing to start.
+func TestTheShippedBinaryStartsPythonWithoutPythonPath(t *testing.T) {
+	python := pythonOnPath(t)
+	dir := t.TempDir()
+	marker := filepath.ToSlash(filepath.Join(dir, "imported"))
+	writeMarking(t, filepath.Join(dir, "base64.py"), marker)
+	setting := "PYTHONPATH=" + dir
+
+	// THE TWIN: Python imports the planted module when the variable reaches it.
+	twin := exec.Command(python, "-c", "import base64")
+	twin.Env = append(minimalEnvironment(), setting)
+	runTheTwin(t, twin, marker)
+
+	r := startProgram(t, invocation{env: []string{setting}}, aLoopbackTarget(t), "--json")
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the planted module ran inside the python process this program started")
+	}
+	if len(trustRowsIn(t, r.stdout, "python")) == 0 {
+		t.Fatalf("no python row in the report, so python was never asked and the marker proves nothing:\n%s", r.stdout)
+	}
+}
+
+// TestTheShippedBinaryStartsPythonWithoutSite is the half -S answers. A
+// sitecustomize module in an interpreter's own site-packages runs inside every
+// process of that interpreter - the twin shows it - and the place is one a
+// package installer writes to, so the interpreter this program starts must not
+// import site at all. A virtual environment in a temporary directory stands in
+// for an installation, and putting it first on PATH also asks the probe to tell
+// it apart from the interpreter it was made from.
+func TestTheShippedBinaryStartsPythonWithoutSite(t *testing.T) {
+	python := pythonOnPath(t)
+	venv := filepath.Join(t.TempDir(), "venv")
+	if out, err := exec.Command(python, "-m", "venv", "--without-pip", venv).CombinedOutput(); err != nil {
+		t.Skipf("no virtual environment could be made, so there is no site-packages to plant in: %v\n%s", err, out)
+	}
+	bin, name := "bin", "python"
+	if runtime.GOOS == "windows" {
+		bin, name = "Scripts", "python.exe"
+	}
+	interpreter := filepath.Join(venv, bin, name)
+	out, err := exec.Command(interpreter, "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])").Output()
+	if err != nil {
+		t.Fatalf("the environment did not name its site-packages: %v", err)
+	}
+	marker := filepath.ToSlash(filepath.Join(venv, "customized"))
+	writeMarking(t, filepath.Join(strings.TrimSpace(string(out)), "sitecustomize.py"), marker)
+	runTheTwin(t, exec.Command(interpreter, "-c", "0"), marker)
+
+	path := "PATH=" + filepath.Join(venv, bin) + string(os.PathListSeparator) + os.Getenv("PATH")
+	r := startProgram(t, invocation{env: []string{path}}, aLoopbackTarget(t), "--json")
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("sitecustomize ran inside the python process this program started")
+	}
+	if !slicesContainsFold(pythonInstancesIn(t, r.stdout), interpreter) {
+		t.Fatalf("no row for %s, so it was never asked and the marker proves nothing:\n%s", interpreter, r.stdout)
+	}
+}
+
+// pythonOnPath is the interpreter a person typing python3, or else python, runs.
+func pythonOnPath(t *testing.T) string {
+	t.Helper()
+	for _, name := range []string{"python3", "python"} {
+		if python, err := exec.LookPath(name); err == nil {
+			return python
+		}
+	}
+	t.Skip("no python on PATH, so there is no interpreter to keep the code out of")
+	return ""
+}
+
+// writeMarking writes a module that leaves a marker file when it runs.
+func writeMarking(t *testing.T, module, marker string) {
+	t.Helper()
+	if err := os.WriteFile(module, []byte("open("+strconv.Quote(marker)+", 'w').write('ran')\n"), 0o600); err != nil {
+		t.Fatalf("no module: %v", err)
+	}
+}
+
+// runTheTwin starts Python the ordinary way and requires the marker, so the
+// marker staying absent afterwards is this program's doing - and clears it.
+func runTheTwin(t *testing.T, twin *exec.Cmd, marker string) {
+	t.Helper()
+	if out, err := twin.CombinedOutput(); err != nil {
+		t.Fatalf("python would not start with the module: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Skipf("python did not run the module either, so this test would prove nothing: %v", err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatalf("the marker could not be cleared: %v", err)
+	}
+}
+
+// pythonInstancesIn is the instance of every python row in a report.
+func pythonInstancesIn(t *testing.T, stdout string) []string {
+	t.Helper()
+	var document struct {
+		Layers []struct {
+			Findings []struct {
+				TrustStore *struct {
+					Runtime  string `json:"runtime"`
+					Instance string `json:"instance"`
+				} `json:"trust_store"`
+			} `json:"findings"`
+		} `json:"layers"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	var instances []string
+	for _, layer := range document.Layers {
+		for _, finding := range layer.Findings {
+			if store := finding.TrustStore; store != nil && store.Runtime == "python" {
+				instances = append(instances, store.Instance)
+			}
+		}
+	}
+	return instances
+}
+
+// slicesContainsFold says one of the paths is this one, folding case as Windows
+// does.
+func slicesContainsFold(paths []string, path string) bool {
+	for _, p := range paths {
+		if strings.EqualFold(filepath.Clean(p), filepath.Clean(path)) {
+			return true
+		}
+	}
+	return false
+}

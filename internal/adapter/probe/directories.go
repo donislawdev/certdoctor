@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -117,33 +119,16 @@ func WeighDirectories(store *report.TrustStore, source func(string) (io.ReadClos
 	}
 	anchors := bytes.Clone(bundle)
 	for _, directory := range dirs.Paths {
-		names, err := files(directory)
+		more, err := readDirectory(source, files, directory, dirs, everyFile, anchors)
 		switch {
-		case errors.Is(err, fs.ErrNotExist):
-			continue
+		case errors.Is(err, ErrDirectoryTooLarge):
+			undetermined(store, fmt.Sprintf(say.TooLarge, directory))
+			return
 		case err != nil:
 			undetermined(store, fmt.Sprintf(say.Unreadable, directory, err))
 			return
-		case len(names) > dirs.EntryCeiling:
-			undetermined(store, fmt.Sprintf(say.TooLarge, directory))
-			return
 		}
-		for _, name := range names {
-			data, err := readAll(source, name)
-			if errors.Is(err, fs.ErrNotExist) {
-				// A dangling link is an ordinary leftover there and holds nothing.
-				continue
-			}
-			if err != nil {
-				undetermined(store, fmt.Sprintf(say.Unreadable, directory, err))
-				return
-			}
-			if len(anchors)+1+len(data) > dirs.ByteCeiling {
-				undetermined(store, fmt.Sprintf(say.TooLarge, directory))
-				return
-			}
-			anchors = append(append(anchors, '\n'), data...)
-		}
+		anchors = more
 		var trial report.TrustStore
 		Verify(&trial, anchors, chain, at)
 		if trial.TrustsPresentedChain != nil && *trial.TrustsPresentedChain {
@@ -151,6 +136,105 @@ func WeighDirectories(store *report.TrustStore, source func(string) (io.ReadClos
 			return
 		}
 	}
+}
+
+// ErrDirectoryTooLarge says a directory holds more than CADirectories lets this
+// program read.
+var ErrDirectoryTooLarge = errors.New("it holds more than this program reads")
+
+// HashedAnchors reads every certificate OpenSSL's directory lookup could find in
+// dirs, as one PEM bundle, or names the directory that stopped it and why.
+//
+// IT IS NOT WeighDirectories, AND THE DIFFERENCE IS WHAT IS KNOWN. There a
+// directory is one a build MAY also read, so a certificate in it leaves the
+// answer undetermined. Here the program asked - Python said which directory its
+// OpenSSL reads - so what is in it is part of the store, and goes into the
+// verdict like the rest - ADR112 part 2.
+//
+// ONLY A FILE NAMED BY A SUBJECT HASH IS READ, because that is the only name
+// OpenSSL opens: eight lowercase hex digits, a dot and a number counted from 0 -
+// "%s%c%08lx.%s%d" with an empty postfix in get_cert_by_subject_ex,
+// crypto/x509/by_dir.c of OpenSSL's openssl-3.5 branch, read 2026-10-21 at
+// https://github.com/openssl/openssl/blob/openssl-3.5/crypto/x509/by_dir.c - so a
+// certificate under any other name is one OpenSSL never finds, and counting it
+// would be a false PASS. A revocation list carries an "r" before the number.
+//
+// WHAT IS NOT CHECKED, NAMED: that the hash in the name is the hash of the
+// subject inside, and that the numbers run on from 0 without a gap - OpenSSL
+// looks up one hash and stops at the first number missing. The tools that write
+// these directories get both right, and a hand-made one that does not would be
+// counted here and missed there.
+func HashedAnchors(source func(string) (io.ReadCloser, error), files func(string) ([]string, error),
+	dirs CADirectories) ([]byte, string, error) {
+	var anchors []byte
+	for _, directory := range dirs.Paths {
+		more, err := readDirectory(source, files, directory, dirs, hashedName, anchors)
+		if err != nil {
+			return nil, directory, err
+		}
+		anchors = more
+	}
+	return anchors, "", nil
+}
+
+// readDirectory appends to anchors every file of one directory that keep takes,
+// within the ceilings of dirs, and says why it stopped when it did. A directory
+// that is not there adds nothing and is no error.
+//
+// BOTH READERS ABOVE GO THROUGH IT, so the ceilings and what a leftover link means
+// are one rule in one place - OBS50.
+func readDirectory(source func(string) (io.ReadCloser, error), files func(string) ([]string, error), directory string,
+	dirs CADirectories, keep func(string) bool, anchors []byte) ([]byte, error) {
+	names, err := files(directory)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return anchors, nil
+	case err != nil:
+		return nil, err
+	case len(names) > dirs.EntryCeiling:
+		return nil, ErrDirectoryTooLarge
+	}
+	for _, name := range names {
+		if !keep(name) {
+			continue
+		}
+		data, err := readAll(source, name)
+		if errors.Is(err, fs.ErrNotExist) {
+			// A dangling link is an ordinary leftover there and holds nothing.
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(anchors)+1+len(data) > dirs.ByteCeiling {
+			return nil, ErrDirectoryTooLarge
+		}
+		anchors = append(append(anchors, '\n'), data...)
+	}
+	return anchors, nil
+}
+
+// everyFile is what Go reads from a certificate directory - every file in it.
+func everyFile(string) bool { return true }
+
+// hashedName says a path names a file OpenSSL's directory lookup opens for a
+// certificate - HashedAnchors has the source.
+func hashedName(path string) bool {
+	hash, number, found := strings.Cut(filepath.Base(path), ".")
+	if !found || len(hash) != 8 || number == "" {
+		return false
+	}
+	for _, r := range hash {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return false
+		}
+	}
+	for _, r := range number {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // refusedForWantOfASigner is the one refusal a directory could overturn.

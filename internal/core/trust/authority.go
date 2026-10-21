@@ -203,9 +203,25 @@ func seen(counted map[string]bool, keys map[report.StoreRef]string, store report
 // keyOf is what a row that does not defer is counted by: the file it reads, or
 // for a platform store with no file, its instance - which is what the instance is
 // for everywhere else in this layer.
+//
+// PYTHON READING THE PLATFORM'S STORES AND NO FILE BESIDE THEM IS COUNTED AS THIS
+// ACCOUNT'S STORE - ADR112 part 2. On Windows its list is then what the CA and
+// ROOT stores of this account and of the machine hold, the stores system-store
+// CurrentUser is judged by, so the two rows are one store and not two. A file
+// beside the stores makes another store, and the row names it, so the path above
+// counts it on its own. On Linux no such row exists, and every Python reading no
+// file - only the platform's hashed directory - is counted once under that same
+// key, which is the one directory they all read.
+//
+// THE PRICE, NAMED: when the two judge one store differently - Python 3.13 takes
+// an intermediate in the CA store as an anchor and Windows does not - the row
+// met first is the one counted.
 func keyOf(store report.TrustStore) string {
 	if store.StorePath != "" {
 		return store.StorePath
+	}
+	if store.Runtime == report.RuntimePython && store.StoreForm == report.StoreSystem {
+		return refKey(report.StoreRef{Runtime: report.RuntimeSystemStore, Instance: report.InstanceCurrentUser})
 	}
 	return refKey(report.StoreRef{Runtime: store.Runtime, Instance: store.Instance})
 }

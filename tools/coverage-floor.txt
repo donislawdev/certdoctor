@@ -132,6 +132,12 @@ github.com/donislawdev/certdoctor/internal/adapter/probe/curl 98
 # with a stand-in.
 github.com/donislawdev/certdoctor/internal/adapter/probe/node 100
 
+# python arrived 2026-10-21 (ADR112). Measured under go1.27.2: 100.0 on Windows
+# and 100.0 in golang:1.27-alpine, where no python is on PATH and the one test
+# that asks a real interpreter is skipped - every branch it passes is also
+# reached with a stand-in.
+github.com/donislawdev/certdoctor/internal/adapter/probe/python 100
+
 # The platform's own store arrived 2026-10-14, Windows only (ADR103). Measured
 # under go1.27.2: 86.5 on Windows and 92.3 in golang:1.27-alpine, where the
 # crypt32 half is not compiled at all - so the floor is the Windows number
