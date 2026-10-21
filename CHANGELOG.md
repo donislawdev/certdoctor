@@ -10,6 +10,15 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - a refusal the Go library may have made is not pinned on a store
+
+- **certdoctor is built with Go 1.27.3**, which refuses every chain through one
+  of eight intermediate certificates, whatever store is asked (GO-2026-6809).
+  certdoctor judges other programs' stores with that library, and those
+  programs do not refuse the eight on their own. So a row whose chain or store
+  holds one of them, and which would read as refused for a reason other than an
+  unknown authority or a date, now says it could not be assessed, and why.
+
 ### Added - Python is judged by the list its ssl module trusts
 
 - **Every Python interpreter that `python`, `python3`, `pip` or `pip3` on PATH

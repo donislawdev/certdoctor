@@ -52,7 +52,7 @@ func VerifySelfSignedAnchors(store *report.TrustStore, anchorsPEM []byte, chain 
 // verify is the one rule both functions above apply - selfSignedOnly is the
 // only thing that differs between them.
 func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now time.Time, selfSignedOnly bool) {
-	roots, held, anchors := anchorsIn(anchorsPEM, selfSignedOnly)
+	roots, held, stored, anchors := anchorsIn(anchorsPEM, selfSignedOnly)
 	store.TrustAnchorCount = anchors
 
 	if anchors == 0 {
@@ -76,31 +76,47 @@ func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now tim
 		return
 	}
 	intermediates := held
+	seen := append([]*x509.Certificate{leaf}, stored...)
 	for _, der := range chain[1:] {
 		if certificate, parseErr := x509.ParseCertificate(der); parseErr == nil {
 			intermediates.AddCert(certificate)
+			seen = append(seen, certificate)
 		}
 	}
 
 	_, verifyErr := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, CurrentTime: now})
 	trusts := verifyErr == nil
-	store.TrustsPresentedChain = &trusts
+	var failure report.TrustFailure
 	if !trusts {
-		store.TrustFailure = classify(verifyErr, now)
+		failure = classify(verifyErr, now)
 	}
+	// A REFUSAL GO'S OWN LIST MAY HAVE MADE IS NOT PINNED ON THE STORE - ADR113.
+	// That list ends up as a CertificateInvalidError, so as OtherFailure, and an
+	// unknown authority or a date fails before it is applied (verify.go of
+	// go1.27.3), so those refusals stand. The price, named: a store holding one
+	// of those keys beside a chain refused for another such reason - a key usage,
+	// a name constraint - says it could not judge rather than "other", which
+	// carries no command either.
+	if failure == report.OtherFailure && carriesKeyGoRefuses(seen) {
+		store.NotAssessed = refusedByGo
+		store.TrustAnchorCount = 0
+		return
+	}
+	store.TrustsPresentedChain = &trusts
+	store.TrustFailure = failure
 }
 
 // anchorsIn reads a PEM bundle into the certificates that end a chain and the
-// ones that only help build it. With selfSignedOnly false every certificate is
-// an anchor and held stays empty.
-func anchorsIn(anchorsPEM []byte, selfSignedOnly bool) (roots, held *x509.CertPool, anchors int) {
+// ones that only help build it, and hands back every certificate it read. With
+// selfSignedOnly false every certificate is an anchor and held stays empty.
+func anchorsIn(anchorsPEM []byte, selfSignedOnly bool) (roots, held *x509.CertPool, stored []*x509.Certificate, anchors int) {
 	roots, held = x509.NewCertPool(), x509.NewCertPool()
 	rest := anchorsPEM
 	for {
 		var block *pem.Block
 		block, rest = pem.Decode(rest)
 		if block == nil {
-			return roots, held, anchors
+			return roots, held, stored, anchors
 		}
 		if block.Type != "CERTIFICATE" {
 			continue
@@ -111,6 +127,7 @@ func anchorsIn(anchorsPEM []byte, selfSignedOnly bool) (roots, held *x509.CertPo
 			// away the rest of it.
 			continue
 		}
+		stored = append(stored, certificate)
 		if selfSignedOnly && !selfSigned(certificate) {
 			held.AddCert(certificate)
 			continue
