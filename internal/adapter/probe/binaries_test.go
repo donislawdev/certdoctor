@@ -199,6 +199,24 @@ func TestNoDirectoriesFindNoBinaries(t *testing.T) {
 	}
 }
 
+// READABLE ASKS WHAT THE WALK ASKS - ADR112. The python probe checks the
+// interpreter a script or a launcher names, a file the walk never found itself,
+// and it has to refuse what the walk refuses: an empty file, a directory, and a
+// file that is not there.
+func TestReadableRefusesWhatTheWalkRefuses(t *testing.T) {
+	source := sourceOf(map[string]string{toolsGitExe: "MZ", mingwCurl: ""}, toolsGitDir)
+	for path, want := range map[string]bool{
+		toolsGitExe: true,
+		mingwCurl:   false,
+		toolsGitDir: false,
+		gitCmdExe:   false,
+	} {
+		if got := Readable(source, path); got != want {
+			t.Errorf("Readable(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
 // PathKey IS THE ONE PLACE THIS PROGRAM DECIDES TWO PATHS ARE THE SAME FILE, so
 // both halves of that decision are asserted here rather than through a caller.
 // THE PATHS GO THROUGH hostSpelling AND THE CLEANING HALF IS WHY. PathKey leans
