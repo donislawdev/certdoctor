@@ -46,7 +46,18 @@ module github.com/donislawdev/certdoctor
 // floors in tools/coverage-floor.txt, measured with the old instrument, fell
 // below themselves on code nobody had touched. go1.27.2 was the current stable
 // release, read at https://go.dev/doc/devel/release on 2026-10-14.
-go 1.27.2
+//
+// MOVED 1.27.2 -> 1.27.3 ON 2026-10-21, FOR ONE PACKAGE. go1.27.3 changes
+// crypto/x509 and nothing else, read at https://go.dev/doc/devel/release on
+// 2026-10-21. It fixes GO-2026-6809: Certificate.Verify now drops every chain
+// holding one of eight intermediates, picked out by the SHA-256 of their public
+// key, whatever pool of roots the caller hands in (golang/go#82345, commit
+// 7f86f957633e). govulncheck found it on the path every row of the trust matrix
+// is judged on, and that path judges OTHER programs' trust - programs that do
+// not carry the list. So a chain through one of the eight reads as refused on
+// every row while the program judged may well accept it. ADR113 decides what
+// such a row says instead.
+go 1.27.3
 
 require github.com/dop251/goja v0.0.0-20261013122152-245c54f48cfc
 
