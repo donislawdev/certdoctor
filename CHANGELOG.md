@@ -10,6 +10,23 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - four small things about files, machines and DNS answers
+
+- **On Linux, two binaries whose names differ only by case are two rows.**
+  certdoctor folded case when it told files apart, as Windows does, so one of
+  them was hidden. Windows and macOS still fold it, as their usual
+  filesystems do.
+- **A Java or git row names the machine its binary was built for.** It is
+  read from the binary itself - x86, x64 or arm64 - and left empty when the
+  binary does not say. It used to be read off the path, which called every
+  install outside "Program Files (x86)" x64, an ARM Mac's included.
+- **A DNS answer that carries records and no question is not believed.**
+  Nothing tied its records to the name that was asked, so a forged answer
+  only had to guess the query's identifier. A resolver's refusal with no
+  question and no records is still read.
+- **A header value followed by a long run of blanks is masked quickly.** The
+  time it took grew with the square of the run.
+
 ### Changed - regular expressions in an automatic configuration script
 
 - **A PAC file's regular expressions are evaluated by a newer engine.** Two

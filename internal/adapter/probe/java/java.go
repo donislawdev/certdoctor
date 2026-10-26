@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/adapter/probe"
@@ -90,13 +89,11 @@ func find(source file.Source, resolve file.Resolve, candidates []string) []Insta
 		if binaryIn(source, root, "javac") != "" {
 			variant = "jdk"
 		}
-		architecture := "x64"
-		if strings.Contains(root, "(x86)") {
-			architecture = "x86"
-		}
+		// THE MACHINE IS READ FROM keytool'S OWN HEADER - ADR114 B15. It used to
+		// be read off the path, which named every install outside "(x86)" x64.
 		found = append(found, Install{
 			Root: root, Store: store, Keytool: keytool,
-			Variant: variant, Architecture: architecture,
+			Variant: variant, Architecture: probe.Architecture(source, keytool),
 		})
 	}
 	return found

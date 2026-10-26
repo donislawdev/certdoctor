@@ -95,20 +95,31 @@ func TestAnInstallFoundOnlyByItsConfigIsStillFound(t *testing.T) {
 	if found[0].OnPath {
 		t.Error("an install nothing on PATH points at was reported as reachable by a typed command")
 	}
-	if found[0].Architecture != "x64" {
-		t.Errorf("architecture %q, want x64", found[0].Architecture)
+	// NO BINARY POINTED AT THIS INSTALL, SO NO HEADER NAMES ITS MACHINE - ADR114
+	// B15. The path used to supply one, x64 for everything outside "(x86)".
+	if found[0].Architecture != "" {
+		t.Errorf("architecture %q for an install with no binary read, want none", found[0].Architecture)
 	}
 }
 
 // Two installs differing ONLY by "(x86)" have separate stores and separate
-// answers, so the row has to say which one it is.
-func TestTheBitnessComesFromThePath(t *testing.T) {
-	source := sourceOf(map[string]string{`C:\Program Files (x86)\Git\etc\gitconfig`: "[http]\n"})
-	found := find(source, noLinks, []string{`C:\Program Files (x86)\Git\etc\gitconfig`}, nil)
+// answers, so the row has to say which one it is - and since ADR114 B15 it
+// says what the header of the binary on PATH says, not what the path does.
+func TestTheBitnessComesFromTheBinaryHeader(t *testing.T) {
+	dir := hostSpelling(`C:\tools\git32\cmd`)
+	binary := hostSpelling(`C:\tools\git32\cmd\git.exe`)
+	source := sourceOf(map[string]string{binary: i386Image})
+	found := find(source, noLinks, nil, []string{dir})
 	if len(found) != 1 || found[0].Architecture != "x86" {
 		t.Fatalf("got %+v, want one x86 install", found)
 	}
 }
+
+// i386Image is the start of a 32-bit x86 PE image: the offset at 0x3c, then the
+// signature and IMAGE_FILE_MACHINE_I386 where it points.
+const i386Image = "MZ" + "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x40\x00\x00\x00" + "PE\x00\x00" + "\x4c\x01"
 
 // TestAGitWithNoConfigurationAtAllStillGetsARow is OBS72, and it is the whole
 // point of this slice.

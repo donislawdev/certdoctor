@@ -41,9 +41,11 @@ type Install struct {
 	// 2026-09-02 in the bench image: git 2.54.0 there has no config file at any
 	// level, and "git config --list --show-origin" prints nothing at all.
 	SystemConfig string
-	// Architecture is x86 where the path says so, and x64 otherwise. Measured on
-	// this machine for Java: two installs differing ONLY by "(x86)" have separate
-	// stores and therefore separate answers.
+	// Architecture is what the header of the binary on PATH says - see
+	// probe.Architecture - and "" for an install found only by its config,
+	// whose binary nothing pointed at. Measured on this machine for Java: two
+	// installs differing ONLY by "(x86)" have separate stores and therefore
+	// separate answers.
 	Architecture string
 }
 
@@ -242,7 +244,7 @@ func find(source file.Source, resolve file.Resolve, candidates []string, pathDir
 			OnPath:       true,
 			Root:         filepath.Dir(binary),
 			SystemConfig: config,
-			Architecture: architectureOf(binary),
+			Architecture: probe.Architecture(source, binary),
 		})
 	}
 
@@ -260,7 +262,6 @@ func find(source file.Source, resolve file.Resolve, candidates []string, pathDir
 			Instance:     root,
 			Root:         root,
 			SystemConfig: config,
-			Architecture: architectureOf(config),
 		})
 	}
 	return found
@@ -295,15 +296,6 @@ func systemConfigNear(source file.Source, binary string) string {
 		return candidate
 	}
 	return ""
-}
-
-// architectureOf reads the bitness off a path, because two installs differing
-// ONLY by "(x86)" have separate stores and separate answers.
-func architectureOf(path string) string {
-	if strings.Contains(path, "(x86)") {
-		return "x86"
-	}
-	return "x64"
 }
 
 // boolean reads a value the way git reads a boolean, and says whether git reads

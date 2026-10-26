@@ -86,14 +86,47 @@ func TestAStoreWithNoKeytoolIsNotAnInstall(t *testing.T) {
 	}
 }
 
-func TestTheBitnessComesFromThePath(t *testing.T) {
-	source := sourceOf(
-		hostSpelling(`C:\Program Files (x86)\Java\jre8\lib\security\cacerts`),
-		hostSpelling(`C:\Program Files (x86)\Java\jre8\bin\keytool.exe`),
-	)
-	found := find(source, noLinks, []string{hostSpelling(`C:\Program Files (x86)\Java\jre8`)})
-	if len(found) != 1 || found[0].Architecture != "x86" {
-		t.Fatalf("got %+v, want one x86 install", found)
+// THE MACHINE IS keytool'S OWN HEADER, NOT THE PATH - ADR114 B15. The path rule
+// named every install outside "(x86)" x64, an ARM Mac's included, so the second
+// install here has "(x86)" in no part of its path and still says x86, and a
+// keytool with no header the probe can read says nothing.
+func TestTheBitnessComesFromTheKeytoolHeader(t *testing.T) {
+	x86Tool := hostSpelling(`C:\Program Files (x86)\Java\jre8\bin\keytool.exe`)
+	oddTool := hostSpelling(`C:\java\old\bin\keytool.exe`)
+	plainTool := hostSpelling(`C:\java\plain\bin\keytool.exe`)
+	source := withContent(sourceOf(
+		hostSpelling(`C:\Program Files (x86)\Java\jre8\lib\security\cacerts`), x86Tool,
+		hostSpelling(`C:\java\old\lib\security\cacerts`), oddTool,
+		hostSpelling(`C:\java\plain\lib\security\cacerts`), plainTool,
+	), map[string]string{x86Tool: i386Image, oddTool: i386Image})
+
+	found := find(source, noLinks, []string{
+		hostSpelling(`C:\Program Files (x86)\Java\jre8`), hostSpelling(`C:\java\old`), hostSpelling(`C:\java\plain`),
+	})
+	if len(found) != 3 {
+		t.Fatalf("got %+v, want three installs", found)
+	}
+	for i, want := range []string{"x86", "x86", ""} {
+		if found[i].Architecture != want {
+			t.Errorf("%s: architecture %q, want %q", found[i].Root, found[i].Architecture, want)
+		}
+	}
+}
+
+// i386Image is the start of a 32-bit x86 PE image: the offset at 0x3c, then the
+// signature and IMAGE_FILE_MACHINE_I386 where it points.
+const i386Image = "MZ" + "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+	"\x40\x00\x00\x00" + "PE\x00\x00" + "\x4c\x01"
+
+// withContent serves the given bodies for their paths and everything else as
+// source does.
+func withContent(source func(string) (io.ReadCloser, error), bodies map[string]string) func(string) (io.ReadCloser, error) {
+	return func(path string) (io.ReadCloser, error) {
+		if body, ok := bodies[path]; ok {
+			return io.NopCloser(strings.NewReader(body)), nil
+		}
+		return source(path)
 	}
 }
 

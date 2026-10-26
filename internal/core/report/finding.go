@@ -984,7 +984,8 @@ type TrustStore struct {
 	Variant string
 	// Architecture tells apart two installs that differ ONLY by "Program Files
 	// (x86)". Measured: jre1.8.0_501 exists in both bitnesses, with separate
-	// stores and therefore separate answers.
+	// stores and therefore separate answers. x86, x64 or arm64 as the binary's
+	// header says, and empty where no header said one of them - ADR114 B15.
 	Architecture string
 
 	// StorePath is where this store lives on THIS machine, and is empty only

@@ -3,6 +3,7 @@ package probe
 import (
 	"io"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -149,11 +150,33 @@ func Resolved(resolve func(string) (string, error), path string) string {
 // of the curl probe reported ONE binary as TWO stores and the verdict counted
 // ten where there are nine.
 //
-// THE COST, NAMED: on a case-sensitive filesystem two genuinely different files
-// whose names differ only by case would be folded into one. That is a pathology
-// nobody ships, while mixed spellings in a Windows PATH are measured and here.
-func PathKey(path string) string {
-	return strings.ToLower(filepath.Clean(path))
+// CASE IS FOLDED ONLY WHERE THE USUAL FILESYSTEM FOLDS IT - ADR114 R15. Windows
+// treats file and directory names as case-insensitive (read 2026-10-26 at
+// https://learn.microsoft.com/en-us/windows/wsl/case-sensitivity), and APFS as
+// macOS formats a volume does too - the case-sensitive one is a variant to be
+// chosen (read the same day at
+// https://support.apple.com/guide/disk-utility/file-system-formats-dsku19ed921c/mac).
+// Elsewhere two names differing only by case are two files, and folding them
+// hid one of them.
+//
+// THE COST, NAMED, EACH WAY. A case-sensitive volume on a Mac, or a directory
+// made case-sensitive on Windows, still folds. A case-insensitive mount on Linux
+// - an NTFS drive under WSL is one, by the same Microsoft page - does not, so
+// one file reached by two spellings shows as two rows there. Both cost a row
+// that can be seen, never a file that cannot.
+func PathKey(path string) string { return pathKey(path, foldsCase) }
+
+// foldsCase says whether this platform's usual filesystem folds case.
+var foldsCase = runtime.GOOS == "windows" || runtime.GOOS == "darwin"
+
+// pathKey is PathKey with the folding as a parameter, so both rules are
+// asserted on every platform.
+func pathKey(path string, fold bool) string {
+	path = filepath.Clean(path)
+	if fold {
+		return strings.ToLower(path)
+	}
+	return path
 }
 
 // Readable reports whether this path is a file this program can read from - the

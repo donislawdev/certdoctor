@@ -278,16 +278,21 @@ func TestASectionCutShortIsRefusedRatherThanWalkedPast(t *testing.T) {
 		t.Error("a question with no type or class was walked past")
 	}
 
+	// BOTH ANSWERS BELOW FOLLOW A WHOLE QUESTION. They used to come with no
+	// question at all, and since ADR114 B10 such a packet is refused before its
+	// answers are read - so the two checks they are about went unreached while
+	// this test stayed green. Found by the coverage of this package.
+	asked := append(append([]byte{0, 5, 0x80, 0, 0, 1, 0, 1, 0, 0, 0, 0}, name...), 0, 1, 0, 1)
+
 	// An answer whose name is complete and whose ten byte header is not.
-	answer := append(append([]byte{0, 5, 0x80, 0, 0, 0, 0, 1, 0, 0, 0, 0}, name...), 0, 1, 0, 1)
+	answer := append(append([]byte{}, asked...), 0xc0, headerLen, 0, 1, 0, 1)
 	if _, err := Parse(answer, 5, "example.com", TypeA); err == nil {
 		t.Error("an answer record with a header cut in half was walked past")
 	}
 
 	// An answer whose own NAME runs off the end. It is a separate branch from the
-	// question's name above and would be reached by a resolver that answered a
-	// question we never sent - which is the case with nothing else guarding it.
-	nameless := []byte{0, 5, 0x80, 0, 0, 0, 0, 1, 0, 0, 0, 0, 60, 'x'}
+	// question's name above.
+	nameless := append(append([]byte{}, asked...), 60, 'x')
 	if _, err := Parse(nameless, 5, "example.com", TypeA); err == nil {
 		t.Error("an answer record whose name runs past the end of the packet was read")
 	}
@@ -419,6 +424,32 @@ func TestAnAnswerToAnotherQuestionIsNotOurs(t *testing.T) {
 	// A trailing dot is the same name, and a person may well type one.
 	if _, err := Parse(whole.bytes(), 42, "example.com.", TypeA); err != nil {
 		t.Errorf("an answer to a name written with a trailing dot was refused: %v", err)
+	}
+}
+
+// AN ANSWER WITH NO QUESTION IS BELIEVED ONLY WHEN IT CARRIES NO RECORD -
+// ADR114 B10. With no question there is nothing to hold the name and the type
+// against, so a forged packet that guessed the identifier and left the question
+// out passed both checks above. A resolver refusing a query may send no question
+// back, and no record with it - that shape is still read.
+func TestAnAnswerWithNoQuestionIsBelievedOnlyWithoutRecords(t *testing.T) {
+	name, err := encodeName("example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := func(rcode, records byte) []byte {
+		return []byte{0, 42, 0x81, 0x80 | rcode, 0, 0, 0, records, 0, 0, 0, 0}
+	}
+
+	forged := append(header(0, 1), name...)
+	forged = append(forged, 0, byte(TypeA), 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 66)
+	if _, err := Parse(forged, 42, "example.com", TypeA); !errors.Is(err, ErrNotOurs) {
+		t.Errorf("a record with no question came back as %v, want ErrNotOurs", err)
+	}
+
+	refused, err := Parse(header(5, 0), 42, "example.com", TypeA)
+	if err != nil || refused.ResponseCode != "REFUSED" {
+		t.Errorf("a refusal with no question came back as %+v, %v", refused, err)
 	}
 }
 

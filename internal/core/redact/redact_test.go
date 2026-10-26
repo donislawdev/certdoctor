@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestTheDocumentedLeaksAreClosed walks the concrete values this package was
@@ -500,6 +501,33 @@ func TestACookieKeepsItsWholeValueMasked(t *testing.T) {
 	got := New(Credentials).Text("set-cookie: sid=abc123; Path=/; HttpOnly")
 	if strings.Contains(got, "abc123") || strings.Contains(got, "HttpOnly") {
 		t.Errorf("a cookie was cut short of its own end: %q", got)
+	}
+}
+
+// A RUN OF BLANKS IS CROSSED ONCE - ADR114 R13. Before a word that is not a
+// variable, every blank of the run used to be asked about, each time trimming
+// the rest of the run: about eight billion steps for this one value. The places
+// of the cut are the ones that asking at each blank gave.
+func TestALongRunOfBlanksIsCrossedOnce(t *testing.T) {
+	blanks := strings.Repeat(" ", 1<<17)
+
+	started := time.Now()
+	secret, tail := splitHeaderValue("sid=abc123" + blanks + "Path=/")
+	if took := time.Since(started); took > time.Second {
+		t.Errorf("splitting one header value took %v", took)
+	}
+	if tail != "" || secret != "sid=abc123"+blanks+"Path=/" {
+		t.Errorf("a value with no variable behind it was cut at %d", len(secret))
+	}
+
+	for _, c := range []struct{ value, secret string }{
+		{"a  \tB_C=1", "a"},
+		{"a x B_C=1", "a x"},
+		{" \tB_C=1", " "},
+	} {
+		if secret, tail := splitHeaderValue(c.value); secret != c.secret || secret+tail != c.value {
+			t.Errorf("%q: cut after %q, want after %q", c.value, secret, c.secret)
+		}
 	}
 }
 

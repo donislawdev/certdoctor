@@ -197,11 +197,23 @@ func Parse(msg []byte, wantID uint16, wantName string, want Type) (Message, erro
 		return Message{}, errors.New("this packet is a question, not an answer")
 	}
 
-	at, err := readQuestions(msg, int(uint16(msg[4])<<8|uint16(msg[5])), wantName, want)
+	questions, answers := int(uint16(msg[4])<<8|uint16(msg[5])), int(uint16(msg[6])<<8|uint16(msg[7]))
+	// AN ANSWER WITH NO QUESTION IS BELIEVED ONLY WHEN IT CARRIES NO RECORD -
+	// ADR114 B10. With no question there is nothing to hold the name and the
+	// type against, so a forged packet that guessed the identifier and left the
+	// question out passed both checks in readQuestions. A resolver refusing or
+	// failing a query may send no question back, and then it sends no answer
+	// record either, so that shape is still read. The other two sections are
+	// never read, so what they hold cannot reach the report.
+	if questions == 0 && answers > 0 {
+		return Message{}, fmt.Errorf("%w: it carries %d answer record(s) and no question, so nothing ties them to what was asked",
+			ErrNotOurs, answers)
+	}
+	at, err := readQuestions(msg, questions, wantName, want)
 	if err != nil {
 		return Message{}, err
 	}
-	addresses, matched, err := readAnswers(msg, at, int(uint16(msg[6])<<8|uint16(msg[7])), want)
+	addresses, matched, err := readAnswers(msg, at, answers, want)
 	if err != nil {
 		return Message{}, err
 	}

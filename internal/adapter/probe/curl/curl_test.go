@@ -77,12 +77,25 @@ func TestEveryCurlOnPathIsFound(t *testing.T) {
 // machine carries system32 in two spellings, so the first version of find
 // reported ONE binary as TWO stores and the verdict counted ten where there are
 // nine. Caught by running the binary.
-func TestOneBinaryReachedByTwoSpellingsIsOneRow(t *testing.T) {
+//
+// Where the filesystem tells case apart the two spellings are two files, so
+// there they are two rows - ADR114 R15, asserted in the probe package.
+func TestOneBinaryReachedByTwoSpellingsIsOneRowWhereCaseFolds(t *testing.T) {
 	source := sourceOf(system32Curl)
 	found := find(source, noLinks, []string{winSystem32, winSystem32Loud})
-	if len(found) != 1 {
-		t.Fatalf("found %d rows for one binary: %+v", len(found), found)
+	if want := rowsForSystem32Twice(); len(found) != want {
+		t.Fatalf("found %d rows for one binary, want %d: %+v", len(found), want, found)
 	}
+}
+
+// rowsForSystem32Twice is how many rows system32 in two spellings makes here.
+// It asks probe.PathKey rather than restating which platforms fold case, so the
+// rule has one copy - its test is in the probe package.
+func rowsForSystem32Twice() int {
+	if probe.PathKey(winSystem32) == probe.PathKey(winSystem32Loud) {
+		return 1
+	}
+	return 2
 }
 
 // SCHANNEL ASKS THE PLATFORM, AND THE ANSWER IS THE PLATFORM ROW'S. This probe
@@ -669,8 +682,8 @@ func TestTheProbeReturnsOneRowPerBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
 	}
-	if len(stores) != 2 {
-		t.Fatalf("%d rows, want one per binary - system32 appears twice on PATH", len(stores))
+	if want := 1 + rowsForSystem32Twice(); len(stores) != want {
+		t.Fatalf("%d rows, want %d - system32 appears twice on PATH", len(stores), want)
 	}
 	for _, store := range stores {
 		if store.Runtime != "curl" || store.Backend != "schannel" {

@@ -659,6 +659,11 @@ func maskHeaders(s string) string {
 // a cookie carrying "; Path=/" keeps its whole value masked rather than being
 // cut at a word that is not a variable at all. Refusing to cut is the safe
 // direction here, so the rule for cutting is the one that has to be sure.
+//
+// A RUN OF BLANKS IS ASKED ONCE, AT ITS FIRST BLANK - ADR114 R13. Every blank in
+// the run leads to the same word, so the answer and the place of the cut are
+// the ones asking at each blank gave, and asking at each blank cost the run's
+// length squared on a line that is somebody else's input.
 func splitHeaderValue(rest string) (secret, tail string) {
 	for at := 1; at < len(rest); at++ {
 		if rest[at] != ' ' && rest[at] != '\t' {
@@ -668,6 +673,7 @@ func splitHeaderValue(rest string) (secret, tail string) {
 		if environmentAssignment.MatchString(following) {
 			return rest[:at], rest[at:]
 		}
+		at = len(rest) - len(following)
 	}
 	return rest, ""
 }

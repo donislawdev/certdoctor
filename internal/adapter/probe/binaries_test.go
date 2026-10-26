@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -132,13 +133,26 @@ func TestEveryBinaryOnPathIsFound(t *testing.T) {
 // machine carries system32 in two spellings, so the first version of this walk
 // reported ONE binary as TWO stores and the verdict counted ten where there are
 // nine. Caught by running the binary, never by a test.
-func TestOneFileReachedByTwoSpellingsIsFoundOnce(t *testing.T) {
+//
+// WHERE THE FILESYSTEM TELLS CASE APART THE SAME TWO NAMES ARE TWO FILES -
+// ADR114 R15 - so there the walk finds both, and the fake disk serves both
+// because it folds case with its own rule.
+func TestOneFileReachedByTwoSpellingsIsFoundOnceWhereCaseFolds(t *testing.T) {
 	source := sourceOf(map[string]string{hostSpelling(`C:\Windows\system32\curl.exe`): "MZ"})
 	found := Binaries(source, noLinks, []string{hostSpelling(`C:\Windows\system32`), hostSpelling(`C:\WINDOWS\system32`)}, "curl.exe")
-	if len(found) != 1 {
-		t.Fatalf("found %d entries for one binary: %v", len(found), found)
+	want := 1
+	if !filesystemFoldsCase() {
+		want = 2
+	}
+	if len(found) != want {
+		t.Fatalf("found %d entries for one binary on %s, want %d: %v", len(found), runtime.GOOS, want, found)
 	}
 }
+
+// filesystemFoldsCase is which platforms fold case, stated from the two sources
+// PathKey cites rather than read back from foldsCase - so the rule and the tests
+// of it cannot move together.
+func filesystemFoldsCase() bool { return runtime.GOOS == "windows" || runtime.GOOS == "darwin" }
 
 // THE WALK ITSELF KEEPS EVERY SPELLING, WITH THE NAME IT CARRIES - ADR112. Two
 // spellings of one file are two hits, in PATH order, so a probe telling them apart
@@ -265,12 +279,25 @@ func TestReadableRefusesWhatTheWalkRefuses(t *testing.T) {
 // ordinary character in a filename, so the whole string is one element and there
 // is nothing to clean. Spelled for the host, both halves of the decision are
 // asserted everywhere instead of on Windows alone.
-func TestPathKeyCleansAndFoldsCase(t *testing.T) {
-	if PathKey(hostSpelling(`C:\Windows\.\system32\curl.exe`)) != PathKey(hostSpelling(`C:\WINDOWS\system32\curl.exe`)) {
-		t.Error("two spellings of one file produced two keys")
+//
+// BOTH RULES ARE ASSERTED ON EVERY PLATFORM through pathKey, and the last check
+// says which of them PathKey applies here - ADR114 R15.
+func TestPathKeyCleansAndFoldsCaseWhereTheFilesystemDoes(t *testing.T) {
+	quiet, loud := hostSpelling(`C:\Windows\.\system32\curl.exe`), hostSpelling(`C:\WINDOWS\system32\curl.exe`)
+	if pathKey(quiet, true) != pathKey(loud, true) {
+		t.Error("folding, two spellings of one file produced two keys")
+	}
+	if pathKey(quiet, false) == pathKey(loud, false) {
+		t.Error("without folding, two names differing by case produced one key")
+	}
+	if got := pathKey(quiet, false); got != hostSpelling(`C:\Windows\system32\curl.exe`) {
+		t.Errorf("without folding, the path was not cleaned: %q", got)
 	}
 	if PathKey(hostSpelling(`C:\tools\git.exe`)) == PathKey(hostSpelling(`C:\tools\git2.exe`)) {
 		t.Error("two different files produced one key")
+	}
+	if folded := PathKey(quiet) == PathKey(loud); folded != filesystemFoldsCase() {
+		t.Errorf("on %s two spellings of one name gave one key: %v, want %v", runtime.GOOS, folded, filesystemFoldsCase())
 	}
 }
 
