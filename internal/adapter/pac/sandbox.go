@@ -55,6 +55,20 @@ type Sandbox struct {
 	// 256 MiB with the ceiling on, inside a 512 MiB container. The ceiling buys
 	// a real bound on how far a hostile file gets before something stops it.
 	//
+	// THAT BOUND HOLDS ONLY FOR A FILE THAT ALLOCATES IN STEPS - OBS199. The
+	// stopwatch asks the engine to stop, and goja checks that between its own
+	// instructions, so a built-in that asks for its whole result at once is
+	// native code the request never reaches. "x".repeat(1e10) and
+	// "".padStart(1e10) grow one buffer to the length the script chose, and
+	// Array.prototype.join grows one inside a single native loop. Measured
+	// 2026-10-26 in a container with 1 GB, on the goja this module pins: each
+	// of the three got the process killed, while a string doubled thirty-four
+	// times in the same container stopped at this ceiling. Such a file ends the
+	// run with no report at all. Wrapping those three built-ins would not close
+	// it, because the list of built-ins whose output size a script picks is not
+	// closed. A process can be killed in the middle of native code, so the
+	// recorded answer is to evaluate in a child process.
+	//
 	// WHAT A CALLER MUST DO ABOUT IT: do not evaluate a PAC file beside layers
 	// that allocate, and do not report memory_ceiling to a user as a fact about
 	// their file without that caveat.

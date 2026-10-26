@@ -16,6 +16,8 @@
 //     setTimeout or console. We add nothing but the twelve helpers.
 //  3. A hard time limit, a memory ceiling enforced by stopwatch, and a
 //     mandatory call stack limit - this file and the size check in sandbox.go.
+//     The memory ceiling does not reach a built-in that allocates its whole
+//     result in native code - the Ceiling field in sandbox.go says why.
 //  4. Only the helper functions from the PAC specification - sandbox.go injects
 //     twelve names and no others.
 //  5. A limit or an error is an outcome with a reason, never an exception and
