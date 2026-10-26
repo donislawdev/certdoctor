@@ -50,15 +50,28 @@ func commands(platform string) []string {
 // A later hit is shadowed - a person typing the command never reaches it - so its
 // interpreter keeps the row and not the name. A first hit this cannot follow
 // still takes the name, so no later hit claims it.
+//
+// A SHADOWED ALIAS OF A PACKAGE ALREADY STARTED IS NOT STARTED - OBS191, the
+// cheaper variant the owner chose. Each alias is a process, and the probe has
+// ten seconds: a hit nobody reaches by typing takes no name, so all it could add
+// is a runtime only it leads to, and an alias of the same package has already
+// said which runtime that package starts. The same rule skips an alias met a
+// second time through a directory PATH lists twice.
 func (m machine) interpreters(ctx context.Context, pathDirs []string) []interpreter {
 	var found []interpreter
 	at := map[string]int{}
 	typed := map[string]bool{}
+	asked := map[string]bool{}
 	for _, hit := range probe.OnPathOrAliases(m.source, m.alias, pathDirs, commands(m.platform)...) {
 		command := strings.TrimSuffix(hit.Name, ".exe")
 		first := !typed[command]
 		typed[command] = true
+		pkg := strings.ToLower(hit.Package)
+		if pkg != "" && !first && asked[pkg] {
+			continue
+		}
 		in, key := m.follow(ctx, pathDirs, hit)
+		asked[pkg] = asked[pkg] || in.asked
 		if in.path == "" {
 			continue
 		}

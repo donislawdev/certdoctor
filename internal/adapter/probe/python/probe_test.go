@@ -485,6 +485,47 @@ func TestAnAppAliasIsAskedWhichInterpreterItIs(t *testing.T) {
 
 // AN INTERPRETER FOUND BEFORE ITS ALIAS IS NOT ASKED TWICE - the order of PATH
 // on the owner's machine, where the install manager's directory comes first.
+// A SHADOWED ALIAS OF A PACKAGE ALREADY STARTED IS NOT STARTED - OBS191, the
+// cheaper variant the owner chose. Here the manager's launchers come first on
+// PATH, so both aliases are shadowed: the first is still started, because
+// nothing of its package has been, and the second is not. A WindowsApps PATH
+// lists twice is the same case, and its second alias is not started either.
+func TestAShadowedAliasOfAPackageAlreadyStartedIsNotStarted(t *testing.T) {
+	b := newBench(t)
+	w := newWorld("windows")
+	w.path = []string{managerBin, windowsApps, windowsApps}
+	for _, name := range []string{"python.exe", "python3.exe"} {
+		w.disk.put(filepath.Join(managerBin, name), "MZ")
+		w.disk.put(filepath.Join(managerBin, name)+".__target__", managerCore)
+		w.aliases[filepath.Join(windowsApps, name)] = pythonManager
+		w.replies[filepath.Join(windowsApps, name)] = replyOf(t, started(managerCore, listing(0x8000, b.root)))
+	}
+	w.disk.put(managerCore, "MZ")
+
+	stores := w.rows(t, b.chain())
+	if len(stores) != 1 || !slices.Equal(stores[0].SelectedBy, []string{"PATH", "python", "python3"}) {
+		t.Fatalf("got %+v", stores)
+	}
+	if len(w.calls) != 1 || w.calls[0].binary != filepath.Join(windowsApps, "python.exe") {
+		t.Errorf("started %+v, want the first alias of the package alone", w.calls)
+	}
+
+	// A shadowed alias of a package nothing has started yet is still asked: it
+	// may be the only way to a runtime of its own.
+	w = newWorld("windows")
+	w.path = []string{managerBin, windowsApps}
+	w.disk.put(filepath.Join(managerBin, "python3.exe"), "MZ")
+	w.disk.put(filepath.Join(managerBin, "python3.exe")+".__target__", managerCore)
+	w.disk.put(managerCore, "MZ")
+	alias := filepath.Join(windowsApps, "python3.exe")
+	w.aliases[alias] = pythonManager
+	w.replies[alias] = replyOf(t, started(managerCore, listing(0x8000, b.root)))
+	w.rows(t, b.chain())
+	if len(w.calls) != 1 || w.calls[0].binary != alias {
+		t.Errorf("a shadowed alias of a package not yet started was not asked: %+v", w.calls)
+	}
+}
+
 func TestAnInterpreterFoundBeforeItsAliasIsAskedOnce(t *testing.T) {
 	b := newBench(t)
 	w := newWorld("windows")
