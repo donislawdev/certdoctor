@@ -23,6 +23,7 @@ package run
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/layer"
@@ -634,7 +635,7 @@ func maskTrustStore(r *redact.Redaction, finding *report.Finding) {
 	// same object.
 	if store.Fix != nil {
 		fix := *store.Fix
-		fix.Command = r.Text(fix.Command)
+		fix.Command = maskBetween(r, fix.Command, fix.Placeholders)
 		store.Fix = &fix
 	}
 	// TrustFailure is not masked and neither is anything else in a Fix. The
@@ -642,6 +643,33 @@ func maskTrustStore(r *redact.Redaction, finding *report.Finding) {
 	// sentence and the caveat name no path, no host and no account - they are
 	// about what a store IS, not about where it lives.
 	finding.TrustStore = &store
+}
+
+// maskBetween masks a command everywhere except its placeholders.
+//
+// A PLACEHOLDER IS PART OF THE COMMAND'S SHAPE AND NAMES NOBODY - ADR114. The
+// contract asks every placeholder to stand in its command, and a name this run
+// was told to hide can be spelled like one: a host called certificate.pem turned
+// "<certificate.pem>" into a pseudonym, the fix then named a placeholder its
+// command no longer held, and the whole report was refused rather than printed.
+// So only the text between them is masked, by the same Redaction, and the
+// placeholders cross as they are.
+func maskBetween(r *redact.Redaction, command string, placeholders []string) string {
+	var masked strings.Builder
+	for command != "" {
+		at, width := len(command), 0
+		for _, placeholder := range placeholders {
+			// An empty placeholder is found everywhere and would never move this
+			// loop on - the contract refuses one, but only after masking.
+			if i := strings.Index(command, placeholder); placeholder != "" && i >= 0 && i < at {
+				at, width = i, len(placeholder)
+			}
+		}
+		masked.WriteString(r.Text(command[:at]))
+		masked.WriteString(command[at : at+width])
+		command = command[at+width:]
+	}
+	return masked.String()
 }
 
 // maskTCPConnect is the entry that had to be WRITTEN in order to say that this

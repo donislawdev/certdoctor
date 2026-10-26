@@ -91,16 +91,16 @@ func (m machine) storeFor(ctx context.Context, in interpreter, chain [][]byte, n
 	// not read matters only where what it did read did not close the chain.
 	switch {
 	case relative != "" && !trusted(store):
-		undetermined(&store, fmt.Sprintf("SSL_CERT_DIR names %s, a relative directory each program looks up from "+
+		probe.Undetermined(&store, fmt.Sprintf("SSL_CERT_DIR names %s, a relative directory each program looks up from "+
 			"wherever it starts, so what this python makes of the chain is undetermined", relative))
 	case err != nil && !trusted(store):
-		undetermined(&store, fmt.Sprintf("this python also reads the directory %s, which could not be read in full "+
+		probe.Undetermined(&store, fmt.Sprintf("this python also reads the directory %s, which could not be read in full "+
 			"(%v), so what it makes of the chain is undetermined", stopped, err))
 	case a.flags().Strict() && !a.openSSL3() && trusted(store):
 		// STRICT ONLY TAKES AWAY - ADR112 part 3. Its rules are applied here as
 		// OpenSSL 3 has them, and OpenSSL 1.1.1 has far fewer, so a trust under
 		// any other OpenSSL is not proven, and a refusal stands as it is.
-		undetermined(&store, fmt.Sprintf("this python checks a chain against the strict rules (VERIFY_X509_STRICT) of "+
+		probe.Undetermined(&store, fmt.Sprintf("this python checks a chain against the strict rules (VERIFY_X509_STRICT) of "+
 			"%s, and this program applies those of OpenSSL 3 alone", openSSLName(a.OpenSSL)))
 	}
 	return store
@@ -201,14 +201,4 @@ func (m machine) directories(a answer) (probe.CADirectories, string) {
 // trusted says the row closed the chain.
 func trusted(store report.TrustStore) bool {
 	return store.TrustsPresentedChain != nil && *store.TrustsPresentedChain
-}
-
-// undetermined turns a row into one without a verdict, and the count goes with
-// the verdict - the contract refuses a row that could not judge a store and still
-// counts what is in it.
-func undetermined(store *report.TrustStore, why string) {
-	store.TrustsPresentedChain = nil
-	store.TrustFailure = ""
-	store.TrustAnchorCount = 0
-	store.NotAssessed = why
 }

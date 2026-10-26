@@ -199,6 +199,48 @@ func TestMaskingTakesThePathOutOfTheCommandToo(t *testing.T) {
 	}
 }
 
+// A NAME SPELLED LIKE A PLACEHOLDER IS MASKED AROUND IT, NEVER INSIDE IT -
+// ADR114. Masking the placeholder made the fix name one its command no longer
+// held, and the CLI refused to print the whole report - so the row is held to its
+// own contract here, not only read.
+func TestAPlaceholderSpelledLikeAMaskedNameStaysWhole(t *testing.T) {
+	redaction := redact.New(redact.Everything, redact.Host("certificate.pem"), redact.Host("alias"))
+	no := false
+	store := report.TrustStore{
+		Runtime:              "java",
+		Instance:             "/srv/certificate.pem/jdk",
+		Variant:              "jdk",
+		StorePath:            "/srv/certificate.pem/jdk/lib/security/cacerts",
+		StoreForm:            report.StoreFile,
+		TrustAnchorCount:     150,
+		TrustsPresentedChain: &no,
+		TrustFailure:         report.UnknownAuthority,
+		SelectedBy:           []string{},
+		Fix: &report.Fix{
+			Command: "'/srv/certificate.pem/jdk/bin/keytool' -importcert -keystore " +
+				"'/srv/certificate.pem/jdk/lib/security/cacerts' -alias '<alias>' -file '<certificate.pem>'",
+			Placeholders: []string{"<alias>", "<certificate.pem>"},
+		},
+	}
+	finding := report.Finding{Kind: report.FindingTrustStore, Summary: "java", Source: report.SourceDetected, TrustStore: &store}
+
+	Options{Redaction: redaction}.maskFinding(&finding)
+	command := finding.TrustStore.Fix.Command
+	if !strings.Contains(command, "'<alias>'") || !strings.Contains(command, "'<certificate.pem>'") {
+		t.Errorf("a placeholder was masked: %q", command)
+	}
+	if strings.Contains(command, "/srv/certificate.pem/") {
+		t.Errorf("the name survived between the placeholders: %q", command)
+	}
+	if broken := finding.Breach(); broken != "" {
+		t.Errorf("the masked row breaks its contract: %s", broken)
+	}
+	// An empty placeholder is everywhere at once, and must not hold masking still.
+	if got := maskBetween(redaction, "kept", []string{""}); got != "kept" {
+		t.Errorf("an empty placeholder gave %q", got)
+	}
+}
+
 // A row with nothing to fix must survive masking rather than panicking on a nil,
 // and that is the common case: every green row in the matrix.
 func TestMaskingARowWithNoCommandIsFine(t *testing.T) {

@@ -682,6 +682,19 @@ func TestStrictUnderAnotherOpenSSLLeavesATrustUnproven(t *testing.T) {
 	}
 }
 
+// A STRICT REFUSAL BESIDE A DIRECTORY THIS PROGRAM CANNOT READ IS NO REFUSAL,
+// and the rule it named goes with it - ADR114. The rule used to stay, the
+// contract refused the row, and the orchestrator dropped the whole matrix with it.
+func TestAStrictRefusalLeftUnprovenNamesNoRule(t *testing.T) {
+	root, chain := withoutKeyID(t)
+	a := listing(0x88020, root)
+	a.DirEnv = text("certs")
+	store := one(t, runtime.GOOS, a, chain, nil)
+	if trustOf(store) != "undetermined" || store.RefusalDetail != "" {
+		t.Errorf("got %s naming the rule %q", trustOf(store), store.RefusalDetail)
+	}
+}
+
 // THE HASHED DIRECTORY IS PART OF THE STORE - ADR112 part 2, measured by S28:
 // Fedora listed nothing and Python trusted the directory. Only a hashed name
 // counts, and a certificate on the list and in the directory counts once.

@@ -10,6 +10,15 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - `--redact` no longer throws away a report with a command in it
+
+- **A report whose remediation command holds a placeholder spelled like a name
+  being masked is printed.** With a host or a name called `certificate.pem` or
+  `alias`, masking reached into `<certificate.pem>` or `<alias>`, the command no
+  longer held the placeholder it named, and certdoctor refused to print the
+  report at all. The placeholders now stay as they are and only the text around
+  them is masked.
+
 ### Changed - a refusal the Go library may have made is not pinned on a store
 
 - **certdoctor is built with Go 1.27.3**, which refuses every chain through one

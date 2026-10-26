@@ -122,17 +122,17 @@ func WeighDirectories(store *report.TrustStore, source func(string) (io.ReadClos
 		more, err := readDirectory(source, files, directory, dirs, everyFile, anchors)
 		switch {
 		case errors.Is(err, ErrDirectoryTooLarge):
-			undetermined(store, fmt.Sprintf(say.TooLarge, directory))
+			Undetermined(store, fmt.Sprintf(say.TooLarge, directory))
 			return
 		case err != nil:
-			undetermined(store, fmt.Sprintf(say.Unreadable, directory, err))
+			Undetermined(store, fmt.Sprintf(say.Unreadable, directory, err))
 			return
 		}
 		anchors = more
 		var trial report.TrustStore
 		Verify(&trial, anchors, chain, at)
 		if trial.TrustsPresentedChain != nil && *trial.TrustsPresentedChain {
-			undetermined(store, fmt.Sprintf(say.Closes, directory))
+			Undetermined(store, fmt.Sprintf(say.Closes, directory))
 			return
 		}
 	}
@@ -243,12 +243,19 @@ func refusedForWantOfASigner(store *report.TrustStore) bool {
 		store.TrustFailure == report.UnknownAuthority
 }
 
-// undetermined turns a row into one without a verdict. The count goes with the
-// verdict - the contract refuses a row that could not assess a store and still
-// counts what is in it.
-func undetermined(store *report.TrustStore, why string) {
+// Undetermined turns a row into one without a verdict, for every probe - one
+// rule in one place, which the python probe's own copy was not.
+//
+// EVERYTHING THAT DESCRIBED THE VERDICT GOES WITH IT. The contract refuses a row
+// that could not assess a store and still counts what is in it, or still says
+// why it refused - and the orchestrator drops a whole layer over one row it
+// refuses. A strict refusal followed by a directory that could not be read did
+// exactly that until ADR114: the detail of the refusal stayed, and the matrix
+// went.
+func Undetermined(store *report.TrustStore, why string) {
 	store.TrustsPresentedChain = nil
 	store.TrustFailure = ""
+	store.RefusalDetail = ""
 	store.TrustAnchorCount = 0
 	store.NotAssessed = why
 }

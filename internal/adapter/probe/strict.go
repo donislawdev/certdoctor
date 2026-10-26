@@ -58,14 +58,14 @@ func VerifyStrictly(store *report.TrustStore, anchorsPEM []byte, chain [][]byte,
 	// chains and trusted certificates first - S28 saw 0x88020 on every 3.13 and
 	// later. Another way of building it is not one this program can tell.
 	if !flags.PartialChain() || flags&flagTrustedFirst == 0 {
-		undetermined(store, "this runtime checks OpenSSL's strict rules on a chain it builds without partial chains or "+
+		Undetermined(store, "this runtime checks OpenSSL's strict rules on a chain it builds without partial chains or "+
 			"without its own certificates first, and only a chain built with both is judged here")
 		return
 	}
 	breach, why := strictBreach(built, stored)
 	switch {
 	case why != "":
-		undetermined(store, why)
+		Undetermined(store, why)
 	case breach != "":
 		refused := false
 		store.TrustsPresentedChain = &refused
