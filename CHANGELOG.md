@@ -18,6 +18,11 @@ Barely diagnosable yet, and there has been no release.
   proxy that stays silent for the time certdoctor allows makes the layer
   unknown with the reason `timeout`. Any HTTP answer other than 407 is still
   read as before.
+- **The top line says when what failed was the direct route and a proxy
+  applies to the URL.** certdoctor resolves, connects and shakes hands
+  directly, so a name only the proxy resolves, or a firewall that lets only
+  the proxy out, fails those steps while a program set to use the proxy gets
+  through. The cause is still named, now with that said beside it.
 - **Two automatic configuration scripts that send one URL two ways are a
   warning.** The first script read used to decide the sentence and the layer
   passed, so the order in which certdoctor read the places chose which

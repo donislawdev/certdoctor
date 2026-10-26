@@ -205,15 +205,16 @@ func tail(counts map[status.Status]int, total int, causeNamed bool) string {
 // scenario S-5 - every row of the trust matrix red, and the right answer still
 // "do nothing on this machine".
 //
-// Any layer that has no cause of its own here (L0 and L2, neither of which
-// fails today) is taken in layer order, in its own words, so that a failure a
-// future layer produces is never reported as a count alone.
+// Any layer that has no cause of its own here is taken in layer order, in its
+// own words, so that a failure a future layer produces is never reported as a
+// count alone. L0 does not fail today, and L2 fails since ADR114 when a proxy
+// this URL goes through refuses the connection.
 func causeOf(results []LayerResult) (string, bool) {
 	if r, ok := failing(results, layer.Resolution); ok {
-		return sentence(r.Detail)
+		return directly(results, r.Detail)
 	}
 	if r, ok := failing(results, layer.TCP); ok {
-		return sentence(r.Detail)
+		return directly(results, r.Detail)
 	}
 	if r, ok := failing(results, layer.TrustMatrix); ok {
 		if authority := localAuthority(r); authority != nil {
@@ -221,7 +222,7 @@ func causeOf(results []LayerResult) (string, bool) {
 		}
 	}
 	if r, ok := failing(results, layer.TLS); ok {
-		return sentence(r.Detail)
+		return directly(results, r.Detail)
 	}
 	if r, ok := failing(results, layer.TrustMatrix); ok {
 		return trustCause(r)
@@ -232,6 +233,34 @@ func causeOf(results []LayerResult) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// directly is the sentence of a layer that measured the direct route, with one
+// "but" when a proxy applies to this URL - ADR114 point 2, decided by the owner.
+//
+// L1, L3 AND L4 GO THE WAY THIS PROGRAM GOES, straight to the target. A name
+// only the proxy resolves, or a firewall letting only the proxy out, fails all
+// three while a program set to use the proxy gets through - and a top line
+// naming the direct route's failure as THE cause sends that reader to fix
+// something their program never touches. The measurement stays the cause, and
+// stays true; what it does not cover is said beside it. A proxy applies when L2
+// put one to the question at all, asked or not - a row per such endpoint.
+func directly(results []LayerResult, detail string) (string, bool) {
+	if detail == "" {
+		return "", false
+	}
+	for _, r := range results {
+		if r.ID != layer.Proxy {
+			continue
+		}
+		for _, f := range r.Findings {
+			if f.Kind == FindingProxyChallenge {
+				return sentence(detail + ", but that was measured on the direct route, and a proxy applies to this " +
+					"URL - a program set to use it goes through the proxy instead")
+			}
+		}
+	}
+	return sentence(detail)
 }
 
 // failing returns the first result carrying id if that result failed.

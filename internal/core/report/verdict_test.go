@@ -137,6 +137,46 @@ var causeScenarios = []struct {
 		want: "None of the 2 address(es) this name resolved to accepted a connection. 2 of 6 diagnostic layers could not be assessed.",
 	},
 	{
+		name: "the direct route fails and a proxy applies: the measurement stays the cause and says which route it was - ADR114",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
+			row(layer.Proxy, status.Pass, "", Finding{Kind: FindingProxyChallenge, Summary: "asked"}),
+			row(layer.TCP, status.Fail, "none of the 2 address(es) this name resolved to accepted a connection"),
+			skipped(layer.TLS, "x"), skipped(layer.TrustMatrix, "x")},
+		want: "None of the 2 address(es) this name resolved to accepted a connection, but that was measured on the " +
+			"direct route, and a proxy applies to this URL - a program set to use it goes through the proxy instead. " +
+			"2 of 6 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "a name only the proxy resolves: L1 is the cause and says it looked directly",
+		rows: []LayerResult{pass(layer.Context),
+			row(layer.Resolution, status.Fail, "neither view found an address for this name"),
+			row(layer.Proxy, status.Pass, "", Finding{Kind: FindingProxyChallenge, Summary: "asked"}),
+			skipped(layer.TCP, "x"), skipped(layer.TLS, "x"), skipped(layer.TrustMatrix, "x")},
+		want: "Neither view found an address for this name, but that was measured on the direct route, and a proxy " +
+			"applies to this URL - a program set to use it goes through the proxy instead. " +
+			"3 of 6 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "S-5 through a proxy: the server is still to blame, on the route that was measured",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
+			row(layer.Proxy, status.Pass, "", Finding{Kind: FindingProxyChallenge, Summary: "asked"}), pass(layer.TCP),
+			row(layer.TLS, status.Fail, l4Incomplete),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
+		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can " +
+			"build a path to a root - this is a fact about the server rather than about this machine, but that was " +
+			"measured on the direct route, and a proxy applies to this URL - a program set to use it goes through the " +
+			"proxy instead. Failures in 2 of 6 diagnostic layers.",
+	},
+	{
+		name: "a proxy layer with rows of another kind names no proxy that applies",
+		rows: []LayerResult{pass(layer.Context),
+			row(layer.Resolution, status.Fail, "neither view found an address for this name"),
+			row(layer.Proxy, status.Pass, "", Finding{Kind: FindingProxyStack, Summary: "no proxy named"}),
+			skipped(layer.TCP, "x"), skipped(layer.TLS, "x"), skipped(layer.TrustMatrix, "x")},
+		want: "Neither view found an address for this name. 3 of 6 diagnostic layers could not be assessed.",
+	},
+	{
 		name: "S-5 the server forgot its intermediate: every trust row is red and the server is still to blame",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			row(layer.TLS, status.Fail, l4Incomplete),
