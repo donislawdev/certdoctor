@@ -174,7 +174,8 @@ func start(ctx context.Context, env []string, executable string, args ...string)
 	command.Stderr = &stderr
 	command.Stdin = nil
 	command.WaitDelay = waitDelay
-	isolate(command)
+	command.SysProcAttr = ownGroup()
+	command.Cancel = func() error { return endGroup(command.Process) }
 
 	err := command.Run()
 

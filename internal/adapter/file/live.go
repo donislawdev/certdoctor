@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -52,24 +53,35 @@ func LiveAppAlias() AppAlias { return liveAppAlias }
 // ONLY A REGULAR FILE IS HANDED BACK - ADR114. A limit on bytes does not bound
 // TIME: a FIFO with no writer blocks in the open itself on Linux, a terminal
 // device blocks in the first read, and both can be named by a variable or a
-// PATH entry this program follows. So the open does not wait (openFlags, per
-// platform), and what was opened is asked what it is before anybody reads it.
-// What this cannot bound is a slow filesystem behind a regular file - no
-// stopwatch interrupts a read the kernel is still serving.
+// PATH entry this program follows. So the path is asked what it names before
+// it is opened - see expect.
 func liveSource(path string) (io.ReadCloser, error) {
-	opened, err := os.OpenFile(path, openFlags, 0)
-	if err != nil {
+	if err := expect(path, fs.FileMode.IsRegular); err != nil {
 		return nil, err
 	}
-	info, err := opened.Stat()
-	if err == nil && !info.Mode().IsRegular() {
-		err = &NotRegular{Path: path, Mode: info.Mode()}
-	}
+	return os.Open(path)
+}
+
+// expect refuses a path that does not name what want accepts, before anything
+// opens it.
+//
+// THE QUESTION IS ASKED OF THE PATH, NOT OF A HANDLE, AND THAT LEAVES A WINDOW:
+// a path swapped for a FIFO between this and the open still blocks the open.
+// An open that cannot wait - O_NONBLOCK - would close it, and os.OpenFile is
+// the one call able to ask for that, which the write guard counts as a write
+// because it can obtain a handle to write with whatever its flags say. Whoever
+// can swap a file at that moment, in a directory this program reads, already
+// owns that directory. What this cannot bound either is a slow filesystem behind
+// a regular file - no stopwatch interrupts a read the kernel is still serving.
+func expect(path string, want func(fs.FileMode) bool) error {
+	info, err := os.Stat(path)
 	if err != nil {
-		_ = opened.Close()
-		return nil, err
+		return err
 	}
-	return opened, nil
+	if !want(info.Mode()) {
+		return &NotRegular{Path: path, Mode: info.Mode()}
+	}
+	return nil
 }
 
 // liveResolve follows symbolic links to the path they actually name.
@@ -145,10 +157,10 @@ const listingCeiling = 1 << 16
 // listingBatch is how many entries are read at a time.
 const listingBatch = 512
 
-// readDir is os.ReadDir with the ceiling, and with the open liveSource makes.
+// readDir is os.ReadDir with the ceiling, and with the question liveSource asks.
 //
-// THE OPEN DOES NOT WAIT AND WHAT IT OPENED IS ASKED WHAT IT IS, for the reason
-// liveSource gives: a directory named by somebody's variable can be a pipe.
+// THE PATH IS ASKED WHAT IT NAMES BEFORE IT IS OPENED, for the reason liveSource
+// gives: a directory named by somebody's variable can be a pipe.
 // THE ORDER IS BY NAME, as os.ReadDir gives it, because callers turn it into
 // rows and two runs on one machine have to print them alike.
 func readDir(path string) ([]os.DirEntry, error) { return readDirWithin(path, listingCeiling) }
@@ -156,17 +168,14 @@ func readDir(path string) ([]os.DirEntry, error) { return readDirWithin(path, li
 // readDirWithin is readDir with the ceiling as a parameter, so a test can reach
 // it with three files rather than sixty-five thousand.
 func readDirWithin(path string, ceiling int) ([]os.DirEntry, error) {
-	dir, err := os.OpenFile(path, openFlags, 0)
+	if err := expect(path, fs.FileMode.IsDir); err != nil {
+		return nil, err
+	}
+	dir, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = dir.Close() }()
-	if info, err := dir.Stat(); err != nil || !info.IsDir() {
-		if err == nil {
-			err = &NotRegular{Path: path, Mode: info.Mode()}
-		}
-		return nil, err
-	}
 	var entries []os.DirEntry
 	for {
 		batch, err := dir.ReadDir(listingBatch)

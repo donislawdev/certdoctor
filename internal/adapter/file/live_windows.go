@@ -2,15 +2,7 @@
 
 package file
 
-import (
-	"os"
-	"syscall"
-)
-
-// openFlags is a plain read. Opening a file does not wait on Windows - a pipe
-// with no server fails at once - and what waits is the first read of a device,
-// which liveSource refuses after the open, before that read.
-const openFlags = os.O_RDONLY
+import "syscall"
 
 // liveAppAlias reads the reparse point at path and the package out of it.
 //
