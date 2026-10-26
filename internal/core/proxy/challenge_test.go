@@ -130,6 +130,10 @@ func TestARefusedProxyOutranksOneThatAskedForCredentials(t *testing.T) {
 		Lenses: lensesOf(namingLens(StackEnvironment, "a.example:8080"), namingLens(StackWinINET, "b.example:8080")),
 		Target: target,
 	}
+	refusing := answeringProxy(nil, ChallengeAnswer{Detail: "why", Unreached: UnreachedRefused})
+	if result := askWithProxy(t, two, refusing); !strings.Contains(result.Detail, "2 of the proxies") {
+		t.Errorf("two refusals are not counted: %q", result.Detail)
+	}
 	if result := askWithProxy(t, two, ask); result.Status != status.Fail {
 		t.Errorf("a refusal beside a demand came back %s / %s", result.Status, result.Reason)
 	}

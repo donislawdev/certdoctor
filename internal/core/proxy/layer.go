@@ -567,12 +567,13 @@ func settledAnswer(lenses []Lens, scripts []script, findings []report.Finding, t
 //
 // AN ENTRY IS THE WAY IT IS REACHED AND WHERE: PROXY and HTTP name one kind of
 // proxy, and a host name is the same host in any case.
+//
+// EVERY SCRIPT HERE SETTLED - gradeOf returns before settledAnswer while any is
+// open - so none is skipped, and a check for one would be a branch no input
+// reaches.
 func scriptsDisagree(scripts []script) bool {
 	seen := ""
 	for _, one := range scripts {
-		if !one.settled() {
-			continue
-		}
 		chosen, _ := firstUsable(one.answer.Result.Directives)
 		way := schemeOfDirective(chosen.Kind)
 		if way == "" {
