@@ -58,8 +58,13 @@ chain_complete=true
 # THREE SINCE ADR110, STILL ONE STORE. git here comes from the Alpine package
 # and nothing names a file for it, so it defers to the platform's own row and
 # refuses with it - and a row that defers is counted under that row's file.
+#
+# FOUR SINCE ADR112, STILL ONE STORE. python reads the same bundle, through
+# /etc/ssl/cert.pem, and judges it with a list of its own, so it refuses as a
+# row of its own. Found by the run of 2026-10-26 - the row arrived with the
+# python probe on 2026-10-21 and this count stayed behind.
 l5_status=FAIL
-l5_rows_not_trusting=3
+l5_rows_not_trusting=4
 l5_trust_failure=unknown_authority
 
 # THE INDEPENDENT WITNESS IS THE RUNTIME ITSELF, and this is the first time in

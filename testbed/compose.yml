@@ -29,10 +29,10 @@ name: certdoctor-testbed
 # "pinned" here means "one declared version", not "byte-identical for ever".
 services:
   dns:
-    # CoreDNS 1.14.6, the current stable release - checked at
-    # https://github.com/coredns/coredns/releases on 2026-08-17, and confirmed by
-    # running the image: it reports CoreDNS-1.14.6.
-    image: coredns/coredns:1.14.6
+    # CoreDNS 1.15.0, the current stable release - checked at
+    # https://github.com/coredns/coredns/releases on 2026-10-26, and confirmed by
+    # running the image: it reports CoreDNS-1.15.0.
+    image: coredns/coredns:1.15.0
     command: -conf /etc/coredns/Corefile
     volumes:
       - ./dns:/etc/coredns:ro
@@ -69,11 +69,12 @@ services:
 
   # The server that does not send its intermediate - scenario S-5.
   partner:
-    # nginx 1.30.4, the STABLE branch. nginx.org lists 1.31.3 as mainline and
-    # 1.30.4 as stable - checked on 2026-08-17 - and the image confirms
-    # nginx/1.30.4. A measuring rig takes the boring branch: the point here is
-    # the certificate it serves, never the server.
-    image: nginx:1.30.4-alpine
+    # nginx 1.30.6, the STABLE branch. https://github.com/nginx/nginx/releases
+    # lists 1.31.8 as the newest mainline and 1.30.6 as the newest stable -
+    # checked on 2026-10-26 - and the image confirms nginx/1.30.6. A measuring
+    # rig takes the boring branch: the point here is the certificate it serves,
+    # never the server.
+    image: nginx:1.30.6-alpine
     depends_on:
       chain:
         condition: service_completed_successfully
@@ -105,10 +106,10 @@ services:
   # can measure it" AND THAT WAS FALSE. ADR46 forbids L4 touching any trust
   # store, so the question belongs to L5 - measured and corrected in D14.
   mitm:
-    # mitmproxy 12.2.3, the current release - checked at
-    # https://github.com/mitmproxy/mitmproxy/releases on 2026-08-17, and
-    # confirmed by running the image: Mitmproxy 12.2.3.
-    image: mitmproxy/mitmproxy:12.2.3
+    # mitmproxy 12.3.1, the current release - checked at
+    # https://github.com/mitmproxy/mitmproxy/releases on 2026-10-26, and
+    # confirmed by running the image: Mitmproxy 12.3.1.
+    image: mitmproxy/mitmproxy:12.3.1
     # TWO LISTENERS IN ONE PROCESS, AND THE SECOND ONE IS WHAT LETS P6b HAPPEN
     # BEFORE P8 - measured 2026-08-19, both modes served by one mitmdump.
     #
@@ -158,7 +159,7 @@ services:
   # scenarios is what the PAC file says - and the PAC file comes from this same
   # server. One address, one variable.
   pac:
-    image: nginx:1.30.4-alpine
+    image: nginx:1.30.6-alpine
     volumes:
       - ./pac/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./pac/files:/srv/pac:ro

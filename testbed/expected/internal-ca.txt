@@ -73,8 +73,11 @@ chain_complete=true
 #
 # TWO REFUSING ROWS SINCE ADR104, the same two as intercepted.txt: git on its
 # copy without the root, and the platform's own row on the untouched image bundle.
+# THREE SINCE ADR112: python reads that untouched bundle too, through
+# /etc/ssl/cert.pem. Found by the run of 2026-10-26 - the row arrived with the
+# python probe on 2026-10-21 and this count stayed behind.
 l5_status=FAIL
-l5_rows_not_trusting=2
+l5_rows_not_trusting=3
 l5_trust_failure=unknown_authority
 
 # --- P6b: the same measured answer as the middlebox, and no accusation ---

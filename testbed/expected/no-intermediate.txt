@@ -66,8 +66,12 @@ verdict_blames_forbidden=machine,runtime,store
 # bundle and both refuse, and neither may produce a command. THREE SINCE ADR110:
 # git from the Alpine package names nothing and defers to the platform's own row,
 # so it refuses with it - and a row that defers never carries a command at all.
+# FOUR SINCE ADR112: python on this image reads the same bundle, through
+# /etc/ssl/cert.pem, and judges it with a list of its own, so it refuses as a
+# row of its own rather than a deferral. Found by the run of 2026-10-26 - the
+# row arrived with the python probe on 2026-10-21 and this count stayed behind.
 l5_status=FAIL
-l5_rows_not_trusting=3
+l5_rows_not_trusting=4
 
 # There is no command for the user to run. A generated fix here would be a fix
 # for somebody else's server, which we cannot reach - so the deliverable is

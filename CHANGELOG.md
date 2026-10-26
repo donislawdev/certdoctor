@@ -10,6 +10,13 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - regular expressions in an automatic configuration script
+
+- **A PAC file's regular expressions are evaluated by a newer engine.** Two
+  of its fixes concern searches that skipped a valid match, so a script whose
+  expression should have matched could have been read as sending the URL
+  another way.
+
 ### Changed - a proxy that cannot be reached is a failure, not a pass
 
 - **A proxy this URL goes through that refuses the connection now fails the
