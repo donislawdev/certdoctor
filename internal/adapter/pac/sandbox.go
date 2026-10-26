@@ -106,6 +106,17 @@ type Sandbox struct {
 	// forgets this number gets a run that says it could not ask, not one that
 	// asks without limit.
 	MaxLookups int
+
+	// MaxAnswer is the longest answer read, in bytes, and MaxDirectives the most
+	// entries one answer may name - ADR114.
+	//
+	// THEY BOUND WHAT RUNS AFTER THE ENGINE, WHICH NO STOPWATCH WATCHES. MaxSource
+	// limits the file, and a file of one line can return "DIRECT;" repeated a
+	// million times: seven megabytes the memory ceiling may never notice, then a
+	// million entries split, carried into rows, masked and written out by our own
+	// code. A zero refuses every answer, by this type's rule for an unset field.
+	MaxAnswer     int
+	MaxDirectives int
 }
 
 // Evaluate runs source and asks it which proxy to use for rawURL on host.
@@ -115,7 +126,11 @@ type Sandbox struct {
 // limit reached, a panic from code we do not own - comes back as a Result whose
 // Outcome names what happened. A caller cannot accidentally treat a broken PAC
 // as a working one, because there is no error to forget to check.
-func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
+//
+// ctx is the layer's: its deadline caps Budget and its cancellation stops the
+// file - ADR114. Until then an evaluation started with little of the layer left
+// got its whole budget again.
+func (s Sandbox) Evaluate(ctx context.Context, source, rawURL, host string) (result corepac.Result) {
 	// A PANIC FROM SOMEBODY ELSE'S ENGINE IS CAUGHT HERE AND NOWHERE ELSE -
 	// ADR67 applied one layer along. The orchestrator's recover runs on the
 	// goroutine that walks the layers, and probe S12 measured only that no panic
@@ -150,11 +165,19 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 		}
 	}
 
+	// ONE CLOCK FOR THE STOPWATCH AND FOR shExpMatch - ADR114. The stopwatch
+	// cannot interrupt native code, so the one helper whose work grows with its
+	// input asks the same question between its steps, and both answer to this
+	// file's budget and to the layer: ctx.Err() turns non-nil at the layer's
+	// deadline as well as at a cancelled run, so the deadline needs no copying.
+	deadline := time.Now().Add(s.Budget)
+	expired := func() bool { return ctx.Err() != nil || time.Now().After(deadline) }
+
 	vm := goja.New()
 	vm.SetMaxCallStackSize(s.MaxStack)
 	usedRandomness, readClock := s.makeDeterministic(vm)
 
-	record, failure := s.inject(vm)
+	record, failure := s.inject(vm, expired)
 	if failure != nil {
 		return corepac.Result{
 			Outcome: corepac.OutcomeMalformed,
@@ -176,6 +199,7 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 		result.Unanswered = seen.unanswered
 		result.Asked = seen.asked
 		result.LookupsExhausted = seen.exhausted
+		result.LookupsFailed = seen.failed
 		// EITHER ROUTE COUNTS. seen.usedClock is our three helpers taking the
 		// pinned instant; readClock is the file calling Date itself. The caveat
 		// is about the ANSWER having a date on it, not about which door was used.
@@ -183,9 +207,9 @@ func (s Sandbox) Evaluate(source, rawURL, host string) (result corepac.Result) {
 		return result
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	watch(ctx, vm, s.Budget, s.Ceiling)
+	watching, stop := context.WithCancel(context.Background())
+	defer stop()
+	watch(watching, vm, expired, s.Ceiling)
 
 	if _, err := vm.RunString(source); err != nil {
 		return finish(outcomeOf(err, "the PAC file could not be loaded"))
@@ -230,8 +254,27 @@ func (s Sandbox) read(answer goja.Value) corepac.Result {
 		}
 	}
 
+	// THE LIMITS COME AFTER String() AND THAT IS WHERE THEY HAVE TO BE. For an
+	// object String() runs the file's own toString - still inside the budget and
+	// the ceiling, because the stopwatch stops only when Evaluate returns - so the
+	// length of what it built is known only here, and everything from here on is
+	// our code with nothing watching it - ADR114.
 	raw := answer.String()
+	if len(raw) > s.MaxAnswer {
+		return corepac.Result{
+			Outcome: corepac.OutcomeTooLarge,
+			Detail: fmt.Sprintf("the PAC file returned an answer of %d bytes and this run reads at most %d",
+				len(raw), s.MaxAnswer),
+		}
+	}
 	directives := corepac.ParseDirectives(raw)
+	if len(directives) > s.MaxDirectives {
+		return corepac.Result{
+			Outcome: corepac.OutcomeTooLarge,
+			Detail: fmt.Sprintf("the PAC file returned %d entries and this run reads at most %d",
+				len(directives), s.MaxDirectives),
+		}
+	}
 	if len(directives) == 0 {
 		return corepac.Result{
 			Outcome: corepac.OutcomeNoAnswer,

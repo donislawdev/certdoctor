@@ -252,6 +252,6 @@ func Resolver(fetch Fetcher, sandbox Sandbox, targetURL, targetHost string) prox
 		if err != nil {
 			return proxy.ScriptAnswer{Detail: err.Error()}
 		}
-		return proxy.ScriptAnswer{Fetched: true, Result: sandbox.Evaluate(source, targetURL, targetHost)}
+		return proxy.ScriptAnswer{Fetched: true, Result: sandbox.Evaluate(ctx, source, targetURL, targetHost)}
 	}
 }

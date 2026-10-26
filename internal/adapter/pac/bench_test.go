@@ -1,6 +1,7 @@
 package pac
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -61,7 +62,7 @@ func TestTheBenchPACFiles(t *testing.T) {
 		sandbox.Budget = c.budget
 
 		start := time.Now()
-		result := sandbox.Evaluate(benchPAC(t, c.file), "http://"+c.host+"/", c.host)
+		result := sandbox.Evaluate(context.Background(), benchPAC(t, c.file), "http://"+c.host+"/", c.host)
 		elapsed := time.Since(start)
 
 		t.Logf("%-14s %-24s -> %-15s %-26q %v",
@@ -87,7 +88,7 @@ func TestTheBenchPACFiles(t *testing.T) {
 func TestTheBrokenPACNeverAnswersDirect(t *testing.T) {
 	mustNotSay := benchExpectation(t, "pac-broken.txt", "l2_must_not_say")
 
-	result := testSandbox().Evaluate(benchPAC(t, "broken.pac"), "http://via.proxy.test/", "via.proxy.test")
+	result := testSandbox().Evaluate(context.Background(), benchPAC(t, "broken.pac"), "http://via.proxy.test/", "via.proxy.test")
 
 	if result.Outcome == corepac.OutcomeAnswered {
 		t.Fatalf("a PAC file that does not parse produced an answer: %q", result.Raw)
@@ -129,7 +130,7 @@ func TestEveryBranchOfTheBenchPACIsReachable(t *testing.T) {
 		// proxy, which is the common shape and worth seeing.
 		{"unknown.example", "DIRECT"},
 	} {
-		result := testSandbox().Evaluate(source, "http://"+c.host+"/", c.host)
+		result := testSandbox().Evaluate(context.Background(), source, "http://"+c.host+"/", c.host)
 		if result.Outcome != corepac.OutcomeAnswered || result.Raw != c.want {
 			t.Errorf("%s -> %s %q, want an answer of %q", c.host, result.Outcome, result.Raw, c.want)
 		}

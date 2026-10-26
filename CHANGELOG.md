@@ -10,6 +10,26 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - a PAC script's answer is believed only when it can be
+
+- **An answer made only of entries a client cannot follow no longer passes.**
+  Unknown keywords, or `PROXY` with no address after it, used to settle the
+  proxy layer - and `PROXY` alone was even reported as sending the URL past
+  every proxy. Such an entry is now skipped, as a client skips it, and an
+  answer with nothing left says so and leaves the layer undetermined.
+- **An answer that rested on a resolver that did not answer is not taken as
+  the route.** A script asking `dnsResolve` and choosing `DIRECT` when it gets
+  nothing back was given the same nothing for a resolver that timed out, and
+  its answer was reported as settled. The row now says a resolver gave no
+  usable answer.
+- **A script cannot hold the run past its time any more.** `shExpMatch` over
+  very long strings ran in native code the time limit could not stop, an
+  answer of millions of entries was read in full, and an evaluation that
+  started late in the proxy layer got its whole time again. Long matches now
+  stop at the time limit, an answer longer than 16 KiB or with more than 64
+  entries is refused as too large, and the layer's own deadline and an
+  interrupted run stop the script.
+
 ### Fixed - `--redact` no longer throws away a report with a command in it
 
 - **A report whose remediation command holds a placeholder spelled like a name

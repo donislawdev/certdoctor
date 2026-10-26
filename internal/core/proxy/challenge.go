@@ -231,7 +231,7 @@ func endpointsOf(lenses []Lens, scripts []script, target Target) []Endpoint {
 		if !one.settled() {
 			continue
 		}
-		chosen, ok := firstRecognised(one.answer.Result.Directives)
+		chosen, ok := firstUsable(one.answer.Result.Directives)
 		if !ok || chosen.Endpoint == "" {
 			continue
 		}

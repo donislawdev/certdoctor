@@ -261,11 +261,13 @@ func liveEnvironment() environment {
 						// say why in full.
 						Now: time.Now,
 					},
-					Budget:     pacEvaluationBudget,
-					Ceiling:    pacCeiling,
-					MaxSource:  pacSourceLimit,
-					MaxStack:   pacStackLimit,
-					MaxLookups: pacMaxLookups,
+					Budget:        pacEvaluationBudget,
+					Ceiling:       pacCeiling,
+					MaxSource:     pacSourceLimit,
+					MaxStack:      pacStackLimit,
+					MaxLookups:    pacMaxLookups,
+					MaxAnswer:     pacAnswerLimit,
+					MaxDirectives: pacDirectiveLimit,
 				},
 				targetURL, targetHost)
 		},
@@ -361,6 +363,20 @@ const pacCeiling = 64 << 20
 // late. It is the resolver config number for the same reason ADR25 chose it:
 // real PAC files are kilobytes, so this caps memory rather than the parser.
 const pacSourceLimit = 1 << 20
+
+// pacAnswerLimit and pacDirectiveLimit bound what a PAC file's answer may cost
+// the code that runs after the engine - ADR114.
+//
+// BOTH ARE AN ASSESSMENT, not a source - chosen against what an answer is, not
+// measured on a population of files. An answer names the proxies to try in order and ends in
+// DIRECT more often than not; a corporate failover list of a dozen proxies is a
+// few hundred bytes. Sixteen kilobytes and sixty-four entries leave that room
+// tens of times over, and a file needing more is one this report would print as
+// a wall rather than describe.
+const (
+	pacAnswerLimit    = 16 << 10
+	pacDirectiveLimit = 64
+)
 
 // pacStackLimit is a CONDITION and not tuning - ADR75. Measured 2026-09-02:
 // with goja's default, unbounded recursion was still running after ten seconds

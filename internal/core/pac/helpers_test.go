@@ -1,6 +1,9 @@
 package pac
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The vectors below are TRANSCRIBED FROM MOZILLA'S PAC DOCUMENTATION, read
 // 2026-09-02, not produced by running this package. That is the whole point of
@@ -155,5 +158,51 @@ func TestShExpMatchDoesNotBacktrackExponentially(t *testing.T) {
 	}
 	if ShExpMatch(text, "*a*a*a*a*a*a*a*a*a*a*b") {
 		t.Fatal("the pattern demands a trailing b that the text does not have")
+	}
+}
+
+// POLYNOMIAL IS NOT SHORT - ADR114. The product of the two lengths is billions
+// of steps for a text a PAC file builds in one line, so the loop asks when to
+// stop, and stopping is said rather than answered as a no. The asking costs
+// nothing a finished match can see.
+func TestShExpMatchStopsWhenAskedAndSaysItDidNot(t *testing.T) {
+	text := strings.Repeat("a", 20000)
+	pattern := "*" + strings.Repeat("a", 10000) + "b"
+	asked := 0
+	matched, finished := ShExpMatchUntil(text, pattern, func() bool { asked++; return asked == 3 })
+	if matched || finished || asked != 3 {
+		t.Errorf("got matched %v, finished %v after %d questions - want a stop at the third, said", matched, finished, asked)
+	}
+
+	never := func() bool { return false }
+	if matched, finished := ShExpMatchUntil("http://a.test/x", "*a.test*", never); !matched || !finished {
+		t.Errorf("a match that never had to stop came back %v, %v", matched, finished)
+	}
+	if matched, finished := ShExpMatchUntil(text, "a?", never); matched || !finished {
+		t.Errorf("a refusal that never had to stop came back %v, %v", matched, finished)
+	}
+	if _, finished := ShExpMatchUntil(text[:stopEvery/4], "*b", func() bool { return true }); !finished {
+		t.Error("a match shorter than one round of steps asked to stop")
+	}
+}
+
+// AN ENTRY A CLIENT CAN FOLLOW - ADR114. Mozilla's documentation, read
+// 2026-09-02: DIRECT takes nothing and every other keyword names "host:port".
+func TestADirectiveIsUsableOnlyWithTheAddressItNeeds(t *testing.T) {
+	for answer, want := range map[string]bool{
+		"DIRECT":              true,
+		"PROXY p.test:8080":   true,
+		"SOCKS5 s.test:1080":  true,
+		"PROXY":               false,
+		"HTTPS":               false,
+		"DIRECT p.test:8080":  false,
+		"PROXY p.test 8080":   false,
+		"WARP g.test:9":       false,
+		"PROXY p.test:8080\t": true,
+	} {
+		directives := ParseDirectives(answer)
+		if len(directives) != 1 || directives[0].Usable() != want {
+			t.Errorf("%q: got %+v, want usable %v", answer, directives, want)
+		}
 	}
 }

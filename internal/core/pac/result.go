@@ -65,10 +65,14 @@ const (
 	// certdoctor run; with the limit set the same file ends in 1 ms.
 	OutcomeStackLimit Outcome = "stack_limit"
 
-	// OutcomeTooLarge - the file was refused before it reached the parser.
+	// OutcomeTooLarge - the file was refused before it reached the parser, or
+	// its answer was refused before it was split into entries.
 	//
 	// docs/14 section 2.3: the size limit is checked BEFORE the bytes are handed
-	// over, because after parsing it is already too late.
+	// over, because after parsing it is already too late. THE ANSWER GOT THE
+	// SAME LIMIT AT ADR114: a file of one line can return a string of millions
+	// of entries, and everything after the engine - the split, the rows, the
+	// masking, the document - is ours and runs with no stopwatch at all.
 	OutcomeTooLarge Outcome = "too_large"
 )
 
@@ -178,6 +182,17 @@ type Result struct {
 	// stop the answer from settling, and for the same underlying reason: the
 	// file took a branch a browser would not.
 	LookupsExhausted bool
+
+	// LookupsFailed says a name the file asked about got no usable answer from
+	// any resolver - a timeout, a refusal, a broken packet - and the file was
+	// told it did not resolve.
+	//
+	// IT IS THE THIRD ROUTE TO THE SAME UNTRUTH, FOUND AT ADR114. The PAC
+	// contract has one null for "no such name" and for "nobody could tell", so
+	// a file choosing DIRECT when dnsResolve gives null took that branch on a
+	// resolver that did not answer in time. A name that does not exist is an
+	// answer and is not counted here - the resolver port keeps those apart.
+	LookupsFailed bool
 }
 
 // Directive is one entry of a PAC file's answer.
@@ -192,6 +207,21 @@ type Directive struct {
 	// directive silently discarded would make a report say a client goes direct
 	// when the file actually named something we failed to read.
 	Recognised bool
+}
+
+// Usable says whether a client can follow this entry: a keyword this program
+// knows, with the address it needs and nothing else.
+//
+// SOURCE: Mozilla's PAC documentation, read 2026-09-02 - DIRECT takes nothing,
+// and every other keyword names "host:port". A KNOWN WORD IS NOT YET AN ENTRY,
+// found at ADR114: a file returning "PROXY" alone was read as a recognised entry
+// with no address, and an empty address is how DIRECT looks - so the report said
+// the URL went past every proxy, which the file never said.
+func (d Directive) Usable() bool {
+	if !d.Recognised || strings.ContainsAny(d.Endpoint, " \t") {
+		return false
+	}
+	return (d.Kind == "DIRECT") == (d.Endpoint == "")
 }
 
 // knownDirectives are the keywords a PAC answer may use.

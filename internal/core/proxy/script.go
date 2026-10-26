@@ -73,11 +73,20 @@ type script struct {
 // separate from Unanswered because the sentence a reader gets is different:
 // one says this machine has no resolver, the other says it has one and the
 // script spent its allowance.
+//
+// TWO MORE CAME WITH ADR114, BOTH WAYS OF ANSWERING WITHOUT SAYING ANYTHING. A
+// resolver that failed hands the file the same null as a name that does not
+// exist - the third route to the untruth above. And an answer no entry of which
+// a client could follow - unknown words, or "PROXY" with no address - is an
+// answer this program does not understand, and rule 15 says what that is.
 func (s script) settled() bool {
+	_, followed := firstUsable(s.answer.Result.Directives)
 	return s.answer.Fetched &&
 		s.answer.Result.Outcome == pac.OutcomeAnswered &&
 		len(s.answer.Result.Unanswered) == 0 &&
-		!s.answer.Result.LookupsExhausted
+		!s.answer.Result.LookupsExhausted &&
+		!s.answer.Result.LookupsFailed &&
+		followed
 }
 
 // scriptReasons maps what the evaluator saw onto the layer's vocabulary.
@@ -273,7 +282,7 @@ func scriptFinding(s script, target Target) report.Finding {
 		body.Outcome = string(s.answer.Result.Outcome)
 		body.Answer = s.answer.Result.Raw
 		body.Directives = directivesOf(s.answer.Result.Directives)
-		if chosen, ok := firstRecognised(s.answer.Result.Directives); ok {
+		if chosen, ok := firstUsable(s.answer.Result.Directives); ok {
 			body.Selected = &chosen
 		}
 		// COPIED RATHER THAN ALIASED, AND NON-NIL EVEN WHEN EMPTY. A script that
@@ -311,16 +320,16 @@ func directivesOf(directives []pac.Directive) []report.PACDirective {
 	return out
 }
 
-// firstRecognised is the entry a client would act on.
+// firstUsable is the entry a client would act on.
 //
-// LEFT TO RIGHT AND THE FIRST ONE WE KNOW - Mozilla documents the entries as
-// tried in the order the file listed them. An unrecognised keyword is SKIPPED
-// here and still CARRIED in the list above, which is the pair inviolable rule
-// 15 asks for: this program says what it would do without pretending the file
-// said nothing else.
-func firstRecognised(directives []pac.Directive) (report.PACDirective, bool) {
+// LEFT TO RIGHT AND THE FIRST ONE A CLIENT CAN FOLLOW - Mozilla documents the
+// entries as tried in the order the file listed them. An unrecognised keyword,
+// or a known one without the address it needs, is SKIPPED here and still
+// CARRIED in the list above, which is the pair inviolable rule 15 asks for: this
+// program says what it would do without pretending the file said nothing else.
+func firstUsable(directives []pac.Directive) (report.PACDirective, bool) {
 	for _, directive := range directives {
-		if directive.Recognised {
+		if directive.Usable() {
 			return report.PACDirective{
 				Kind:       directive.Kind,
 				Endpoint:   directive.Endpoint,
@@ -383,9 +392,18 @@ func caveatsOfScript(s script, body report.PACScript) []string {
 			"this script chose with Math.random, so this is one of the answers a client could get "+
 				"rather than the only one")
 	}
+	if s.answer.Result.LookupsFailed {
+		// THE THIRD ROUTE TO THE SAME UNTRUTH, said apart from the two above
+		// because what a reader checks is different: here the machine has a
+		// resolver and the resolver did not answer - ADR114.
+		caveats = append(caveats,
+			"this script asked about a name no resolver on this machine gave a usable answer about, so it was "+
+				"answered as though the name did not resolve, and its answer may not be the one a browser would get")
+	}
 	if body.Selected == nil && len(body.Directives) > 0 {
 		caveats = append(caveats,
-			"none of the entries this script returned is a keyword certdoctor knows, so it names nothing to act on")
+			"none of the entries this script returned is one a client can follow - a keyword certdoctor knows, "+
+				"with the address it needs - so it names nothing to act on")
 	}
 	return caveats
 }
@@ -411,8 +429,8 @@ func summaryOfScript(s script, body report.PACScript, target Target) string {
 	}
 	switch {
 	case body.Selected == nil:
-		return where + " answered for " + describe(target) + " with nothing certdoctor recognises"
-	case body.Selected.Endpoint == "":
+		return where + " answered for " + describe(target) + " with nothing a client can follow"
+	case body.Selected.Kind == "DIRECT":
 		return where + " sends " + describe(target) + " past every proxy this machine names"
 	default:
 		return where + " sends " + describe(target) + " through a proxy of its own choosing"

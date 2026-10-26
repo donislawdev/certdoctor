@@ -30,6 +30,26 @@ package pac
 // able to end it. The obvious recursive glob backtracks exponentially on
 // patterns like "*a*a*a*b", which somebody else's file is free to contain.
 func ShExpMatch(text, pattern string) bool {
+	matched, _ := ShExpMatchUntil(text, pattern, nil)
+	return matched
+}
+
+// stopEvery is how many steps ShExpMatchUntil takes between two questions to
+// stop - a clock read costs tens of nanoseconds, and a step a few.
+const stopEvery = 1 << 10
+
+// ShExpMatchUntil is ShExpMatch that gives up when stop says so, and says
+// whether it finished. A nil stop never stops it.
+//
+// BOUNDED IS NOT THE SAME AS SHORT, AND ADR114 IS WHERE THAT WAS FOUND. The
+// worst case above is the product of the two lengths, and nothing bounds the
+// lengths but the memory ceiling: a file can build a string of a hundred
+// thousand letters in one line, and shExpMatch over it and a pattern half as
+// long is billions of steps the stopwatch cannot interrupt. So the sandbox hands
+// in the deadline its stopwatch works to, and this loop asks it. An unfinished
+// match answers false, and the caller has to say why rather than let a branch be
+// taken on it.
+func ShExpMatchUntil(text, pattern string, stop func() bool) (matched, finished bool) {
 	s, p := []rune(text), []rune(pattern)
 
 	// starPattern remembers where the last "*" sat and how much of the text it
@@ -37,7 +57,10 @@ func ShExpMatch(text, pattern string) bool {
 	starPattern, starText := -1, 0
 	si, pi := 0, 0
 
-	for si < len(s) {
+	for steps := 1; si < len(s); steps++ {
+		if stop != nil && steps%stopEvery == 0 && stop() {
+			return false, false
+		}
 		switch {
 		case pi < len(p) && p[pi] == '*':
 			starPattern, starText = pi, si
@@ -51,7 +74,7 @@ func ShExpMatch(text, pattern string) bool {
 			starText++
 			si, pi = starText, starPattern+1
 		default:
-			return false
+			return false, true
 		}
 	}
 
@@ -60,7 +83,7 @@ func ShExpMatch(text, pattern string) bool {
 	for pi < len(p) && p[pi] == '*' {
 		pi++
 	}
-	return pi == len(p)
+	return pi == len(p), true
 }
 
 // atomWidth returns how many runes of the pattern the leading atom occupies: one

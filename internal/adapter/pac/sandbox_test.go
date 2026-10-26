@@ -1,6 +1,7 @@
 package pac
 
 import (
+	"context"
 	"math"
 	"os"
 	"path/filepath"
@@ -55,11 +56,13 @@ func benchExpectation(t *testing.T, file, key string) string {
 // a test that fails when a laptop is busy teaches retrying rather than looking.
 func testSandbox() Sandbox {
 	return Sandbox{
-		Ports:     corepac.Ports{Now: func() time.Time { return time.Unix(1767225600, 0).UTC() }},
-		Budget:    2 * time.Second,
-		Ceiling:   64 << 20,
-		MaxSource: 1 << 20,
-		MaxStack:  2000,
+		Ports:         corepac.Ports{Now: func() time.Time { return time.Unix(1767225600, 0).UTC() }},
+		Budget:        2 * time.Second,
+		Ceiling:       64 << 20,
+		MaxSource:     1 << 20,
+		MaxStack:      2000,
+		MaxAnswer:     16 << 10,
+		MaxDirectives: 64,
 	}
 }
 
@@ -73,7 +76,7 @@ func testSandbox() Sandbox {
 // visible, named answer that cannot be mistaken for an unrelated fault - and
 // this test can say WHICH condition failed rather than only that one did.
 func TestTheSandboxReachesNeitherTheNetworkNorTheFileSystem(t *testing.T) {
-	result := testSandbox().Evaluate(benchPAC(t, "hostile.pac"), "http://via.proxy.test/", "via.proxy.test")
+	result := testSandbox().Evaluate(context.Background(), benchPAC(t, "hostile.pac"), "http://via.proxy.test/", "via.proxy.test")
 
 	want := benchExpectation(t, "pac-hostile.txt", "l2_pac_result")
 	if result.Outcome != corepac.OutcomeAnswered {
@@ -112,7 +115,7 @@ func TestOnlyTheTwelveHelpersAreExposed(t *testing.T) {
 	before := globalNames(t, goja.New())
 
 	injected := goja.New()
-	if _, err := (testSandbox()).inject(injected); err != nil {
+	if _, err := (testSandbox()).inject(injected, func() bool { return false }); err != nil {
 		t.Fatalf("the sandbox could not be built: %v", err)
 	}
 	after := globalNames(t, injected)
@@ -167,7 +170,7 @@ func TestACeilingSetHighMeansLooseRatherThanInstantlyTripped(t *testing.T) {
 	loose := testSandbox()
 	loose.Ceiling = math.MaxUint64
 
-	result := loose.Evaluate("function FindProxyForURL(url, host) { return 'DIRECT'; }",
+	result := loose.Evaluate(context.Background(), "function FindProxyForURL(url, host) { return 'DIRECT'; }",
 		"https://example.com/", "example.com")
 
 	if result.Outcome == corepac.OutcomeMemoryCeiling {
@@ -238,7 +241,7 @@ func TestALooseCeilingAlsoHoldsForAFileTheStopwatchGetsToWatch(t *testing.T) {
 		return n === 300000 ? 'DIRECT' : 'PROXY counted.wrong:1';
 	}`
 
-	result := loose.Evaluate(source, "https://example.com/", "example.com")
+	result := loose.Evaluate(context.Background(), source, "https://example.com/", "example.com")
 
 	if result.Outcome == corepac.OutcomeMemoryCeiling {
 		t.Fatalf("a file that only counted was stopped for allocating, under the loosest ceiling "+

@@ -219,3 +219,26 @@ func TestARunWithNoResolverRecordsNothingAsAsked(t *testing.T) {
 		t.Errorf("a run with no resolver recorded %v, want the helper nobody could answer", result.Unanswered)
 	}
 }
+
+// A RESOLVER THAT DID NOT ANSWER IS SAID, A NAME THAT DOES NOT EXIST IS NOT -
+// ADR114. Both reach the file as the same null, and only the first is no answer
+// at all.
+func TestAResolverThatFailedIsRecordedAndANameThatDoesNotExistIsNot(t *testing.T) {
+	failing := func(string) ([]string, error) { return nil, errors.New("no resolver answered in time") }
+	nowhere := func(string) ([]string, error) { return nil, nil }
+	for name, c := range map[string]struct {
+		resolve func(string) ([]string, error)
+		failed  bool
+	}{
+		"a resolver that failed": {failing, true},
+		"a name with no address": {nowhere, false},
+		"a name that resolves":   {alwaysResolves, false},
+	} {
+		result := evaluateSource(sandboxResolving(c.resolve, 4), `
+			if (dnsResolve(host) === null) { return "DIRECT"; }
+			return "PROXY proxy.example:8080";`)
+		if result.Outcome != corepac.OutcomeAnswered || result.LookupsFailed != c.failed {
+			t.Errorf("%s: %s, lookups failed %v - want answered, %v", name, result.Outcome, result.LookupsFailed, c.failed)
+		}
+	}
+}

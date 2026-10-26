@@ -629,15 +629,15 @@ func scriptOutcome(scripts []script, target Target) string {
 		if !one.settled() {
 			continue
 		}
-		chosen, ok := firstRecognised(one.answer.Result.Directives)
-		switch {
-		case !ok:
-			return "it answered for " + describe(target) + " with nothing certdoctor recognises"
-		case chosen.Endpoint == "":
+		// A SETTLED SCRIPT ALWAYS HAS AN ENTRY TO FOLLOW - settled asks for one
+		// since ADR114 - so the answer "nothing recognised" left this function
+		// with it, and DIRECT is told by its keyword rather than by an empty
+		// address.
+		chosen, _ := firstUsable(one.answer.Result.Directives)
+		if chosen.Kind == "DIRECT" {
 			return "it sends " + describe(target) + " past every proxy this machine names"
-		default:
-			return "it sends " + describe(target) + " through a proxy of its own choosing, named in the row below"
 		}
+		return "it sends " + describe(target) + " through a proxy of its own choosing, named in the row below"
 	}
 	return ""
 }

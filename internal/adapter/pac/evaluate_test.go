@@ -1,6 +1,7 @@
 package pac
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 // answer runs one inline PAC file through the test sandbox.
 func answer(t *testing.T, body string) corepac.Result {
 	t.Helper()
-	return testSandbox().Evaluate("function "+Entry+"(url, host) {"+body+"}",
+	return testSandbox().Evaluate(context.Background(), "function "+Entry+"(url, host) {"+body+"}",
 		"http://via.proxy.test/path", "via.proxy.test")
 }
 
@@ -26,8 +27,9 @@ func TestTheShapesOfAnAnswer(t *testing.T) {
 		{"direct", `return "DIRECT";`, corepac.OutcomeAnswered, "DIRECT"},
 		{"a fallback chain", `return "PROXY a.test:1; PROXY b.test:2; DIRECT";`, corepac.OutcomeAnswered, "PROXY a.test:1; PROXY b.test:2; DIRECT"},
 
-		// An object with toString is a string by the time it reaches us -
-		// measured by probe S12, and the reason read() does not test the type.
+		// An object with toString is read through it - probe S12 measured that,
+		// and read() takes it as text rather than testing the type. The
+		// toString runs inside the budget, because the stopwatch is still on.
 		{"an object with toString", `return { toString: function(){ return "DIRECT"; } };`, corepac.OutcomeAnswered, "DIRECT"},
 
 		// null and undefined are the same state and neither is a directive.
@@ -81,7 +83,7 @@ func TestTheWaysAPACFileCanBeUnusable(t *testing.T) {
 		{"it throws", `function ` + Entry + `(u, h) { throw new Error("no"); }`, "failed while answering"},
 		{"it throws at load", `throw new Error("no");`, "could not be loaded"},
 	} {
-		result := testSandbox().Evaluate(c.source, "http://via.proxy.test/", "via.proxy.test")
+		result := testSandbox().Evaluate(context.Background(), c.source, "http://via.proxy.test/", "via.proxy.test")
 		if result.Outcome != corepac.OutcomeMalformed {
 			t.Errorf("%s: outcome %s, want %s", c.name, result.Outcome, corepac.OutcomeMalformed)
 		}
@@ -102,7 +104,7 @@ func TestAFileTooLargeIsRefusedBeforeItIsParsed(t *testing.T) {
 	sandbox := testSandbox()
 	sandbox.MaxSource = 32
 
-	result := sandbox.Evaluate("function "+Entry+"(u, h) { return \"DIRECT\"; }", "http://x.test/", "x.test")
+	result := sandbox.Evaluate(context.Background(), "function "+Entry+"(u, h) { return \"DIRECT\"; }", "http://x.test/", "x.test")
 
 	if result.Outcome != corepac.OutcomeTooLarge {
 		t.Fatalf("outcome %s, want %s - a file that parses must still be refused on size", result.Outcome, corepac.OutcomeTooLarge)
@@ -153,7 +155,7 @@ func TestTheClockInsideThePACFileIsOurs(t *testing.T) {
 	moment := time.Date(2026, time.September, 2, 14, 30, 0, 0, time.UTC)
 	sandbox.Ports.Now = func() time.Time { return moment }
 
-	result := sandbox.Evaluate("function "+Entry+`(u, h) { return "PROXY t" + new Date().getTime() + ":1"; }`,
+	result := sandbox.Evaluate(context.Background(), "function "+Entry+`(u, h) { return "PROXY t" + new Date().getTime() + ":1"; }`,
 		"http://x.test/", "x.test")
 
 	want := "PROXY t1788359400000:1"
@@ -186,13 +188,13 @@ func TestEachEvaluationGetsItsOwnRuntime(t *testing.T) {
 	// on a Runtime nobody will use again. A file that leaves a global behind
 	// must therefore not be able to see it on the next evaluation.
 	sandbox := testSandbox()
-	first := sandbox.Evaluate("function "+Entry+`(u, h) { globalThis.left = "behind"; return "DIRECT"; }`,
+	first := sandbox.Evaluate(context.Background(), "function "+Entry+`(u, h) { globalThis.left = "behind"; return "DIRECT"; }`,
 		"http://x.test/", "x.test")
 	if first.Outcome != corepac.OutcomeAnswered {
 		t.Fatalf("the first evaluation failed: %s", first.Detail)
 	}
 
-	second := sandbox.Evaluate("function "+Entry+
+	second := sandbox.Evaluate(context.Background(), "function "+Entry+
 		`(u, h) { return "PROXY " + (typeof globalThis.left === "undefined" ? "clean" : "dirty") + ":1"; }`,
 		"http://x.test/", "x.test")
 	if second.Raw != "PROXY clean:1" {
@@ -209,12 +211,12 @@ func TestARunawayFileDoesNotPoisonTheNextOne(t *testing.T) {
 	sandbox := testSandbox()
 	sandbox.Budget = 200 * time.Millisecond
 
-	stopped := sandbox.Evaluate(benchPAC(t, "runaway.pac"), "http://x.test/", "x.test")
+	stopped := sandbox.Evaluate(context.Background(), benchPAC(t, "runaway.pac"), "http://x.test/", "x.test")
 	if stopped.Outcome != corepac.OutcomeTimeLimit {
 		t.Fatalf("the runaway file was not stopped: %s %s", stopped.Outcome, stopped.Detail)
 	}
 
-	after := sandbox.Evaluate("function "+Entry+`(u, h) { return "DIRECT"; }`, "http://x.test/", "x.test")
+	after := sandbox.Evaluate(context.Background(), "function "+Entry+`(u, h) { return "DIRECT"; }`, "http://x.test/", "x.test")
 	if after.Outcome != corepac.OutcomeAnswered || after.Raw != "DIRECT" {
 		t.Errorf("the evaluation after an interrupted one gave %s %q, want an ordinary answer (%s)",
 			after.Outcome, after.Raw, after.Detail)
@@ -225,7 +227,7 @@ func TestAZeroSandboxRefusesRatherThanRunsUnbounded(t *testing.T) {
 	// A value nobody set must fail towards refusing. A zero MaxSource refuses
 	// every file that is not empty, which is the safe direction.
 	var unset Sandbox
-	result := unset.Evaluate("function "+Entry+`(u, h) { return "DIRECT"; }`, "http://x.test/", "x.test")
+	result := unset.Evaluate(context.Background(), "function "+Entry+`(u, h) { return "DIRECT"; }`, "http://x.test/", "x.test")
 	if result.Outcome != corepac.OutcomeTooLarge {
 		t.Errorf("an unconfigured sandbox gave %s, want it to refuse", result.Outcome)
 	}
@@ -239,7 +241,7 @@ func TestTheSandboxRefusesToBuildWithAHelperMissing(t *testing.T) {
 	helperNames = append(helperNames, "notAHelper")
 	defer func() { helperNames = helperNames[:len(helperNames)-1] }()
 
-	result := testSandbox().Evaluate("function "+Entry+`(u, h) { return "DIRECT"; }`, "http://x.test/", "x.test")
+	result := testSandbox().Evaluate(context.Background(), "function "+Entry+`(u, h) { return "DIRECT"; }`, "http://x.test/", "x.test")
 	if result.Outcome != corepac.OutcomeMalformed {
 		t.Fatalf("outcome %s, want the sandbox to refuse to build", result.Outcome)
 	}
@@ -298,7 +300,7 @@ func TestTheClockIsPinnedForOneEvaluation(t *testing.T) {
 		return monday.AddDate(0, 0, 3*(calls-1))
 	}
 
-	result := sandbox.Evaluate("function "+Entry+
+	result := sandbox.Evaluate(context.Background(), "function "+Entry+
 		`(u, h) { return "PROXY " + weekdayRange("MON","MON") + "-" + weekdayRange("THU","THU") + ":1"; }`,
 		"http://x.test/", "x.test")
 
@@ -336,5 +338,66 @@ func TestOnlyAFileThatAskedTheClockIsSaidToHaveAskedIt(t *testing.T) {
 		if result.UsedClock != c.want {
 			t.Errorf("%s: UsedClock %v, want %v", c.name, result.UsedClock, c.want)
 		}
+	}
+}
+
+// THE ANSWER HAS ITS OWN LIMITS - ADR114. A file of one line can return millions
+// of entries, and everything after the engine is our code with no stopwatch, so
+// an answer past either limit is refused before it is split or carried anywhere.
+func TestAnAnswerPastItsLimitsIsRefusedBeforeItIsRead(t *testing.T) {
+	sandbox := testSandbox()
+	sandbox.MaxAnswer, sandbox.MaxDirectives = 13, 2
+	for body, want := range map[string]corepac.Outcome{
+		`return "DIRECT;DIRECT";`:   corepac.OutcomeAnswered,
+		`return "DIRECT;DIRECT ";`:  corepac.OutcomeTooLarge,
+		`return "DIRECT;DIRECT;D";`: corepac.OutcomeTooLarge,
+		`return "D;DIRECT";`:        corepac.OutcomeAnswered,
+		`return "D;D;D";`:           corepac.OutcomeTooLarge,
+	} {
+		result := sandbox.Evaluate(context.Background(), "function "+Entry+"(u, h) { "+body+" }", "http://x.test/", "x.test")
+		if result.Outcome != want {
+			t.Errorf("%s: %s (%s), want %s", body, result.Outcome, result.Detail, want)
+		}
+	}
+}
+
+// THE LAYER'S DEADLINE IS THE FILE'S TOO - ADR114. An evaluation started late in
+// a layer used to get its whole budget again, and a cancelled run went on
+// evaluating until the budget ran out.
+func TestTheLayersDeadlineAndCancellationStopTheFile(t *testing.T) {
+	sandbox := testSandbox()
+	source := "function " + Entry + "(u, h) { while (true) {} }"
+
+	soon, cancelSoon := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancelSoon()
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for name, ctx := range map[string]context.Context{"a deadline": soon, "a cancelled run": cancelled} {
+		started := time.Now()
+		result := sandbox.Evaluate(ctx, source, "http://x.test/", "x.test")
+		if result.Outcome != corepac.OutcomeTimeLimit || time.Since(started) > sandbox.Budget/2 {
+			t.Errorf("%s: %s after %v, want time_limit well inside the %v budget", name, result.Outcome,
+				time.Since(started), sandbox.Budget)
+		}
+	}
+}
+
+// shExpMatch ASKS THE STOPWATCH'S QUESTION AND ENDS THE FILE ITSELF - ADR114.
+// The stopwatch cannot interrupt native code, and over these two strings the
+// match is billions of steps. And its early false is no answer: the file must
+// not get to take the branch it chooses.
+func TestShExpMatchOverAHugeTextEndsTheFileInsideTheBudget(t *testing.T) {
+	sandbox := testSandbox()
+	sandbox.Budget = 100 * time.Millisecond
+	started := time.Now()
+	result := sandbox.Evaluate(context.Background(), "function "+Entry+`(u, h) {
+		if (shExpMatch("a".repeat(100000), "*" + "a".repeat(50000) + "b")) { return "PROXY p.test:1"; }
+		return "DIRECT";
+	}`, "http://x.test/", "x.test")
+	if result.Outcome != corepac.OutcomeTimeLimit {
+		t.Errorf("got %s %q, want time_limit - the file took a branch on a match that never finished", result.Outcome, result.Raw)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Errorf("the match ran %v against a %v budget", elapsed, sandbox.Budget)
 	}
 }

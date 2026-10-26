@@ -96,7 +96,7 @@ func fixedRandom() (goja.RandSource, func() bool) {
 // THE RULE LIVES IN ONE PLACE. noteUnanswered is told whether the port behind a
 // helper was supplied, rather than four sites each deciding it for themselves -
 // the shape OBS50 has measured six times in this tree.
-func (s Sandbox) inject(vm *goja.Runtime) (func() helperRecord, error) {
+func (s Sandbox) inject(vm *goja.Runtime, expired func() bool) (func() helperRecord, error) {
 	unanswered := map[string]bool{}
 	noteUnanswered := func(name string, supplied bool) {
 		if !supplied {
@@ -120,7 +120,18 @@ func (s Sandbox) inject(vm *goja.Runtime) (func() helperRecord, error) {
 		"dnsDomainIs":         corepac.DNSDomainIs,
 		"localHostOrDomainIs": corepac.LocalHostOrDomainIs,
 		"dnsDomainLevels":     corepac.DNSDomainLevels,
-		"shExpMatch":          corepac.ShExpMatch,
+		// THE ONE HELPER WHOSE WORK GROWS WITH ITS INPUT, so it alone asks the
+		// stopwatch's question between its steps - ADR114. When it stops early
+		// it interrupts the engine itself: its false is no answer, and the
+		// stopwatch's next tick may come after the file has already taken the
+		// branch that false chose.
+		"shExpMatch": func(text, pattern string) bool {
+			matched, finished := corepac.ShExpMatchUntil(text, pattern, expired)
+			if !finished {
+				vm.Interrupt(LimitTime)
+			}
+			return matched
+		},
 		"isResolvable": func(host string) bool {
 			noteUnanswered("isResolvable", ports.Resolve != nil)
 			return ports.IsResolvable(host)
@@ -186,8 +197,8 @@ func (s Sandbox) inject(vm *goja.Runtime) (func() helperRecord, error) {
 				called = append(called, name)
 			}
 		}
-		asked, exhausted := lookups()
-		return helperRecord{unanswered: called, asked: asked, exhausted: exhausted, usedClock: clockUsed()}
+		asked, exhausted, failed := lookups()
+		return helperRecord{unanswered: called, asked: asked, exhausted: exhausted, failed: failed, usedClock: clockUsed()}
 	}, nil
 }
 
@@ -202,6 +213,7 @@ type helperRecord struct {
 	unanswered []string
 	asked      []string
 	exhausted  bool
+	failed     bool
 	usedClock  bool
 }
 
@@ -232,10 +244,14 @@ var errLookupsExhausted = errors.New("this evaluation has already asked about as
 // A NIL RESOLVER IS RETURNED UNTOUCHED so that pac.Ports' own rule - a nil port
 // means nobody can answer - stays the single description of that state. Wrapping
 // it would put a second one here.
-func (s Sandbox) boundedPorts() (corepac.Ports, func() ([]string, bool)) {
+//
+// A RESOLVER THAT FAILED IS RECORDED, NOT ONLY CACHED - ADR114. The helpers hand
+// the file a null for it, the same null a name that does not exist gets, so the
+// layer can only refuse to rest a route on that branch if it is told.
+func (s Sandbox) boundedPorts() (corepac.Ports, func() (asked []string, exhausted, failed bool)) {
 	ports := s.Ports
 	if ports.Resolve == nil {
-		return ports, func() ([]string, bool) { return nil, false }
+		return ports, func() ([]string, bool, bool) { return nil, false, false }
 	}
 
 	type answer struct {
@@ -251,7 +267,7 @@ func (s Sandbox) boundedPorts() (corepac.Ports, func() ([]string, bool)) {
 	// writing when Evaluate reads this back.
 	seen := map[string]answer{}
 	var asked []string
-	exhausted := false
+	exhausted, failed := false, false
 
 	resolve := s.Ports.Resolve
 	ports.Resolve = func(host string) ([]string, error) {
@@ -265,10 +281,11 @@ func (s Sandbox) boundedPorts() (corepac.Ports, func() ([]string, bool)) {
 		addresses, err := resolve(host)
 		seen[host] = answer{addresses: addresses, err: err}
 		asked = append(asked, host)
+		failed = failed || err != nil
 		return addresses, err
 	}
 
-	return ports, func() ([]string, bool) { return asked, exhausted }
+	return ports, func() ([]string, bool, bool) { return asked, exhausted, failed }
 }
 
 // pinnedClock hands the three time helpers ONE instant for the whole

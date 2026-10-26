@@ -83,9 +83,15 @@ const tick = time.Millisecond
 // bytecode instructions, so what this protects is the PAC file's own loops. What
 // protects the rest is that internal/core/pac contains nothing that can block or
 // loop without a bound, which is a rule stated in that package.
-func watch(ctx context.Context, vm *goja.Runtime, budget time.Duration, ceiling uint64) {
-	deadline := time.Now().Add(budget)
-
+//
+// THE CLOCK IS HANDED IN RATHER THAN STARTED HERE - ADR114. expired is the same
+// question shExpMatch asks between its steps, and it says yes for the layer's
+// deadline and for a cancelled run as well as for this evaluation's own budget,
+// so an evaluation started late in a layer no longer gets its whole budget again.
+// ctx only ends this goroutine once the evaluation is over, and it is never the
+// layer's own: a cancelled layer has to INTERRUPT the engine, not merely stop
+// watching it.
+func watch(ctx context.Context, vm *goja.Runtime, expired func() bool, ceiling uint64) {
 	// The baseline is taken HERE rather than inside the goroutine, so that the
 	// ceiling measures what this evaluation added rather than what the rest of
 	// the run was already holding.
@@ -111,7 +117,7 @@ func watch(ctx context.Context, vm *goja.Runtime, budget time.Duration, ceiling 
 
 	go func() {
 		for ctx.Err() == nil {
-			if time.Now().After(deadline) {
+			if expired() {
 				vm.Interrupt(LimitTime)
 				return
 			}

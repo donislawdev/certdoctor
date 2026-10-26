@@ -1,6 +1,7 @@
 package pac
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -9,7 +10,7 @@ import (
 
 // evaluateSource runs one snippet and hands back the result.
 func evaluateSource(s Sandbox, body string) corepac.Result {
-	return s.Evaluate("function "+Entry+"(url, host) { "+body+" }",
+	return s.Evaluate(context.Background(), "function "+Entry+"(url, host) { "+body+" }",
 		"https://api.example.com/", "api.example.com")
 }
 
@@ -119,7 +120,7 @@ func TestOneHelperCalledTwiceIsRecordedOnce(t *testing.T) {
 // dropped the list would report "no entry point" about a file that had already
 // gone looking for a resolver.
 func TestAFileThatWentLookingAndThenBrokeStillSaysSo(t *testing.T) {
-	noEntryPoint := testSandbox().Evaluate(`var cached = dnsResolve("api.example.com");`,
+	noEntryPoint := testSandbox().Evaluate(context.Background(), `var cached = dnsResolve("api.example.com");`,
 		"https://api.example.com/", "api.example.com")
 	if noEntryPoint.Outcome != corepac.OutcomeMalformed {
 		t.Fatalf("a file with no entry point answered %s", noEntryPoint.Outcome)

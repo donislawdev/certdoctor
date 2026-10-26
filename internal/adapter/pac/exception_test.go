@@ -1,6 +1,7 @@
 package pac
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestAScriptsErrorNamesTheScriptsOwnPositionAndNeverOurs(t *testing.T) {
 // load time by a different error type, which names line and column itself and
 // never a frame - describe leaves it alone.
 func TestASyntaxErrorKeepsItsOwnText(t *testing.T) {
-	result := testSandbox().Evaluate("function "+Entry+"(url, host) { return ; ; ; ]", "http://a.test/", "a.test")
+	result := testSandbox().Evaluate(context.Background(), "function "+Entry+"(url, host) { return ; ; ; ]", "http://a.test/", "a.test")
 	if result.Outcome != corepac.OutcomeMalformed {
 		t.Fatalf("outcome %s, want malformed: %s", result.Outcome, result.Detail)
 	}

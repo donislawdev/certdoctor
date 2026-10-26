@@ -246,6 +246,68 @@ func TestAnAnswerOfNothingRecognisedIsSaidRatherThanTreatedAsDirect(t *testing.T
 	if strings.Contains(result.Detail, "past every proxy") {
 		t.Errorf("an unreadable answer was reported as going direct: %q", result.Detail)
 	}
+	// AND IT SETTLES NOTHING - ADR114. It used to settle the layer and leave it
+	// a PASS on an answer this program says it cannot read.
+	if result.Status != status.Unknown || result.Reason != status.ReasonUndetermined {
+		t.Errorf("an answer of nothing recognised came back as %s / %s", result.Status, result.Reason)
+	}
+}
+
+// A KNOWN WORD WITHOUT ITS ADDRESS IS NO ENTRY - ADR114. "PROXY" alone was
+// selected with an empty address, which is how DIRECT looks, and the report said
+// the URL went past every proxy. A client skips it, so a DIRECT after it is the
+// entry that decides.
+func TestAKnownWordWithoutItsAddressIsNoEntry(t *testing.T) {
+	ask := func(raw string) Result {
+		return askLayer(t, Input{
+			Lenses:    lensesOf(silentLens(StackEnvironment)),
+			Target:    target,
+			Evaluate:  answering(nil, answeredWith(raw)),
+			ScriptURL: "http://pac.example/proxy.pac",
+		})
+	}
+
+	alone := ask("PROXY")
+	if row := scriptRowOf(t, alone); row.Selected != nil || strings.Contains(scriptSummary(alone), "past every proxy") {
+		t.Errorf("PROXY alone was followed: %+v, %q", row.Selected, scriptSummary(alone))
+	}
+	if alone.Status != status.Unknown {
+		t.Errorf("PROXY alone settled the layer as %s", alone.Status)
+	}
+	for _, raw := range []string{"DIRECT elsewhere.example:1", "PROXY two words:1"} {
+		if row := scriptRowOf(t, ask(raw)); row.Selected != nil {
+			t.Errorf("%q was followed as %+v", raw, row.Selected)
+		}
+	}
+
+	skipped := ask("PROXY; DIRECT")
+	if row := scriptRowOf(t, skipped); row.Selected == nil || row.Selected.Kind != "DIRECT" {
+		t.Errorf("the entry after PROXY alone is not the one followed: %+v", row.Selected)
+	}
+	if skipped.Status != status.Pass || !strings.Contains(skipped.Detail, "past every proxy") {
+		t.Errorf("a script ending in DIRECT came back as %s: %q", skipped.Status, skipped.Detail)
+	}
+}
+
+// A RESOLVER THAT DID NOT ANSWER SETTLES NOTHING - ADR114. The file got the null
+// a name that does not exist gets, and may have chosen DIRECT on it.
+func TestAnAnswerRestingOnAResolverThatFailedIsNotSettled(t *testing.T) {
+	answer := answeredWith("DIRECT")
+	answer.Result.LookupsFailed = true
+
+	result := askLayer(t, Input{
+		Lenses:    lensesOf(silentLens(StackEnvironment)),
+		Target:    target,
+		Evaluate:  answering(nil, answer),
+		ScriptURL: "http://pac.example/proxy.pac",
+	})
+
+	if result.Status != status.Unknown || result.Reason != status.ReasonUndetermined {
+		t.Errorf("an answer resting on a failed resolver came back as %s / %s", result.Status, result.Reason)
+	}
+	if !hasScriptCaveat(scriptRowOf(t, result), "no resolver on this machine gave a usable answer") {
+		t.Errorf("the row does not say a resolver failed: %v", scriptRowOf(t, result).Caveats)
+	}
 }
 
 // TestEveryWayAScriptCanFailGetsItsOwnWord is the table ADR80 part 3 fixed and
