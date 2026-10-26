@@ -10,6 +10,21 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Fixed - three things about asking a proxy
+
+- **A proxy reached over TLS is no longer asked in plain text.** An
+  `https://` entry, or a script's `HTTPS` keyword, used to get the same
+  plain request as any other proxy, which such a proxy reads as a broken TLS
+  greeting - the run then waited out its time on an answer that could not
+  come. Its row now says it was not asked and why, as a SOCKS proxy's does.
+- **A proxy answering at once is not kept waiting for its error page.** The
+  answer was read from the head, and then the connection was held open while
+  the rest of the page arrived, until the time ran out.
+- **The line for a proxy setting says what its exception list says.** It used
+  to read "a proxy applies" over a `no_proxy` that sends the URL past it. It
+  now says the list excuses the URL, or that programs reading the list
+  differently disagree about it.
+
 ### Fixed - a PAC script's answer is believed only when it can be
 
 - **An answer made only of entries a client cannot follow no longer passes.**

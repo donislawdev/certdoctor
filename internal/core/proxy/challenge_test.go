@@ -300,6 +300,40 @@ func TestASocksProxyIsNotAskedOverHTTP(t *testing.T) {
 	}
 }
 
+// A PROXY REACHED OVER TLS IS NOT ASKED IN PLAIN TEXT EITHER - ADR114. It reads
+// the question as a broken TLS hello, and the wait for an answer that cannot
+// come was spent out of the layer's budget. The scheme of the proxy is kept
+// apart from the scheme of the target: an https:// target through an http://
+// proxy is the ordinary case and is asked.
+func TestAProxyReachedOverTLSIsNotAskedInPlainText(t *testing.T) {
+	for scheme, want := range map[string]int{"https": 0, "http": 1} {
+		lens := Lens{
+			Stack: StackEnvironment, Source: "test", Read: true,
+			Servers: []Server{{Scheme: scheme, Address: "proxy.example:443"}},
+		}
+		var asked []ChallengeRequest
+		result := askWithProxy(t, Input{Lenses: lensesOf(lens), Target: target},
+			answeringProxy(&asked, ChallengeAnswer{Asked: true, Status: 200}))
+		if len(asked) != want {
+			t.Errorf("an %s proxy was asked %d time(s), want %d", scheme, len(asked), want)
+		}
+		if row := oneChallengeRow(t, result); want == 0 && !strings.Contains(row.Detail, "over TLS") {
+			t.Errorf("the row does not say why nothing was asked: %q", row.Detail)
+		}
+	}
+
+	var asked []ChallengeRequest
+	result := askWithProxy(t, Input{
+		Lenses:    lensesOf(silentLens(StackEnvironment)),
+		Target:    target,
+		ScriptURL: "http://wpad.example/proxy.pac",
+		Evaluate:  answering(nil, answeredWith("HTTPS proxy.example:443")),
+	}, answeringProxy(&asked, ChallengeAnswer{Asked: true, Status: 200}))
+	if row := oneChallengeRow(t, result); len(asked) != 0 || !strings.Contains(row.Detail, "over TLS") {
+		t.Errorf("an HTTPS directive was asked %d time(s): %q", len(asked), row.Detail)
+	}
+}
+
 // TestAnEndpointWithNoPortAndNoSchemeIsNotGuessedAt. Vendors do not agree on
 // what a bare proxy name means, so inventing a port would make this program open
 // a connection nobody named and then report what it found there.
@@ -321,8 +355,9 @@ func TestAnEndpointWithNoPortAndNoSchemeIsNotGuessedAt(t *testing.T) {
 }
 
 // TestAnEndpointWithNoPortTakesTheOneItsSchemeImplies is the other half: an
-// entry written as a URL says which port it means, and the two schemes this
-// program accepts have registered ones.
+// entry written as a URL says which port it means. An https:// entry is not
+// asked at all since ADR114 - TestAProxyReachedOverTLSIsNotAskedInPlainText - so
+// http is the scheme whose port this question is dialled on.
 func TestAnEndpointWithNoPortTakesTheOneItsSchemeImplies(t *testing.T) {
 	for _, tc := range []struct {
 		scheme  string
@@ -330,7 +365,6 @@ func TestAnEndpointWithNoPortTakesTheOneItsSchemeImplies(t *testing.T) {
 		want    string
 	}{
 		{"http", "p.example", "p.example:80"},
-		{"https", "p.example", "p.example:443"},
 		{"http", "[2001:db8::1]", "[2001:db8::1]:80"},
 		{"http", "2001:db8::1", "[2001:db8::1]:80"},
 	} {
@@ -710,7 +744,8 @@ func TestEveryKeywordAScriptMayNameArrivesAtTheRightPort(t *testing.T) {
 	}{
 		{"PROXY p.example", "p.example:80", true},
 		{"HTTP p.example", "p.example:80", true},
-		{"HTTPS p.example", "p.example:443", true},
+		// Reached over TLS, and so not asked in plain text - ADR114.
+		{"HTTPS p.example", "p.example", false},
 		{"SOCKS p.example", "p.example", false},
 	} {
 		t.Run(tc.answer, func(t *testing.T) {

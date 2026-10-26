@@ -405,8 +405,24 @@ func invalidatedByPath(lens Lens) bool {
 // run of this layer printed "Internet Settings ... follow names no proxy at
 // all", and a report that reads as broken English is one a reader trusts less
 // than they should.
+//
+// A PROXY NAMED IS NOT YET A PROXY THAT APPLIES - ADR114. The exception list
+// is read per runtime in bypass_rules beside this line, and a summary saying
+// "applies" over a list that excuses the target contradicted the row it heads.
 func summaryOf(lens Lens, body report.ProxyStack, target Target) string {
+	excused := 0
+	for _, rule := range body.BypassRules {
+		if rule.Bypasses {
+			excused++
+		}
+	}
 	switch {
+	case body.Selected != nil && excused > 0 && excused == len(body.BypassRules):
+		return fmt.Sprintf("%s: a proxy is named, and its exception list sends %s past it",
+			lens.Stack.Meaning(), describe(target))
+	case body.Selected != nil && excused > 0:
+		return fmt.Sprintf("%s: a proxy is named, and programs reading its exception list differently disagree "+
+			"about whether %s goes past it", lens.Stack.Meaning(), describe(target))
 	case body.Selected != nil:
 		return fmt.Sprintf("%s: a proxy applies to %s", lens.Stack.Meaning(), describe(target))
 	case len(body.Servers) > 0:

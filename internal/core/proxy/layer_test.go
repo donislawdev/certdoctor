@@ -410,6 +410,30 @@ func TestOneExceptionListIsReadTwiceForTheEnvironment(t *testing.T) {
 	}
 }
 
+// A PROXY ITS OWN EXCEPTION LIST EXCUSES DOES NOT "APPLY" - ADR114. The summary
+// said it did over a row whose bypass_rules said the opposite, and only the
+// readings that agree may say either.
+func TestTheSummaryOfAStackKeepsToItsExceptionList(t *testing.T) {
+	for bypass, want := range map[string]string{
+		"":                "a proxy applies to",
+		"api.example.com": "its exception list sends",
+		"example.com":     "disagree about whether",
+	} {
+		lens := namingLens(StackEnvironment, "proxy.example:8080")
+		lens.Bypass, lens.BypassSet = bypass, bypass != ""
+		result := askLayer(t, Input{Lenses: lensesOf(lens), Target: target})
+		var summary string
+		for _, finding := range result.Findings {
+			if finding.ProxyStack != nil {
+				summary = finding.Summary
+			}
+		}
+		if !strings.Contains(summary, want) {
+			t.Errorf("NO_PROXY=%q: %q, want it to say %q", bypass, summary, want)
+		}
+	}
+}
+
 // TestASystemPlaceIsReadUnderItsOwnRuleOnly is the other side of the rule above:
 // a place that holds its list under one documented reading gets one answer, not
 // two borrowed from somewhere else.

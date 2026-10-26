@@ -291,21 +291,34 @@ func bypassedEverywhere(lens Lens, target Target) bool {
 // binary protocol on the same kind of socket, so an HTTP request sent to one
 // gets an answer that is not HTTP at all - and a status code read out of that
 // would be a number this program invented.
+//
+// A PROXY REACHED OVER TLS IS THE SAME CASE ONE LAYER UP - ADR114. The question
+// goes out as plain text on a bare socket, and a proxy expecting a TLS hello
+// first reads it as garbage: it hangs up or waits, and the wait is spent out of
+// this layer's budget on an answer that cannot come.
 func refusedScheme(scheme string) string {
-	if !strings.HasPrefix(lower(scheme), "socks") {
-		return ""
+	switch {
+	case strings.HasPrefix(lower(scheme), "socks"):
+		return "this entry names a SOCKS proxy, and certdoctor asks this question over HTTP, " +
+			"which a SOCKS proxy does not answer"
+	case lower(scheme) == "https":
+		return "this entry names a proxy reached over TLS, and certdoctor asks this question in plain HTTP, " +
+			"which such a proxy does not answer"
 	}
-	return "this entry names a SOCKS proxy, and certdoctor asks this question over HTTP, " +
-		"which a SOCKS proxy does not answer"
+	return ""
 }
 
 // refusedDirective is refusedScheme for a keyword out of a script's answer.
 func refusedDirective(kind string) string {
-	if !strings.HasPrefix(lower(kind), "socks") {
-		return ""
+	switch {
+	case strings.HasPrefix(lower(kind), "socks"):
+		return "this script chose a SOCKS proxy, and certdoctor asks this question over HTTP, " +
+			"which a SOCKS proxy does not answer"
+	case lower(kind) == "https":
+		return "this script chose a proxy reached over TLS, and certdoctor asks this question in plain HTTP, " +
+			"which such a proxy does not answer"
 	}
-	return "this script chose a SOCKS proxy, and certdoctor asks this question over HTTP, " +
-		"which a SOCKS proxy does not answer"
+	return ""
 }
 
 // schemeOfDirective says how a proxy named by a script keyword is reached.

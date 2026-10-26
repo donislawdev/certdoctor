@@ -30,6 +30,9 @@ type fakeProxy struct {
 	// hold is how long the proxy waits before answering, for the one test about
 	// a proxy that accepts a connection and says nothing.
 	hold time.Duration
+	// linger is how long it keeps the connection open AFTER answering, for the
+	// test about a body announced and slow to come.
+	linger time.Duration
 
 	mu       sync.Mutex
 	requests []string
@@ -43,11 +46,19 @@ func startProxy(t *testing.T, answer string) *fakeProxy {
 
 func startProxyHolding(t *testing.T, answer string, hold time.Duration) *fakeProxy {
 	t.Helper()
+	return started(t, &fakeProxy{answer: answer, hold: hold})
+}
+
+// started puts p on a socket. Everything p is told comes BEFORE the goroutine
+// that reads it starts - a field set afterwards would be a race the detector is
+// not obliged to see.
+func started(t *testing.T, p *fakeProxy) *fakeProxy {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listening: %v", err)
 	}
-	p := &fakeProxy{address: listener.Addr().String(), answer: answer, hold: hold}
+	p.address = listener.Addr().String()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -94,6 +105,7 @@ func (p *fakeProxy) serve(conn net.Conn) {
 		return
 	}
 	_, _ = conn.Write([]byte(p.answer))
+	time.Sleep(p.linger)
 }
 
 func (p *fakeProxy) received(t *testing.T) string {
@@ -424,7 +436,7 @@ func TestTheBodyIsNeverRead(t *testing.T) {
 		"Proxy-Authenticate: Basic realm=\"corporate\"\r\n"+
 		"Content-Length: 100000000\r\n\r\n")
 
-	started := time.Now()
+	began := time.Now()
 	answer := Ask(permitting(p.address), 3*time.Second)(context.Background(), proxy.ChallengeRequest{
 		Endpoint: p.address, Query: proxy.QueryConnect, Authority: "api.example.com:443",
 	})
@@ -433,8 +445,28 @@ func TestTheBodyIsNeverRead(t *testing.T) {
 		t.Fatalf("the exchange did not come back on the head alone: asked=%v status=%d detail=%q",
 			answer.Asked, answer.Status, answer.Detail)
 	}
-	if waited := time.Since(started); waited > 2*time.Second {
+	if waited := time.Since(began); waited > 2*time.Second {
 		t.Errorf("the exchange took %s, which is long enough to have waited for a body", waited)
+	}
+}
+
+// THE BODY IS NOT WAITED FOR EITHER - ADR114. A proxy that answers at once and
+// keeps the connection open with its error page still to come used to hold the
+// exchange until its deadline: closing a framed body reads the rest of it.
+func TestABodyStillToComeIsNotWaitedFor(t *testing.T) {
+	p := started(t, &fakeProxy{linger: 2 * time.Second, answer: "HTTP/1.1 407 Proxy Authentication Required\r\n" +
+		"Proxy-Authenticate: Basic realm=\"corporate\"\r\nContent-Length: 100\r\n\r\n"})
+
+	began := time.Now()
+	answer := Ask(permitting(p.address), 3*time.Second)(context.Background(), proxy.ChallengeRequest{
+		Endpoint: p.address, Query: proxy.QueryConnect, Authority: "api.example.com:443",
+	})
+
+	if !answer.Asked || answer.Status != 407 {
+		t.Fatalf("asked=%v status=%d detail=%q", answer.Asked, answer.Status, answer.Detail)
+	}
+	if waited := time.Since(began); waited > time.Second {
+		t.Errorf("the exchange took %s, waiting for a body nobody reads", waited)
 	}
 }
 
@@ -461,7 +493,7 @@ func TestTheLayersOwnDeadlineWinsWhenItIsTheEarlierOne(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
 
-	started := time.Now()
+	began := time.Now()
 	answer := Ask(permitting(p.address), time.Minute)(ctx, proxy.ChallengeRequest{
 		Endpoint: p.address, Query: proxy.QueryConnect, Authority: "api.example.com:443",
 	})
@@ -469,7 +501,7 @@ func TestTheLayersOwnDeadlineWinsWhenItIsTheEarlierOne(t *testing.T) {
 	if answer.Asked {
 		t.Error("a proxy that said nothing was reported as one that answered")
 	}
-	if waited := time.Since(started); waited > time.Second {
+	if waited := time.Since(began); waited > time.Second {
 		t.Errorf("the exchange took %s, so the layer's own deadline was not what stopped it", waited)
 	}
 }

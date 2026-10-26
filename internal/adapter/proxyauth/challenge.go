@@ -114,13 +114,19 @@ func exchange(ctx context.Context, request proxy.ChallengeRequest, perEndpoint t
 	// line and in the Proxy-Authenticate headers; an error page is somebody
 	// else's prose about a machine this run was told about rather than asked
 	// about, and inviolable rule 19 forbids deciding anything from it.
-	defer response.Body.Close()
-
-	return proxy.ChallengeAnswer{
+	//
+	// AND THE SOCKET GOES FIRST - ADR114. Closing a body net/http has framed
+	// reads the rest of it, so with the connection still open a proxy that
+	// announced an error page and was slow to send it held this exchange until
+	// its deadline. Nothing is reused, so nothing is lost by hanging up first.
+	answer := proxy.ChallengeAnswer{
 		Asked:   true,
 		Status:  response.StatusCode,
 		Schemes: schemesOf(response.Header.Values("Proxy-Authenticate")),
 	}
+	_ = conn.Close()
+	_ = response.Body.Close()
+	return answer
 }
 
 // requestLine is the one question, in the shape the target's scheme decides.
