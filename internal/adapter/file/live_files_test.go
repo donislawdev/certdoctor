@@ -1,9 +1,11 @@
 package file
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -48,5 +50,50 @@ func TestALinkIsListedWithoutBeingFollowed(t *testing.T) {
 	}
 	if len(names) != 1 || filepath.Base(names[0]) != "dangling.pem" {
 		t.Errorf("got %v, want the dangling link named", names)
+	}
+}
+
+// ONLY A REGULAR FILE IS HANDED BACK - ADR114. A directory is the one thing
+// that is not a file on every platform; the pipe and the device are each
+// checked where they exist.
+func TestTheLiveSourceHandsBackRegularFilesAlone(t *testing.T) {
+	dir := t.TempDir()
+	_, err := liveSource(dir)
+	var refused *NotRegular
+	if !errors.As(err, &refused) || refused.Path != dir {
+		t.Errorf("a directory was opened for reading: %v", err)
+	}
+
+	regular := filepath.Join(dir, "bundle.pem")
+	if err := os.WriteFile(regular, []byte("pem"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := liveSource(regular)
+	if err != nil {
+		t.Fatalf("a regular file was refused: %v", err)
+	}
+	_ = opened.Close()
+}
+
+// A DIRECTORY IS LISTED WHOLE, IN NAME ORDER, OR NOT AT ALL - ADR114. Read in
+// batches, so the ceiling is met while reading rather than after, and the order
+// is the one os.ReadDir gave, which rows are built from.
+func TestADirectoryIsListedInOrderUpToItsCeiling(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"c.pem", "a.pem", "b.pem"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := readDirWithin(dir, 3)
+	if err != nil || len(entries) != 3 || entries[0].Name() != "a.pem" || entries[2].Name() != "c.pem" {
+		t.Errorf("got %v, %v - want a.pem, b.pem, c.pem", entries, err)
+	}
+	if _, err := readDirWithin(dir, 2); err == nil || !strings.Contains(err.Error(), "more than 2 entries") {
+		t.Errorf("three entries under a ceiling of two came back %v", err)
+	}
+	var refused *NotRegular
+	if _, err := readDir(filepath.Join(dir, "a.pem")); !errors.As(err, &refused) {
+		t.Errorf("a file was listed as a directory: %v", err)
 	}
 }

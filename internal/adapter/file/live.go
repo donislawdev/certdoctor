@@ -1,9 +1,13 @@
 package file
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 )
 
 // Live returns the real plumbing behind the two ports in this package.
@@ -44,7 +48,29 @@ func LiveAppAlias() AppAlias { return liveAppAlias }
 // It hands back the handle without reading a byte, because the cap on how much
 // is read belongs to Guarded - the limit is per parser and arrives as a
 // parameter, so this function has no honest number of its own.
-func liveSource(path string) (io.ReadCloser, error) { return os.Open(path) }
+//
+// ONLY A REGULAR FILE IS HANDED BACK - ADR114. A limit on bytes does not bound
+// TIME: a FIFO with no writer blocks in the open itself on Linux, a terminal
+// device blocks in the first read, and both can be named by a variable or a
+// PATH entry this program follows. So the open does not wait (openFlags, per
+// platform), and what was opened is asked what it is before anybody reads it.
+// What this cannot bound is a slow filesystem behind a regular file - no
+// stopwatch interrupts a read the kernel is still serving.
+func liveSource(path string) (io.ReadCloser, error) {
+	opened, err := os.OpenFile(path, openFlags, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err := opened.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = &NotRegular{Path: path, Mode: info.Mode()}
+	}
+	if err != nil {
+		_ = opened.Close()
+		return nil, err
+	}
+	return opened, nil
+}
 
 // liveResolve follows symbolic links to the path they actually name.
 //
@@ -71,7 +97,7 @@ func liveResolve(path string) (string, error) { return filepath.EvalSymlinks(pat
 // candidate, and filtering here keeps the caller from having to know what a
 // directory entry is.
 func liveList(path string) ([]string, error) {
-	entries, err := os.ReadDir(path)
+	entries, err := readDir(path)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +118,7 @@ func liveList(path string) ([]string, error) {
 // Guarded's job - so the caller opens each name through that port, the same way
 // it opens everything else.
 func liveFiles(path string) ([]string, error) {
-	entries, err := os.ReadDir(path)
+	entries, err := readDir(path)
 	if err != nil {
 		return nil, err
 	}
@@ -103,4 +129,58 @@ func liveFiles(path string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// listingCeiling is the most entries one directory may hold before it is
+// refused rather than listed - ADR114.
+//
+// IT BOUNDS THE LISTING, NOT WHAT A CALLER ACCEPTS. The caller's own limit -
+// 4096 files in a certificate directory - used to be applied to a list this
+// file had already read in full, sorted and copied. Sixty-five thousand is far
+// past any directory this program is pointed at, an assessment and not a
+// measurement, and it keeps a directory of millions from being held in memory
+// to be refused afterwards.
+const listingCeiling = 1 << 16
+
+// listingBatch is how many entries are read at a time.
+const listingBatch = 512
+
+// readDir is os.ReadDir with the ceiling, and with the open liveSource makes.
+//
+// THE OPEN DOES NOT WAIT AND WHAT IT OPENED IS ASKED WHAT IT IS, for the reason
+// liveSource gives: a directory named by somebody's variable can be a pipe.
+// THE ORDER IS BY NAME, as os.ReadDir gives it, because callers turn it into
+// rows and two runs on one machine have to print them alike.
+func readDir(path string) ([]os.DirEntry, error) { return readDirWithin(path, listingCeiling) }
+
+// readDirWithin is readDir with the ceiling as a parameter, so a test can reach
+// it with three files rather than sixty-five thousand.
+func readDirWithin(path string, ceiling int) ([]os.DirEntry, error) {
+	dir, err := os.OpenFile(path, openFlags, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = dir.Close() }()
+	if info, err := dir.Stat(); err != nil || !info.IsDir() {
+		if err == nil {
+			err = &NotRegular{Path: path, Mode: info.Mode()}
+		}
+		return nil, err
+	}
+	var entries []os.DirEntry
+	for {
+		batch, err := dir.ReadDir(listingBatch)
+		entries = append(entries, batch...)
+		if len(entries) > ceiling {
+			return nil, fmt.Errorf("%s holds more than %d entries, so it was not listed", path, ceiling)
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	slices.SortFunc(entries, func(a, b os.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+	return entries, nil
 }

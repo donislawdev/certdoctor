@@ -65,6 +65,31 @@ func TestHelperProcess(t *testing.T) {
 			time.Sleep(20 * time.Millisecond)
 		}
 		os.Exit(0)
+	case "parent":
+		// A WRAPPER: it starts the real program as its own child, without exec,
+		// and waits past any budget a test sets - ADR114 point 6.
+		child := exec.Command(os.Args[0], "-test.run=TestHelperProcess")
+		child.Env = append(os.Environ(), "CERTDOCTOR_HELPER_MODE=beat")
+		if err := child.Start(); err != nil {
+			os.Exit(9)
+		}
+		time.Sleep(15 * time.Second)
+		os.Exit(0)
+	case "beat":
+		// Appends to a file while it lives, so a test can see whether it still
+		// does - a pid would outlive it as a zombie under an init that does not
+		// reap, and a file does not. The ceiling is a backstop.
+		stop := time.Now().Add(30 * time.Second)
+		for time.Now().Before(stop) {
+			beat, err := os.OpenFile(os.Getenv("CERTDOCTOR_BEAT_FILE"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			if err != nil {
+				os.Exit(8)
+			}
+			_, _ = beat.WriteString(".")
+			_ = beat.Close()
+			time.Sleep(20 * time.Millisecond)
+		}
+		os.Exit(0)
 	case "readstdin":
 		buf := make([]byte, 8)
 		n, err := os.Stdin.Read(buf)

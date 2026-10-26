@@ -15,6 +15,7 @@ package java
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -154,6 +155,14 @@ func anchorsOf(ctx context.Context, run probe.Runner, install Install) ([]byte, 
 		// corrupt store all arrive as a non-zero exit, and which one it was is
 		// somebody else's sentence in somebody else's language.
 		return nil, fmt.Errorf("keytool exited with %d", out.ExitCode)
+	}
+	// A LISTING CUT SHORT IS NOT A SMALLER STORE - ADR114. The runner keeps a
+	// bounded amount of output, and what it kept parses as the first part of
+	// the store: a root past the cut would come back as missing, and the row
+	// would advise importing one the store already holds. node and python
+	// already refuse this; java did not.
+	if out.Truncated {
+		return nil, errors.New("keytool listed more than this program keeps, so the store was not read in full")
 	}
 	return []byte(out.Stdout), nil
 }

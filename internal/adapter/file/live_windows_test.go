@@ -65,3 +65,13 @@ func TestTheLiveAliasPortReadsAnAliasThisMachineHas(t *testing.T) {
 	}
 	t.Skipf("no app execution alias in %s", dir)
 }
+
+// A DEVICE IS REFUSED BEFORE ITS FIRST READ - ADR114. Opening NUL succeeds at
+// once on Windows, and a console device opened the same way waits in the read.
+func TestADeviceIsRefusedBeforeItIsRead(t *testing.T) {
+	_, err := liveSource("NUL")
+	var refused *NotRegular
+	if !errors.As(err, &refused) {
+		t.Errorf("the null device was opened for reading: %v", err)
+	}
+}

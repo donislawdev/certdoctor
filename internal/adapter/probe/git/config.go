@@ -47,6 +47,15 @@ var keyNames = map[string]string{
 // stops.
 const maxIncludeDepth = 10
 
+// maxConfigReads is how many configuration files one installation's reading may
+// open, includes and all - ADR114.
+//
+// GIT HAS NO SUCH LIMIT AND THIS IS OURS, an assessment and not a measurement.
+// Depth bounds one chain, not the tree: ten levels each including the next twice
+// is a thousand reads of files that are each small, and the reading has no clock
+// of its own. Real configurations include a handful of files.
+const maxConfigReads = 256
+
 // commandLevel is the scope git gives the GIT_CONFIG_COUNT pairs, the word
 // "git config --show-scope" prints for them.
 const commandLevel = "command"
@@ -60,6 +69,8 @@ type configReader struct {
 	hasHome  bool
 	homeWhy  string
 	settings *Settings
+	// reads counts the files opened, against maxConfigReads.
+	reads int
 }
 
 // readSettings is git's configuration for one installation, read in the order
@@ -286,6 +297,11 @@ func (r *configReader) top(path, level string) {
 // config that could not be read says nothing about what it would have set.
 func (r *configReader) file(path, where, level string, depth int, condition string, lenient bool) {
 	if r.settings.Unreadable != "" || path == "" {
+		return
+	}
+	if r.reads++; r.reads > maxConfigReads {
+		r.refuse(condition, fmt.Sprintf("%s is one more configuration file than the %d this program reads for one "+
+			"installation, so what the rest would set was not established", where, maxConfigReads))
 		return
 	}
 	data, err := readAll(r.source, path)

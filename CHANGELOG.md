@@ -28,6 +28,23 @@ Barely diagnosable yet, and there has been no release.
   passed, so the order in which certdoctor read the places chose which
   configuration the report described.
 
+### Fixed - reading files and starting programs cannot hold a run
+
+- **A path that is not a regular file is refused before it is read.** A pipe
+  nobody writes to, a terminal or a directory named by a variable such as
+  `SSL_CERT_FILE`, or found on PATH, could hold the run for ever - a limit on
+  bytes does not stop a read that never starts.
+- **A huge directory is refused while it is being listed**, rather than read
+  in full, sorted and then turned down.
+- **A Java store whose listing was cut short is not judged.** Only the first
+  part of it used to be read, so a root past the cut showed as missing and the
+  row advised importing a certificate the store already held.
+- **git's include files are limited in number as well as in depth.** A shallow
+  configuration including the same files many times was read over and over.
+- **On Linux and macOS, a program started through a wrapper is stopped with
+  it.** When certdoctor's time for a runtime ran out, a shim that started the
+  real runtime as its own child left that child running.
+
 ### Fixed - three things about asking a proxy
 
 - **A proxy reached over TLS is no longer asked in plain text.** An

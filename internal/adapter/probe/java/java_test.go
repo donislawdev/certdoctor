@@ -125,6 +125,19 @@ func TestAKeytoolThatRefusesIsUnknownWithAReason(t *testing.T) {
 	}
 }
 
+// A LISTING CUT SHORT IS NO STORE - ADR114. What the runner kept parses as the
+// first part of the store, so a root past the cut would read as missing.
+func TestAListingCutShortIsUnknownRatherThanASmallerStore(t *testing.T) {
+	install := Install{Root: `C:\jdk`, Store: `C:\jdk\store`, Keytool: `C:\jdk\keytool.exe`}
+	run := func(context.Context, string, ...string) (probe.Output, error) {
+		return probe.Output{Stdout: "-----BEGIN CERTIFICATE-----", Truncated: true}, nil
+	}
+	store := storeFor(context.Background(), run, install, [][]byte{{0x30}}, "", nil, atNoon())
+	if store.TrustsPresentedChain != nil || !strings.Contains(store.NotAssessed, "not read in full") {
+		t.Errorf("a listing cut short came back %v: %q", store.TrustsPresentedChain, store.NotAssessed)
+	}
+}
+
 // JAVA_HOME NAMES ONE OF SIX ON THIS MACHINE - measured - so it may enrich a row
 // and may never find one. An install nothing selects is perfectly real.
 func TestSelectionNamesJavaHomeAndPathWithoutFindingAnything(t *testing.T) {

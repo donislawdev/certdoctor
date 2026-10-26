@@ -77,6 +77,22 @@ func (r *RemotePath) Error() string {
 		"whoever is running this, so it was reported instead of opened", r.Path)
 }
 
+// NotRegular is returned when a path names something that is not a regular file
+// - a pipe, a device, a directory - ADR114.
+//
+// IT IS REFUSED BECAUSE READING IT MAY NEVER END, not because it is unusual: a
+// pipe nobody writes to and a terminal both wait for ever, and no limit on bytes
+// stops a read that has not started.
+type NotRegular struct {
+	Path string
+	Mode fs.FileMode
+}
+
+func (n *NotRegular) Error() string {
+	return fmt.Sprintf("%s is not a regular file (%s), and only a regular file is read, because reading "+
+		"anything else may wait for ever", n.Path, n.Mode.Type())
+}
+
 // TooLarge is returned when a file exceeds the limit it was read under.
 type TooLarge struct {
 	Path  string

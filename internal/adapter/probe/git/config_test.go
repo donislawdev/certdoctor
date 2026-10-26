@@ -454,6 +454,28 @@ func TestIncludesStopPastTenDeep(t *testing.T) {
 	}
 }
 
+// DEPTH BOUNDS A CHAIN, NOT A TREE - ADR114. One file including another many
+// times is shallow and still costs a read each time; past the limit the row
+// says so rather than reading on.
+func TestManyIncludesStopTheReadingWhereDepthWouldNot(t *testing.T) {
+	wide := func(times int) map[string]string {
+		return map[string]string{
+			"/home/jdoe/.gitconfig": strings.Repeat("[include]\n\tpath = again\n", times),
+			"/home/jdoe/again":      "[http]\n\tsslCAInfo = /wide.crt\n",
+		}
+	}
+	// Every attempt counts, a file that is not there included - the limit is on
+	// the work - so the exact edge depends on which places git looks first.
+	if settings := readSettings(sourceOf(wide(maxConfigReads/2)), "", home); settings.CAInfo != "/wide.crt" ||
+		settings.Unreadable != "" {
+		t.Errorf("under the limit: got %+v", settings)
+	}
+	if settings := readSettings(sourceOf(wide(maxConfigReads)), "", home); !strings.Contains(settings.Unreadable,
+		"one more configuration file") {
+		t.Errorf("past the limit: got %+v", settings)
+	}
+}
+
 // A RELATIVE INCLUDE FROM THE ENVIRONMENT IS REFUSED BY GIT, and an absolute one
 // is read at the command level.
 func TestAnIncludeFromTheEnvironment(t *testing.T) {

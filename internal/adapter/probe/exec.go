@@ -174,6 +174,7 @@ func start(ctx context.Context, env []string, executable string, args ...string)
 	command.Stderr = &stderr
 	command.Stdin = nil
 	command.WaitDelay = waitDelay
+	isolate(command)
 
 	err := command.Run()
 
