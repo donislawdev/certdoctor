@@ -254,3 +254,34 @@ func TestALooseCeilingAlsoHoldsForAFileTheStopwatchGetsToWatch(t *testing.T) {
 		t.Errorf("the file answered %q and should have answered DIRECT", result.Raw)
 	}
 }
+
+// A STRING BUILT BY DOUBLING IS STOPPED AT THE CEILING WHEN IT IS USED, NOT
+// ONLY WHILE IT GROWS - ADR115. goja from commit 64adc8b on (2026-10-21) joins
+// strings lazily: thirty-four doublings cost thirty-four small nodes, which the
+// stopwatch cannot see, and the first use - a search here, the answer being read
+// in the other case - asks for the whole length in one allocation in native
+// code, which no interrupt reaches. Measured 2026-10-26 in a container with
+// 1 GB: under that goja the test binary was killed, under the pinned one both
+// cases stopped at memory_ceiling within a quarter of a second. A run that dies
+// is how this test fails, and that is loud enough.
+func TestAStringBuiltByDoublingStopsAtTheCeiling(t *testing.T) {
+	for name, use := range map[string]string{
+		"searched": `return s.indexOf("!") < 0 ? "DIRECT" : "PROXY found.wrong:1";`,
+		"answered": `return s;`,
+	} {
+		sandbox := testSandbox()
+		// Doubling is copying, and under -race goja is roughly twelve times
+		// slower - the reason the test above loosens its budget too. A time
+		// limit here would be an answer to a question this test is not asking.
+		sandbox.Budget = 20 * time.Second
+		source := `function FindProxyForURL(url, host) {
+			var s = "abcdefghijklmnopqrstuvwxyz0123456789";
+			for (var i = 0; i < 34; i++) { s = s + s; }
+			` + use + `
+		}`
+		result := sandbox.Evaluate(context.Background(), source, "https://example.com/", "example.com")
+		if result.Outcome != corepac.OutcomeMemoryCeiling {
+			t.Errorf("%s: outcome %s, want %s (%s)", name, result.Outcome, corepac.OutcomeMemoryCeiling, result.Detail)
+		}
+	}
+}

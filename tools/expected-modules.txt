@@ -49,10 +49,16 @@ github.com/donislawdev/certdoctor
 # together with the toolchain. Every licence was read again at source that day,
 # for the new version, and none of them changed. The references below point at
 # the new versions.
+#
+# THREE MOVED AGAIN ON 2026-10-26 - goja, regexp2 and pprof - by the owner's
+# decision. Their licences were read at source that day for the new versions,
+# and each file is byte for byte the one read on 2026-10-14. x/text and
+# sourcemap were already at their latest. goja did NOT go to its latest commit,
+# and the reason is written beside it.
 
 # The JavaScript engine. MIT - "Copyright (c) 2016 Dmitry Panov" and
 # "Copyright (c) 2012 Robert Krimen", read at
-# https://raw.githubusercontent.com/dop251/goja/245c54f48cfc/LICENSE
+# https://raw.githubusercontent.com/dop251/goja/a6ef56644a78/LICENSE
 #
 # THIRD QUESTION OF THE SIEVE - what it does beyond what we want: a complete
 # ECMAScript runtime, of which a PAC file uses a fraction. That surface is
@@ -66,16 +72,31 @@ github.com/donislawdev/certdoctor
 # The only new imports are golang.org/x/text/transform, from a module already
 # linked, and iter from the standard library. Nothing new reaches a file, a
 # socket or a process.
-github.com/dop251/goja v0.0.0-20261013122152-245c54f48cfc
+#
+# THE MOVE OF 2026-10-26 STOPS ONE COMMIT SHORT OF THE LATEST, ON PURPOSE -
+# ADR115. Commit 64adc8b of 2026-10-21 joins strings lazily, so a PAC file can
+# double a string thirty-four times without allocating anything the stopwatch
+# sees, and its first use asks for the whole length in one allocation in native
+# code. Measured that day in a container with 1 GB: the latest commit had the
+# process killed, while a6ef56644a78 - the commit before - stops the same file
+# at the memory ceiling. TestAStringBuiltByDoublingStopsAtTheCeiling fails on
+# any goja that joins strings that way. The 33 commits taken were read as a
+# list. They fix language behaviour, and none adds an import.
+github.com/dop251/goja v0.0.0-20261021125811-a6ef56644a78
 
 # The regular expression engine goja uses. MIT - "Copyright (c) Doug Clark",
-# read at https://raw.githubusercontent.com/dlclark/regexp2/v2.8.4/LICENSE
+# read at https://raw.githubusercontent.com/dlclark/regexp2/v2.10.1/LICENSE
+#
+# v2.8.4 -> v2.10.1 ON 2026-10-26 is mostly correctness: two of its fifteen
+# commits fix searches that skipped a valid match (upstream #125 and #126),
+# and an expression in a PAC file that misses picks the wrong proxy. No new
+# import.
 #
 # IT IS THE REASON goja WAS CHOSEN OVER otto AND NOT AN INCIDENTAL COST - ADR75.
 # otto stands on re2, which has no backtracking, so a PAC file using lookahead
 # fails to compile there and certdoctor would call a working machine's
 # configuration broken. testbed/pac/files/lookahead.pac keeps that measurement.
-github.com/dlclark/regexp2/v2 v2.8.4
+github.com/dlclark/regexp2/v2 v2.10.1
 
 # Source map support, used by goja for stack traces. BSD-2-Clause -
 # "Copyright (c) 2016 The github.com/go-sourcemap/sourcemap Contributors", read
@@ -84,7 +105,7 @@ github.com/dlclark/regexp2/v2 v2.8.4
 github.com/go-sourcemap/sourcemap v2.1.4+incompatible
 
 # Profile format support. Apache-2.0, read at
-# https://raw.githubusercontent.com/google/pprof/2af12c3f4d87/LICENSE
+# https://raw.githubusercontent.com/google/pprof/1facf8f91b50/LICENSE
 #
 # A JAVASCRIPT ENGINE PULLING IN pprof IS A SURPRISE AND IT IS RECORDED RATHER
 # THAN PASSED OVER, as ADR75 asked. Measured: goja/profiler.go imports
@@ -96,7 +117,7 @@ github.com/go-sourcemap/sourcemap v2.1.4+incompatible
 # GPLv3 one but not the reverse. That is a legal reading rather than a
 # measurement - an OPINION, not a source - and it is the reason this line is
 # spelled out instead of being grouped with the BSD and MIT ones.
-github.com/google/pprof v0.0.0-20261012231050-2af12c3f4d87
+github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50
 
 # Unicode text handling. BSD-3-Clause - "Copyright 2009 The Go Authors", read at
 # https://raw.githubusercontent.com/golang/text/v0.43.0/LICENSE

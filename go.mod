@@ -59,11 +59,11 @@ module github.com/donislawdev/certdoctor
 // such a row says instead.
 go 1.27.3
 
-require github.com/dop251/goja v0.0.0-20261013122152-245c54f48cfc
+require github.com/dop251/goja v0.0.0-20261021125811-a6ef56644a78
 
 require (
-	github.com/dlclark/regexp2/v2 v2.8.4 // indirect
+	github.com/dlclark/regexp2/v2 v2.10.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
-	github.com/google/pprof v0.0.0-20261012231050-2af12c3f4d87 // indirect
+	github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
