@@ -683,6 +683,33 @@ func answeringEach(answers map[string]ScriptAnswer) Evaluate {
 	}
 }
 
+// TWO SCRIPTS SENDING ONE URL TWO WAYS ARE A WARNING - ADR114 point 2, decided
+// by the owner. The first one read used to decide the sentence and the layer
+// passed, so the order of reading chose the configuration the report described.
+// Two spellings of one proxy are one answer.
+func TestTwoScriptsThatDisagreeAreAWarning(t *testing.T) {
+	ask := func(machine, given string) Result {
+		lens := silentLens(StackWinINET)
+		lens.PACURL = "http://wpad.example/machine.pac"
+		return askLayer(t, Input{
+			Lenses: lensesOf(lens),
+			Target: target,
+			Evaluate: answeringEach(map[string]ScriptAnswer{
+				"http://wpad.example/machine.pac": answeredWith(machine),
+				"http://pac.example/given.pac":    answeredWith(given),
+			}),
+			ScriptURL: "http://pac.example/given.pac",
+		})
+	}
+	if result := ask("DIRECT", "PROXY proxy.example:8080"); result.Status != status.Warn ||
+		!strings.Contains(result.Detail, "do not send") {
+		t.Errorf("two scripts disagreeing came back %s: %q", result.Status, result.Detail)
+	}
+	if result := ask("HTTP PROXY.example:8080", "PROXY proxy.example:8080"); result.Status != status.Pass {
+		t.Errorf("two spellings of one proxy came back %s: %q", result.Status, result.Detail)
+	}
+}
+
 // TestOneScriptSettledBesideOneThatIsNotSaysBothThings is the case a single
 // script cannot produce: the verdict has to lead with what WAS settled while
 // still naming what was not, and the sentence that names the answer has to walk

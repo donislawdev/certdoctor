@@ -94,7 +94,7 @@ func exchange(ctx context.Context, request proxy.ChallengeRequest, perEndpoint t
 	var dialer net.Dialer
 	conn, err := dialer.DialContext(dialCtx, "tcp", request.Endpoint)
 	if err != nil {
-		return notAsked(whyNotReached(err))
+		return proxy.ChallengeAnswer{Detail: whyNotReached(err), Unreached: unreachedBy(ctx, err, proxy.UnreachedRefused)}
 	}
 	defer conn.Close()
 	// A DEADLINE ON THE SOCKET AND NOT ONLY ON THE CONTEXT. A context bounds the
@@ -108,7 +108,9 @@ func exchange(ctx context.Context, request proxy.ChallengeRequest, perEndpoint t
 	}
 	response, err := http.ReadResponse(bufio.NewReader(io.LimitReader(conn, maxHeaderBytes)), asked(request))
 	if err != nil {
-		return notAsked(whyNoAnswer(err))
+		// Something unreadable is no Unreached: the proxy answered, and what it
+		// answered is not ours to read as a refusal.
+		return proxy.ChallengeAnswer{Detail: whyNoAnswer(err), Unreached: unreachedBy(ctx, err, "")}
 	}
 	// THE BODY IS CLOSED AND NEVER READ. What the answer means is in the status
 	// line and in the Proxy-Authenticate headers; an error page is somebody
@@ -174,6 +176,25 @@ func whyNoAnswer(err error) string {
 		return "this proxy accepted the connection and did not answer within the time this run allows"
 	}
 	return "this proxy answered with something certdoctor could not read as an HTTP response"
+}
+
+// unreachedBy reads off the shape of err why a dialled proxy gave no answer -
+// ADR114 point 2.
+//
+// A TIMEOUT IS OUR CLOCK, AND A CANCELLED RUN IS NOT THE PROXY AT ALL. The
+// deadline is the earlier of this exchange's and the layer's, so running out
+// of it says how long this run waited, not that the proxy refused - and a run
+// the user interrupted must not leave a proxy accused of refusing a connection
+// nobody let it finish.
+func unreachedBy(ctx context.Context, err error, otherwise proxy.Unreached) proxy.Unreached {
+	var timeout net.Error
+	switch {
+	case errors.As(err, &timeout) && timeout.Timeout():
+		return proxy.UnreachedSilent
+	case ctx.Err() != nil:
+		return ""
+	}
+	return otherwise
 }
 
 // whyNotReached says a proxy could not be reached without repeating somebody

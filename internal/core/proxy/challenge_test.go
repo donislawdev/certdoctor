@@ -95,6 +95,46 @@ func TestOnlyA407SaysAProxyWantsCredentials(t *testing.T) {
 	}
 }
 
+// A PROXY NOBODY COULD CONNECT TO IS NOT A CODE - ADR114 point 2, decided by the
+// owner. A refused connection is FAIL, silence is the time this run allowed, and
+// an answer this program cannot read stays as S15 left every non-407 answer.
+func TestAProxyNobodyCouldReachDecidesTheLayer(t *testing.T) {
+	for _, tc := range []struct {
+		unreached Unreached
+		status    status.Status
+		reason    status.Reason
+		says      string
+	}{
+		{UnreachedRefused, status.Fail, "", "could not be connected to"},
+		{UnreachedSilent, status.Unknown, status.ReasonTimeout, "did not answer in the time"},
+		{"", status.Pass, "", ""},
+	} {
+		in := Input{Lenses: lensesOf(namingLens(StackEnvironment, "p.example:8080")), Target: target}
+		result := askWithProxy(t, in, answeringProxy(nil, ChallengeAnswer{Detail: "why", Unreached: tc.unreached}))
+		if result.Status != tc.status || result.Reason != tc.reason || !strings.Contains(result.Detail, tc.says) {
+			t.Errorf("%q: %s / %s %q", tc.unreached, result.Status, result.Reason, result.Detail)
+		}
+	}
+}
+
+// A REFUSAL IS CERTAIN AND A DEMAND IS NOT, so of two proxies one of which
+// refused and one of which asked for credentials, the refusal decides.
+func TestARefusedProxyOutranksOneThatAskedForCredentials(t *testing.T) {
+	ask := func(_ context.Context, request ChallengeRequest) ChallengeAnswer {
+		if request.Endpoint == "a.example:8080" {
+			return demanding()
+		}
+		return ChallengeAnswer{Detail: "why", Unreached: UnreachedRefused}
+	}
+	two := Input{
+		Lenses: lensesOf(namingLens(StackEnvironment, "a.example:8080"), namingLens(StackWinINET, "b.example:8080")),
+		Target: target,
+	}
+	if result := askWithProxy(t, two, ask); result.Status != status.Fail {
+		t.Errorf("a refusal beside a demand came back %s / %s", result.Status, result.Reason)
+	}
+}
+
 // TestADemandIsUnknownAndNeverFail is inviolable rule 15 read carefully, and the
 // word was fixed by testbed/expected/proxy-auth.txt before this code existed. A
 // proxy asking who you are is not a broken proxy and not a broken machine, and

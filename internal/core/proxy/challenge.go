@@ -100,7 +100,29 @@ type ChallengeAnswer struct {
 	Status int
 	// Schemes are the ways the proxy offered to be told who is asking.
 	Schemes []report.ProxyAuthScheme
+	// Unreached says why a proxy that was dialled gave no answer, when the
+	// reason is the proxy's and not this run's: empty for an answer, for a
+	// proxy this run chose not to ask, and for one that answered something
+	// unreadable.
+	Unreached Unreached
 }
+
+// Unreached is a proxy that was dialled and could not be asked - ADR114 point 2.
+//
+// IT IS READ BY THE ADAPTER FROM THE SHAPE OF THE ERROR, NEVER ITS TEXT, which
+// inviolable rule 19 asks for: the operating system writes that sentence in the
+// language of the machine.
+type Unreached string
+
+const (
+	// UnreachedRefused - no connection could be opened. A program set to use
+	// this proxy cannot reach anything through it.
+	UnreachedRefused Unreached = "refused"
+	// UnreachedSilent - nothing came back in the time this run allows, either
+	// to the connection or to the question. That says nothing yet about the
+	// proxy, only about how long this run waited.
+	UnreachedSilent Unreached = "silent"
+)
 
 // ChallengeAsk is the port that puts one question to one proxy.
 //
@@ -393,37 +415,68 @@ func join(host, port string) string {
 // so the orchestrator does it, from a closure the entry point built, exactly as
 // it does between L1 and L3.
 //
-// EVERYTHING THAT IS NOT A 407 LEAVES THE VERDICT ALONE - probe S15 again, and
-// this is the half of that measurement nobody went looking for. A CONNECT the
-// bench's proxy ALLOWED came back 503 because the origin was out of reach, and
-// from the client's side that is indistinguishable from a refusal. The layer's
-// own question - which proxy applies to this URL - was already settled by then,
-// so a code that says nothing about credentials must not unsettle it.
+// EVERY HTTP CODE THAT IS NOT A 407 LEAVES THE VERDICT ALONE - probe S15 again,
+// and this is the half of that measurement nobody went looking for. A CONNECT
+// the bench's proxy ALLOWED came back 503 because the origin was out of reach,
+// and from the client's side that is indistinguishable from a refusal. The
+// layer's own question - which proxy applies to this URL - was already settled
+// by then, so a code that says nothing about credentials must not unsettle it.
+//
+// A PROXY NOBODY COULD CONNECT TO IS NOT A CODE - ADR114 point 2, decided by
+// the owner. S15 measured codes, and this function used to treat a proxy that
+// refused the connection the same way, so a machine whose only proxy was down
+// ended its run on "everything passed". A refusal is FAIL, and it outranks a
+// challenge because it is certain where the challenge is not. Silence is the
+// time this run allowed, so it is a timeout, after a challenge.
 func Challenge(ctx context.Context, in Input, result Result) Result {
 	if len(result.Endpoints) == 0 {
 		return result
 	}
-	var challenged, carried int
+	var challenged, carried, refused, silent int
 	for _, endpoint := range result.Endpoints {
 		answer := askProxy(ctx, in.Challenge, endpoint)
 		result.Findings = append(result.Findings, challengeFinding(endpoint, answer, in.Target))
-		if answer.Asked && answer.Status == proxyAuthRequired {
+		switch {
+		case answer.Asked && answer.Status == proxyAuthRequired:
 			challenged++
 			if endpoint.CarriedCredentials {
 				carried++
 			}
+		case answer.Unreached == UnreachedRefused:
+			refused++
+		case answer.Unreached == UnreachedSilent:
+			silent++
 		}
 	}
-	if challenged == 0 {
+	answered := Result{Findings: result.Findings, Endpoints: result.Endpoints}
+	switch {
+	case refused > 0:
+		answered.Status = status.Fail
+		answered.Detail = unreachedDetail(refused, "could not be connected to",
+			"so a program set to use that proxy does not reach this URL through it")
+	case challenged > 0:
+		answered.Status, answered.Reason = status.Unknown, status.ReasonCredentialsRequired
+		answered.Detail = demandDetail(challenged, carried)
+	case silent > 0:
+		answered.Status, answered.Reason = status.Unknown, status.ReasonTimeout
+		answered.Detail = unreachedDetail(silent, "did not answer in the time this run allows",
+			"so whether this URL can be reached through that proxy was not established")
+	default:
 		return result
 	}
-	return Result{
-		Status:    status.Unknown,
-		Reason:    status.ReasonCredentialsRequired,
-		Detail:    demandDetail(challenged, carried),
-		Findings:  result.Findings,
-		Endpoints: result.Endpoints,
+	return answered
+}
+
+// unreachedDetail is the sentence for proxies that gave no answer at all.
+//
+// IT NAMES NO ENDPOINT, for the masking rule demandDetail states below - the
+// rows name them.
+func unreachedDetail(count int, what, so string) string {
+	if count == 1 {
+		return "the proxy this URL goes through " + what + ", " + so + " - the row below says what happened"
 	}
+	return fmt.Sprintf("%d of the proxies this URL goes through %s, %s - the rows below say what happened",
+		count, what, so)
 }
 
 // demandDetail is the sentence a run that met a challenge ends on.
@@ -482,7 +535,7 @@ func askProxy(ctx context.Context, ask ChallengeAsk, endpoint Endpoint) Challeng
 			answer.Detail = "certdoctor did not ask this proxy and did not record why, " +
 				"which is a gap here rather than anything about this machine"
 		}
-		return ChallengeAnswer{Detail: answer.Detail}
+		return ChallengeAnswer{Detail: answer.Detail, Unreached: answer.Unreached}
 	}
 	if answer.Status == 0 {
 		return ChallengeAnswer{Detail: "certdoctor asked this proxy and did not record what it answered, " +

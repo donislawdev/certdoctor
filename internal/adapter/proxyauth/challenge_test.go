@@ -389,6 +389,20 @@ func TestAProxyNobodyIsListeningOnSaysTheDialFailed(t *testing.T) {
 	if !strings.Contains(answer.Detail, "could not be reached") {
 		t.Errorf("the sentence does not say the proxy was out of reach: %q", answer.Detail)
 	}
+	// AND THE LAYER IS TOLD BY A VALUE, NOT A SENTENCE - ADR114 point 2.
+	if answer.Unreached != proxy.UnreachedRefused {
+		t.Errorf("a refused connection came back as %q, want refused", answer.Unreached)
+	}
+
+	// A run interrupted while dialling has accused nobody.
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	interrupted := Ask(permitting(address), budget)(cancelled, proxy.ChallengeRequest{
+		Endpoint: address, Query: proxy.QueryConnect, Authority: "api.example.com:443",
+	})
+	if interrupted.Asked || interrupted.Unreached != "" {
+		t.Errorf("an interrupted run blamed the proxy: %q", interrupted.Unreached)
+	}
 }
 
 // TestAProxyThatAcceptsAndSaysNothingIsNotCalledUnreadable. Those two send a
@@ -405,6 +419,9 @@ func TestAProxyThatAcceptsAndSaysNothingIsNotCalledUnreadable(t *testing.T) {
 	}
 	if !strings.Contains(answer.Detail, "did not answer within the time") {
 		t.Errorf("the sentence does not say the proxy went quiet: %q", answer.Detail)
+	}
+	if answer.Unreached != proxy.UnreachedSilent {
+		t.Errorf("a silent proxy came back as %q, want silent", answer.Unreached)
 	}
 }
 
@@ -423,6 +440,10 @@ func TestSomethingThatIsNotHTTPIsNotReadAsAStatusCode(t *testing.T) {
 	}
 	if !strings.Contains(answer.Detail, "could not read as an HTTP response") {
 		t.Errorf("the sentence does not say what was wrong with the answer: %q", answer.Detail)
+	}
+	// It answered, so it was reached - what it said is not a refusal.
+	if answer.Unreached != "" {
+		t.Errorf("an unreadable answer came back as %q", answer.Unreached)
 	}
 }
 

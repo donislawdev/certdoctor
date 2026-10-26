@@ -10,6 +10,19 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - a proxy that cannot be reached is a failure, not a pass
+
+- **A proxy this URL goes through that refuses the connection now fails the
+  proxy layer.** Only a demand for credentials used to change its answer, so
+  a machine whose only proxy was down could end on "everything passed". A
+  proxy that stays silent for the time certdoctor allows makes the layer
+  unknown with the reason `timeout`. Any HTTP answer other than 407 is still
+  read as before.
+- **Two automatic configuration scripts that send one URL two ways are a
+  warning.** The first script read used to decide the sentence and the layer
+  passed, so the order in which certdoctor read the places chose which
+  configuration the report described.
+
 ### Fixed - three things about asking a proxy
 
 - **A proxy reached over TLS is no longer asked in plain text.** An

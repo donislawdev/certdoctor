@@ -532,7 +532,23 @@ func gradeOf(lenses []Lens, scripts []script, findings []report.Finding, target 
 				" - so what is listed below may not be the whole answer",
 		}
 	}
+	return settledAnswer(lenses, scripts, findings, target, readable)
+}
 
+// settledAnswer grades a run that settled every question it could ask.
+//
+// TWO SCRIPTS SENDING ONE URL TWO WAYS ARE THE SAME FAULT AS TWO PLACES DOING
+// IT - ADR114 point 2, decided by the owner. The script a reader met first used
+// to decide the sentence and the layer passed, so the order this program read
+// the places in chose which of two configurations the report described.
+func settledAnswer(lenses []Lens, scripts []script, findings []report.Finding, target Target, readable int) Result {
+	if scriptsDisagree(scripts) {
+		return Result{
+			Status: status.Warn, Findings: findings,
+			Detail: "this machine points at more than one automatic configuration script, and they do not send " +
+				describe(target) + " the same way - so two programs on it will do different things with the same URL",
+		}
+	}
 	class, compared := Compare(lenses)
 	if compared && (class == DivergeOneSided || class == DivergeConflicting) {
 		return Result{
@@ -545,6 +561,30 @@ func gradeOf(lenses []Lens, scripts []script, findings []report.Finding, target 
 		Status: status.Pass, Findings: findings,
 		Detail: agreementOf(readable, compared, class, scripts, target),
 	}
+}
+
+// scriptsDisagree says whether two settled scripts chose different entries.
+//
+// AN ENTRY IS THE WAY IT IS REACHED AND WHERE: PROXY and HTTP name one kind of
+// proxy, and a host name is the same host in any case.
+func scriptsDisagree(scripts []script) bool {
+	seen := ""
+	for _, one := range scripts {
+		if !one.settled() {
+			continue
+		}
+		chosen, _ := firstUsable(one.answer.Result.Directives)
+		way := schemeOfDirective(chosen.Kind)
+		if way == "" {
+			way = chosen.Kind
+		}
+		entry := way + " " + lower(chosen.Endpoint)
+		if seen != "" && entry != seen {
+			return true
+		}
+		seen = entry
+	}
+	return false
 }
 
 // nothingNamed is the answer for a machine whose places name no proxy, no
