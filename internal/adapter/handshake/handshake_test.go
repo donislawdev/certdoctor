@@ -235,8 +235,52 @@ func TestAServerThatSendsNoIntermediateStillLeavesItsCertificate(t *testing.T) {
 	}
 	// The evidence somebody came for: the leaf names an issuer that did not
 	// arrive, and nothing on this side had to consult a trust store to say so.
-	if shown.Chain[0].Issuer == shown.Chain[0].Subject || shown.Chain[0].SelfSigned {
+	if shown.Chain[0].Issuer == shown.Chain[0].Subject || shown.Chain[0].SelfSigned || shown.Chain[0].IssuerSent {
 		t.Errorf("the missing issuer is not visible from what was reported: %+v", shown.Chain[0])
+	}
+}
+
+// TestTheIssuerOfTheLeafIsFoundByItsKey is B01 from ADR114. Whether the issuer
+// arrived used to be one comparison of names, and a certificate carrying the
+// issuer's name with somebody else's key passed it.
+func TestTheIssuerOfTheLeafIsFoundByItsKey(t *testing.T) {
+	root, intermediate, leaf := bundle(t)
+	// The same name and a key of its own: an issuer re-issued, sent in the form
+	// that did not sign this leaf.
+	impostor := mint(t, "certdoctor test intermediate", &root, true)
+	if distinguishedName(impostor.cert.Subject) != distinguishedName(leaf.cert.Issuer) {
+		t.Fatalf("the fixture failed to reproduce the issuer's name")
+	}
+	// A leaf claiming MD5 - its signature cannot be checked against any key, so
+	// the name decides, as it did before keys were asked.
+	unverifiable := *leaf.cert
+	unverifiable.SignatureAlgorithm = x509.MD5WithRSA
+
+	cases := []struct {
+		name  string
+		chain []*x509.Certificate
+		want  bool
+	}{
+		{"the issuer right after the leaf", []*x509.Certificate{leaf.cert, intermediate.cert}, true},
+		{"the issuer after another certificate", []*x509.Certificate{leaf.cert, root.cert, intermediate.cert}, true},
+		{"the leaf alone", []*x509.Certificate{leaf.cert}, false},
+		{"the issuer's name with another key", []*x509.Certificate{leaf.cert, impostor.cert}, false},
+		{"another key, then the issuer", []*x509.Certificate{leaf.cert, impostor.cert, intermediate.cert}, true},
+		{"a signature nothing can check, under the issuer's name", []*x509.Certificate{&unverifiable, impostor.cert}, true},
+		{"a signature nothing can check, under another name", []*x509.Certificate{&unverifiable, root.cert}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := certificates(c.chain)
+			if got[0].IssuerSent != c.want {
+				t.Errorf("IssuerSent %v, want %v", got[0].IssuerSent, c.want)
+			}
+			for i, rest := range got[1:] {
+				if rest.IssuerSent {
+					t.Errorf("certificate %d was asked about its issuer, and only the leaf is", i+1)
+				}
+			}
+		})
 	}
 }
 

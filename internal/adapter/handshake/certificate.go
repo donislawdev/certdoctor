@@ -6,6 +6,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	core "github.com/donislawdev/certdoctor/internal/core/handshake"
@@ -26,19 +27,54 @@ func certificates(chain []*x509.Certificate) []core.Certificate {
 	for _, certificate := range chain {
 		out = append(out, summarise(certificate))
 	}
+	if len(out) > 0 {
+		out[0].IssuerSent = issuerSent(chain)
+	}
 	return out
+}
+
+// issuerSent says whether the issuer of the first certificate is among the
+// others that arrived: its subject is the leaf's issuer, by the one function
+// both names are rendered by, and its key verifies the leaf's signature -
+// ADR114.
+//
+// IN ANY POSITION, not only the next one. RFC 8446 section 4.4.2 asks
+// receivers to cope with certificates in any order after the first.
+//
+// NOT CheckSignatureFrom, for the reason selfSigned gives: that function also
+// refuses a parent that is not an authority, and the question here is whether
+// the issuer ARRIVED. Whether a client will accept it as an issuer is a path
+// question, and L5 asks it with a store.
+//
+// A SIGNATURE THAT CANNOT BE CHECKED AT ALL leaves the name to decide, as it
+// did before this function existed. MD5, or an algorithm Go does not know, says
+// nothing about the key, and "the server did not send it" would be a claim this
+// program cannot make.
+func issuerSent(chain []*x509.Certificate) bool {
+	leaf := chain[0]
+	issuer := distinguishedName(leaf.Issuer)
+	for _, candidate := range chain[1:] {
+		if distinguishedName(candidate.Subject) != issuer {
+			continue
+		}
+		err := candidate.CheckSignature(leaf.SignatureAlgorithm, leaf.RawTBSCertificate, leaf.Signature)
+		var insecure x509.InsecureAlgorithmError
+		if err == nil || errors.As(err, &insecure) || errors.Is(err, x509.ErrUnsupportedAlgorithm) {
+			return true
+		}
+	}
+	return false
 }
 
 // summarise is one certificate, exactly as it was presented.
 func summarise(certificate *x509.Certificate) core.Certificate {
 	return core.Certificate{
 		// BOTH NAMES GO THROUGH ONE FUNCTION, and the completeness check is what
-		// makes that load bearing rather than tidy. L4 asks whether the issuer of
-		// the leaf is the subject of anything else that arrived, which is a STRING
-		// COMPARISON: two spellings of one distinguished name would report a
-		// complete chain as broken, and send somebody to fix a server that is
-		// already correct. The same failure tcp.Target exists to prevent one layer
-		// down.
+		// makes that load bearing rather than tidy. Whether the issuer of the leaf
+		// arrived starts as a STRING COMPARISON in issuerSent, before any key is
+		// asked: two spellings of one distinguished name would report a complete
+		// chain as broken, and send somebody to fix a server that is already
+		// correct. The same failure tcp.Target exists to prevent one layer down.
 		Subject:   distinguishedName(certificate.Subject),
 		Issuer:    distinguishedName(certificate.Issuer),
 		NotBefore: certificate.NotBefore,

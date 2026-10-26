@@ -110,6 +110,20 @@ type Certificate struct {
 	// adapter side from the signature rather than from the names matching,
 	// because a certificate can name itself as issuer without having signed it.
 	SelfSigned bool
+	// IssuerSent is set on the FIRST certificate of a chain when another one
+	// that arrived is its issuer - the issuer's name, and the issuer's key
+	// verifying this certificate's signature. It is computed on the adapter side
+	// like SelfSigned, and it is the fact chainComplete reads - ADR114.
+	//
+	// THE NAME ALONE IS WHAT THIS USED TO BE, AND IT CALLED A CHAIN WHOLE THAT
+	// WAS NOT: an issuer re-issued under the same name with a new key matches
+	// by name and verifies nothing, so a server still sending the old one sent
+	// no issuer at all.
+	//
+	// ONLY THE FIRST CERTIFICATE IS ASKED, because L4's question is about the
+	// leaf. Asking every certificate costs a signature check for every pair a
+	// server cares to send, and a hostile server chooses how many.
+	IssuerSent bool
 }
 
 // Presented is everything one handshake established.
@@ -397,33 +411,36 @@ func (in Input) attempt(ctx context.Context, address string) (Presented, error) 
 // errNotAttempted is internal: it never reaches a report, it selects a row.
 var errNotAttempted = errors.New("there was no budget left to try this address")
 
-// chainComplete says whether the server sent enough to build a path.
+// chainComplete says whether the server sent the issuer of its leaf.
 //
 // IT IS ANSWERED FROM THE PRESENTED BYTES ALONE AND NEEDS NO TRUST STORE, which
 // is exactly why it belongs to L4 while trust belongs to L5 - ADR46. A leaf
-// whose issuer is not among the certificates that arrived, and which did not
-// sign itself, cannot be chained by anybody who does not already hold the
-// missing certificate. That is the commonest real misconfiguration there is, and
-// it is invisible from a browser that cached the intermediate elsewhere.
+// whose issuer did not arrive, and which did not sign itself, can be chained
+// only by a client that already holds the missing certificate. When that is an
+// intermediate, it is the commonest real misconfiguration there is, and it is
+// invisible from a browser that cached the intermediate elsewhere.
+//
+// FALSE IS NOT "NOTHING CAN BUILD A PATH", and the sentence used to say it was
+// - ADR114, decided by the owner. A leaf signed straight by a root is ordinary
+// with a private authority, and RFC 8446 section 4.4.2 lets a server leave out
+// a certificate that specifies a trust anchor. The bytes cannot tell that root
+// from a missing intermediate, so whether a path exists is L5's answer, given
+// by stores.
+//
+// ONLY THE LEAF'S LINK IS ASKED, for the same reason. Past it, an issuer that
+// did not arrive is what every correctly configured server does with its root,
+// so nothing further down the chain can be settled from the bytes either.
 //
 // AN EMPTY CHAIN IS NOT COMPLETE, and saying so explicitly matters: the zero
-// value of a slice would otherwise sail through a loop that finds no
-// counter-example and report a server that sent nothing as correctly configured.
+// value of a slice would otherwise report a server that sent nothing as
+// correctly configured.
 func chainComplete(chain []Certificate) bool {
 	if len(chain) == 0 {
 		return false
 	}
-	leaf := chain[0]
-	if leaf.SelfSigned {
-		// It chains to itself. Whether anybody trusts that is L5's question.
-		return true
-	}
-	for _, candidate := range chain[1:] {
-		if candidate.Subject == leaf.Issuer {
-			return true
-		}
-	}
-	return false
+	// A self-signed leaf chains to itself. Whether anybody trusts that is L5's
+	// question.
+	return chain[0].SelfSigned || chain[0].IssuerSent
 }
 
 // detailFor is the layer's one line.
@@ -455,7 +472,7 @@ func detailFor(completed, total int, chain []Certificate, complete bool, disagre
 	case names.notCovered > 0:
 		return nameDetail(names)
 	case !complete:
-		return fmt.Sprintf("the server presented %d certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine",
+		return fmt.Sprintf("the server presented %d certificate(s) and did not send the issuer of the first one, so only a client that already holds it can build a path",
 			len(chain))
 	case names.commonOnly > 0:
 		return nameDetail(names)

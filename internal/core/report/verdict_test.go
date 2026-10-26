@@ -80,8 +80,21 @@ func row(id layer.ID, s status.Status, detail string, findings ...Finding) Layer
 	return r
 }
 
+// handshakeRow is the L4 row carrying the chain, saying whether the issuer of
+// its leaf arrived.
+func handshakeRow(complete bool) Finding {
+	return Finding{Kind: FindingTLSHandshake, TLSHandshake: &TLSHandshake{Completed: true, ChainComplete: complete, Chain: []Certificate{{}}}}
+}
+
+// withheld is L4 over a leaf whose issuer did not arrive - a warning since
+// ADR114, with the row that says so.
+func withheld() LayerResult {
+	return row(layer.TLS, status.Warn, l4Incomplete, handshakeRow(false))
+}
+
 const (
-	l4Incomplete    = "the server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine"
+	l4Incomplete    = "the server presented 1 certificate(s) and did not send the issuer of the first one, so only a client that already holds it can build a path"
+	serverWithheld  = "The server presented 1 certificate(s) and did not send the issuer of the first one, so only a client that already holds it can build a path, and none of the 2 store(s) assessed here built one - this is a fact about the server rather than about this machine"
 	l5TwoRefuse     = "2 of 3 store(s) do not trust the presented chain"
 	middlebox       = "mitmproxy signed this certificate and is an authority local to this machine - 1 store(s) here hold it and 1 do not - and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server"
 	nobodyHolds     = "certdoctor testbed intermediate signed this certificate, and no store on this machine holds an anchor for it"
@@ -98,10 +111,10 @@ const (
 //
 // The cases are the bench scenarios of docs/21 written as rows. The two that
 // matter most are the pair measured on 2026-08-19: a middlebox and a server
-// that forgot its intermediate fail L4 identically, and only the trust matrix
-// tells them apart - so the middlebox verdict must come from L5 even though L4
-// is the earlier red row, and the forgetful server's verdict must blame the
-// server even though every trust row under it is red.
+// that forgot its intermediate look identical to L4 - a warning since ADR114 -
+// and only the trust matrix tells them apart. So the middlebox verdict comes
+// from L5, and the forgetful server's verdict must blame the server even though
+// every trust row under it is red.
 func TestTheVerdictNamesTheCauseInTheDecisiveLayersWords(t *testing.T) {
 	for _, c := range causeScenarios {
 		t.Run(c.name, func(t *testing.T) {
@@ -160,13 +173,11 @@ var causeScenarios = []struct {
 		name: "S-5 through a proxy: the server is still to blame, on the route that was measured",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
 			row(layer.Proxy, status.Pass, "", Finding{Kind: FindingProxyChallenge, Summary: "asked"}), pass(layer.TCP),
-			row(layer.TLS, status.Fail, l4Incomplete),
+			withheld(),
 			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
-		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can " +
-			"build a path to a root - this is a fact about the server rather than about this machine, but that was " +
-			"measured on the direct route, and a proxy applies to this URL - a program set to use it goes through the " +
-			"proxy instead. Failures in 2 of 6 diagnostic layers.",
+		want: serverWithheld + ", but that was measured on the direct route, and a proxy applies to this URL - a " +
+			"program set to use it goes through the proxy instead. Warnings in 1 of 6 diagnostic layers.",
 	},
 	{
 		name: "a proxy layer with rows of another kind names no proxy that applies",
@@ -179,26 +190,88 @@ var causeScenarios = []struct {
 	{
 		name: "S-5 the server forgot its intermediate: every trust row is red and the server is still to blame",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
-			row(layer.TLS, status.Fail, l4Incomplete),
+			withheld(),
 			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
-		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine. Failures in 2 of 6 diagnostic layers.",
+		want: serverWithheld + ". Warnings in 1 of 6 diagnostic layers.",
 	},
 	{
-		name: "S-1 a middlebox: L4 fails exactly as in S-5, and the local authority in L5 outranks it",
+		name: "B01 a leaf signed straight by a root every store here holds: a warning about the bytes and nothing failing - ADR114",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
-			row(layer.TLS, status.Fail, l4Incomplete),
+			withheld(),
+			row(layer.TrustMatrix, status.Pass, "2 of 2 store(s) trust the presented chain", storeTrusting("curl"), storeTrusting("git"))},
+		want: "Everything assessed passed. Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
+		name: "a chain without its issuer that one store here completed: the server is not blamed, and the refusing stores are the story",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			withheld(),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, storeRefusing("curl", Expired), storeRefusing("git", Expired), storeTrusting("java"))},
+		want: "2 of 3 store(s) do not trust the presented chain - a certificate in the path is past its validity. Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
+		name: "a whole chain warned about for its name and refused by every store: no issuer is said to be missing",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Warn, "the certificate names legacy.example.com only in its common name", handshakeRow(true)),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
+		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
+		name: "a failing matrix with no store assessed: nothing was built and nothing was tried, so the server is not blamed",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			withheld(),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, storeUndetermined("curl", "curl.exe", onSchannel))},
+		want: "2 of 3 store(s) do not trust the presented chain. Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
+		name: "the row carrying the chain is not the first: an address that never completed says nothing about an issuer",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Warn, "the certificate names legacy.example.com only in its common name",
+				Finding{Kind: FindingTLSHandshake, TLSHandshake: &TLSHandshake{NotCompleted: "the server did not complete a TLS handshake"}},
+				handshakeRow(true)),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
+		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
+		name: "an L4 warning with no row carrying a chain: nothing is said about an issuer",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Warn, l4Incomplete),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
+		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
+		name: "a leaf for another name: L4 fails, and its sentence is the cause",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Fail, "the certificate does not cover wrong.host.example", handshakeRow(true)),
+			row(layer.TrustMatrix, status.Pass, "2 of 2 store(s) trust the presented chain", storeTrusting("curl"), storeTrusting("git"))},
+		want: "The certificate does not cover wrong.host.example.",
+	},
+	{
+		name: "a chain without its issuer and an L4 row with no sentence: nothing is quoted that was not written",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Warn, "", handshakeRow(false)),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
+		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
+		name: "S-1 a middlebox: L4 warns exactly as in S-5, and the local authority in L5 is the cause",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			withheld(),
 			row(layer.TrustMatrix, status.Fail, "1 of 2 store(s) do not trust the presented chain", inspected(middlebox, HeldBySomeStores),
 				storeTrusting("curl"), storeRefusing("git", UnknownAuthority))},
-		want: middlebox + ". Without it: git. Failures in 2 of 6 diagnostic layers.",
+		want: middlebox + ". Without it: git. Warnings in 1 of 6 diagnostic layers.",
 	},
 	{
-		name: "a middlebox nobody here trusts: L4 fails, no store holds the signer, and the named product still leads - measured on the bench 2026-09-22",
+		name: "a middlebox nobody here trusts: L4 warns, no store holds the signer, and the named product still leads - measured on the bench 2026-09-22",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
-			row(layer.TLS, status.Fail, l4Incomplete),
+			withheld(),
 			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, inspected(unheldMiddlebox, HeldByNoStores),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
-		want: unheldMiddlebox + ". Failures in 2 of 6 diagnostic layers.",
+		want: unheldMiddlebox + ". Warnings in 1 of 6 diagnostic layers.",
 	},
 	{
 		name: "S-3 and S-6 an honest server under a company authority: which runtimes lack the anchor, with counts where a runtime has several stores",
@@ -279,13 +352,13 @@ var causeScenarios = []struct {
 		want: "Everything assessed passed, but " + wantsCreds + ". 2 of 6 diagnostic layers could not be assessed.",
 	},
 	{
-		name: "S-5 with the platform's row undetermined: a failure outranks it and the server is still to blame",
+		name: "S-5 with the platform's row undetermined: a failure outranks it, the server is still to blame, and only the assessed stores are counted",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
-			row(layer.TLS, status.Fail, l4Incomplete),
+			withheld(),
 			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority),
 				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))},
-		want: "The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can build a path to a root - this is a fact about the server rather than about this machine. Failures in 2 of 6 diagnostic layers.",
+		want: serverWithheld + ". Warnings in 1 of 6 diagnostic layers.",
 	},
 	{
 		name: "a failing row with no detail names nothing, so the count stands in and the function stays total",

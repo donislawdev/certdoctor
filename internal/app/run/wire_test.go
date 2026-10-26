@@ -480,6 +480,9 @@ func TestNoHandshakeMeansL5JudgesNothing(t *testing.T) {
 // produces a command in one case and none in the other, with the certificates
 // as the only difference.
 func TestWhetherTheChainWasWholeCrossesTheSameSeamAsTheChain(t *testing.T) {
+	// THE ADAPTER'S ANSWER, NOT THE NAMES: the leaf says its issuer arrived the
+	// way the adapter says it, from the issuer's key - ADR114.
+	signed := handshake.Certificate{Subject: "CN=example.com", Issuer: "CN=issuer", FingerprintSHA256: "aa", Raw: []byte{0x30, 0x01}, IssuerSent: true}
 	leaf := handshake.Certificate{Subject: "CN=example.com", Issuer: "CN=issuer", FingerprintSHA256: "aa", Raw: []byte{0x30, 0x01}}
 	issuer := handshake.Certificate{Subject: "CN=issuer", Issuer: "CN=issuer", FingerprintSHA256: "bb", IsCA: true, SelfSigned: true, Raw: []byte{0x30, 0x02}}
 
@@ -502,7 +505,7 @@ func TestWhetherTheChainWasWholeCrossesTheSameSeamAsTheChain(t *testing.T) {
 		chain   []handshake.Certificate
 		command bool
 	}{
-		{"the issuer of the leaf arrived", []handshake.Certificate{leaf, issuer}, true},
+		{"the issuer of the leaf arrived", []handshake.Certificate{signed, issuer}, true},
 		{"the server sent the leaf alone", []handshake.Certificate{leaf}, false},
 	}
 

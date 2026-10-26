@@ -105,12 +105,16 @@ root_pem=/mitmconf/mitmproxy-ca-cert.pem
 # difference between the two paths and not the one being studied.
 curl_exit_code=0
 
-# --- L4: structural, and it FAILS - the same value no-intermediate.txt expects
+# --- L4: structural, and it WARNS - the same value no-intermediate.txt expects
 #
 # THE L4 STATUS ALONE CAN THEREFORE NEVER BE THE DETECTION, which is the sentence
 # this file has carried from the beginning and the only one that survived both
 # rewrites intact.
-l4_status=FAIL
+#
+# WARN AND NOT FAIL SINCE ADR114, B01, decided by the owner: the bytes cannot
+# tell a missing intermediate from a root left out on purpose, and a client that
+# holds mitmproxy's root - curl here - builds a path. It was FAIL until then.
+l4_status=WARN
 chain_complete=false
 
 # --- L5: the matrix S-1 was always about ---

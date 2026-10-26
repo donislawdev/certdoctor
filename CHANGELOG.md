@@ -10,6 +10,22 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - a chain without its issuer is a warning, and stores decide who is to blame
+
+- **A server that does not send the issuer of its certificate makes the
+  TLS layer warn rather than fail.** The bytes cannot tell a missing
+  intermediate from a root the server is allowed to leave out, and a
+  certificate signed straight by a company root is ordinary. Every store
+  holding that root builds a path, and such a run used to end on a failure
+  that blamed the server. The layer now says that only a client already
+  holding the issuer can build a path.
+- **The top line still blames the server when no store on this machine
+  built a path**, and now says how many stores were asked. When one did, the
+  stores that refused are the cause, as for any other chain.
+- **Whether the issuer arrived is decided by its key, not only by its
+  name.** A certificate carrying the issuer's name with another key - an
+  issuer re-issued, sent in its old form - was taken for the issuer.
+
 ### Fixed - four small things about files, machines and DNS answers
 
 - **On Linux, two binaries whose names differ only by case are two rows.**

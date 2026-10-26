@@ -96,23 +96,27 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	// THREE FAILURES, ONE BRANCH - the sentence above them, from detailFor, is
 	// what tells them apart.
 	//
+	// A HANDSHAKE THAT PRESENTED NO CERTIFICATE leaves every store with nothing
+	// to judge - ADR66 made it legal and left it failing.
+	//
 	// A NAME THE LEAF DOES NOT COVER is a fact about the server or about the
 	// name, and never about this machine - ADR106. Every client refuses it
 	// whatever its trust store holds, which is why it is asked here and not in
 	// L5: there, every store would say it does not trust a chain it trusts
 	// perfectly well.
-	//
-	// AN INCOMPLETE CHAIN is a fact about the server, and the sentence says so.
-	// Every runtime on this machine will fail against this server and the
-	// answer is still "do nothing here" - the one scenario where a verdict
-	// computed from the trust matrix would point the reader at exactly the
-	// wrong machine.
-	case completed == 0, names.notCovered > 0, !complete:
+	case completed == 0, len(firstChain) == 0, names.notCovered > 0:
 		graded.Status = status.Fail
-	case names.commonOnly > 0:
-		// A WARNING AND NOT A FAILURE, decided by the owner in ADR106: a client
-		// written to RFC 6125 may still accept the common name, so whether this
-		// works depends on which client is asking.
+	// TWO WARNINGS, ONE BRANCH, both decided by the owner.
+	//
+	// AN ISSUER THE SERVER DID NOT SEND - ADR114. The bytes cannot tell a
+	// missing intermediate from a root left out on purpose, and a client that
+	// already holds the issuer builds a path, so this layer says what arrived
+	// and L5 says who can. When no store here builds one, the verdict still
+	// names the server - causeOf in the report package.
+	//
+	// A NAME ONLY IN THE COMMON NAME - ADR106: a client written to RFC 6125 may
+	// still accept it, so whether this works depends on which client is asking.
+	case !complete, names.commonOnly > 0:
 		graded.Status = status.Warn
 	default:
 		graded.Status = status.Pass

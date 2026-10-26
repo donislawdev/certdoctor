@@ -128,11 +128,12 @@ func TestTheNameIsSaidBeforeAnIncompleteChain(t *testing.T) {
 }
 
 // TestAnIncompleteChainOutranksACommonNameWarning is the other half of the
-// order: a failure is not hidden behind a warning.
+// order. Both are warnings since ADR114, and the sentence is the chain's: it is
+// the one the verdict quotes when no store here builds a path.
 func TestAnIncompleteChainOutranksACommonNameWarning(t *testing.T) {
 	got := Ask(context.Background(), askedFor("legacy.example.com", presenting(leafOnly("aa"), NameInCommonNameOnly)))
 
-	if got.Status != status.Fail || !strings.Contains(got.Detail, "did not send the issuer") {
+	if got.Status != status.Warn || !strings.Contains(got.Detail, "did not send the issuer") {
 		t.Errorf("got %s %q, want the incomplete chain", got.Status, got.Detail)
 	}
 }

@@ -200,10 +200,11 @@ func tail(counts map[status.Status]int, total int, causeNamed bool) string {
 // on structure alone L4 fails identically for both. What separates them is L5:
 // the middlebox's signer is an authority THIS MACHINE holds in some stores and
 // not in others, while nobody holds the forgetful server's missing issuer.
-// So a local authority held by some stores is asked before L4's structural
-// failure, and a chain nobody can complete is blamed on the server, which is
-// scenario S-5 - every row of the trust matrix red, and the right answer still
-// "do nothing on this machine".
+// So a local authority held by some stores is asked before L4, and a chain
+// without its issuer that no store here completed is blamed on the server,
+// which is scenario S-5 - every row of the trust matrix red, and the right
+// answer still "do nothing on this machine". Since ADR114 L4 only warns about
+// that chain, so the server is named from the trust rung - issuerWithheld.
 //
 // Any layer that has no cause of its own here is taken in layer order, in its
 // own words, so that a failure a future layer produces is never reported as a
@@ -225,6 +226,9 @@ func causeOf(results []LayerResult) (string, bool) {
 		return directly(results, r.Detail)
 	}
 	if r, ok := failing(results, layer.TrustMatrix); ok {
+		if withheld, ok := issuerWithheld(results, r); ok {
+			return directly(results, withheld)
+		}
 		return trustCause(r)
 	}
 	for _, id := range layer.All {
@@ -263,14 +267,70 @@ func directly(results []LayerResult, detail string) (string, bool) {
 	return sentence(detail)
 }
 
-// failing returns the first result carrying id if that result failed.
-func failing(results []LayerResult, id layer.ID) (LayerResult, bool) {
+// issuerWithheld is the verdict over a server that did not send the issuer of
+// its leaf when no store on this machine built a path without it - ADR114,
+// decided by the owner.
+//
+// L4 WARNS ABOUT A MISSING ISSUER RATHER THAN FAILING, because the bytes cannot
+// tell a missing intermediate from a root the server may leave out, and a
+// client holding that root builds a path. What decides is whether any store
+// here built one. None did, so the cause is the server, which is scenario S-5:
+// every row of the trust matrix red and "do nothing on this machine" still the
+// right answer. One that did makes the refusing stores the story, and the rungs
+// above and below tell it.
+//
+// L4'S OWN SENTENCE IS QUOTED, and it is the missing-issuer one by the order
+// detailFor keeps in the handshake package: L4 did not fail, or the rung above
+// would have spoken, and a layer that did not fail over a chain without its
+// issuer reached that sentence before any other. What is added is the count of
+// stores, and whose fact it is.
+func issuerWithheld(results []LayerResult, trust LayerResult) (string, bool) {
+	tls, ok := resultOf(results, layer.TLS)
+	if !ok || tls.Detail == "" || !carriesIncompleteChain(tls) {
+		return "", false
+	}
+	assessed := 0
+	for _, f := range trust.Findings {
+		if f.Kind != FindingTrustStore || f.TrustStore == nil || f.TrustStore.TrustsPresentedChain == nil {
+			continue
+		}
+		if *f.TrustStore.TrustsPresentedChain {
+			return "", false
+		}
+		assessed++
+	}
+	if assessed == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("%s, and none of the %d store(s) assessed here built one - this is a fact about the server rather than about this machine",
+		tls.Detail, assessed), true
+}
+
+// carriesIncompleteChain says whether the row carrying the chain says the issuer
+// of its leaf did not arrive.
+func carriesIncompleteChain(tls LayerResult) bool {
+	for _, f := range tls.Findings {
+		if f.Kind == FindingTLSHandshake && f.TLSHandshake != nil && len(f.TLSHandshake.Chain) > 0 {
+			return !f.TLSHandshake.ChainComplete
+		}
+	}
+	return false
+}
+
+// resultOf returns the first result carrying id.
+func resultOf(results []LayerResult, id layer.ID) (LayerResult, bool) {
 	for _, r := range results {
 		if r.ID == id {
-			return r, r.Status == status.Fail
+			return r, true
 		}
 	}
 	return LayerResult{}, false
+}
+
+// failing returns the first result carrying id if that result failed.
+func failing(results []LayerResult, id layer.ID) (LayerResult, bool) {
+	r, ok := resultOf(results, id)
+	return r, ok && r.Status == status.Fail
 }
 
 // credentialsDemand returns the proxy layer's own account of a proxy that

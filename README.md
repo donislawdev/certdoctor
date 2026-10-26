@@ -79,8 +79,9 @@ them, with the first sentence certdoctor prints at the top of each report:
 certdoctor https://incomplete-chain.badssl.com/
 ```
 
-> The server presented 1 certificate(s) and did not send the issuer of the first one, so nothing can
-> build a path to a root - this is a fact about the server rather than about this machine.
+> The server presented 1 certificate(s) and did not send the issuer of the first one, so only a
+> client that already holds it can build a path, and none of the 11 store(s) assessed here built
+> one - this is a fact about the server rather than about this machine.
 
 ```
 certdoctor https://untrusted-root.badssl.com/

@@ -41,9 +41,13 @@ openssl_verify_error=unable to get local issuer certificate
 
 # --- P6: nothing reads these yet ---
 #
-# FAIL rather than WARN: the site cannot be used by anything that does not
-# already hold the intermediate, which is every fresh runtime.
-l4_status=FAIL
+# WARN rather than FAIL since ADR114, B01, decided by the owner, and it was FAIL
+# until then. The site cannot be used by anything that does not already hold
+# the intermediate, which is every fresh runtime - but the same bytes come from
+# a server signed straight by a root it may leave out, which every client
+# holding that root uses. L4 says what arrived. That nothing here built a path
+# is L5's half below, and the verdict names the server because of it.
+l4_status=WARN
 
 # The whole point of S-5. The verdict names the SERVER, and must never name this
 # machine or its runtimes - even though every row of the trust matrix is red.

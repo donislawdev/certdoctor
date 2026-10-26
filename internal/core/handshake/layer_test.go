@@ -37,12 +37,15 @@ func certAt(subject, issuer, fingerprint string, selfSigned bool) Certificate {
 	}
 }
 
-// completeChain is leaf plus the issuer that signs it - the ordinary case.
+// completeChain is leaf plus the issuer that signs it - the ordinary case. The
+// adapter says so on the leaf, from the signature.
 func completeChain(fingerprint string) []Certificate {
-	return []Certificate{
+	chain := []Certificate{
 		certAt("CN=partner.test", "CN=testbed intermediate", fingerprint, false),
 		certAt("CN=testbed intermediate", "CN=testbed root", "int-"+fingerprint, false),
 	}
+	chain[0].IssuerSent = true
+	return chain
 }
 
 // leafOnly is scenario S-5: the issuer of the leaf was never sent.
@@ -135,22 +138,23 @@ func TestANameWithNoAddressesIsNotThisLayersFailure(t *testing.T) {
 	}
 }
 
-// TestAMissingIntermediateIsTheServersFaultAndTheSentenceSaysSo is scenario S-5,
-// and it is the hardest verdict in this whole product.
+// TestAMissingIssuerIsAWarningThatSaysWhoCanBuildAPath is scenario S-5 as this
+// layer sees it, and B01 as ADR114 settled it.
 //
-// EVERY RUNTIME ON THIS MACHINE FAILS AGAINST THIS SERVER AND THE ANSWER IS
-// STILL "DO NOTHING HERE". A verdict computed from the statistics of the trust
-// matrix would answer the exact opposite and send somebody to reinstall their
-// own certificates. The check is structural and consults no trust store at all -
-// ADR46 - which is why it works on a machine that trusts nothing.
-func TestAMissingIntermediateIsTheServersFaultAndTheSentenceSaysSo(t *testing.T) {
+// THE BYTES ARE THE SAME FOR TWO OPPOSITE SERVERS. One forgot its intermediate,
+// and nothing that lacks it builds a path. The other is signed straight by a
+// private root it may leave out, and every store holding that root builds one.
+// So the layer warns and says who can build a path - and the verdict names the
+// server only when no store here did, which the report package asks. The check
+// is structural and consults no trust store at all - ADR46.
+func TestAMissingIssuerIsAWarningThatSaysWhoCanBuildAPath(t *testing.T) {
 	got := Ask(context.Background(), workingInput(shakeReturning(leafOnly("aa"))))
 
-	if got.Status != status.Fail {
-		t.Errorf("a chain that cannot be built left the layer at %s", got.Status)
+	if got.Status != status.Warn {
+		t.Errorf("a chain without the leaf's issuer left the layer at %s", got.Status)
 	}
-	if !strings.Contains(got.Detail, "server") {
-		t.Errorf("the sentence does not name the server as the cause: %q", got.Detail)
+	if !strings.Contains(got.Detail, "only a client that already holds it can build a path") {
+		t.Errorf("the sentence does not say who can still build a path: %q", got.Detail)
 	}
 	if strings.Contains(strings.ToLower(got.Detail), "trust") {
 		t.Errorf("the sentence talks about trust, which is L5's question: %q", got.Detail)
@@ -161,6 +165,23 @@ func TestAMissingIntermediateIsTheServersFaultAndTheSentenceSaysSo(t *testing.T)
 	}
 	if broken := got.Findings[0].Breach(); broken != "" {
 		t.Errorf("the row is refused by its own contract: %s", broken)
+	}
+}
+
+// TestAnIssuerMatchedByNameAloneIsNotSent pins that the layer reads the
+// adapter's answer and compares no names - ADR114. The certificate after the
+// leaf carries the issuer's name, and the adapter found its key did not sign
+// the leaf: an issuer re-issued with a new key, sent in its old form.
+func TestAnIssuerMatchedByNameAloneIsNotSent(t *testing.T) {
+	chain := completeChain("aa")
+	chain[0].IssuerSent = false
+	got := Ask(context.Background(), workingInput(shakeReturning(chain)))
+
+	if got.Status != status.Warn || !strings.Contains(got.Detail, "did not send the issuer") {
+		t.Errorf("a name without the key was taken for the issuer: %s %q", got.Status, got.Detail)
+	}
+	if rows := rowsOf(got); len(rows) != 1 || rows[0].ChainComplete {
+		t.Errorf("the row calls a chain complete whose issuer did not arrive: %+v", rows)
 	}
 }
 
