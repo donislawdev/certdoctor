@@ -446,8 +446,9 @@ func TestSelfSignedAsksBothHalves(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s will not parse: %v", c.name, err)
 		}
-		if got := selfSigned(certificate); got != c.want {
-			t.Errorf("%s: selfSigned says %v, want %v", c.name, got, c.want)
+		// Through the exported name, which the pip row asks before judging.
+		if got := SelfSigned(certificate); got != c.want {
+			t.Errorf("%s: SelfSigned says %v, want %v", c.name, got, c.want)
 		}
 	}
 }

@@ -2,6 +2,7 @@ package python
 
 import (
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -274,6 +275,42 @@ func TestOnlyAnAuthorityIsHandedToWindows(t *testing.T) {
 	if kept := authoritiesOnly([]byte(pemOf(b.root, b.leaf, b.inter))); string(kept) != pemOf(b.root, b.inter) {
 		t.Errorf("the bundle kept %q", kept)
 	}
+
+	// WITHOUT BASIC CONSTRAINTS check_ca takes a self-issued version 1
+	// certificate, and one whose key usage allows signing - built as structs,
+	// since crypto/x509 writes version 3 alone and authority reads only fields.
+	usage := []pkix.Extension{{Id: keyUsage}}
+	for _, c := range []struct {
+		name string
+		cert *x509.Certificate
+		want bool
+	}{
+		{"a self-issued version 1", &x509.Certificate{Version: 1, RawSubject: []byte("a"), RawIssuer: []byte("a")}, true},
+		{"a version 1 issued by another", &x509.Certificate{Version: 1, RawSubject: []byte("a"), RawIssuer: []byte("b")}, false},
+		{"a key usage allowing signing", &x509.Certificate{Version: 3, Extensions: usage,
+			KeyUsage: x509.KeyUsageCertSign}, true},
+		{"neither", &x509.Certificate{Version: 3}, false},
+	} {
+		if got := authority(c.cert); got != c.want {
+			t.Errorf("%s: authority says %v", c.name, got)
+		}
+	}
+}
+
+// A LIST THAT HAS A ROOT AND STILL COULD NOT JUDGE DOES NOT DEFER - a leaf that
+// will not parse is no refusal of the list, and Windows could read it no better.
+func TestPipOnWindowsDoesNotDeferWhatItCouldNotRead(t *testing.T) {
+	b := newBench(t)
+	certifi := abs("/pip/cacert.pem")
+	a := listing(0x8000)
+	a.Pip = onTruststore(certifi)
+	a.Pip.TruststoreLoads = nil
+	_, pip := both(t, "windows", a, [][]byte{[]byte("not a certificate")}, func(w *world) {
+		w.disk.put(certifi, pemOf(b.root))
+	})
+	if pip.DefersTo != nil || pip.TrustsPresentedChain != nil {
+		t.Errorf("an unreadable leaf on Windows is %s, defers to %+v", trustOf(pip), pip.DefersTo)
+	}
 }
 
 // A pip WITHOUT TRUSTSTORE READS ONE FILE: the one named for verification takes
@@ -378,6 +415,14 @@ func TestWhatCannotBeToldAboutPipIsSaid(t *testing.T) {
 	}{
 		{"a step that raised", "linux", func(p *pipAnswer) { p.Failed = "settings: SystemExit" }, "settings: SystemExit"},
 		{"a version with no number", "linux", func(p *pipAnswer) { p.Version = "unknown" }, "cannot place"},
+		{"a version with no number after the dot", "linux", func(p *pipAnswer) { p.Version = "24.x" }, "cannot place"},
+		{"certifi missing for a pip without truststore", "linux", func(p *pipAnswer) {
+			p.Version, p.Certifi = "23.0.1", abs("/missing/cacert.pem")
+		}, "could not be read"},
+		{"certifi missing on Windows", "windows", func(p *pipAnswer) {
+			p.Certifi, p.TruststoreLoads = abs("/missing/cacert.pem"), nil
+		}, "could not be read"},
+		{"certifi named relatively", "linux", func(p *pipAnswer) { p.Certifi = "pip/cacert.pem" }, "not an absolute path"},
 		{"truststore by --use-feature", "linux", func(p *pipAnswer) {
 			p.Version, p.Features = "23.0.1", []string{"truststore"}
 		}, "--use-feature=truststore"},
