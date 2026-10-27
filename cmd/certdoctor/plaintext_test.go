@@ -135,7 +135,7 @@ func runAgainst(t *testing.T, target string, extra ...string) (shakes, probes in
 				return corehandshake.Presented{}, corehandshake.ErrRejected
 			}
 		},
-		trustProbes: func() map[string]trust.Probe {
+		trustProbes: func(bool) map[string]trust.Probe {
 			return map[string]trust.Probe{"git": func(context.Context, [][]byte) ([]report.TrustStore, error) {
 				probes++
 				return nil, nil

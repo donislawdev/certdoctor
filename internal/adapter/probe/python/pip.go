@@ -59,6 +59,10 @@ func (m machine) pipStore(in interpreter, a answer, chain [][]byte, now time.Tim
 			return store
 		}
 	}
+	if why := addressRefused(m.addressed, variant, p.Urllib3); why != "" {
+		store.NotAssessed = why
+		return store
+	}
 	switch {
 	case variant == report.PipCertifi:
 		return m.onCertifi(store, a, p, verify, chain, now)
@@ -104,6 +108,49 @@ func variantOf(p pipAnswer) (string, string) {
 		return report.PipCertifi, ""
 	}
 	return report.PipTruststore, ""
+}
+
+// namesAnAddressFrom is the first major version of urllib3 that hands TLS the
+// server's name when the target is an IP address - addressRefused has the source.
+const namesAnAddressFrom = 2
+
+// addressRefused is the sentence of a pip that cannot open https to an IP
+// address at all, or empty - OBS202, decided by the owner 2026-10-27: UNKNOWN
+// with the way out, rather than a verdict on a list pip never gets to use.
+//
+// URLLIB3 BEFORE 2 SENDS NO SERVER NAME TO AN ADDRESS, AND TRUSTSTORE REFUSES A
+// CONNECTION WITHOUT ONE before any certificate is read: ssl_wrap_socket in
+// urllib3 1.26.20's util/ssl_.py leaves server_hostname out for an IP address,
+// and truststore's context keeps check_hostname on, so Python's ssl module
+// raises "check_hostname requires server_hostname". Read 2026-10-27 on GitHub,
+// and measured with probe S28 the same day: pip 25.0.1, 25.1.1 and 26.0.1, each
+// on urllib3 1.26.20, failed that way against the bench's address with a root
+// they trusted through its name, while 26.1.2 on urllib3 2.6.3 and 26.2.1 on
+// 2.7.0 reached it. pip carries urllib3 2 from 26.1 - src/pip/_vendor/vendor.txt
+// of each tag. Without truststore urllib3 makes its own context and checks the
+// name itself, and --use-deprecated=legacy-certs reached the address on 25.0.1.
+func addressRefused(addressed bool, variant string, urllib3 *string) string {
+	if !addressed || variant != report.PipTruststore {
+		return ""
+	}
+	if urllib3 == nil {
+		return "this pip runs on truststore and did not say which urllib3 it connects through, and before urllib3 2 " +
+			"an https connection to an IP address is refused before any certificate is read, so what this pip makes " +
+			"of this target is undetermined"
+	}
+	release, placed := releaseOf(*urllib3)
+	switch {
+	case !placed:
+		return fmt.Sprintf("this pip connects through urllib3 %q, which this program cannot place before or after 2, "+
+			"and before 2 an https connection to an IP address is refused before any certificate is read, so what "+
+			"this pip makes of this target is undetermined", *urllib3)
+	case release[0] < namesAnAddressFrom:
+		return fmt.Sprintf("this pip runs on truststore with urllib3 %s, which opens https to an IP address without "+
+			"the server's name, and truststore refuses that before any certificate is read - so this pip cannot reach "+
+			"this target whatever it trusts. pip 26.1 or later, a host name in place of the address, or "+
+			"--use-deprecated=legacy-certs reaches it", *urllib3)
+	}
+	return ""
 }
 
 // beforeTruststore says a release came before 24.2.

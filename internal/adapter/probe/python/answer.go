@@ -68,6 +68,10 @@ import (
 // context then, and urllib3 2 sets PARTIAL_CHAIN and STRICT on Python 3.13 and
 // later - create_urllib3_context in urllib3 2.7.0's util/ssl_.py, read the same
 // day - so the flags are what that function returns, not a rule kept here.
+//
+// AND URLLIB3'S VERSION, because before 2 it cannot take truststore to an IP
+// address at all - OBS202, beside addressRefused. It is the urllib3 pip imports,
+// its own copy or the one a distribution puts in its place.
 const script = `import base64, json, os, ssl, sys
 c = ssl.create_default_context()
 p = ssl.get_default_verify_paths()
@@ -116,6 +120,8 @@ def about_pip():
         step = 'urllib3'
         from pip._vendor.urllib3.util.ssl_ import create_urllib3_context
         facts['legacy_flags'] = int(create_urllib3_context().verify_flags)
+        from pip._vendor import urllib3
+        facts['urllib3'] = getattr(urllib3, '__version__', None)
         step = 'truststore'
         try:
             from pip._vendor import truststore
@@ -212,6 +218,9 @@ type pipAnswer struct {
 	// LegacyFlags are the flags of the context urllib3 makes for a pip that does
 	// not use truststore.
 	LegacyFlags *int64 `json:"legacy_flags"`
+	// Urllib3 is the version of the urllib3 pip connects through, nil when it
+	// does not say.
+	Urllib3 *string `json:"urllib3"`
 	// Truststore says pip can import truststore, which it needs to use it.
 	Truststore bool `json:"truststore"`
 	// TruststoreLoads is what truststore loads off Windows and macOS - a nil

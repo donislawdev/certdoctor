@@ -36,12 +36,15 @@ var withheld = []string{"SSLKEYLOGFILE", "OPENSSL_CONF"}
 // start makes the runner from the variables to withhold, and this package names
 // them, as for curl and node. platform decides the names on PATH, the form of the
 // store and the separator SSL_CERT_DIR is split by. files lists the hashed
-// directory, and alias reads Windows' app execution aliases.
+// directory, and alias reads Windows' app execution aliases. addressed says the
+// target names its host by an IP address, which a pip on truststore before
+// urllib3 2 cannot reach at all - OBS202, worked out once at the entry point.
 func Probe(source file.Source, resolve file.Resolve, alias file.AppAlias, files file.List,
-	start func(withheld ...string) probe.Runner, pathDirs []string, platform string,
+	start func(withheld ...string) probe.Runner, pathDirs []string, platform string, addressed bool,
 	now func() time.Time) func(context.Context, [][]byte) ([]report.TrustStore, error) {
 	return func(ctx context.Context, chain [][]byte) ([]report.TrustStore, error) {
-		host := machine{source: source, resolve: resolve, alias: alias, files: files, run: start(withheld...), platform: platform}
+		host := machine{source: source, resolve: resolve, alias: alias, files: files, run: start(withheld...),
+			platform: platform, addressed: addressed}
 		found := host.interpreters(ctx, pathDirs)
 		if len(found) == 0 {
 			// NOT AN ERROR - docs/20 rule 1. No Python is not a fact about trust.
@@ -78,6 +81,8 @@ type machine struct {
 	files    file.List
 	run      probe.Runner
 	platform string
+	// addressed says the target is an IP address rather than a name.
+	addressed bool
 }
 
 // storeFor turns one interpreter's answer, or the sentence saying there is none,

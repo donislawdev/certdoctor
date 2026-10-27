@@ -500,7 +500,7 @@ const caBundleLimit = 8 << 20
 // IT IS A FUNCTION OF ITS OWN BECAUSE THE SIZE RATCHET SAID SO, 2026-10-14: the
 // platform store pushed liveEnvironment past the ceiling, and the ceiling is
 // not raised to get unblocked.
-func liveTrustProbes() map[string]trust.Probe {
+func liveTrustProbes(addressed bool) map[string]trust.Probe {
 	source, resolvePath := file.Live()
 	guarded := file.Guarded(source, resolvePath, caBundleLimit, nil)
 	files := file.GuardedList(file.LiveFiles(), resolvePath, nil)
@@ -522,9 +522,10 @@ func liveTrustProbes() map[string]trust.Probe {
 		report.RuntimeNode: node.Probe(guarded, resolvePath, probe.Without, paths, node.EnvironmentFrom(os.LookupEnv, runtime.GOOS), time.Now),
 		// python is started through probe.Without too, reads its hashed directory
 		// through the same listing port as git and curl, and Windows' app
-		// execution aliases through a port of their own - ADR112.
+		// execution aliases through a port of their own - ADR112. Its pip row
+		// needs to know whether the target is an address - OBS202.
 		report.RuntimePython: python.Probe(guarded, resolvePath, file.GuardedAppAlias(file.LiveAppAlias(), resolvePath, nil),
-			files, probe.Without, paths, runtime.GOOS, time.Now),
+			files, probe.Without, paths, runtime.GOOS, addressed, time.Now),
 	}
 	// THE PLATFORM'S OWN STORE IS WIRED ONLY WHERE IT CAN BE READ - Windows by
 	// ADR103, Linux by ADR104. Elsewhere there is no probe rather than one

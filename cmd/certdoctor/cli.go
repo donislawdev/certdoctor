@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -130,7 +131,9 @@ type environment struct {
 	challengeProxy func(targets *allowed.Targets, perEndpoint time.Duration) proxy.ChallengeAsk
 	// trustProbes are the L5 probes, built with a file port of their own because
 	// the files they read are a different size class from a resolver config.
-	trustProbes func() map[string]trust.Probe
+	// addressed says the target names its host by an IP address, which pip's row
+	// needs - OBS202.
+	trustProbes func(addressed bool) map[string]trust.Probe
 	// sources reads what this machine records about WHERE it looks names up.
 	//
 	// A nil one, and an error, both mean the same thing to the layer: nothing was
@@ -816,6 +819,14 @@ func plaintext(parsed *url.URL) bool {
 	return parsed.Scheme == "http"
 }
 
+// addressed says the target names its host by an IP address rather than a name
+// - OBS202. Worked out once here, like plaintext, and handed to the probes: a pip
+// on truststore before urllib3 2 cannot open https to an address at all.
+func addressed(parsed *url.URL) bool {
+	_, err := netip.ParseAddr(parsed.Hostname())
+	return err == nil
+}
+
 // portOf is the port this run will try, from the URL or from its scheme.
 //
 // A URL WITHOUT A PORT IS THE ORDINARY CASE and the scheme is what decides it.
@@ -1105,7 +1116,7 @@ func trustInput(o *options, env environment, parsed *url.URL) trust.Input {
 	}
 	return trust.Input{
 		Plaintext: plaintext(parsed),
-		Probes:    env.trustProbes(),
+		Probes:    env.trustProbes(addressed(parsed)),
 		// What a remediation command needs to know about where it will be run.
 		// Both values come from this environment rather than being read inside
 		// the layer, so an assessment stays reproducible from its input.

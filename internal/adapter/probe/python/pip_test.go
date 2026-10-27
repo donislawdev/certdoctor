@@ -15,7 +15,7 @@ import (
 // certifi - truststore having loaded OpenSSL's defaults.
 func onTruststore(certifi string) *pipAnswer {
 	return &pipAnswer{Version: "26.2.2", Certifi: certifi, Deprecated: []string{}, Features: []string{},
-		LegacyFlags: flags(0x88020), Truststore: true, TruststoreLoads: []*string{nil}}
+		LegacyFlags: flags(0x88020), Urllib3: text("2.7.0"), Truststore: true, TruststoreLoads: []*string{nil}}
 }
 
 // onCertifi is pip 23.0.1, which has no truststore, on a Python whose urllib3
@@ -357,6 +357,56 @@ func TestANewPipCanGoBackToCertifi(t *testing.T) {
 			_, pip := both(t, "linux", a, b.chain(), func(w *world) { w.disk.put(certifi, pemOf(b.inter)) })
 			if got := trustOf(pip); got != "trusted" || pip.Variant != report.PipCertifi {
 				t.Errorf("pip is %s on %q", got, pip.Variant)
+			}
+		})
+	}
+}
+
+// A PIP ON TRUSTSTORE BEFORE URLLIB3 2 CANNOT REACH AN IP ADDRESS AT ALL - OBS202,
+// measured with probe S28: pip 25.0.1, 25.1.1 and 26.0.1 raised before any
+// certificate was read, with the root on their list. So the row says that and
+// the way out rather than PASS, on every platform, and only where it applies:
+// a name, urllib3 2, or certifi under legacy-certs reach the address.
+func TestAPipThatCannotReachAnAddressSaysSo(t *testing.T) {
+	b := newBench(t)
+	certifi := abs("/pip/cacert.pem")
+	for _, c := range []struct {
+		name      string
+		platform  string
+		addressed bool
+		urllib3   *string
+		legacy    bool
+		want      string
+		says      []string
+	}{
+		{"urllib3 1.26 and an address", "linux", true, text("1.26.20"), false, "undetermined",
+			[]string{"urllib3 1.26.20", "pip 26.1 or later", "a host name", "--use-deprecated=legacy-certs"}},
+		{"the same on Windows", "windows", true, text("1.26.20"), false, "undetermined", []string{"urllib3 1.26.20"}},
+		{"urllib3 1.26 and a name", "linux", false, text("1.26.20"), false, "trusted", nil},
+		{"urllib3 2 and an address", "linux", true, text("2.6.3"), false, "trusted", nil},
+		{"certifi under legacy-certs", "linux", true, text("1.26.20"), true, "trusted", nil},
+		{"no urllib3 said", "linux", true, nil, false, "undetermined", []string{"did not say which urllib3"}},
+		{"a urllib3 that cannot be placed", "linux", true, text("main"), false, "undetermined",
+			[]string{`urllib3 "main"`, "cannot place"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a := listing(0x8000)
+			a.Pip = onTruststore(certifi)
+			a.Pip.Urllib3 = c.urllib3
+			if c.legacy {
+				a.Pip.Deprecated = []string{"legacy-certs"}
+			}
+			_, pip := both(t, c.platform, a, b.chain(), func(w *world) {
+				w.addressed = c.addressed
+				w.disk.put(certifi, pemOf(b.root))
+			})
+			if got := trustOf(pip); got != c.want {
+				t.Fatalf("pip is %s, want %s: %s", got, c.want, pip.NotAssessed)
+			}
+			for _, part := range c.says {
+				if !strings.Contains(pip.NotAssessed, part) {
+					t.Errorf("the sentence leaves out %q: %s", part, pip.NotAssessed)
+				}
 			}
 		})
 	}

@@ -23,7 +23,7 @@ func TestNoTrustPortMeansNoProbesRatherThanNoRuntimes(t *testing.T) {
 
 func TestTheTrustPortIsPassedThrough(t *testing.T) {
 	env := environment{
-		trustProbes: func() map[string]trust.Probe {
+		trustProbes: func(bool) map[string]trust.Probe {
 			return map[string]trust.Probe{
 				"git": func(context.Context, [][]byte) ([]report.TrustStore, error) { return nil, nil },
 			}
@@ -38,12 +38,41 @@ func TestTheTrustPortIsPassedThrough(t *testing.T) {
 	}
 }
 
+// WHETHER THE TARGET IS AN ADDRESS REACHES THE PROBES, worked out once here -
+// OBS202. An IP address in either family is one, a name made of digits and dots
+// is not, and neither is a name that merely contains an address.
+func TestWhetherTheTargetIsAnAddressReachesTheProbes(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"https://127.0.0.1:8444/":    true,
+		"https://[::1]:8444/":        true,
+		"https://[fe80::1%25eth0]/":  true,
+		"https://example.com/":       false,
+		"https://1.2.3.4.nip.io/":    false,
+		"https://localhost:8444/":    false,
+		"https://xn--bcher-kva.com/": false,
+	} {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var handed *bool
+		env := environment{trustProbes: func(addressed bool) map[string]trust.Probe {
+			handed = &addressed
+			return map[string]trust.Probe{}
+		}}
+		trustInput(&options{}, env, parsed)
+		if handed == nil || *handed != want {
+			t.Errorf("%s: the probes were handed %v, want %v", raw, handed, want)
+		}
+	}
+}
+
 // NODE_EXTRA_CA_CERTS REACHES THE COMMAND GENERATOR through the seam L0 reads,
 // so a node command adds to the file Node reads rather than naming another -
 // ADR111 part 7. A run with no seam has nothing set.
 func TestTheFileNodeReadsReachesTheCommandGenerator(t *testing.T) {
 	env := environment{
-		trustProbes: func() map[string]trust.Probe { return map[string]trust.Probe{} },
+		trustProbes: func(bool) map[string]trust.Probe { return map[string]trust.Probe{} },
 		lookupEnv: func(name string) (string, bool) {
 			if name == "NODE_EXTRA_CA_CERTS" {
 				return "/etc/ssl/extra.pem", true
@@ -65,7 +94,7 @@ func TestTheFileNodeReadsReachesTheCommandGenerator(t *testing.T) {
 // lines below - caught by running the program, not by a test. A note built from
 // the registry cannot drift that way, and this test is what says so.
 func TestTheCoverageNoteNamesTheRuntimesThisBuildCanAsk(t *testing.T) {
-	probes := liveEnvironment().trustProbes()
+	probes := liveEnvironment().trustProbes(false)
 	note := trustCoverageNote(probes)
 
 	if note.Field != "trust_matrix" {
@@ -137,7 +166,7 @@ func TestWithNoProbesTheNoteSaysTheMatrixIsEmpty(t *testing.T) {
 // wiring exists at all - without this the binary could ship with L5 wired to
 // nothing and every test above would still pass.
 func TestTheLiveEnvironmentCarriesTheTrustProbes(t *testing.T) {
-	probes := liveEnvironment().trustProbes()
+	probes := liveEnvironment().trustProbes(false)
 	if _, present := probes["git"]; !present {
 		t.Errorf("the live environment offers %d probe(s) and none of them is git", len(probes))
 	}
@@ -148,7 +177,7 @@ func TestTheLiveEnvironmentCarriesTheTrustProbes(t *testing.T) {
 // slice existed for never running, and present elsewhere - macOS until M3 - is
 // a probe answering for a store it never opened.
 func TestThePlatformStoreIsWiredExactlyWhereItCanBeRead(t *testing.T) {
-	_, present := liveEnvironment().trustProbes()[report.RuntimeSystemStore]
+	_, present := liveEnvironment().trustProbes(false)[report.RuntimeSystemStore]
 	if want := runtime.GOOS == "windows" || runtime.GOOS == "linux"; present != want {
 		t.Errorf("on %s the platform store probe is wired=%v, want %v", runtime.GOOS, present, want)
 	}

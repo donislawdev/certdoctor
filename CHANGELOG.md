@@ -10,6 +10,17 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - a pip that cannot reach an IP address says so
+
+- **The pip row no longer says PASS for a target given as an IP address
+  that pip cannot reach at all.** pip from 24.2 up to 26.0 reads the
+  machine's store through truststore and connects through urllib3 1.26, and
+  that pair refuses https to an IP address before any certificate is read -
+  whatever the list trusts. The row now says so, with the ways out: pip 26.1
+  or later, a host name instead of the address, or
+  `--use-deprecated=legacy-certs`. A target given by name, a pip on urllib3 2,
+  and a pip without truststore are judged as before.
+
 ### Added - an icon
 
 - **certdoctor.exe has an icon** - a gold bean on a blue shield - in File

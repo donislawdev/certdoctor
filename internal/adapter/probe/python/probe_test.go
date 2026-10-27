@@ -184,6 +184,8 @@ type world struct {
 	// aliases are app execution aliases, path to package. The disk does not
 	// hold them, as Windows does not let them be read.
 	aliases map[string]string
+	// addressed says the target is an IP address.
+	addressed bool
 }
 
 func newWorld(platform string) *world {
@@ -210,7 +212,8 @@ func (w *world) rows(t *testing.T, chain [][]byte) []report.TrustStore {
 		w.withheld = append(w.withheld, names...)
 		return run
 	}
-	stores, err := Probe(w.disk.source, w.disk.resolve, w.alias, w.disk.list, start, w.path, w.platform, atNoon)(
+	stores, err := Probe(w.disk.source, w.disk.resolve, w.alias, w.disk.list, start, w.path, w.platform, w.addressed,
+		atNoon)(
 		context.Background(), chain)
 	if err != nil {
 		t.Fatalf("the probe failed: %v", err)
