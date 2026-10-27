@@ -306,6 +306,11 @@ jobs:
             goarch: arm64
           - goos: windows
             goarch: amd64
+          # Joined on 2026-10-27 with the release plan in ADR116, which ships
+          # both Windows architectures. It is also the build that links the
+          # arm64 icon resource, which nothing else here would compile.
+          - goos: windows
+            goarch: arm64
           - goos: darwin
             goarch: arm64
     steps:
@@ -315,6 +320,34 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+
+      # THE WINDOWS ICON IS A BINARY FILE IN THE REPOSITORY, and a binary nobody
+      # regenerates is a blob nobody reviews. cmd/certdoctor/rsrc_windows_*.syso
+      # are what the linker puts into the .exe, picked up by their names alone,
+      # and they are made from assets/icon/certdoctor.ico by go-winres. This
+      # makes them again and asks for the same bytes, so a resource that drifted
+      # from its icon - or was swapped for something else - stops the build.
+      # Measured 2026-10-27: two runs on Windows wrote identical files.
+      #
+      # What it does NOT check: that the .ico is what assets/icon/appicon.py
+      # draws. That needs Pillow and numpy, and the drawing is reviewed by eye,
+      # at every size, rather than by a hash.
+      #
+      # go-winres v0.3.3 is the newest release, published 2024-04-11 per the
+      # GitHub releases API, read 2026-10-27. 0BSD, as is the winres library it
+      # writes with - both read at source that day. It is a build tool: run by
+      # hand or here, never linked, so it never reaches a user. --manifest none,
+      # because the default adds a manifest and a manifest changes how Windows
+      # runs a program.
+      - name: the icon resource comes from the committed icon
+        if: matrix.goos == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go run github.com/tc-hib/go-winres@v0.3.3 simply --icon assets/icon/certdoctor.ico \
+            --manifest none --arch "${{ matrix.goarch }}" --out "$RUNNER_TEMP/rsrc"
+          cmp "$RUNNER_TEMP/rsrc_windows_${{ matrix.goarch }}.syso" "cmd/certdoctor/rsrc_windows_${{ matrix.goarch }}.syso"
+          echo "cmd/certdoctor/rsrc_windows_${{ matrix.goarch }}.syso is what go-winres makes from the icon"
 
       - name: build with cgo disabled
         shell: bash

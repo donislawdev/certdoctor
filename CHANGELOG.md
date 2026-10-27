@@ -10,6 +10,14 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Added - an icon
+
+- **certdoctor.exe has an icon** - a gold bean on a blue shield - in File
+  Explorer and on the taskbar, where Windows used to draw its placeholder for
+  a program without one. Both Windows builds carry it, amd64 and arm64. The
+  picture is drawn from shapes by a script in `assets/icon`, so nobody else's
+  artwork is in it.
+
 ### Changed - an append command waits for a line break, and keytool says which shell it is for
 
 - **A store file that does not end with a line break gets no append

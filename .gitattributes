@@ -32,6 +32,8 @@ testbed/**/expected/**  text eol=lf
 *.png       binary
 *.gif       binary
 *.ico       binary
+*.icns      binary
+*.syso      binary
 *.exe       binary
 *.der       binary
 *.p12       binary
