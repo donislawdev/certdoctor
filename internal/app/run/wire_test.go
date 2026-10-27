@@ -467,6 +467,36 @@ func TestNoHandshakeMeansL5JudgesNothing(t *testing.T) {
 	}
 }
 
+// TestHowManyAddressesPresentedAnotherChainCrossesTheSameSeam is B02 from
+// ADR114. L4 counts the addresses whose chain is not the one L5 judges, and
+// L5's sentence says so - asserted on the sentence, not on the plumbing.
+func TestHowManyAddressesPresentedAnotherChainCrossesTheSameSeam(t *testing.T) {
+	first := handshake.Certificate{Subject: "CN=example.com", Issuer: "CN=issuer", FingerprintSHA256: "aa", Raw: []byte{0x30, 0x01}}
+	second := handshake.Certificate{Subject: "CN=example.com", Issuer: "CN=issuer", FingerprintSHA256: "bb", Raw: []byte{0x30, 0x02}}
+	trusting := func(context.Context, [][]byte) ([]report.TrustStore, error) {
+		yes := true
+		return []report.TrustStore{{Runtime: "git", Instance: "/usr/bin/git", StoreForm: report.StoreFile,
+			StorePath: "/etc/ssl/certs/ca-certificates.crt", TrustAnchorCount: 150, TrustsPresentedChain: &yes, SelectedBy: []string{}}}, nil
+	}
+
+	w := reachableWiring(handshake.Presented{}, map[string]trust.Probe{"git": trusting})
+	w.Resolution.System = func(context.Context, string) resolve.SystemAnswer {
+		return resolve.SystemAnswer{Addresses: []string{"192.0.2.10", "192.0.2.11"}}
+	}
+	w.Handshake.Shake = func(_ context.Context, address string, _ int, _ string) (handshake.Presented, error) {
+		chain := []handshake.Certificate{first}
+		if address == "192.0.2.11" {
+			chain = []handshake.Certificate{second}
+		}
+		return handshake.Presented{Completed: true, Version: "TLS 1.3", Chain: chain, Name: handshake.NameCovered}, nil
+	}
+
+	answer := walkTo(t, w)
+	if !strings.Contains(answer.Detail, "judged on the first address's chain, which 1 other address(es) did not present") {
+		t.Errorf("L5 does not say it judged one of two chains: %q", answer.Detail)
+	}
+}
+
 // TestWhetherTheChainWasWholeCrossesTheSameSeamAsTheChain.
 //
 // THE FOURTH SEAM, AND IT DECIDES WHETHER ANYBODY IS GIVEN A COMMAND TO RUN.

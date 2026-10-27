@@ -10,6 +10,18 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - addresses that present different chains are a warning
+
+- **When the addresses of one name present different chains, the TLS layer
+  warns.** It used to compare the first certificate alone and pass, so one
+  certificate under two different intermediates read as the same answer, and
+  a second address with another certificate changed only a sentence. The
+  whole chain is compared now, in its order. A row whose certificate is the
+  first address's says when its chain is not.
+- **The trust matrix says which chain it judged.** It judges the first
+  address's, and when other addresses presented another one its sentence
+  says how many did. A matrix for each chain is planned for after 0.1.0.
+
 ### Changed - a chain without its issuer is a warning, and stores decide who is to blame
 
 - **A server that does not send the issuer of its certificate makes the

@@ -244,6 +244,10 @@ type Result struct {
 	// It is false when nothing completed, which is correct rather than merely
 	// convenient: no chain arrived, so no issuer did either.
 	ChainWhole bool
+	// OtherChains is how many other addresses completed a handshake and did not
+	// present the chain in Presented - the fourth half of the seam L5 reads,
+	// ADR114, B02. L5 judges one chain, and says so when there were others.
+	OtherChains int
 	// Leaf is the summary of the certificate the chain starts with, and is nil
 	// when no handshake completed - the third half of the seam L5 reads.
 	//
@@ -477,7 +481,7 @@ func detailFor(completed, total int, chain []Certificate, complete bool, disagre
 	case names.commonOnly > 0:
 		return nameDetail(names)
 	case disagreed:
-		return fmt.Sprintf("%d of %d address(es) completed a handshake, and they did not all present the same certificate",
+		return fmt.Sprintf("%d of %d address(es) completed a handshake, and they did not all present the same chain",
 			completed, total)
 	}
 	return fmt.Sprintf("%d of %d address(es) completed a handshake and presented the same chain of %d certificate(s)",

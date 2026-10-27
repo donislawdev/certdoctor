@@ -57,6 +57,14 @@ type Input struct {
 	// bytes into a distinguished name, which is exactly how a complete chain
 	// starts looking broken. It is nil when no handshake completed.
 	PresentedLeaf func() *report.Certificate
+	// OtherChains is how many other addresses did not present the chain this
+	// layer judges - asked at walk time through the same seam - ADR114, B02.
+	//
+	// THE MATRIX STAYS ONE CHAIN, decided by the owner until after 0.1.0, so
+	// the sentence is what carries the difference. A required port, for the
+	// reason ChainComplete is one: a layer that cannot be told would otherwise
+	// describe one address's chain as the server's in silence.
+	OtherChains func() int
 	// Plaintext says the target was given as http://, so no certificate was
 	// ever going to arrive - ADR100. The entry point hands L4 the same answer,
 	// worked out once.
@@ -96,6 +104,7 @@ const (
 	noChain  = "no way to learn what the server presented was supplied, so no store could be asked about anything"
 	noWhole  = "no way to learn whether the presented chain was complete was supplied, so a store failing could not be told from a server failing"
 	noLeaf   = "no way to learn what the server's leaf was supplied, so who signed it could not be named"
+	noOthers = "no way to learn whether other addresses presented other chains was supplied, so one address's chain could not be told from the server's"
 	noOS     = "no platform was supplied, so a command this machine could run could not be written"
 	noProbes = "no probes were supplied, so nothing on this machine was asked"
 	noClock  = "no clock was supplied, so no probe could be given a share of the time this layer has left"
@@ -159,7 +168,23 @@ func Ask(ctx context.Context, in Input) Result {
 
 	findings := in.findingsFrom(rows, whole, closed)
 
-	return verdict(findings, counted.asked, counted.trusting, counted.unassessed, counted.timedOut)
+	judged := verdict(findings, counted.asked, counted.trusting, counted.unassessed, counted.timedOut)
+	return judgedOnOneOf(judged, counted, in.OtherChains())
+}
+
+// judgedOnOneOf says which chain the matrix judged when other addresses
+// presented others - ADR114, B02, decided by the owner. The matrix stays one
+// chain until after 0.1.0, so the difference is carried by the sentence.
+//
+// ONLY A SENTENCE THAT JUDGED A CHAIN GETS IT. One saying no store could be
+// assessed, or that none was found, judged nothing, and naming a chain there
+// would describe a judgement that did not happen.
+func judgedOnOneOf(judged Result, counted tally, others int) Result {
+	if others == 0 || counted.asked == counted.unassessed {
+		return judged
+	}
+	judged.Detail += fmt.Sprintf(", judged on the first address's chain, which %d other address(es) did not present", others)
+	return judged
 }
 
 // tally is what the walk counted, kept together because the verdict needs all
@@ -514,6 +539,8 @@ func (in Input) breach() string {
 		return noWhole
 	case in.PresentedLeaf == nil:
 		return noLeaf
+	case in.OtherChains == nil:
+		return noOthers
 	case in.Machine.OS == "":
 		return noOS
 	case len(in.Probes) == 0:

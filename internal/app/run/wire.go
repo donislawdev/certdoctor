@@ -230,6 +230,7 @@ func Wire(w Wiring) Layers {
 	var presented [][]byte
 	var whole bool
 	var leaf *report.Certificate
+	var others int
 	shake := w.Handshake
 	shake.Addresses = func() []string { return connected }
 	layers[layer.TLS] = func(ctx context.Context) Answer {
@@ -241,7 +242,7 @@ func Wire(w Wiring) Layers {
 		if contractBreach(answer) != "" {
 			return answer
 		}
-		presented, whole, leaf = result.Presented, result.ChainWhole, result.Leaf
+		presented, whole, leaf, others = result.Presented, result.ChainWhole, result.Leaf, result.OtherChains
 		return answer
 	}
 
@@ -261,6 +262,9 @@ func Wire(w Wiring) Layers {
 	trusted.PresentedChain = func() [][]byte { return presented }
 	trusted.ChainComplete = func() bool { return whole }
 	trusted.PresentedLeaf = func() *report.Certificate { return leaf }
+	// AND HOW MANY OTHER ADDRESSES PRESENTED ANOTHER CHAIN - ADR114, B02, so the
+	// matrix, which judges this one, says it judged this one.
+	trusted.OtherChains = func() int { return others }
 	layers[layer.TrustMatrix] = func(ctx context.Context) Answer {
 		return answerFromTrust(trust.Ask(ctx, trusted))
 	}

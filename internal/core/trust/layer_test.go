@@ -76,6 +76,7 @@ func full() Input {
 		PresentedChain: chain,
 		ChainComplete:  whole,
 		PresentedLeaf:  leaf,
+		OtherChains:    func() int { return 0 },
 		Machine:        aMachine(),
 		Probes:         map[string]Probe{"git": nil},
 		Now:            func() time.Time { return time.Unix(1_770_000_000, 0).UTC() },
@@ -91,6 +92,7 @@ func TestAMissingPortIsOurDefectAndSaysSo(t *testing.T) {
 		{"no chain port", func(in *Input) { in.PresentedChain = nil }, noChain},
 		{"no completeness port", func(in *Input) { in.ChainComplete = nil }, noWhole},
 		{"no leaf port", func(in *Input) { in.PresentedLeaf = nil }, noLeaf},
+		{"no port for other chains", func(in *Input) { in.OtherChains = nil }, noOthers},
 		{"no platform", func(in *Input) { in.Machine.OS = "" }, noOS},
 		{"no probes", func(in *Input) { in.Probes = nil }, noProbes},
 		// A missing port outranks a target without TLS - ADR100 part 3.
@@ -230,6 +232,48 @@ func TestAProbeThatFallsOverBecomesARowRatherThanKillingTheReport(t *testing.T) 
 	}
 	if breach := got.Findings[0].Breach(); breach != "" {
 		t.Errorf("the layer produced a finding its own contract refuses: %s", breach)
+	}
+}
+
+// TestAMatrixJudgedOnOneOfSeveralChainsSaysWhichOne is B02 from ADR114,
+// decided by the owner: the matrix judges the first address's chain, and when
+// other addresses presented another one the sentence says so - but only a
+// sentence that judged a chain.
+func TestAMatrixJudgedOnOneOfSeveralChainsSaysWhichOne(t *testing.T) {
+	const suffix = ", judged on the first address's chain, which 2 other address(es) did not present"
+	cases := []struct {
+		name   string
+		stores []report.TrustStore
+		others int
+		says   string
+		bare   bool
+	}{
+		{"some stores judged it", []report.TrustStore{aStore("git", "a", yes(true), ""), aStore("git", "b", yes(false), "")}, 2,
+			"1 of 2 store(s) do not trust the presented chain" + suffix, false},
+		{"every store trusts it", []report.TrustStore{aStore("git", "a", yes(true), "")}, 2,
+			"all 1 store(s) found trust the presented chain" + suffix, false},
+		{"no other address differed", []report.TrustStore{aStore("git", "a", yes(true), "")}, 0,
+			"all 1 store(s) found trust the presented chain", true},
+		{"no store could judge it", []report.TrustStore{aStore("git", "a", nil, "no permission")}, 2,
+			"none of the 1 store(s) found could be assessed", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stores := c.stores
+			in := probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) { return stores, nil })
+			others := c.others
+			in.OtherChains = func() int { return others }
+			got := Ask(context.Background(), in)
+			if got.Detail != c.says {
+				t.Errorf("detail %q, want %q", got.Detail, c.says)
+			}
+			if c.bare && strings.Contains(got.Detail, "judged on") {
+				t.Errorf("a sentence that judged no other chain names one: %q", got.Detail)
+			}
+		})
+	}
+	if got := judgedOnOneOf(Result{Detail: noneHere}, tally{}, 2); got.Detail != noneHere {
+		t.Errorf("a layer that found no store names a chain it judged: %q", got.Detail)
 	}
 }
 

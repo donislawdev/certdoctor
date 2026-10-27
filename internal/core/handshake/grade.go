@@ -3,6 +3,7 @@ package handshake
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -37,7 +38,12 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	if carrier >= 0 {
 		firstChain = outcomes[carrier].shown.Chain
 	}
-	disagreed := false
+	// THE WHOLE CHAIN IS COMPARED, NOT THE LEAF ALONE - ADR114, B02, decided by
+	// the owner. Two addresses presenting one certificate under two different
+	// intermediates are two different answers to a client, and the leaf alone
+	// called them the same. others counts the completed addresses whose chain is
+	// not the one L5 judges, and travels to L5 so its sentence can say so.
+	others := 0
 
 	// THE TWO OUTCOMES THAT NEVER LEFT THIS MACHINE, counted in the same walk as
 	// everything else here - ADR58. Both are ours: one is this layer running out
@@ -51,7 +57,11 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	names := nameTally{host: in.ServerName}
 
 	for i, o := range outcomes {
+		// MatchesFirstAddress KEEPS ITS PUBLISHED MEANING, the same certificate,
+		// and the chain is compared beside it: a field consumers already read
+		// would otherwise change what it says under the same name.
 		matches := (*bool)(nil)
+		sameChain := true
 		switch {
 		case o.err == nil && o.shown.Completed:
 			completed++
@@ -59,8 +69,9 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 			if i != carrier {
 				same := leafOf(o.shown.Chain) == leafOf(firstChain)
 				matches = &same
-				if !same {
-					disagreed = true
+				sameChain = chainsEqual(o.shown.Chain, firstChain)
+				if !sameChain {
+					others++
 				}
 			}
 		case errors.Is(o.err, errNotAttempted):
@@ -68,15 +79,15 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 		case errors.Is(o.err, ErrRefusedByRule):
 			refused++
 		}
-		findings = append(findings, in.row(o, i == carrier, matches))
+		findings = append(findings, in.row(o, i == carrier, matches, sameChain))
 	}
 
 	complete := chainComplete(firstChain)
-	detail := detailFor(completed, len(addresses), firstChain, complete, disagreed, names)
+	detail := detailFor(completed, len(addresses), firstChain, complete, others > 0, names)
 	// ChainWhole travels on EVERY outcome, including the failing ones, because
 	// L5 asks it in order to decide whether a store can be advised at all - and
 	// the case it most needs it for is the FAIL below.
-	graded := Result{Detail: detail, Findings: findings, ChainWhole: complete}
+	graded := Result{Detail: detail, Findings: findings, ChainWhole: complete, OtherChains: others}
 
 	switch {
 	case completed == 0 && skipped+refused > 0:
@@ -106,7 +117,7 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	// perfectly well.
 	case completed == 0, len(firstChain) == 0, names.notCovered > 0:
 		graded.Status = status.Fail
-	// TWO WARNINGS, ONE BRANCH, both decided by the owner.
+	// THREE WARNINGS, ONE BRANCH, all decided by the owner.
 	//
 	// AN ISSUER THE SERVER DID NOT SEND - ADR114. The bytes cannot tell a
 	// missing intermediate from a root left out on purpose, and a client that
@@ -116,7 +127,12 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	//
 	// A NAME ONLY IN THE COMMON NAME - ADR106: a client written to RFC 6125 may
 	// still accept it, so whether this works depends on which client is asking.
-	case !complete, names.commonOnly > 0:
+	//
+	// ADDRESSES THAT PRESENTED DIFFERENT CHAINS - ADR114, B02. L5 judges one of
+	// them, so a run can pass on the address that happened to come first while
+	// a client sent to another refuses. The matrix per chain is for after 0.1.0,
+	// because it changes the shape of --json.
+	case !complete, names.commonOnly > 0, others > 0:
 		graded.Status = status.Warn
 	default:
 		graded.Status = status.Pass
@@ -272,12 +288,22 @@ func leafOf(chain []Certificate) string {
 	return chain[0].FingerprintSHA256
 }
 
+// chainsEqual says whether two chains are the same certificates in the same
+// order, by fingerprint - ADR114, B02.
+//
+// THE ORDER IS PART OF THE ANSWER. TLS 1.2 required each certificate to certify
+// the one before it, RFC 5246 section 7.4.2, so a client written to it can
+// refuse on one address the chain it accepts on another.
+func chainsEqual(a, b []Certificate) bool {
+	return slices.EqualFunc(a, b, func(x, y Certificate) bool { return x.FingerprintSHA256 == y.FingerprintSHA256 })
+}
+
 // row turns one address's answer into one finding.
 //
 // IT ALWAYS PRODUCES A ROW, including for an address whose handshake never
 // happened, because a report with fewer rows reads as a name with fewer
 // addresses.
-func (in Input) row(o outcome, carriesChain bool, matchesFirst *bool) report.Finding {
+func (in Input) row(o outcome, carriesChain bool, matchesFirst *bool, sameChain bool) report.Finding {
 	body := &report.TLSHandshake{
 		Address:   o.address,
 		Port:      in.Port,
@@ -321,7 +347,7 @@ func (in Input) row(o outcome, carriesChain bool, matchesFirst *bool) report.Fin
 
 	return report.Finding{
 		Kind:         report.FindingTLSHandshake,
-		Summary:      summaryFor(o.address, in.Port, o.shown, carriesChain, matchesFirst) + nameClause(o.shown.Name, in.ServerName),
+		Summary:      summaryFor(o.address, in.Port, o.shown, carriesChain, matchesFirst, sameChain) + nameClause(o.shown.Name, in.ServerName),
 		Source:       report.SourceDetected,
 		TLSHandshake: body,
 	}
@@ -368,7 +394,7 @@ func reasonFor(err error) string {
 
 // summaryFor is the sentence a surface prints when it has no special handling
 // for this kind of finding.
-func summaryFor(address string, port int, shown Presented, carriesChain bool, matchesFirst *bool) string {
+func summaryFor(address string, port int, shown Presented, carriesChain bool, matchesFirst *bool, sameChain bool) string {
 	// NOTHING WAS PRESENTED, SO NOTHING IS COMPARED - the same rule the body
 	// already obeys through MatchesFirstAddress, arriving here two weeks late.
 	//
@@ -394,5 +420,10 @@ func summaryFor(address string, port int, shown Presented, carriesChain bool, ma
 	if matchesFirst != nil && !*matchesFirst {
 		return fmt.Sprintf("%s on port %d presented a DIFFERENT certificate from the first address", address, port)
 	}
-	return fmt.Sprintf("%s on port %d presented the same certificate as the first address", address, port)
+	if !sameChain {
+		// THE CASE THE LEAF ALONE HID - ADR114, B02: one certificate, under
+		// intermediates that are not the first address's.
+		return fmt.Sprintf("%s on port %d presented the same certificate as the first address, in a DIFFERENT chain", address, port)
+	}
+	return fmt.Sprintf("%s on port %d presented the same chain as the first address", address, port)
 }

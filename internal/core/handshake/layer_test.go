@@ -310,6 +310,60 @@ func TestAnAddressPresentingADifferentCertificateSaysSo(t *testing.T) {
 	}
 }
 
+// TestAddressesAreComparedByTheirWholeChain is B02 from ADR114, decided by the
+// owner: the whole chain is compared, different chains make the layer warn,
+// and the count of addresses that differ travels to L5. MatchesFirstAddress
+// keeps its published meaning - the same certificate - so the case the leaf
+// alone hid is told apart by the row's sentence.
+func TestAddressesAreComparedByTheirWholeChain(t *testing.T) {
+	underAnother := completeChain("aa")
+	underAnother[1].FingerprintSHA256 = "int-zz"
+	threeLong := append(completeChain("aa"), certAt("CN=testbed cross", "CN=testbed root", "cross-aa", false))
+	reordered := []Certificate{threeLong[0], threeLong[2], threeLong[1]}
+
+	cases := []struct {
+		name    string
+		first   []Certificate
+		second  []Certificate
+		status  status.Status
+		others  int
+		matches bool
+		row     string
+	}{
+		{"the same chain", completeChain("aa"), completeChain("aa"), status.Pass, 0, true, "presented the same chain as the first address"},
+		{"the same certificate under another intermediate", completeChain("aa"), underAnother, status.Warn, 1, true, "presented the same certificate as the first address, in a DIFFERENT chain"},
+		{"another certificate", completeChain("aa"), completeChain("bb"), status.Warn, 1, false, "presented a DIFFERENT certificate from the first address"},
+		{"the same certificates in another order", threeLong, reordered, status.Warn, 1, true, "in a DIFFERENT chain"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := workingInput(func(_ context.Context, address string, _ int, _ string) (Presented, error) {
+				chain := c.first
+				if address == "192.0.2.11" {
+					chain = c.second
+				}
+				return Presented{Completed: true, Version: "TLS 1.3", Chain: chain, Name: NameCovered}, nil
+			})
+			in.Addresses = func() []string { return []string{"192.0.2.10", "192.0.2.11"} }
+
+			got := Ask(context.Background(), in)
+			if got.Status != c.status || got.OtherChains != c.others {
+				t.Errorf("status %s and %d other chain(s), want %s and %d: %q", got.Status, got.OtherChains, c.status, c.others, got.Detail)
+			}
+			if c.others > 0 && !strings.Contains(got.Detail, "did not all present the same chain") {
+				t.Errorf("the sentence does not say the chains differ: %q", got.Detail)
+			}
+			rows := rowsOf(got)
+			if len(rows) != 2 || rows[1].MatchesFirstAddress == nil || *rows[1].MatchesFirstAddress != c.matches {
+				t.Fatalf("the second row does not compare the certificate as %v: %+v", c.matches, rows)
+			}
+			if !strings.Contains(got.Findings[1].Summary, c.row) {
+				t.Errorf("the second row says %q, want %q in it", got.Findings[1].Summary, c.row)
+			}
+		})
+	}
+}
+
 // TestTheRowShownAndTheChainJudgedComeFromOneAddress is the invariant
 // firstShown's comment has always promised and the grader used to break.
 //
