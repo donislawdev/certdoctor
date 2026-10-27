@@ -84,8 +84,11 @@ func TestTheShippedBinaryStartsPythonWithoutSite(t *testing.T) {
 // as it ships: the script hands pip's own parser the question, and only a real
 // pip answers it - a script that broke on one pip passes every test in the
 // probe's package. REQUESTS_CA_BUNDLE has to reach the pip row, and a proxy in
-// pip's own configuration has to take it away again, because pip turns trust_env
-// off for a proxy - read in pip 26.2.2 and requests 2.34.2 on 2026-10-27.
+// pip's own configuration has to take it away again from pip 24.2 on, because
+// that pip turns trust_env off for a proxy - read in pip's tags on 2026-10-27
+// and measured with probe S28: pip 23.0.1 still read the variable. Each row's own
+// interpreter is asked which pip it carries, so the test expects what that pip
+// does - CI's Ubuntu and macOS ship a pip older than 24.2.
 //
 // Skipped where the python on PATH has no pip, because then nothing is asked.
 func TestTheShippedBinaryAsksPipWhatItReads(t *testing.T) {
@@ -118,11 +121,44 @@ func TestTheShippedBinaryAsksPipWhatItReads(t *testing.T) {
 	proxied := pipRowsIn(t, startProgram(t, invocation{env: []string{"REQUESTS_CA_BUNDLE=" + bundle,
 		"PIP_CONFIG_FILE=" + config}}, aLoopbackTarget(t), "--json").stdout)
 	for _, row := range proxied {
-		if slices.Contains(row.SelectedBy, "REQUESTS_CA_BUNDLE") {
-			t.Errorf("the pip row of %s reads REQUESTS_CA_BUNDLE through a proxy that turns it off: %v", row.Instance,
-				row.SelectedBy)
+		release, known := pipReleaseOf(row.Instance)
+		if !known {
+			t.Logf("the pip of %s did not say its version, so the proxy is not judged for it", row.Instance)
+			continue
+		}
+		turnsOff := release[0] > 24 || release[0] == 24 && release[1] >= 2
+		if read := slices.Contains(row.SelectedBy, "REQUESTS_CA_BUNDLE"); read == turnsOff {
+			t.Errorf("the pip row of %s (pip %d.%d) says REQUESTS_CA_BUNDLE is read through a proxy: %v, and that "+
+				"pip reads it there: %v", row.Instance, release[0], release[1], read, !turnsOff)
 		}
 	}
+}
+
+// pipReleaseOf is the first two numbers of the pip an interpreter carries, asked
+// the way the probe asks it - without site, with site-packages put on the path.
+func pipReleaseOf(interpreter string) ([2]int, bool) {
+	out, err := exec.Command(interpreter, "-I", "-S", "-c",
+		"import site, sys; sys.path.extend(site.getsitepackages()); import pip; print(pip.__version__)").Output()
+	if err != nil {
+		return [2]int{}, false
+	}
+	parts := strings.SplitN(strings.TrimSpace(string(out)), ".", 3)
+	if len(parts) < 2 {
+		return [2]int{}, false
+	}
+	var release [2]int
+	for i := range release {
+		digits := parts[i]
+		if end := strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' }); end >= 0 {
+			digits = digits[:end]
+		}
+		n, err := strconv.Atoi(digits)
+		if err != nil {
+			return [2]int{}, false
+		}
+		release[i] = n
+	}
+	return release, true
 }
 
 // pipRow is what TestTheShippedBinaryAsksPipWhatItReads reads of a pip row.
