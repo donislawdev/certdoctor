@@ -25,6 +25,27 @@ func TestEveryDescriptorCarriesItsSource(t *testing.T) {
 	}
 }
 
+// A FAMILY ASKED BY ANOTHER PROBE NAMES ONE THE REGISTRY DECLARES, EARLIER AND
+// WITH A PROBE OF ITS OWN - otherwise the coverage note would name a family no
+// run asks, or one whose rows come from nowhere.
+func TestAFamilyAskedByAnotherNamesAProbeThatExists(t *testing.T) {
+	asked := 0
+	own := map[string]bool{}
+	for _, d := range All() {
+		if d.AskedBy == "" {
+			own[d.ID] = true
+			continue
+		}
+		asked++
+		if !own[d.AskedBy] {
+			t.Errorf("%q is asked by %q, which is not declared before it with a probe of its own", d.ID, d.AskedBy)
+		}
+	}
+	if asked == 0 {
+		t.Error("no family is asked by another probe, so this test proves nothing - pip's rows come from python's")
+	}
+}
+
 // All hands out a copy. Without that a caller could edit the registry underneath
 // everybody else, and the evidence rule would be enforceable only until somebody
 // wrote to the slice.

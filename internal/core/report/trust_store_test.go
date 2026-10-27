@@ -93,6 +93,25 @@ func TestARuntimeWithNoVariantIsAccepted(t *testing.T) {
 	}
 }
 
+// A pip ROW SAYS WHICH LIST IT JUDGED, and only one that judged nothing - pip's
+// own code could not say - may leave it unsaid.
+func TestAPipRowNamesItsListUnlessItJudgedNothing(t *testing.T) {
+	for _, variant := range []string{PipTruststore, PipCertifi} {
+		store := aReadableStore()
+		store.Runtime, store.Variant = RuntimePip, variant
+		if got := store.breach(); got != "" {
+			t.Errorf("a pip row on %q was refused: %q", variant, got)
+		}
+	}
+	store := aReadableStore()
+	store.Runtime, store.Variant = RuntimePip, ""
+	store.TrustsPresentedChain, store.TrustAnchorCount = nil, 0
+	store.NotAssessed = "pip's own code could not say what it reads"
+	if got := store.breach(); got != "" {
+		t.Errorf("a pip row that judged nothing was refused for its missing variant: %q", got)
+	}
+}
+
 // A store that could not be read carries a reason and NO verdict. This is the
 // UNKNOWN of docs/20 - failing to open a keystore with the default password is
 // never a fact about trust.
@@ -350,6 +369,17 @@ func TestTheTrustStoreRefusesWhatItMustRefuse(t *testing.T) {
 				s.PlatformListCloses = true
 			},
 			says: "unknown authority",
+		},
+		{
+			// The command for pip depends on which list it judged - ADR112 part 5.
+			name:  "a pip verdict on no list",
+			spoil: func(s *TrustStore) { s.Runtime, s.Variant = RuntimePip, "" },
+			says:  "which of pip's two lists",
+		},
+		{
+			name:  "a pip row of a third variant",
+			spoil: func(s *TrustStore) { s.Runtime, s.Variant = RuntimePip, "jdk" },
+			says:  "which list pip trusts",
 		},
 	}
 

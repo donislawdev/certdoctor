@@ -63,6 +63,9 @@ func aRefusedRowFor(descriptor Descriptor) report.TrustStore {
 	if descriptor.Runtime == report.RuntimePython {
 		return aPythonOnTheWindowsStores()
 	}
+	if descriptor.Runtime == report.RuntimePip {
+		return aPipOnTruststore()
+	}
 	return aRefusedStore(descriptor.Runtime, `C:\somewhere\install`, `C:\somewhere\install\store.crt`)
 }
 

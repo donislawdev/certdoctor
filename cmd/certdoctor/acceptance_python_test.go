@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -77,6 +78,83 @@ func TestTheShippedBinaryStartsPythonWithoutSite(t *testing.T) {
 	if !slicesContainsFold(pythonInstancesIn(t, r.stdout), interpreter) {
 		t.Fatalf("no row for %s, so it was never asked and the marker proves nothing:\n%s", interpreter, r.stdout)
 	}
+}
+
+// TestTheShippedBinaryAsksPipWhatItReads is ADR112 part 5 asked of the program
+// as it ships: the script hands pip's own parser the question, and only a real
+// pip answers it - a script that broke on one pip passes every test in the
+// probe's package. REQUESTS_CA_BUNDLE has to reach the pip row, and a proxy in
+// pip's own configuration has to take it away again, because pip turns trust_env
+// off for a proxy - read in pip 26.2.2 and requests 2.34.2 on 2026-10-27.
+//
+// Skipped where the python on PATH has no pip, because then nothing is asked.
+func TestTheShippedBinaryAsksPipWhatItReads(t *testing.T) {
+	python := pythonOnPath(t)
+	if out, err := exec.Command(python, "-I", "-m", "pip", "--version").CombinedOutput(); err != nil {
+		t.Skipf("the python on PATH has no pip of its own, so no pip row is asked for: %v\n%s", err, out)
+	}
+	dir := t.TempDir()
+	bundle := filepath.Join(dir, "company.pem")
+	config := filepath.Join(dir, "pip.conf")
+	if err := os.WriteFile(bundle, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, []byte("[global]\nproxy = http://127.0.0.1:9\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	named := pipRowsIn(t, startProgram(t, invocation{env: []string{"REQUESTS_CA_BUNDLE=" + bundle}}, aLoopbackTarget(t),
+		"--json").stdout)
+	if len(named) == 0 {
+		t.Fatal("no pip row in the report, so pip was never asked")
+	}
+	for _, row := range named {
+		if !slices.Contains(row.SelectedBy, "REQUESTS_CA_BUNDLE") {
+			t.Errorf("the pip row of %s does not say REQUESTS_CA_BUNDLE named its file: %v (%s)", row.Instance,
+				row.SelectedBy, row.NotAssessed)
+		}
+	}
+
+	proxied := pipRowsIn(t, startProgram(t, invocation{env: []string{"REQUESTS_CA_BUNDLE=" + bundle,
+		"PIP_CONFIG_FILE=" + config}}, aLoopbackTarget(t), "--json").stdout)
+	for _, row := range proxied {
+		if slices.Contains(row.SelectedBy, "REQUESTS_CA_BUNDLE") {
+			t.Errorf("the pip row of %s reads REQUESTS_CA_BUNDLE through a proxy that turns it off: %v", row.Instance,
+				row.SelectedBy)
+		}
+	}
+}
+
+// pipRow is what TestTheShippedBinaryAsksPipWhatItReads reads of a pip row.
+type pipRow struct {
+	Runtime     string   `json:"runtime"`
+	Instance    string   `json:"instance"`
+	SelectedBy  []string `json:"selected_by"`
+	NotAssessed string   `json:"not_assessed"`
+}
+
+// pipRowsIn is every pip row in a report.
+func pipRowsIn(t *testing.T, stdout string) []pipRow {
+	t.Helper()
+	var document struct {
+		Layers []struct {
+			Findings []struct {
+				TrustStore *pipRow `json:"trust_store"`
+			} `json:"findings"`
+		} `json:"layers"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	var rows []pipRow
+	for _, layer := range document.Layers {
+		for _, finding := range layer.Findings {
+			if finding.TrustStore != nil && finding.TrustStore.Runtime == "pip" {
+				rows = append(rows, *finding.TrustStore)
+			}
+		}
+	}
+	return rows
 }
 
 // pythonOnPath is the interpreter a person typing python3, or else python, runs.

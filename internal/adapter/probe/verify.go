@@ -161,6 +161,10 @@ func selfSigned(c *x509.Certificate) bool {
 		c.CheckSignature(c.SignatureAlgorithm, c.RawTBSCertificate, c.Signature) == nil
 }
 
+// SelfSigned is the rule above for a probe that has to know, before judging,
+// whether a list can end a chain at all - pip on Windows.
+func SelfSigned(c *x509.Certificate) bool { return selfSigned(c) }
+
 // classify says WHICH WAY a store refused, because only one of the ways is
 // something a person can repair by adding a certificate.
 //

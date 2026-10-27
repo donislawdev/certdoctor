@@ -82,6 +82,12 @@ type Descriptor struct {
 	// how the weaker of the two travels on the strength of the stronger.
 	FixSource   Source
 	FixEvidence string
+	// AskedBy is the ID of the probe whose run writes this family's rows, and is
+	// empty for a family with a probe of its own. pip's rows come from the python
+	// probe, which starts each interpreter once and hears about its pip in the same
+	// answer - ADR112 part 1 - so pip has no probe to wire, and a run that wired
+	// python asked pip.
+	AskedBy string
 }
 
 // descriptors is the registry.
@@ -273,6 +279,35 @@ var descriptors = []Descriptor{
 			"OpenSSL loads whole each time a context is made - measured with probe S28: a root appended to the " +
 			"distribution's bundle was trusted by the standard library in every image whose Python reads that " +
 			"bundle. Adding one to the Windows store was not measured, because that needs the owner at the machine.",
+	},
+	{
+		ID:      report.RuntimePip,
+		Runtime: report.RuntimePip,
+		AskedBy: report.RuntimePython,
+		TrustSource: "what each interpreter's pip trusts, as pip's own code reports its version and settings - from 24.2 " +
+			"on, unless --use-deprecated=legacy-certs, this machine's store through truststore beside the certifi pip " +
+			"carries and the one file named for verification; before 24.2 and under legacy-certs that one file or else " +
+			"certifi alone - read by asking that interpreter, and only a self-signed certificate ends a chain",
+		Source: Measured,
+		Evidence: "Measured 2026-10-21 with probe S28 on the owner's machine and in nine images, pip 21.3.1 to 26.2.2, " +
+			"with a request over loopback as the signal. pip 24.2 and later trusted a root in this machine's store, in " +
+			"certifi or in the one file named for verification, and on Windows asked Windows first and certifi and that " +
+			"file after; SSL_CERT_FILE did not reach it on Windows. Its context set neither PARTIAL_CHAIN nor STRICT on " +
+			"any Python: an intermediate alone was refused everywhere. REQUESTS_CA_BUNDLE won over CURL_CA_BUNDLE, PIP_CERT " +
+			"and cert in pip's configuration on every pip measured. pip 21.3.1 and 23.0.1, and legacy-certs, trusted " +
+			"certifi and that file alone, with urllib3's flags. Read beside it in pip 26.2.2, " +
+			"src/pip/_internal/cli/index_command.py - the truststore context loads certifi, cert becomes the session's " +
+			"verify, and a proxy or --no-proxy-env turns trust_env off - in requests 2.34.2, sessions.py, which reads " +
+			"REQUESTS_CA_BUNDLE and CURL_CA_BUNDLE only under trust_env, and in truststore 0.10.4, _openssl.py and " +
+			"_windows.py. pip's settings are read by pip's own parser in the interpreter's process, without site and " +
+			"without writing bytecode - ADR112 part 6.",
+		FixSource: Measured,
+		FixEvidence: "Measured 2026-10-21 with probe S28: a root appended to the bundle the platform keeps was trusted " +
+			"by pip 24.2 and later on Linux, and a root in the file REQUESTS_CA_BUNDLE, CURL_CA_BUNDLE, PIP_CERT or cert " +
+			"named was trusted by every pip measured, beside certifi from 24.2 on. So the command adds to the file named " +
+			"for verification when there is one, and otherwise to the file truststore reads. On Windows a refusing list " +
+			"takes the answer and the command of the row for this account's store, which pip asks first - read in " +
+			"truststore 0.10.4, _windows.py, and not measured, because a root in that store needs the owner at the machine.",
 	},
 }
 

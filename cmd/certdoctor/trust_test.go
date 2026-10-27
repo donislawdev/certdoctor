@@ -106,6 +106,20 @@ func TestTheCoverageNoteNamesOnlyWhatIsWired(t *testing.T) {
 	}
 }
 
+// A FAMILY ANOTHER PROBE ASKS IS NAMED WHEN THAT PROBE IS WIRED, and not
+// otherwise - pip's rows come from python's probe, ADR112 part 1.
+func TestTheCoverageNoteNamesPipWhenPythonIsWired(t *testing.T) {
+	none := func(context.Context, [][]byte) ([]report.TrustStore, error) { return nil, nil }
+	note := trustCoverageNote(map[string]trust.Probe{report.RuntimePython: none})
+	if !strings.Contains(note.Detail, "(python, pip)") {
+		t.Errorf("a run asking python does not name pip: %q", note.Detail)
+	}
+	note = trustCoverageNote(map[string]trust.Probe{"git": none})
+	if strings.Contains(note.Detail, "pip") {
+		t.Errorf("a run not asking python names pip: %q", note.Detail)
+	}
+}
+
 // A build with no probes at all is a real state - it is what a port to a new
 // platform looks like before its first probe lands - and the note has to say
 // that rather than claim a complete matrix.

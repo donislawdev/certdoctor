@@ -49,10 +49,25 @@ func Probe(source file.Source, resolve file.Resolve, alias file.AppAlias, files 
 		}
 		stores := make([]report.TrustStore, 0, len(found))
 		for _, in := range found {
-			stores = append(stores, host.storeFor(ctx, in, chain, now()))
+			stores = append(stores, host.storesFor(ctx, in, chain, now())...)
 		}
 		return stores, nil
 	}
+}
+
+// storesFor asks one interpreter once and turns its answer into rows - python
+// always, and pip beside it when the interpreter has a pip - ADR112 part 1.
+func (m machine) storesFor(ctx context.Context, in interpreter, chain [][]byte, now time.Time) []report.TrustStore {
+	a, why := in.reply, in.why
+	if !in.asked {
+		a, why = ask(ctx, m.run, in.path)
+	}
+	python := m.storeFor(in, a, why, chain, now)
+	// An interpreter that could not be asked has an empty answer, so no pip.
+	if a.Pip == nil {
+		return []report.TrustStore{python}
+	}
+	return []report.TrustStore{python, m.pipStore(in, a, chain, now)}
 }
 
 // machine is what one run of the probe reads this machine through.
@@ -65,8 +80,9 @@ type machine struct {
 	platform string
 }
 
-// storeFor turns one interpreter into one row of the matrix.
-func (m machine) storeFor(ctx context.Context, in interpreter, chain [][]byte, now time.Time) report.TrustStore {
+// storeFor turns one interpreter's answer, or the sentence saying there is none,
+// into its python row.
+func (m machine) storeFor(in interpreter, a answer, why string, chain [][]byte, now time.Time) report.TrustStore {
 	store := report.TrustStore{
 		Runtime: report.RuntimePython,
 		// THE PATH IS THE IDENTITY, as for node and curl - two interpreters differ
@@ -74,10 +90,6 @@ func (m machine) storeFor(ctx context.Context, in interpreter, chain [][]byte, n
 		Instance:   in.path,
 		SelectedBy: in.selectedBy,
 		StoreForm:  report.StoreSystem,
-	}
-	a, why := in.reply, in.why
-	if !in.asked {
-		a, why = ask(ctx, m.run, in.path)
 	}
 	if why != "" {
 		store.NotAssessed = why
@@ -93,21 +105,28 @@ func (m machine) storeFor(ctx context.Context, in interpreter, chain [][]byte, n
 	dirs, relative := m.directories(a)
 	directory, stopped, err := probe.HashedAnchors(m.source, m.files, dirs)
 	judge(&store, a, a.bundle(directory), chain, now)
+	return undecided(store, a, relative, stopped, err)
+}
+
+// undecided takes back a verdict the row cannot stand behind, and says why - for
+// the python row and for pip's, whose flags a carries. relative is a directory
+// named relatively, and stopped and err the directory that could not be read.
+func undecided(store report.TrustStore, a answer, relative, stopped string, err error) report.TrustStore {
 	// A DIRECTORY ADDS SIGNERS AND NEVER TAKES ONE AWAY, so one this program could
 	// not read matters only where what it did read did not close the chain.
 	switch {
 	case relative != "" && !trusted(store):
 		probe.Undetermined(&store, fmt.Sprintf("SSL_CERT_DIR names %s, a relative directory each program looks up from "+
-			"wherever it starts, so what this python makes of the chain is undetermined", relative))
+			"wherever it starts, so what this %s makes of the chain is undetermined", relative, store.Runtime))
 	case err != nil && !trusted(store):
-		probe.Undetermined(&store, fmt.Sprintf("this python also reads the directory %s, which could not be read in full "+
-			"(%v), so what it makes of the chain is undetermined", stopped, err))
+		probe.Undetermined(&store, fmt.Sprintf("this %s also reads the directory %s, which could not be read in full "+
+			"(%v), so what it makes of the chain is undetermined", store.Runtime, stopped, err))
 	case a.flags().Strict() && !a.openSSL3() && trusted(store):
 		// STRICT ONLY TAKES AWAY - ADR112 part 3. Its rules are applied here as
 		// OpenSSL 3 has them, and OpenSSL 1.1.1 has far fewer, so a trust under
 		// any other OpenSSL is not proven, and a refusal stands as it is.
-		probe.Undetermined(&store, fmt.Sprintf("this python checks a chain against the strict rules (VERIFY_X509_STRICT) of "+
-			"%s, and this program applies those of OpenSSL 3 alone", openSSLName(a.OpenSSL)))
+		probe.Undetermined(&store, fmt.Sprintf("this %s checks a chain against the strict rules (VERIFY_X509_STRICT) of "+
+			"%s, and this program applies those of OpenSSL 3 alone", store.Runtime, openSSLName(a.OpenSSL)))
 	}
 	return store
 }
@@ -164,13 +183,21 @@ func (m machine) place(store *report.TrustStore, a answer) {
 		return
 	}
 	store.StoreForm = report.StoreFile
+	store.StorePath = m.spelled(*a.CAFile)
+}
+
+// spelled is a file this interpreter reads, written as the platform store's row
+// writes it when it is that row's file after links - so the rows are counted as
+// one store, and hand a person one command.
+func (m machine) spelled(path string) string {
 	if m.platform != "linux" {
-		return
+		return path
 	}
 	if platform, _, _ := probe.FirstBundle(m.source, probe.LinuxBundles); platform != "" &&
-		probe.IdentityKey(m.resolve, platform) == probe.IdentityKey(m.resolve, *a.CAFile) {
-		store.StorePath = platform
+		probe.IdentityKey(m.resolve, platform) == probe.IdentityKey(m.resolve, path) {
+		return platform
 	}
+	return path
 }
 
 // directories are the hashed directories this interpreter's OpenSSL looks in -

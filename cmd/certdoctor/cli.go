@@ -1158,11 +1158,13 @@ func trustCoverageNote(probes map[string]trust.Probe) report.Note {
 	return coverageNoteFor(wired(trust.All(), probes))
 }
 
-// wired keeps the descriptors this run has a probe for, in registry order.
+// wired keeps the descriptors this run has a probe for, in registry order. A
+// family whose rows another probe writes - pip's come from python's - is asked
+// when that probe is wired.
 func wired(descriptors []trust.Descriptor, probes map[string]trust.Probe) []trust.Descriptor {
 	out := make([]trust.Descriptor, 0, len(descriptors))
 	for _, descriptor := range descriptors {
-		if probes[descriptor.ID] != nil {
+		if probes[descriptor.ID] != nil || descriptor.AskedBy != "" && probes[descriptor.AskedBy] != nil {
 			out = append(out, descriptor)
 		}
 	}

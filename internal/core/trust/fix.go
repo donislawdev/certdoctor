@@ -131,6 +131,8 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 	switch store.Runtime {
 	case "java":
 		return javaFix(store, m, elevated, why)
+	case report.RuntimePip:
+		return pipFix(store, m, elevated, why)
 	case "curl", "git":
 		command, withheld := appendPEM(store.StorePath, store.FileEnd, m.OS)
 		if withheld != "" {
@@ -311,13 +313,70 @@ func pythonFix(store report.TrustStore, m Machine) (*report.Fix, string) {
 			Placeholders:      []string{certificatePlaceholder},
 			RequiresElevation: elevated,
 			Elevation:         why,
-			Caveat: "every program reading this file trusts the certificate too, and whatever maintains it - " +
-				"update-ca-certificates or update-ca-trust, when it is the distribution's bundle - rewrites the file " +
-				"and drops a certificate appended here",
+			Caveat:            sharedFileCaveat,
 		}, ""
 	}
 	return nil, ""
 }
+
+// sharedFileCaveat is what an append to a file Python or pip reads leaves behind.
+const sharedFileCaveat = "every program reading this file trusts the certificate too, and whatever maintains it - " +
+	"update-ca-certificates or update-ca-trust, when it is the distribution's bundle - rewrites the file and drops a " +
+	"certificate appended here"
+
+// pipFix adds the certificate to the file this pip reads - ADR112 part 5,
+// decided by the owner.
+//
+// THE FILE NAMED FOR VERIFICATION FIRST, AND THE PROBE HAS ALREADY PUT IT IN
+// StorePath. Setting cert or REQUESTS_CA_BUNDLE to another file would take the
+// trust the first one gives - docs/20 rule 7 - and REQUESTS_CA_BUNDLE hides cert
+// without a word, which is why the command adds to what is named and never names
+// something new. With nothing named, a pip on truststore reads the platform's
+// file, and the probe put that file there instead. A row on the platform's store
+// with no file never reaches this function - on Windows it defers to this
+// account's store and takes that row's command.
+//
+// A PIP ON certifi ALONE WITH NOTHING NAMED GETS NO COMMAND, and says why. A file
+// named with cert or REQUESTS_CA_BUNDLE takes certifi's place there instead of
+// joining it - HTTPAdapter.cert_verify in requests 2.34.2, adapters.py, uses the
+// named path in place of certifi's, read 2026-10-27 in the copy pip 26.2.2 carries
+// - so the only command left would be one somebody has to fill with every root
+// pip needs. That this replaces rather than adds is read and not measured, since
+// the bench serves no publicly trusted chain.
+func pipFix(store report.TrustStore, m Machine, elevated bool, why string) (*report.Fix, string) {
+	if store.Variant != report.PipTruststore && !namesItsFile(store) {
+		return nil, certifiAlone
+	}
+	command, withheld := appendPEM(store.StorePath, store.FileEnd, m.OS)
+	if withheld != "" {
+		return nil, withheld
+	}
+	return &report.Fix{
+		Command:           command,
+		Placeholders:      []string{certificatePlaceholder},
+		RequiresElevation: elevated,
+		Elevation:         why,
+		Caveat:            sharedFileCaveat,
+	}, ""
+}
+
+// namesItsFile says a pip row's file was named for verification rather than
+// being certifi's - the probe adds the name that did it to SelectedBy.
+func namesItsFile(store report.TrustStore) bool {
+	return slices.ContainsFunc(store.SelectedBy, func(name string) bool {
+		switch name {
+		case report.PipRequestsCABundle, report.PipCurlCABundle, report.PipCertVariable, report.PipCertSetting:
+			return true
+		}
+		return false
+	})
+}
+
+// certifiAlone is the sentence a pip on certifi alone carries in place of a
+// command - pipFix has the reason.
+const certifiAlone = "no command is offered for it: this pip trusts the one file certifi names, and naming another " +
+	"with cert or REQUESTS_CA_BUNDLE would replace that file rather than add to it - pip 24.2 and later, without " +
+	"--use-deprecated=legacy-certs, read this machine's store as well"
 
 // distributionBundleFix is the command for the Linux platform store - ADR104,
 // decided by the owner 2026-10-15: the same append git and curl get, aimed at

@@ -1289,6 +1289,38 @@ const RuntimeNode = "node"
 // an exception for it that the probe and the generator read in one place.
 const RuntimePython = "python"
 
+// RuntimePip is the runtime of a row judging what one interpreter's pip trusts -
+// ADR112 part 5. Its rows come from the python probe, which asks each interpreter
+// once, so pip is a second answer from the same process. It is declared here
+// because its command depends on the variant below, which the probe writes and
+// the generator reads.
+const RuntimePip = "pip"
+
+// The two variants of a pip row - ADR112 part 5, carried in Variant by decision
+// of the owner 2026-10-27. They are the list pip trusts, and a command aimed at
+// the wrong one edits a file pip does not read.
+const (
+	// PipTruststore - pip 24.2 and later, unless --use-deprecated=legacy-certs:
+	// this machine's store through truststore, beside the certifi pip carries and
+	// the one file named for verification.
+	PipTruststore = "truststore"
+	// PipCertifi - pip before 24.2, under legacy-certs, or where truststore cannot
+	// be imported: the one file named for verification, or certifi alone.
+	PipCertifi = "certifi"
+)
+
+// The four names that can hand pip the one file it verifies with, as a pip row
+// spells them in SelectedBy - decided by the owner 2026-10-27, as the node row
+// carries NODE_EXTRA_CA_CERTS. The first two are what requests reads from the
+// environment, the third is the variable pip reads its cert option from, and the
+// last is that option in pip's configuration files.
+const (
+	PipRequestsCABundle = "REQUESTS_CA_BUNDLE"
+	PipCurlCABundle     = "CURL_CA_BUNDLE"
+	PipCertVariable     = "PIP_CERT"
+	PipCertSetting      = "cert"
+)
+
 // The two instances of the Windows platform store, spelled as Windows spells
 // the two system store locations - CERT_SYSTEM_STORE_CURRENT_USER and
 // CERT_SYSTEM_STORE_LOCAL_MACHINE, documented under CertOpenStore. They are
@@ -1337,6 +1369,14 @@ func (t *TrustStore) breach() string {
 	// statement about US - that nobody looked - dressed as one about the machine.
 	case t.SelectedBy == nil:
 		return "carries no selection list at all, and an empty one is the answer when nothing selects this instance"
+	// A PIP ROW SAYS WHICH LIST IT JUDGED, because the command depends on it. Only
+	// a row that judged nothing - pip's own code could not say which list it
+	// reads - may leave it empty.
+	case t.Runtime == RuntimePip && t.Variant == "" && t.TrustsPresentedChain != nil:
+		return "judges a chain for pip without saying which of pip's two lists it judged"
+	case t.Runtime == RuntimePip && t.Variant != "" && t.Variant != PipTruststore && t.Variant != PipCertifi:
+		return fmt.Sprintf("is a pip row of the variant %q, and only %q and %q say which list pip trusts",
+			t.Variant, PipTruststore, PipCertifi)
 	}
 
 	// THE THIRD STATE IS CHECKED IN BOTH DIRECTIONS. An unassessed store with no
