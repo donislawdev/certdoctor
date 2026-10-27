@@ -15,7 +15,8 @@ import (
 // this file, and would look exactly like a careful one.
 
 // aRefusedStore is a store that read its anchors and found none that signed what
-// arrived - the only failure a command addresses.
+// arrived - the only failure a command addresses. Its file ends with a line
+// break, as every bundle measured on the owner's machine does - ADR114 B13.
 func aRefusedStore(runtime, instance, path string) report.TrustStore {
 	no := false
 	return report.TrustStore{
@@ -27,6 +28,7 @@ func aRefusedStore(runtime, instance, path string) report.TrustStore {
 		TrustsPresentedChain: &no,
 		TrustFailure:         report.UnknownAuthority,
 		SelectedBy:           []string{},
+		FileEnd:              report.FileEndLineBreak,
 	}
 }
 
@@ -239,6 +241,37 @@ func TestTheJavaCommandNamesTheKeytoolBesideTheStore(t *testing.T) {
 	// "Program Files" is on every Windows machine this tool will meet.
 	if !strings.Contains(fix.Command, `"C:\Program Files\OpenJDK\jdk-25\lib\security\cacerts"`) {
 		t.Errorf("the store path is not quoted, so a space in it splits the command: %q", fix.Command)
+	}
+}
+
+// The Windows keytool line begins with a quoted path, which the Command Prompt
+// runs and PowerShell reads as a string - ADR114 B14, measured 2026-10-27. The
+// caveat says where it can be pasted, and only where the line is that shape.
+func TestTheWindowsKeytoolLineSaysWhichShellItIsFor(t *testing.T) {
+	fix, _ := fixFor(aJavaStore(), true, false, aMachine())
+	if fix == nil {
+		t.Fatal("no command for a Java store that refused the chain")
+	}
+	if !strings.HasPrefix(fix.Command, `"`) {
+		t.Fatalf("the Windows line no longer begins with a quoted path, so the caveat below is about a shape it lost: %q",
+			fix.Command)
+	}
+	if !strings.Contains(fix.Caveat, powerShellCall) {
+		t.Errorf("the caveat does not say the line is for cmd.exe and how PowerShell runs it: %q", fix.Caveat)
+	}
+	if !strings.Contains(fix.Caveat, "newer build of this runtime") {
+		t.Errorf("the caveat lost what outlives the command: %q", fix.Caveat)
+	}
+
+	// THE TWIN: a POSIX shell runs a quoted path at the start of a line, so the
+	// Linux line says nothing about PowerShell.
+	linux, _ := fixFor(aRefusedStore("java", "/usr/lib/jvm/jdk-21", "/usr/lib/jvm/jdk-21/lib/security/cacerts"),
+		true, false, posix())
+	if linux == nil {
+		t.Fatal("no command for a Java store on Linux")
+	}
+	if strings.Contains(linux.Caveat, "PowerShell") {
+		t.Errorf("the Linux line warns about PowerShell: %q", linux.Caveat)
 	}
 }
 

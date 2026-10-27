@@ -236,6 +236,7 @@ func judgedByAFile(store report.TrustStore, source file.Source, files file.List,
 		store.NotAssessed = fmt.Sprintf("the bundle named by %s could not be read: %v", named, err)
 		return store
 	}
+	store.FileEnd = probe.EndOf(bundle)
 	probe.Verify(&store, bundle, chain, now)
 	probe.WeighDirectories(&store, source, files, probe.CADirectoriesOn(env.Platform), bundle, chain, now,
 		probe.LibcurlDirectorySentences(named, "git"))

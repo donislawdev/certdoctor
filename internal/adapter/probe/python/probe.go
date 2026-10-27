@@ -84,6 +84,12 @@ func (m machine) storeFor(ctx context.Context, in interpreter, chain [][]byte, n
 		return store
 	}
 	m.place(&store, a)
+	if store.StoreForm == report.StoreFile {
+		// THE INTERPRETER READ THE FILE AND HANDED BACK ITS CERTIFICATES, not its
+		// bytes, so the end the append command depends on is read here - ADR114
+		// B13.
+		store.FileEnd = probe.ReadEndOf(m.source, store.StorePath)
+	}
 	dirs, relative := m.directories(a)
 	directory, stopped, err := probe.HashedAnchors(m.source, m.files, dirs)
 	judge(&store, a, a.bundle(directory), chain, now)

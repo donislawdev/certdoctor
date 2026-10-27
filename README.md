@@ -117,7 +117,8 @@ command rather than carrying one of their own. An excerpt from a Windows machine
         run: "C:\Program Files\OpenJDK\jdk-21.0.2\bin\keytool" -importcert -trustcacerts -keystore "C:\Program Files\OpenJDK\jdk-21.0.2\lib\security\cacerts" -storepass changeit -alias "<alias>" -file "<certificate.pem>"
         replace first: <alias>, <certificate.pem>
         note: installing a newer build of this runtime brings its own store and does not carry this
-              certificate across
+              certificate across, and the line is for the Command Prompt (cmd.exe) - PowerShell runs
+              it only with & and a space put before it
       curl C:\Windows\system32\curl.exe does NOT trust the presented chain (90 anchors) - it judges
         by system-store CurrentUser, which refuses it  detected
 ```

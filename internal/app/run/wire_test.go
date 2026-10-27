@@ -527,6 +527,7 @@ func TestWhetherTheChainWasWholeCrossesTheSameSeamAsTheChain(t *testing.T) {
 			TrustsPresentedChain: &no,
 			TrustFailure:         report.UnknownAuthority,
 			SelectedBy:           []string{},
+			FileEnd:              report.FileEndLineBreak,
 		}}, nil
 	}
 

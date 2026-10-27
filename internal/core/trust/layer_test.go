@@ -30,6 +30,8 @@ func aStore(runtime, instance string, trusts *bool, why string) report.TrustStor
 		TrustsPresentedChain: trusts,
 		NotAssessed:          why,
 		SelectedBy:           []string{},
+		// The bundle ends with a line break, as every measured one does.
+		FileEnd: report.FileEndLineBreak,
 	}
 	// A refusal has to say which way, and the fixture obeys the contract rather
 	// than working around it - the same call the anchor count above got.

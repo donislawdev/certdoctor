@@ -305,15 +305,17 @@ func (in Input) findingsFrom(rows []row, whole, closed bool) []report.Finding {
 			// carrying one has passed through the branch that says it was
 			// refused. A probe filling this in itself would be a probe producing
 			// a verdict, which ADR7 keeps out of the adapters.
-			var unwritable string
-			r.store.Fix, unwritable = fixFor(r.store, whole, closed, in.Machine)
+			var withheld string
+			r.store.Fix, withheld = fixFor(r.store, whole, closed, in.Machine)
 			// A REFUSED COMMAND SAYS SO ON THE ROW, AND AN ORDINARY nil DOES NOT.
 			// "No command" is the usual answer and needs no sentence - ADR51 -
 			// but "there is a command for this and we will not write it" is a
 			// different fact, and leaving it silent would be rule 1 broken in the
-			// one place this program tells somebody to do something. ADR59.
-			if unwritable != "" {
-				r.summary = summaryOf(r.store) + " - " + unwritable
+			// one place this program tells somebody to do something. ADR59 for a
+			// path no shell reads safely, ADR114 B13 for a file an append would
+			// break.
+			if withheld != "" {
+				r.summary = summaryOf(r.store) + " - " + withheld
 			}
 		}
 		findings = append(findings, r.finding())

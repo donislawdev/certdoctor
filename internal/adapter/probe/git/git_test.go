@@ -403,6 +403,35 @@ func TestABundleWithoutTheAnchorDoesNotTrustTheChain(t *testing.T) {
 	}
 }
 
+// The row says how the bundle it read ends, from the bytes it read - ADR114 B13.
+// The command appends to that file, and a file ending mid-line gets none.
+func TestTheRowSaysHowTheBundleItReadEnds(t *testing.T) {
+	otherPEM, _ := anchorAndLeaf(t)
+	_, leafDER := anchorAndLeaf(t)
+	cases := []struct {
+		name   string
+		bundle string
+		want   report.FileEnd
+	}{
+		{"ending with a line feed", string(otherPEM), report.FileEndLineBreak},
+		{"ending mid-line", strings.TrimSuffix(string(otherPEM), "\n"), report.FileEndMidLine},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			source := sourceOf(map[string]string{"/bundle.crt": c.bundle})
+			store := storeFor(t.Context(), probe.Ports{Source: source}, noFiles,
+				Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settingsFor("/bundle.crt"), Environment{},
+				[][]byte{leafDER}, atNoon())
+			if store.TrustsPresentedChain == nil {
+				t.Fatalf("the bundle was not read, so its end says nothing: %s", store.NotAssessed)
+			}
+			if store.FileEnd != c.want {
+				t.Errorf("FileEnd %d, want %d", store.FileEnd, c.want)
+			}
+		})
+	}
+}
+
 // AN UNREADABLE BUNDLE IS UNKNOWN WITH A REASON, NEVER A FAILURE TO TRUST -
 // inviolable rule 15. It is also a real diagnosis: the file port refuses a path
 // that would leave this machine, so "your bundle is on a file server" arrives

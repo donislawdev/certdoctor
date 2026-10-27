@@ -218,6 +218,33 @@ func TestARefusalStandsWhenTheDirectoriesCloseNothing(t *testing.T) {
 	}
 }
 
+// The row says how the bundle it read ends, from the bytes it read - ADR114 B13.
+// The command appends to that file, and a file ending mid-line gets none.
+func TestTheRowSaysHowTheBundleEnds(t *testing.T) {
+	ours, other := anAuthority(t, "ours"), anAuthority(t, "other")
+	cases := []struct {
+		name   string
+		bundle []byte
+		want   report.FileEnd
+	}{
+		{"ending with a line feed", pemOf(other.certificate), report.FileEndLineBreak},
+		{"ending mid-line", bytes.TrimSuffix(pemOf(other.certificate), []byte("\n")), report.FileEndMidLine},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := newDisk()
+			d.files[debianBundle] = c.bundle
+			store := runOn(t, d, linuxLayout, [][]byte{aLeaf(t, ours, leafOptions{}).Raw})
+			if !isRefused(store, report.UnknownAuthority) {
+				t.Fatalf("got %+v, want a refusal for want of a signer", store)
+			}
+			if store.FileEnd != c.want {
+				t.Errorf("FileEnd %d, want %d", store.FileEnd, c.want)
+			}
+		})
+	}
+}
+
 // A CERTIFICATE ONLY A DIRECTORY HOLDS turns the refusal into undetermined, and
 // the sentence names the directory that closed it - decided by the owner
 // 2026-10-15, because some programs here trust that chain and some do not.

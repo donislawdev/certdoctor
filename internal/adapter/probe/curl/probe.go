@@ -186,6 +186,7 @@ func judgedByAFile(ctx context.Context, store report.TrustStore, ports probe.Por
 		store.NotAssessed = fmt.Sprintf("the bundle named by %s could not be read: %v", variable, err)
 		return store
 	}
+	store.FileEnd = probe.EndOf(bundle)
 	probe.Verify(&store, bundle, chain, now)
 	probe.WeighDirectories(&store, ports.Source, files, probe.CADirectoriesOn(env.Platform), bundle, chain, now,
 		probe.LibcurlDirectorySentences(variable, "curl"))

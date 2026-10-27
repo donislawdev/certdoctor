@@ -79,6 +79,12 @@ func storeFor(ctx context.Context, ports probe.Ports, binary string, env Environ
 	}
 
 	probe.VerifySelfSignedAnchors(&store, a.bundle(a.Lists.Default), chain, now)
+	if len(a.Lists.Extra) > 0 {
+		// THE FILE A COMMAND WOULD ADD TO IS THE ONE NODE_EXTRA_CA_CERTS NAMES,
+		// and node read it, not this program - so its end is read here - ADR114
+		// B13. Only a file node took certificates from gets a command at all.
+		store.FileEnd = probe.ReadEndOf(ports.Source, env.ExtraCACerts)
+	}
 	store.SelectedBy = selectedBy(a, flags, env)
 	store.PlatformListCloses = store.TrustFailure == report.UnknownAuthority && systemListCloses(a, flags, env, chain, now)
 	return store

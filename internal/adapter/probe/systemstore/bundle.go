@@ -108,6 +108,7 @@ func assess(store *report.TrustStore, source file.Source, files file.List, l lay
 		store.NotAssessed = fmt.Sprintf("the CA bundle at %s could not be read: %v", path, err)
 		return
 	}
+	store.FileEnd = probe.EndOf(bundle)
 	probe.Verify(store, bundle, chain, at)
 	probe.WeighDirectories(store, source, files, l.directories, bundle, chain, at, directorySentences)
 }

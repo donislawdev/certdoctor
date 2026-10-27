@@ -10,6 +10,23 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - an append command waits for a line break, and keytool says which shell it is for
+
+- **A store file that does not end with a line break gets no append
+  command.** The command joins bytes and nothing else, so the certificate's
+  first line would have continued the file's last line, and neither the
+  certificate ending there nor the one added would have been read - the
+  store would have lost a certificate rather than gained one. The row now
+  says why it has no command and what to do: end the file with a line break
+  and run certdoctor again. This covers every row whose command appends to a
+  file - curl, git, python reading a file, the Linux system store, and node
+  adding to the file NODE_EXTRA_CA_CERTS names. Where certdoctor could not
+  read the end of that file, it offers no command either, and says so.
+- **The keytool command on Windows says it is for the Command Prompt.** It
+  begins with the path to keytool in quotes, which cmd.exe runs and
+  PowerShell prints as text. Its note now says so, and that PowerShell runs
+  the same line with & and a space put before it.
+
 ### Changed - who signed a certificate is said as a count, and a wrong name comes first
 
 - **The sentence about who signed a certificate counts the stores

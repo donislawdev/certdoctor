@@ -1066,6 +1066,22 @@ type TrustStore struct {
 	// schema later is a MINOR change, and taking it out after a release would
 	// not be.
 	PlatformListCloses bool
+	// FileEnd says how the file an appended certificate would land in ends -
+	// StorePath, or for node the file NODE_EXTRA_CA_CERTS names - ADR114 B13.
+	//
+	// A PEM BLOCK HAS TO START A LINE. Appending is a plain concatenation of
+	// bytes, so after a file whose last line has no line break the new block's
+	// BEGIN line runs on from the old block's END line. Measured 2026-10-27: one
+	// certificate without its last line feed, joined with a second, gave Go's
+	// encoding/pem and OpenSSL 3.5.9 (storeutl) no certificate at all, where the
+	// same two with the line feed gave two. The same day sixteen bundles shipped
+	// on the owner's machine all ended with a line feed, so this is a file
+	// somebody made or edited by hand.
+	//
+	// IT IS AN INPUT TO THE COMMAND AND NOT PART OF THE JSON, as
+	// PlatformListCloses is not. The sentence a withheld command leaves on the
+	// row carries the fact to every surface.
+	FileEnd FileEnd
 	// Fix is the command that would make THIS store accept THIS chain, and is
 	// nil whenever there is nothing honest to say.
 	//
@@ -1225,6 +1241,27 @@ var storeFormMeanings = map[StoreForm]string{
 	StoreSystem:  "the platform's own store, which has no path to point at",
 	StoreBuiltin: "a list compiled into the program, which has no path to point at",
 }
+
+// FileEnd says how the file a command would append a certificate to ends -
+// ADR114 B13, decided by the owner. It is a fact for the command, not part of
+// the JSON.
+//
+// THE ZERO VALUE IS "NOBODY LOOKED", AND IT GETS NO COMMAND. A probe that never
+// read the end of its file is a probe that cannot vouch for the append, so a
+// probe forgetting this field costs a command rather than handing out one that
+// breaks a store.
+type FileEnd int
+
+const (
+	// FileEndUnseen - the end of the file was not read, or could not be.
+	FileEndUnseen FileEnd = iota
+	// FileEndLineBreak - the file is empty or its last byte is a line feed, so
+	// what is appended starts a line of its own.
+	FileEndLineBreak
+	// FileEndMidLine - the last byte is anything else, so what is appended
+	// continues the file's last line.
+	FileEndMidLine
+)
 
 // RuntimeSystemStore is the runtime a row carries when it answers for the
 // platform's OWN store rather than for a program that reads one - ADR103.

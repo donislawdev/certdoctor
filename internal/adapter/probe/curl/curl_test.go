@@ -455,6 +455,34 @@ func TestARefusalByTheNamedFileIsWeighedAgainstTheBuildsDirectories(t *testing.T
 	}
 }
 
+// The row says how the bundle it read ends, from the bytes it read - ADR114 B13.
+// The command appends to that file, and a file ending mid-line gets none.
+func TestTheRowSaysHowTheBundleItReadEnds(t *testing.T) {
+	other := pemOf(leafNaming(t, nil, nil))
+	cases := []struct {
+		name   string
+		bundle []byte
+		want   report.FileEnd
+	}{
+		{"ending with a line feed", other, report.FileEndLineBreak},
+		{"ending mid-line", bytes.TrimSuffix(other, []byte("\n")), report.FileEndMidLine},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			source, files := diskOf(map[string][]byte{"/bundle.crt": c.bundle}, nil)
+			store := storeFor(context.Background(), probe.Ports{Run: versionSaying(opensslLine), Source: source}, files,
+				Install{Path: "/usr/bin/curl"}, [][]byte{leafNaming(t, nil, nil)},
+				Environment{Platform: "windows", CABundle: "/bundle.crt"}, atNoon())
+			if store.TrustsPresentedChain == nil {
+				t.Fatalf("the bundle was not read, so its end says nothing: %+v", store)
+			}
+			if store.FileEnd != c.want {
+				t.Errorf("FileEnd %d, want %d", store.FileEnd, c.want)
+			}
+		})
+	}
+}
+
 // opensslLine is a version line of a file-reading build.
 const opensslLine = "curl 8.21.0 (x86_64-pc-linux-gnu) libcurl/8.21.0 OpenSSL/3.5.7 zlib/1.3.2"
 

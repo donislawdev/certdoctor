@@ -293,6 +293,58 @@ func TestEachRowWithoutAVerdictSaysWhy(t *testing.T) {
 	}
 }
 
+// node read the file NODE_EXTRA_CA_CERTS names, not this program, so the probe
+// reads its end for the command that would append to it - ADR114 B13 - and only
+// when node took certificates from it, the one case that command is for.
+func TestTheRowSaysHowTheExtraFileEnds(t *testing.T) {
+	b := newBench(t)
+	extraPath := filepath.FromSlash("/etc/ssl/extra.pem")
+	whole := pemOf(b.other)
+	cases := []struct {
+		name    string
+		content *string
+		extra   [][]byte
+		want    report.FileEnd
+	}{
+		{"a file ending with a line feed", &whole, [][]byte{b.other}, report.FileEndLineBreak},
+		{"a file ending mid-line", ptr(strings.TrimSuffix(whole, "\n")), [][]byte{b.other}, report.FileEndMidLine},
+		{"a file this program cannot read", nil, [][]byte{b.other}, report.FileEndUnseen},
+		{"a file node took nothing from", &whole, nil, report.FileEndUnseen},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			source := func(path string) (io.ReadCloser, error) {
+				switch filepath.Clean(path) {
+				case firstNode:
+					return io.NopCloser(strings.NewReader("binary")), nil
+				case extraPath:
+					if c.content != nil {
+						return io.NopCloser(strings.NewReader(*c.content)), nil
+					}
+				}
+				return nil, errors.New("no such file")
+			}
+			var calls []call
+			var asked []string
+			out := probe.Output{Stdout: answerOf(t, "v26.9.0", [][]byte{b.other}, nil, c.extra)}
+			stores, err := Probe(source, nil, starting(replying(out, nil, &calls), &asked), []string{firstDir},
+				Environment{Platform: "linux", ExtraCACerts: extraPath}, atNoon)(context.Background(),
+				[][]byte{b.leaf, b.inter})
+			if err != nil || len(stores) != 1 {
+				t.Fatalf("%d row(s), error %v", len(stores), err)
+			}
+			if stores[0].TrustFailure != report.UnknownAuthority {
+				t.Fatalf("got %+v, want a refusal for want of a signer", stores[0])
+			}
+			if stores[0].FileEnd != c.want {
+				t.Errorf("FileEnd %d, want %d", stores[0].FileEnd, c.want)
+			}
+		})
+	}
+}
+
+func ptr(s string) *string { return &s }
+
 // SELECTED BY NAMES WHAT THE LIST SHOWS, not what the environment says - a node
 // that ignores NODE_USE_SYSTEM_CA was not changed by it.
 func TestSelectedByNamesWhatTheListShows(t *testing.T) {

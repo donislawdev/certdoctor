@@ -132,9 +132,9 @@ func fixFor(store report.TrustStore, chainComplete, closedElsewhere bool, m Mach
 	case "java":
 		return javaFix(store, m, elevated, why)
 	case "curl", "git":
-		command, ok := appendPEM(store.StorePath, m.OS)
-		if !ok {
-			return nil, unwritablePath
+		command, withheld := appendPEM(store.StorePath, store.FileEnd, m.OS)
+		if withheld != "" {
+			return nil, withheld
 		}
 		return &report.Fix{
 			Command:           command,
@@ -165,6 +165,10 @@ func javaFix(store report.TrustStore, m Machine, elevated bool, why string) (*re
 	if !keytoolOK || !pathOK || !aliasOK || !certificateOK {
 		return nil, unwritablePath
 	}
+	caveat := "installing a newer build of this runtime brings its own store and does not carry this certificate across"
+	if m.OS == "windows" {
+		caveat += ", and " + powerShellCall
+	}
 	return &report.Fix{
 		Command: fmt.Sprintf(`%s -importcert -trustcacerts -keystore %s -storepass changeit -alias %s -file %s`,
 			keytool, storePath, alias, certificate),
@@ -173,9 +177,30 @@ func javaFix(store report.TrustStore, m Machine, elevated bool, why string) (*re
 		Elevation:         why,
 		// The password is the default one this store was just READ with, so it
 		// is measured rather than assumed - and it is not a secret.
-		Caveat: "installing a newer build of this runtime brings its own store and does not carry this certificate across",
+		Caveat: caveat,
 	}, ""
 }
+
+// powerShellCall says where the Windows keytool command can be pasted as it
+// stands - ADR114 B14, decided by the owner.
+//
+// THE COMMAND BEGINS WITH A QUOTED PATH, which the Command Prompt runs and
+// PowerShell reads as a string. "If you try to execute the quoted path,
+// PowerShell displays the contents of the quoted string instead of running the
+// script. The call operator allows you to execute the contents of the string" -
+// about_Operators, Call operator, read 2026-10-27 at
+// https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_operators
+// Measured the same day with this command's shape, -list in place of
+// -importcert so nothing was changed: cmd.exe ran keytool, the PowerShell parser
+// of 7.6.8 and of 5.1 refused the line with two UnexpectedToken errors, and with
+// "& " in front 7.6.8 ran keytool with every argument as written.
+//
+// A CAVEAT AND NOT A SECOND FORM. A form starting with "& " fails in the Command
+// Prompt instead - measured the same day, "& was unexpected at this time" - and
+// a form for each shell is a template change the owner did not take, since it
+// needs probe S18 measured again in five shells.
+const powerShellCall = "the line is for the Command Prompt (cmd.exe) - PowerShell runs it only with & and a space " +
+	"put before it"
 
 // platformStoreFix is the command that adds one root to the Windows store this
 // row answered for - ADR103, decided by the owner 2026-10-14.
@@ -276,9 +301,9 @@ func pythonFix(store report.TrustStore, m Machine) (*report.Fix, string) {
 		return thisAccountsRootFix(certificate, "Windows asks for confirmation in a dialog before it adds a root to "+
 			"this account's store, and a Python program reads the stores again each time it makes a TLS context"), ""
 	case store.StoreForm == report.StoreFile && store.StorePath != "":
-		command, ok := appendPEM(store.StorePath, m.OS)
-		if !ok {
-			return nil, unwritablePath
+		command, withheld := appendPEM(store.StorePath, store.FileEnd, m.OS)
+		if withheld != "" {
+			return nil, withheld
 		}
 		elevated, why := elevationFor(store.StorePath, m)
 		return &report.Fix{
@@ -313,9 +338,9 @@ func distributionBundleFix(store report.TrustStore, m Machine) (*report.Fix, str
 	if store.StorePath == "" {
 		return nil, ""
 	}
-	command, ok := appendPEM(store.StorePath, m.OS)
-	if !ok {
-		return nil, unwritablePath
+	command, withheld := appendPEM(store.StorePath, store.FileEnd, m.OS)
+	if withheld != "" {
+		return nil, withheld
 	}
 	elevated, why := elevationFor(store.StorePath, m)
 	return &report.Fix{
@@ -431,9 +456,9 @@ func nodeExtraFileFix(store report.TrustStore, m Machine) (*report.Fix, string) 
 		return nil, fmt.Sprintf("no command is offered for it: NODE_EXTRA_CA_CERTS names %s, a relative path that "+
 			"each node looks up from wherever it starts", m.NodeExtraCACerts)
 	}
-	command, ok := appendPEM(m.NodeExtraCACerts, m.OS)
-	if !ok {
-		return nil, unwritablePath
+	command, withheld := appendPEM(m.NodeExtraCACerts, store.FileEnd, m.OS)
+	if withheld != "" {
+		return nil, withheld
 	}
 	elevated, why := elevationFor(m.NodeExtraCACerts, m)
 	return &report.Fix{
@@ -465,16 +490,30 @@ func absoluteOn(platform, path string) bool {
 // alternative, a ">>" redirection, is written by whichever shell the person
 // happens to be in - and Windows PowerShell 5.1 writes UTF-16, which turns a
 // certificate bundle into a file no TLS library will read.
-func appendPEM(storePath, platform string) (string, bool) {
+//
+// THE FILE'S END IS ASKED HERE, SO NO CALLER CAN SKIP IT - ADR114 B13. Both forms
+// join bytes and nothing else, so a file whose last line has no line break
+// would come out with one line ending the old block and beginning the new, and
+// the store would lose its last certificate along with the one added. The
+// templates stay as they are - a form adding the line break itself would change
+// every command for a rare file, and needs the five shells of probe S18
+// measured again. The second answer is the sentence a withheld command leaves
+// on the row, and is empty when there is a command.
+func appendPEM(storePath string, end report.FileEnd, platform string) (string, string) {
 	path, pathOK := quoteFor(platform, storePath)
 	certificate, certificateOK := quoteFor(platform, certificatePlaceholder)
-	if !pathOK || !certificateOK {
-		return "", false
+	switch {
+	case !pathOK || !certificateOK:
+		return "", unwritablePath
+	case end == report.FileEndMidLine:
+		return "", endsMidLine
+	case end != report.FileEndLineBreak:
+		return "", endUnseen
 	}
 	if platform == "windows" {
-		return fmt.Sprintf(`cmd /c copy /b %s+%s %s`, path, certificate, path), true
+		return fmt.Sprintf(`cmd /c copy /b %s+%s %s`, path, certificate, path), ""
 	}
-	return fmt.Sprintf(`cat %s >> %s`, certificate, path), true
+	return fmt.Sprintf(`cat %s >> %s`, certificate, path), ""
 }
 
 // keytoolBeside names the keytool belonging to THIS installation rather than
@@ -547,6 +586,18 @@ func within(path, directory, os string) bool {
 // nil answer, which needs no explanation, so it says which of the two happened.
 const unwritablePath = "no command is offered for it: the path holds a character that a shell would read as an " +
 	"instruction rather than as part of a name, and a line this program cannot write safely is not written at all"
+
+// endsMidLine and endUnseen are the sentences for a file an append cannot be
+// trusted with - ADR114 B13. The first is a fact about the file, and says what
+// a person can do about it. The second says this program did not see the end,
+// which is not the same as the file being wrong.
+const (
+	endsMidLine = "no command is offered for it: the file does not end with a line break, so a certificate appended " +
+		"to it would continue its last line, and neither the certificate ending there nor the one appended would be " +
+		"read - end the file with a line break and run this again"
+	endUnseen = "no command is offered for it: a certificate appended to the file starts a line of its own only when " +
+		"the file ends with a line break, and this program could not read the file to see whether it does"
+)
 
 // windowsMetacharacters are the characters that quoting on Windows does NOT
 // make literal, so a path carrying one gets no command at all - ADR59.
