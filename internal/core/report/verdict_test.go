@@ -64,6 +64,14 @@ func signer(summary string, held AnchorHolding) Finding {
 	return Finding{Kind: FindingSigningAuthority, Summary: summary, SigningAuthority: &SigningAuthority{Issuer: "x", HeldBy: held}}
 }
 
+// unheld is the signer of nobodyHolds: refused by the two stores that sentence
+// counts, listed the way the trust layer lists them - one name per file.
+func unheld() Finding {
+	f := signer(nobodyHolds, HeldByNoStores)
+	f.SigningAuthority.RefusingStores = []string{"curl", "git"}
+	return f
+}
+
 // inspected is a signer whose name matched the list of inspection products.
 func inspected(summary string, held AnchorHolding) Finding {
 	f := signer(summary, held)
@@ -96,9 +104,11 @@ const (
 	l4Incomplete    = "the server presented 1 certificate(s) and did not send the issuer of the first one, so only a client that already holds it can build a path"
 	serverWithheld  = "The server presented 1 certificate(s) and did not send the issuer of the first one, so only a client that already holds it can build a path, and none of the 2 store(s) assessed here built one - this is a fact about the server rather than about this machine"
 	l5TwoRefuse     = "2 of 3 store(s) do not trust the presented chain"
-	middlebox       = "mitmproxy signed this certificate and is an authority local to this machine - 1 store(s) here hold it and 1 do not - and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server"
-	nobodyHolds     = "certdoctor testbed intermediate signed this certificate, and no store on this machine holds an anchor for it"
-	unheldMiddlebox = "mitmproxy signed this certificate, and no store on this machine holds an anchor for it - and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server"
+	middlebox       = "mitmproxy signed this certificate, and 1 store(s) assessed here hold an anchor for it and 1 do not - and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server"
+	nobodyHolds     = "certdoctor testbed intermediate signed this certificate, and none of the 2 store(s) assessed here holds an anchor for it"
+	unheldMiddlebox = "mitmproxy signed this certificate, and none of the 2 store(s) assessed here holds an anchor for it - and that issuer names mitmproxy, a TLS inspection product, so this connection is being intercepted and re-signed between here and the server"
+	companySigner   = "Example Corp Root CA signed this certificate, and 1 store(s) assessed here hold an anchor for it and 1 do not"
+	l4OtherName     = "the server presented a certificate for other.example.com, and that does not cover registry.example.com - clients refuse that whatever they trust, so this is a fact about the server or about the name used to reach it"
 	wantsCreds      = "the proxy this URL goes through demands credentials before it will pass a request, and this run offered none - so whether this URL can be reached through it was not established"
 	noBundle        = "there is no CA bundle at any of the places Go and the common distributions keep one, so this platform has no store to judge the chain with - on Debian and Ubuntu the ca-certificates package is what installs it"
 	notFetched      = "the issuer this chain needs is on this machine's copy of Microsoft's root program list and is not installed yet - Windows fetches such a root when it first needs one and this program does not, so whether this store would trust the chain is undetermined"
@@ -174,7 +184,7 @@ var causeScenarios = []struct {
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
 			row(layer.Proxy, status.Pass, "", Finding{Kind: FindingProxyChallenge, Summary: "asked"}), pass(layer.TCP),
 			withheld(),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
 		want: serverWithheld + ", but that was measured on the direct route, and a proxy applies to this URL - a " +
 			"program set to use it goes through the proxy instead. Warnings in 1 of 6 diagnostic layers.",
@@ -191,7 +201,7 @@ var causeScenarios = []struct {
 		name: "S-5 the server forgot its intermediate: every trust row is red and the server is still to blame",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			withheld(),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
 		want: serverWithheld + ". Warnings in 1 of 6 diagnostic layers.",
 	},
@@ -210,10 +220,34 @@ var causeScenarios = []struct {
 		want: "2 of 3 store(s) do not trust the presented chain - a certificate in the path is past its validity. Warnings in 1 of 6 diagnostic layers.",
 	},
 	{
+		name: "a chain without its issuer that one store refused on its dates: that store built a path first, so the server is not blamed - ADR114",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			withheld(),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority), storeRefusing("java", Expired))},
+		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
+		name: "a chain without its issuer, no_stores on the signer's row and a row that trusts it - two rows over one file judged differently: that row built a path, so the server is not blamed",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			withheld(),
+			row(layer.TrustMatrix, status.Fail, "2 of 3 store(s) do not trust the presented chain", unheld(),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority), storeTrusting("python"))},
+		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
+		name: "S-5 with two rows over one file: the server sentence counts the stores the signer's row counts, decided by the owner 2026-10-27",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			withheld(),
+			row(layer.TrustMatrix, status.Fail, "3 of 3 store(s) do not trust the presented chain", unheld(),
+				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
+		want: serverWithheld + ". Warnings in 1 of 6 diagnostic layers.",
+	},
+	{
 		name: "a whole chain warned about for its name and refused by every store: no issuer is said to be missing",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			row(layer.TLS, status.Warn, "the certificate names legacy.example.com only in its common name", handshakeRow(true)),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
 		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
 	},
@@ -230,7 +264,7 @@ var causeScenarios = []struct {
 			row(layer.TLS, status.Warn, "the certificate names legacy.example.com only in its common name",
 				Finding{Kind: FindingTLSHandshake, TLSHandshake: &TLSHandshake{NotCompleted: "the server did not complete a TLS handshake"}},
 				handshakeRow(true)),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
 		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
 	},
@@ -238,7 +272,7 @@ var causeScenarios = []struct {
 		name: "an L4 warning with no row carrying a chain: nothing is said about an issuer",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			row(layer.TLS, status.Warn, l4Incomplete),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
 		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
 	},
@@ -250,10 +284,17 @@ var causeScenarios = []struct {
 		want: "The certificate does not cover wrong.host.example.",
 	},
 	{
+		name: "a leaf for another name on the direct route while a proxy applies: L4 is the cause and says which route it measured - ADR114",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
+			row(layer.Proxy, status.Pass, "", Finding{Kind: FindingProxyChallenge, Summary: "asked"}), pass(layer.TCP),
+			row(layer.TLS, status.Fail, l4OtherName, handshakeRow(true)), pass(layer.TrustMatrix)},
+		want: "The server presented a certificate for other.example.com, and that does not cover registry.example.com - clients refuse that whatever they trust, so this is a fact about the server or about the name used to reach it, but that was measured on the direct route, and a proxy applies to this URL - a program set to use it goes through the proxy instead.",
+	},
+	{
 		name: "a chain without its issuer and an L4 row with no sentence: nothing is quoted that was not written",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			row(layer.TLS, status.Warn, "", handshakeRow(false)),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
 		want: nobodyHolds + ". Warnings in 1 of 6 diagnostic layers.",
 	},
@@ -277,14 +318,37 @@ var causeScenarios = []struct {
 		name: "S-3 and S-6 an honest server under a company authority: which runtimes lack the anchor, with counts where a runtime has several stores",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
 			row(layer.TrustMatrix, status.Fail, "4 of 6 store(s) do not trust the presented chain",
-				signer("Example Corp Root CA signed this certificate and is an authority local to this machine - 2 store(s) here hold it and 4 do not", HeldBySomeStores),
+				signer("Example Corp Root CA signed this certificate, and 2 store(s) assessed here hold an anchor for it and 4 do not", HeldBySomeStores),
 				storeTrusting("curl"), storeRefusing("git", UnknownAuthority), storeTrusting("java"), storeRefusing("java", UnknownAuthority), storeRefusing("java", UnknownAuthority), storeRefusing("java", UnknownAuthority))},
-		want: "Example Corp Root CA signed this certificate and is an authority local to this machine - 2 store(s) here hold it and 4 do not. Without it: git, java (3 of 4).",
+		want: "Example Corp Root CA signed this certificate, and 2 store(s) assessed here hold an anchor for it and 4 do not. Without it: git, java (3 of 4).",
+	},
+	{
+		name: "B04 a leaf for another name under an authority some stores hold: L4 is the cause, because importing the authority fixes no name - ADR114",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Fail, l4OtherName, handshakeRow(true)),
+			row(layer.TrustMatrix, status.Fail, "1 of 2 store(s) do not trust the presented chain", signer(companySigner, HeldBySomeStores),
+				storeTrusting("curl"), storeRefusing("git", UnknownAuthority))},
+		want: "The server presented a certificate for other.example.com, and that does not cover registry.example.com - clients refuse that whatever they trust, so this is a fact about the server or about the name used to reach it. Failures in 2 of 6 diagnostic layers.",
+	},
+	{
+		name: "B04 a leaf for another name from a named inspection product: the product leads, because the leaf came from it and not from the server - ADR114",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Fail, l4OtherName, handshakeRow(true)),
+			row(layer.TrustMatrix, status.Fail, "1 of 2 store(s) do not trust the presented chain", inspected(middlebox, HeldBySomeStores),
+				storeTrusting("curl"), storeRefusing("git", UnknownAuthority))},
+		want: middlebox + ". Without it: git. Failures in 2 of 6 diagnostic layers.",
+	},
+	{
+		name: "B04 an authority some stores hold, with a leaf that covers the name: the split is still the cause - ADR114",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Fail, "1 of 2 store(s) do not trust the presented chain", signer(companySigner, HeldBySomeStores),
+				storeTrusting("curl"), storeRefusing("git", UnknownAuthority))},
+		want: companySigner + ". Without it: git.",
 	},
 	{
 		name: "a private root nobody here holds, chain complete: the signer is named and no runtime is listed",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority))},
 		want: nobodyHolds + ".",
 	},
@@ -355,7 +419,7 @@ var causeScenarios = []struct {
 		name: "S-5 with the platform's row undetermined: a failure outranks it, the server is still to blame, and only the assessed stores are counted",
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
 			withheld(),
-			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores),
+			row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(),
 				storeRefusing("curl", UnknownAuthority), storeRefusing("git", UnknownAuthority),
 				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))},
 		want: serverWithheld + ". Warnings in 1 of 6 diagnostic layers.",
@@ -365,13 +429,19 @@ var causeScenarios = []struct {
 		rows: []LayerResult{pass(layer.Context), row(layer.Resolution, status.Fail, ""), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS), pass(layer.TrustMatrix)},
 		want: "Failures in 1 of 6 diagnostic layers.",
 	},
+	{
+		name: "a failing trust matrix with no detail and no signer: the count stands in rather than a lone full stop",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP), pass(layer.TLS),
+			row(layer.TrustMatrix, status.Fail, "", storeRefusing("curl", Expired))},
+		want: "Failures in 1 of 6 diagnostic layers.",
+	},
 }
 
 // TestTheDecisiveLayerIsFoundByIdentityNotByPosition: the validator hands the
 // fold whatever order the report holds, so the answer must not depend on it.
 func TestTheDecisiveLayerIsFoundByIdentityNotByPosition(t *testing.T) {
 	rows := []LayerResult{
-		row(layer.TrustMatrix, status.Fail, l5TwoRefuse, signer(nobodyHolds, HeldByNoStores), storeRefusing("git", UnknownAuthority)),
+		row(layer.TrustMatrix, status.Fail, l5TwoRefuse, unheld(), storeRefusing("git", UnknownAuthority)),
 		row(layer.TLS, status.Fail, l4Incomplete),
 		row(layer.TCP, status.Pass, ""),
 		row(layer.Resolution, status.Fail, "neither view found an address for this name"),

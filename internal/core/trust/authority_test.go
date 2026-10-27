@@ -88,6 +88,65 @@ func TestTheHoldingIsCountedRatherThanConcluded(t *testing.T) {
 	}
 }
 
+// TestTheSentenceCountsTheStoresAssessedAndNothingBeyondThem is ADR114, decided
+// by the owner: every holding is said as a count of the stores this run
+// assessed, and neither the sentence nor its caveat speaks for a store it never
+// read.
+//
+// THE PHRASES IT FORBIDS WERE ALL PRINTED ONCE. "No store on this machine" and
+// "a browser included" spoke for stores this program does not read - on Linux a
+// browser reads its own - and "an authority local to this machine" is the
+// conclusion ADR53 keeps out of a count: an old Java missing a public root
+// splits the stores the same way and is nobody's local authority.
+//
+// THE COUNTS ARE UNEQUAL ON PURPOSE, so a sentence counting the wrong list
+// prints a different number rather than the same one.
+func TestTheSentenceCountsTheStoresAssessedAndNothingBeyondThem(t *testing.T) {
+	curl := holder("curl", "/usr/bin/curl", "/etc/ssl/certs/ca.crt")
+	cases := []struct {
+		name   string
+		stores []report.TrustStore
+		want   string
+	}{
+		{
+			name:   "every assessed store holds the signer",
+			stores: []report.TrustStore{curl, holder("git", "/usr/bin/git", "/etc/git.crt")},
+			want:   "CN=an authority signed this certificate, and all 2 store(s) assessed here hold an anchor for it",
+		},
+		{
+			name: "one of three holds it",
+			stores: []report.TrustStore{curl, refuser("git", "/usr/bin/git", "/etc/git.crt"),
+				refuser("java", "/opt/jdk", "/opt/jdk/lib/security/cacerts")},
+			want: "CN=an authority signed this certificate, and 1 store(s) assessed here hold an anchor for it and 2 do not",
+		},
+		{
+			name: "none of three holds it",
+			stores: []report.TrustStore{refuser("curl", "/usr/bin/curl", "/etc/ssl/certs/ca.crt"),
+				refuser("git", "/usr/bin/git", "/etc/git.crt"), refuser("java", "/opt/jdk", "/opt/jdk/lib/security/cacerts")},
+			want: "CN=an authority signed this certificate, and none of the 3 store(s) assessed here holds an anchor for it",
+		},
+	}
+	beyond := []string{"on this machine", "local to this machine", "a browser included"}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			finding := authorityOf(aSignedLeaf(), c.stores)
+			if finding == nil {
+				t.Fatal("no row at all, and every case here has stores that were assessed")
+			}
+			if finding.Summary != c.want {
+				t.Errorf("\n got %q\nwant %q", finding.Summary, c.want)
+			}
+			said := finding.Summary + " " + finding.SigningAuthority.Caveat
+			for _, phrase := range beyond {
+				if strings.Contains(said, phrase) {
+					t.Errorf("the row speaks for stores it did not assess with %q: %q", phrase, said)
+				}
+			}
+		})
+	}
+}
+
 // TestNoAccusationIsMadeOnAnyHolding is the assertion the whole slice exists for,
 // and it is written as a word search on purpose.
 //

@@ -1658,16 +1658,19 @@ const (
 	// runtime, which is true of an inspection appliance and equally true of a
 	// company's own certificate authority.
 	HeldBySomeStores AnchorHolding = "some_stores"
-	// HeldByNoStores - nothing here holds it, so nothing here accepts the name.
-	// A browser on this machine would refuse it too, which is worth saying
-	// because it tells the reader this is not a per-runtime problem.
+	// HeldByNoStores - no store that could be assessed holds it, which tells the
+	// reader this is not a per-runtime problem.
+	//
+	// IT SPEAKS FOR THE STORES ASSESSED AND NO OTHERS - ADR114. A browser on
+	// Linux reads its own store, which this program does not, so "a browser
+	// would refuse it too" was a claim about something nobody measured.
 	HeldByNoStores AnchorHolding = "no_stores"
 )
 
 var anchorHoldingMeanings = map[AnchorHolding]string{
 	HeldByAllStores:  "every trust store that could be assessed holds an anchor for this chain",
 	HeldBySomeStores: "some stores here hold an anchor for this chain and others do not",
-	HeldByNoStores:   "no trust store on this machine holds an anchor for this chain",
+	HeldByNoStores:   "no trust store that could be assessed holds an anchor for this chain",
 }
 
 // Valid reports whether this is one of the declared holdings.

@@ -281,8 +281,9 @@ var caveats = map[report.AnchorHolding]string{
 	report.HeldBySomeStores: "TLS inspection looks exactly like this and so does an organisation's own certificate " +
 		"authority, and this program cannot tell those two apart from one connection - the issuer and the " +
 		"fingerprint beside this line are what somebody who can tell them apart would need",
-	report.HeldByNoStores: "nothing on this machine accepts this name, a browser included, so this is not a " +
-		"question of one runtime being configured differently from another",
+	report.HeldByNoStores: "no store assessed here accepts this signer, so this is not a question of one runtime " +
+		"being configured differently from another - a store this program does not read, a browser's own among " +
+		"them, is not covered by that",
 }
 
 // sentenceFor is the one line every surface prints.
@@ -297,6 +298,13 @@ var caveats = map[report.AnchorHolding]string{
 // hides the one thing a person searching for "self signed certificate" needs
 // to recognise. The flag comes from L4, where it was read off the signature, so
 // a certificate merely NAMING itself as issuer does not get the word.
+//
+// EVERY HOLDING IS A COUNT OF THE STORES ASSESSED HERE - ADR114, decided by the
+// owner. "No store on this machine" spoke for stores this program never reads,
+// and on Linux a browser reads its own. "An authority local to this machine"
+// was the conclusion ADR53 keeps out of a count: an old Java missing a public
+// root - the expired DST Root CA X3 - splits the stores exactly the same way and
+// is nobody's local authority.
 func sentenceFor(a report.SigningAuthority, selfSigned bool) string {
 	signed := a.Issuer + " signed this certificate"
 	if selfSigned {
@@ -307,9 +315,10 @@ func sentenceFor(a report.SigningAuthority, selfSigned bool) string {
 		return fmt.Sprintf("%s, and all %d store(s) assessed here hold an anchor for it",
 			signed, len(a.TrustingStores))
 	case report.HeldByNoStores:
-		return signed + ", and no store on this machine holds an anchor for it"
+		return fmt.Sprintf("%s, and none of the %d store(s) assessed here holds an anchor for it",
+			signed, len(a.RefusingStores))
 	default:
-		return fmt.Sprintf("%s and is an authority local to this machine - %d store(s) here hold it and %d do not",
+		return fmt.Sprintf("%s, and %d store(s) assessed here hold an anchor for it and %d do not",
 			signed, len(a.TrustingStores), len(a.RefusingStores))
 	}
 }

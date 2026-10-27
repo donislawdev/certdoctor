@@ -10,6 +10,27 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - who signed a certificate is said as a count, and a wrong name comes first
+
+- **The sentence about who signed a certificate counts the stores
+  certdoctor assessed, and speaks for no other.** It used to say "no store
+  on this machine" and "a browser included", and on Linux a browser reads a
+  store of its own that certdoctor does not. A signer some stores hold and
+  others do not was called "an authority local to this machine", and an old
+  Java missing a public root splits the stores in exactly the same way. The
+  sentence now says how many of the stores assessed here hold an anchor for
+  the signer and how many do not.
+- **A certificate for another name is the cause on the top line, even when
+  only some stores hold its signer.** Adding that signer to the other stores
+  would not make the name fit. A signer whose name is a TLS inspection
+  product still comes first, because the certificate then came from that
+  product and not from the server.
+- **The top line that blames the server for a missing issuer counts stores
+  the way the signer's sentence does**, one for each file they read, so the
+  two never give one phrase two numbers. A store that refused the chain for
+  its dates, its revocation or a rule no longer counts as one that built no
+  path. It built one and judged it, so the server is not blamed then.
+
 ### Changed - addresses that present different chains are a warning
 
 - **When the addresses of one name present different chains, the TLS layer
@@ -31,8 +52,8 @@ Barely diagnosable yet, and there has been no release.
   holding that root builds a path, and such a run used to end on a failure
   that blamed the server. The layer now says that only a client already
   holding the issuer can build a path.
-- **The top line still blames the server when no store on this machine
-  built a path**, and now says how many stores were asked. When one did, the
+- **The top line still blames the server when no store it assessed built
+  a path**, and now says how many stores were asked. When one did, the
   stores that refused are the cause, as for any other chain.
 - **Whether the issuer arrived is decided by its key, not only by its
   name.** A certificate carrying the issuer's name with another key - an

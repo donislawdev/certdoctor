@@ -200,11 +200,19 @@ func tail(counts map[status.Status]int, total int, causeNamed bool) string {
 // on structure alone L4 fails identically for both. What separates them is L5:
 // the middlebox's signer is an authority THIS MACHINE holds in some stores and
 // not in others, while nobody holds the forgetful server's missing issuer.
-// So a local authority held by some stores is asked before L4, and a chain
-// without its issuer that no store here completed is blamed on the server,
-// which is scenario S-5 - every row of the trust matrix red, and the right
-// answer still "do nothing on this machine". Since ADR114 L4 only warns about
-// that chain, so the server is named from the trust rung - issuerWithheld.
+// A chain without its issuer that no store here completed is blamed on the
+// server, which is scenario S-5 - every row of the trust matrix red, and the
+// right answer still "do nothing on this machine". Since ADR114 L4 only warns
+// about that chain, so the server is named from the trust rung - issuerWithheld.
+//
+// A SIGNER NAMED AS AN INSPECTION PRODUCT GOES FIRST, A SPLIT ACROSS STORES
+// AFTER L4 - ADR114, decided by the owner. The split used to outrank L4 because
+// L4 failed a chain without its issuer, and since that is a warning, every L4
+// failure that can stand beside a signer is a leaf that does not cover the
+// name: the other two leave L5 no leaf to name a signer of. Importing an
+// authority into the stores without it fixes no name, so L4 is the cause. A
+// named product still leads, because then the leaf came from the product and
+// not from the server the L4 sentence would be about.
 //
 // Any layer that has no cause of its own here is taken in layer order, in its
 // own words, so that a failure a future layer produces is never reported as a
@@ -218,14 +226,17 @@ func causeOf(results []LayerResult) (string, bool) {
 		return directly(results, r.Detail)
 	}
 	if r, ok := failing(results, layer.TrustMatrix); ok {
-		if authority := localAuthority(r); authority != nil {
-			return authorityCause(r, *authority), true
+		if a := signingAuthority(r); a != nil && a.SigningAuthority.Inspection != nil {
+			return authorityCause(r, *a), true
 		}
 	}
 	if r, ok := failing(results, layer.TLS); ok {
 		return directly(results, r.Detail)
 	}
 	if r, ok := failing(results, layer.TrustMatrix); ok {
+		if a := signingAuthority(r); a != nil && a.SigningAuthority.HeldBy == HeldBySomeStores {
+			return authorityCause(r, *a), true
+		}
 		if withheld, ok := issuerWithheld(results, r); ok {
 			return directly(results, withheld)
 		}
@@ -268,7 +279,7 @@ func directly(results []LayerResult, detail string) (string, bool) {
 }
 
 // issuerWithheld is the verdict over a server that did not send the issuer of
-// its leaf when no store on this machine built a path without it - ADR114,
+// its leaf when no store assessed here built a path without it - ADR114,
 // decided by the owner.
 //
 // L4 WARNS ABOUT A MISSING ISSUER RATHER THAN FAILING, because the bytes cannot
@@ -284,26 +295,39 @@ func directly(results []LayerResult, detail string) (string, bool) {
 // would have spoken, and a layer that did not fail over a chain without its
 // issuer reached that sentence before any other. What is added is the count of
 // stores, and whose fact it is.
+//
+// ONLY A STORE THAT FOUND NO ANCHOR BUILT NO PATH. One refusing for a date, a
+// revocation answer or a rule built the path first and judged what it built,
+// so "none built one" would be untrue beside it - and one refusing for a reason
+// it did not give may have built one too. A store that trusts the chain carries
+// no failure at all, by the row's contract, so the same test turns it away:
+// the signer's row can still say no_stores beside it, when two rows over one
+// file judge differently and the one met first is counted.
+//
+// THE STORES ARE COUNTED THE WAY THE SIGNER'S ROW COUNTS THEM, by the file they
+// read - decided by the owner on 2026-10-27. Two rows over one file are one
+// store there, and one phrase meaning two numbers on one page is what that
+// avoids. The row exists whenever a store was assessed, so its absence means
+// nothing was.
 func issuerWithheld(results []LayerResult, trust LayerResult) (string, bool) {
 	tls, ok := resultOf(results, layer.TLS)
 	if !ok || tls.Detail == "" || !carriesIncompleteChain(tls) {
 		return "", false
 	}
-	assessed := 0
 	for _, f := range trust.Findings {
 		if f.Kind != FindingTrustStore || f.TrustStore == nil || f.TrustStore.TrustsPresentedChain == nil {
 			continue
 		}
-		if *f.TrustStore.TrustsPresentedChain {
+		if f.TrustStore.TrustFailure != UnknownAuthority {
 			return "", false
 		}
-		assessed++
 	}
-	if assessed == 0 {
+	held := signingAuthority(trust)
+	if held == nil {
 		return "", false
 	}
 	return fmt.Sprintf("%s, and none of the %d store(s) assessed here built one - this is a fact about the server rather than about this machine",
-		tls.Detail, assessed), true
+		tls.Detail, len(held.SigningAuthority.RefusingStores)), true
 }
 
 // carriesIncompleteChain says whether the row carrying the chain says the issuer
@@ -380,26 +404,21 @@ func platformStoreUndetermined(results []LayerResult) (string, bool) {
 	return "", false
 }
 
-// localAuthority returns the signing-authority finding of a trust row when it
-// outranks a structural failure in the handshake, for the reason written above
-// causeOf: the signer is an authority local to this machine - held by some
-// stores here and not by others - OR the signer's name is on the list of TLS
-// inspection products this program carries, whatever holds it.
+// signingAuthority returns the signing-authority finding of a trust row that
+// has a sentence to quote, or nil. causeOf asks it twice, for the two rungs
+// written above it.
 //
-// THE SECOND HALF WAS ADDED AFTER A MEASUREMENT, NOT BEFORE. On the bench with
-// mitmproxy's root deployed nowhere, the signer was held by no store, this
-// function said nothing, and the verdict fell through to L4 - "a fact about
-// the server rather than about this machine" - over a row that named mitmproxy
-// as an inspection product. A named product is the most specific cause this
-// program can establish, and inviolable rule 21 lets the word "intercepted"
-// stand exactly when there is such a name. So it leads.
-func localAuthority(r LayerResult) *Finding {
+// A NAMED PRODUCT LEADS WHATEVER HOLDS IT, AND THAT WAS ADDED AFTER A
+// MEASUREMENT. On the bench with mitmproxy's root deployed nowhere, the signer
+// was held by no store, the rung asked only about a split, and the verdict fell
+// through to L4 - "a fact about the server rather than about this machine" -
+// over a row that named mitmproxy as an inspection product. A named product is
+// the most specific cause this program can establish, and inviolable rule 21
+// lets the word "intercepted" stand exactly when there is such a name.
+func signingAuthority(r LayerResult) *Finding {
 	for i := range r.Findings {
 		f := r.Findings[i]
-		if f.Kind != FindingSigningAuthority || f.SigningAuthority == nil || f.Summary == "" {
-			continue
-		}
-		if f.SigningAuthority.HeldBy == HeldBySomeStores || f.SigningAuthority.Inspection != nil {
+		if f.Kind == FindingSigningAuthority && f.SigningAuthority != nil && f.Summary != "" {
 			return &r.Findings[i]
 		}
 	}

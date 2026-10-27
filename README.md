@@ -80,7 +80,7 @@ certdoctor https://incomplete-chain.badssl.com/
 ```
 
 > The server presented 1 certificate(s) and did not send the issuer of the first one, so only a
-> client that already holds it can build a path, and none of the 11 store(s) assessed here built
+> client that already holds it can build a path, and none of the 10 store(s) assessed here built
 > one - this is a fact about the server rather than about this machine.
 
 ```
@@ -88,7 +88,7 @@ certdoctor https://untrusted-root.badssl.com/
 ```
 
 > CN=BadSSL Untrusted Root Certificate Authority,O=BadSSL,L=San Francisco,ST=California,C=US signed
-> this certificate, and no store on this machine holds an anchor for it.
+> this certificate, and none of the 11 store(s) assessed here holds an anchor for it.
 
 ```
 certdoctor https://expired.badssl.com/
