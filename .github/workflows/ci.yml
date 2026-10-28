@@ -399,3 +399,22 @@ jobs:
             echo "FAIL: the binary does not record CGO_ENABLED=0."
             exit 1
           fi
+
+      # THE BILL OF MATERIALS IS WRITTEN FROM THIS BUILD, the way a release will
+      # write it from all five (ADR116). cmd/sbom reads what the binary records
+      # it links and refuses to write a document when a module, a version or the
+      # toolchain is not the one THIRD-PARTY-NOTICES.md names. The notices guard
+      # asks go list that question about the tree, and this asks the artefact.
+      #
+      # It also needs the commit the build recorded, and a build from a tree with
+      # uncommitted changes is refused - so a step before the build that leaves a
+      # file in the checkout stops here, which is the point.
+      #
+      # Run for the runner, not for the matrix target: GOOS and GOARCH are set on
+      # the build step alone.
+      - name: the bill of materials accepts this build
+        shell: bash
+        run: |
+          set -euo pipefail
+          go version -m dist/certdoctor | go run ./cmd/sbom > "$RUNNER_TEMP/certdoctor.spdx.json"
+          echo "$(wc -c < "$RUNNER_TEMP/certdoctor.spdx.json") bytes of SPDX for ${{ matrix.goos }}/${{ matrix.goarch }}"

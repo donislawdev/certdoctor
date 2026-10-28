@@ -19,6 +19,13 @@ packages it links, for each of the five, and fails when a module is missing
 here, when a version here is not the one linked, or when a licence file in the
 tree of a linked package is not reproduced in full under its own heading.
 
+Each section opens with the version every build links and an SPDX licence
+expression that names every text quoted in that section, in the order they
+appear. Two texts in the standard library match no entry on the SPDX License
+List, and they are named `LicenseRef-Sun-fdlibm-2004` and `LicenseRef-Cephes`
+here. The bill of materials that comes with a release is generated from these
+lines and from the builds themselves, and it is refused when the two disagree.
+
 `go.mod` names more modules than these. The others are there because a
 dependency's own `go.mod` names them for its tests and tools, none of them is
 linked, and so none of them is here.
@@ -27,8 +34,11 @@ linked, and so none of them is here.
 
 ## Go standard library and runtime
 
-Version `go1.27.3`. BSD-3-Clause. Every Go program links the runtime and the
-parts of the standard library it uses, so this applies to every build. The text
+Version `go1.27.3`. BSD-3-Clause AND SunPro AND LicenseRef-Sun-fdlibm-2004 AND
+LicenseRef-Cephes AND BSD-1-Clause AND BSD-2-Clause AND MIT. Every Go program
+links the runtime and the parts of the standard library it uses, so this applies
+to every build. The first identifier is the Go project's own licence, and the
+rest are the notices inside the standard library quoted further down. The text
 below is the `LICENSE` file at the root of that Go distribution, and the copies
 of `golang.org/x/crypto`, `golang.org/x/net`, `golang.org/x/sys` and
 `golang.org/x/text` that the standard library carries inside itself are under
@@ -79,7 +89,9 @@ are the ones in the packages certdoctor links, as the source states them.
 #### Sun's fdlibm, by way of FreeBSD, in package `math`
 
 Several functions in `math` are derived from FreeBSD's `msun`, which came from
-Sun's fdlibm. The notice appears in two forms.
+Sun's fdlibm. The notice appears in two forms. The first is `SunPro` on the
+SPDX License List. The second lacks the line naming SunPro, matches no entry
+there, and is `LicenseRef-Sun-fdlibm-2004` here.
 
 ```
 Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
@@ -99,6 +111,9 @@ is preserved.
 ```
 
 #### The Cephes Math Library, in package `math`
+
+No entry on the SPDX License List matches this text, so it is
+`LicenseRef-Cephes` here.
 
 ```
 Cephes Math Library Release 2.8:  June, 2000
@@ -226,8 +241,9 @@ THE SOFTWARE.
 
 ## github.com/dop251/goja
 
-Version `v0.0.0-20261021125811-a6ef56644a78`. MIT. The JavaScript engine that
-evaluates a PAC file, inside a sandbox with a stopwatch and a memory ceiling.
+Version `v0.0.0-20261021125811-a6ef56644a78`. MIT AND SMLNJ AND BSD-3-Clause.
+The JavaScript engine that evaluates a PAC file, inside a sandbox with a
+stopwatch and a memory ceiling.
 
 ```
 Copyright (c) 2016 Dmitry Panov
@@ -251,7 +267,7 @@ Two of its packages, `ftoa` and `ftoa/internal/fast`, turn numbers into text and
 are derived from other projects. Each keeps that project's notice beside it, and
 both packages are linked.
 
-`ftoa/LICENSE_LUCENE`:
+`ftoa/LICENSE_LUCENE`, which is the `SMLNJ` text of the SPDX License List:
 
 ```
 Copyright (C) 1998, 1999 by Lucent Technologies
@@ -314,8 +330,9 @@ Source: <https://github.com/dop251/goja>
 
 ## github.com/dlclark/regexp2/v2
 
-Version `v2.10.1`. MIT. The regular expression engine goja uses, so that a
-regular expression in a PAC file means what it means in a browser.
+Version `v2.10.1`. MIT AND BSD-3-Clause. The regular expression engine goja
+uses, so that a regular expression in a PAC file means what it means in a
+browser.
 
 ```
 The MIT License (MIT)

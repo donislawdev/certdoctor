@@ -237,3 +237,14 @@ github.com/donislawdev/certdoctor/internal/adapter/proxyconf 83
 # (golang/go#81832). That is arithmetic and the upstream report, not a rerun
 # under 1.27.0. The floor is 96 by the owner's decision.
 github.com/donislawdev/certdoctor/internal/adapter/proxyauth 96
+
+# cmd/sbom is the release tool that writes the SPDX bill of materials (ADR116).
+# It never ships, and it still has a floor, because a document that reaches
+# every person who downloads a release is written by it.
+#
+# WHAT THE REMAINDER IS. Two statements are not reached: main, which only hands
+# the process to run, and the error from json.Encoder.Encode, which cannot
+# happen for structs of strings and booleans written to a bytes.Buffer. Measured
+# 2026-10-28 on Windows: 99.2 percent. There is no build tag in this package, so
+# every platform compiles the same files. The floor is that number rounded down.
+github.com/donislawdev/certdoctor/cmd/sbom 99

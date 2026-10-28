@@ -19,6 +19,10 @@ Barely diagnosable yet, and there has been no release.
   included. The binary used to carry the GPL alone. The same text is in
   `THIRD-PARTY-NOTICES.md`, which goes into every release archive, and
   `--help` says where to find it.
+- **Each section of the notices opens with an SPDX licence expression** that
+  names every text quoted in it, so the licences a person reads there are
+  the ones a machine reads in the bill of materials of a release, which is
+  generated from the same lines.
 
 ### Changed - a pip that cannot reach an IP address says so
 
