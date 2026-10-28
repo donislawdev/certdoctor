@@ -433,8 +433,10 @@ through [SECURITY.md](SECURITY.md) instead.
 
 Copyright (C) 2026 DonislawDev. The project is built with an AI-assisted workflow.
 
-Released under the GNU General Public License, version 3. The full text is in [LICENSE](LICENSE), and
-`certdoctor --license` prints it from the binary.
+Released under the GNU General Public License, version 3. The full text is in [LICENSE](LICENSE). The
+binary also contains code by others - the Go runtime and five modules behind the PAC evaluator - and
+their notices are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). `certdoctor --license` prints
+both from the binary.
 
 Reports and any other output you generate with certdoctor belong to you and are not derivative works
 of this program.

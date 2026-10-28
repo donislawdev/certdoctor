@@ -1,6 +1,6 @@
-// Package certdoctor carries the two facts about this binary that cannot be
-// established from inside the tree: which version it is and what licence it
-// ships under.
+// Package certdoctor carries the facts about this binary that cannot be
+// established from inside the tree: which version it is, what licence it ships
+// under, and the notices of the code it carries that somebody else wrote.
 //
 // WHY THIS PACKAGE SITS IN THE MODULE ROOT, WHICH IS UNUSUAL AND DELIBERATE.
 // The --license flag has to show what is in the binary rather than what is in
@@ -39,3 +39,16 @@ const Name = "certdoctor"
 //
 //go:embed LICENSE
 var License string
+
+// Notices is the text of THIRD-PARTY-NOTICES.md: the licences of the code
+// somebody else wrote that this binary links - the Go runtime and standard
+// library, and the modules behind the PAC evaluator.
+//
+// IN THE BINARY AND NOT ONLY IN THE RELEASE ARCHIVE, for the reason License is.
+// MIT and BSD ask for their notice in every copy of the code, a binary copy
+// included, and this binary travels on its own: copied into a container image,
+// it leaves the archive and the file beside it behind. Until 2026-10-28 it
+// carried the GPL and nothing else - ADR116.
+//
+//go:embed THIRD-PARTY-NOTICES.md
+var Notices string

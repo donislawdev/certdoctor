@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/donislawdev/certdoctor"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/layer"
@@ -328,6 +329,14 @@ func TestTheShippedBinaryAnswersEveryMetaSwitchFromItself(t *testing.T) {
 	// silently stopped reaching the binary.
 	if len(license.stdout) < 30_000 {
 		t.Errorf("--license printed %d bytes, which is too short to be the whole text", len(license.stdout))
+	}
+	// And the notices of the code by others that it links, byte for byte as
+	// the tree holds them - ADR116. A binary built from an older tree, or one
+	// whose embed of the notices stopped reaching it, answers with the GPL
+	// alone and passes every check above.
+	if want := certdoctor.License + "\n" + certdoctor.Notices; license.stdout != want {
+		t.Errorf("--license printed %d bytes, want the GPL and then THIRD-PARTY-NOTICES.md, %d bytes",
+			len(license.stdout), len(want))
 	}
 }
 

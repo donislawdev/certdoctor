@@ -295,7 +295,10 @@ func answerMetaSwitch(o *options, env environment) (exitcode.Code, bool) {
 	case o.showVersion:
 		fmt.Fprint(env.stdout, versionText())
 	case o.showLicense:
-		fmt.Fprint(env.stdout, certdoctor.License)
+		// The GPL first, because it is the licence of this program, and then
+		// the notices that the third party code in it asks to travel with
+		// every copy.
+		fmt.Fprint(env.stdout, certdoctor.License, "\n", certdoctor.Notices)
 	default:
 		return exitcode.OK, false
 	}

@@ -50,6 +50,7 @@ var proseFiles = []string{
 	"README.md",
 	"CHANGELOG.md",
 	"SECURITY.md",
+	"THIRD-PARTY-NOTICES.md",
 	".gitignore",
 	".gitattributes",
 	"go.mod",

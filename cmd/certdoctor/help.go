@@ -45,7 +45,8 @@ func helpText() string {
 	writeEnvironment(&b)
 
 	b.WriteString("\nLICENSE\n")
-	fmt.Fprintf(&b, "  GPL-3.0. Run %s --license for the full text.\n", toolName)
+	fmt.Fprintf(&b, "  GPL-3.0. Run %s --license for the full text, followed by the notices\n", toolName)
+	b.WriteString("  of the third party code this binary links.\n")
 	b.WriteString("  Reports you generate belong to you and are not derivative works of this program.\n")
 	return b.String()
 }

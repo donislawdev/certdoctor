@@ -10,6 +10,16 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Added - the notices of the code by others, in the binary
+
+- **`certdoctor --license` prints the notices of the third party code it
+  contains, after the GPL.** Every build links the Go runtime and standard
+  library and five modules behind the PAC evaluator, and their licences -
+  MIT, BSD and Apache 2.0 - ask for their notices in every copy, a binary one
+  included. The binary used to carry the GPL alone. The same text is in
+  `THIRD-PARTY-NOTICES.md`, which goes into every release archive, and
+  `--help` says where to find it.
+
 ### Changed - a pip that cannot reach an IP address says so
 
 - **The pip row no longer says PASS for a target given as an IP address

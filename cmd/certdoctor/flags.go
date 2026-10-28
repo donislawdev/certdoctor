@@ -285,7 +285,7 @@ var switches = []switchDecl{
 	},
 	{
 		name: "license", group: "meta",
-		summary: "print the licence this binary ships under",
+		summary: "print the licence, then the notices of the third party code in this binary",
 		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.showLicense, "license", false, "") },
 	},
 	{
