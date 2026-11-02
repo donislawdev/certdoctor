@@ -29,6 +29,7 @@ const (
 	releaseNotes    = ".github/release-notes.md"
 	signingPins     = ".github/signing-certificates.txt"
 	sbomRenderer    = "cmd/sbom/spdx.go"
+	spdxValidator   = ".github/requirements-spdx.txt"
 )
 
 // spdxPredicate is the statement type a person is told to ask gh for. The
@@ -328,6 +329,48 @@ func TestTheVerdictGuardCanFail(t *testing.T) {
 	requireViolation(t, violations, "reads steps.c.conclusion")
 }
 
+// TestTheBillOfMaterialsIsReadBySPDXsOwnValidator keeps the second reading of
+// the bill of materials, and keeps what it installs from widening what the
+// release trusts. The build job leaves what publish attests, so a package it
+// installs by name alone is code nobody read, running where the release is
+// made - the reason every action is pinned to a commit. pip holds the hashes
+// itself, but only when the workflow runs, and this one runs on a tag. A
+// validator that can fail without stopping the job validates nothing.
+func TestTheBillOfMaterialsIsReadBySPDXsOwnValidator(t *testing.T) {
+	root := moduleRoot(t)
+	files := map[string]string{spdxValidator: readRel(t, root, spdxValidator)}
+	for _, rel := range workflowFiles(t, root) {
+		files[rel] = readRel(t, root, rel)
+	}
+	requireNoViolations(t, checkSPDXValidator(files), "the bill of materials validator")
+}
+
+func TestTheValidatorGuardCanFail(t *testing.T) {
+	violations := checkSPDXValidator(map[string]string{
+		releaseWorkflow: "on: push\njobs:\n  build:\n    steps:\n" +
+			"      - name: validate\n        continue-on-error: true\n        run: |\n" +
+			"          \"$VENV/bin/pip\" install spdx-tools==0.8.5\n" +
+			"          pyspdxtools --novalidation \\\n            -i dist/x.spdx.json\n",
+		ciWorkflow:    "on: push\njobs:\n  lint:\n    steps:\n      - run: python -m pip install --require-hashes -r tools.txt\n",
+		spdxValidator: "# a comment\nclick==8.5.0\nrdflib>=7 \\\n    --hash=sha256:" + strings.Repeat("a", 64) + "\n",
+	})
+	for _, want := range []string{
+		"runs pip install without --require-hashes",
+		"runs pip install without --only-binary :all:",
+		"without --version SPDX-2.3",
+		"--novalidation",
+		"does not install the validator from " + spdxValidator,
+		"carries continue-on-error",
+		"click==8.5.0 is not pinned",
+		"rdflib>=7",
+		"never pins spdx-tools",
+	} {
+		requireViolation(t, violations, want)
+	}
+	silent := checkSPDXValidator(map[string]string{releaseWorkflow: "on: push\njobs:\n  build:\n    steps:\n      - run: echo\n"})
+	requireViolation(t, silent, "never hands the bill of materials to pyspdxtools")
+}
+
 // --------------------------------------------------------------------------- //
 // the checks, kept apart from the files so each canary can feed them a broken
 // one
@@ -599,6 +642,93 @@ func checkReleaseFences(release, verify string) []Violation {
 	}
 	if strings.Contains(verify, ": write") {
 		at(verifyWorkflow, "can write, and a verifier that can publish is not a verifier")
+	}
+	return sortViolations(violations)
+}
+
+var (
+	continuedLine = regexp.MustCompile(`[ \t]*\\\n\s*`)
+	pinnedWheel   = regexp.MustCompile(`^([A-Za-z0-9._-]+)==[A-Za-z0-9.+!-]+( --hash=sha256:[0-9a-f]{64})+$`)
+	// pipInstall is pip asked to install, by any spelling a workflow uses -
+	// a bare pip, pip3, python -m pip, or a path in quotes.
+	pipInstall = regexp.MustCompile(`\bpip3?["']?\s+install\b`)
+)
+
+// checkSPDXValidator reports a release that stops handing its bill of
+// materials to the validator, reads it in another version than the
+// attestation promises, or goes on when it is refused - and anything a
+// workflow installs with pip that is not held to the bytes of its file. files
+// holds every workflow and the validator's list, by name. A line a shell
+// continues is read as one.
+func checkSPDXValidator(files map[string]string) []Violation {
+	var violations []Violation
+	at := func(rel, detail string) { violations = append(violations, Violation{rel, 0, detail}) }
+	commands := func(body string) []string {
+		var lines []string
+		for _, line := range strings.Split(continuedLine.ReplaceAllString(body, " "), "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+				lines = append(lines, line)
+			}
+		}
+		return lines
+	}
+	for rel, body := range files {
+		if !strings.HasPrefix(rel, ".github/workflows/") {
+			continue
+		}
+		for _, line := range commands(body) {
+			if !pipInstall.MatchString(line) {
+				continue
+			}
+			for _, flag := range []string{"--require-hashes", "--only-binary :all:", "-r "} {
+				if !strings.Contains(line, flag) {
+					at(rel, "runs pip install without "+flag)
+				}
+			}
+		}
+	}
+
+	build := jobBlocks(files[releaseWorkflow])["build"]
+	version := "--version SPDX-" + spdxPredicate[strings.LastIndex(spdxPredicate, "/v")+2:]
+	validates, installs := false, false
+	for _, line := range commands(build) {
+		installs = installs || (pipInstall.MatchString(line) && strings.Contains(line, "-r "+spdxValidator))
+		if !strings.Contains(line, "pyspdxtools") || !strings.Contains(line, ".spdx.json") {
+			continue
+		}
+		validates = true
+		if !strings.Contains(line, version) {
+			at(releaseWorkflow, "reads the bill of materials without "+version+", so a document in another version than the attestation promises passes")
+		}
+		if strings.Contains(line, "--novalidation") {
+			at(releaseWorkflow, "hands the bill of materials over with --novalidation, which parses it and checks nothing")
+		}
+	}
+	if !validates {
+		at(releaseWorkflow, "the build job never hands the bill of materials to pyspdxtools")
+	}
+	if !installs {
+		at(releaseWorkflow, "the build job does not install the validator from "+spdxValidator)
+	}
+	if strings.Contains(build, "continue-on-error") {
+		at(releaseWorkflow, "the build job carries continue-on-error, so a refused build or bill of materials goes on to be attested")
+	}
+
+	pinned := map[string]bool{}
+	for _, line := range commands(files[spdxValidator]) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		m := pinnedWheel.FindStringSubmatch(line)
+		if m == nil {
+			at(spdxValidator, line+" is not pinned to a version and the bytes of its file")
+			continue
+		}
+		pinned[strings.ToLower(m[1])] = true
+	}
+	if !pinned["spdx-tools"] {
+		at(spdxValidator, "never pins spdx-tools, the validator")
 	}
 	return sortViolations(violations)
 }

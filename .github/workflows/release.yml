@@ -164,6 +164,29 @@ jobs:
         shell: bash
         run: bash .github/scripts/build_release.sh "${{ needs.check.outputs.version }}" "$RUNNER_TEMP/release"
 
+      # The bill of materials read by somebody else's understanding of SPDX as
+      # well as ours. The tests of cmd/sbom hold the document to what we read
+      # SPDX 2.3 to say, so a misreading passes all of them, and a document a
+      # scanner cannot parse is a release whose components nobody can look up.
+      # spdx-tools is the SPDX project's own validator. Once a release, on the
+      # five real builds, and on a run by hand as well - not in ci.yml.
+      #
+      # Into a virtual environment in RUNNER_TEMP, from a list pinned to the
+      # bytes of every file, because what this job leaves is what the release
+      # attests. The version is named rather than read from the document, so a
+      # document in another version than the attestation promises is refused.
+      # pyspdxtools prints nothing when the document is valid.
+      - name: the bill of materials is valid SPDX
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/spdx"
+          "$RUNNER_TEMP/spdx/bin/pip" install --quiet --disable-pip-version-check \
+            --require-hashes --only-binary :all: -r .github/requirements-spdx.txt
+          "$RUNNER_TEMP/spdx/bin/pyspdxtools" --version SPDX-2.3 \
+            -i "$RUNNER_TEMP/release/dist/verify-certdoctor_${{ needs.check.outputs.version }}.spdx.json"
+          echo "spdx-tools reads the bill of materials as valid SPDX-2.3"
+
       - name: keep the build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
