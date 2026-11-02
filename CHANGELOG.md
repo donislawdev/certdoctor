@@ -10,6 +10,17 @@ This file records only what a person would notice by running the program. Intern
 
 Barely diagnosable yet, and there has been no release.
 
+### Changed - runtimes are asked side by side, so every Java gets judged
+
+- **The trust matrix asks every runtime at the same time instead of one
+  after another.** Each runtime used to be handed an equal share of the time
+  the layer had left, and a machine with several Java installations ran out
+  of its share: with seven of them, three to five rows said "could not be
+  assessed" on every run with the default `--probe-timeout`, while most of
+  the layer's time went unused. Every runtime now has all of the layer's
+  time, the rows come in the same order as before, and a runtime that still
+  cannot be asked in time says so on its row.
+
 ### Added - the notices of the code by others, in the binary
 
 - **`certdoctor --license` prints the notices of the third party code it

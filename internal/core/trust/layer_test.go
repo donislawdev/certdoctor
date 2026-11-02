@@ -524,41 +524,201 @@ func TestARefusedCommandSaysWhyOnItsRow(t *testing.T) {
 	}
 }
 
-// TestAProbeGetsAShareOfWhatIsLeftRatherThanAllOfIt is R-5.
+// TestEveryFamilyIsHandedTheLayersWholeRemainingTime is ADR118, which replaced
+// the share of ADR70 part 1 - decided by the owner after OBS203.
 //
-// A probe runs somebody else's process - six keytool calls measured at 3.4 s on
-// the owner's machine - and until now each was handed the run's whole context.
-// The first slow one would then spend everything the layer had, and the rest
-// would come back unassessed with nobody having refused them anything. That is
-// the starvation ADR36 removed from L1, arriving one layer down.
-func TestAProbeGetsAShareOfWhatIsLeftRatherThanAllOfIt(t *testing.T) {
-	var handed []time.Time
-	record := func(ctx context.Context, _ [][]byte) ([]report.TrustStore, error) {
-		deadline, set := ctx.Deadline()
-		if !set {
-			t.Error("a probe was handed a context with no deadline on a run that has one")
+// THE SHARE IS WHAT STARVED JAVA. Each family used to be handed what the layer
+// had left divided by the families still to ask, and with seven of them Java -
+// third in line - got about two seconds for seven keytool runs measured at about
+// four and a half on the owner's machine. Four or five of its rows came back
+// unassessed on a layer with most of its budget unspent. Running side by side,
+// no family waits for another's turn, so none needs less than the whole.
+//
+// EACH PROBE WRITES ITS OWN VARIABLE, because they run at the same time and a
+// shared slice would be the race this test is not about.
+func TestEveryFamilyIsHandedTheLayersWholeRemainingTime(t *testing.T) {
+	var first, second time.Time
+	handedTo := func(deadline *time.Time) Probe {
+		return func(ctx context.Context, _ [][]byte) ([]report.TrustStore, error) {
+			given, set := ctx.Deadline()
+			if !set {
+				t.Error("a probe was handed a context with no deadline on a run that has one")
+			}
+			*deadline = given
+			return nil, nil
 		}
-		handed = append(handed, deadline)
-		return nil, nil
 	}
 
 	in := full()
 	in.Now = time.Now
-	in.Probes = map[string]Probe{descriptors[0].ID: record, descriptors[1].ID: record}
+	in.Probes = map[string]Probe{descriptors[0].ID: handedTo(&first), descriptors[1].ID: handedTo(&second)}
 
 	layer := time.Now().Add(2 * time.Second)
 	ctx, cancel := context.WithDeadline(context.Background(), layer)
 	defer cancel()
 	Ask(ctx, in)
 
-	if len(handed) != 2 {
-		t.Fatalf("%d probe(s) ran, want 2", len(handed))
+	if !first.Equal(layer) || !second.Equal(layer) {
+		t.Errorf("the layer ends at %v and its families were handed %v and %v - a share rather than the whole",
+			layer, first, second)
 	}
-	// With two probes to ask, the first may have half of what is left - never all
-	// of it. Half of two seconds is a second, so anything later than 1.5 seconds
-	// from now is the whole budget handed to the first caller.
-	if !handed[0].Before(layer.Add(-500 * time.Millisecond)) {
-		t.Errorf("the first probe was handed the layer's whole remaining time")
+
+	// THE CAP STILL BINDS. A family may have everything the layer has left and
+	// no more than PerProbe of it, so a quarter of a second inside two seconds is
+	// what both get.
+	in.PerProbe = 250 * time.Millisecond
+	Ask(ctx, in)
+	for _, given := range []time.Time{first, second} {
+		if !given.Before(layer.Add(-time.Second)) {
+			t.Errorf("with a cap of %v a family was handed time until %v, and the layer ends at %v",
+				in.PerProbe, given, layer)
+		}
+	}
+}
+
+// TestTheFamiliesAreAskedSideBySide is the other half of ADR118: the whole of
+// the layer's time is only safe to hand every family because none waits for
+// another.
+//
+// EACH PROBE WAITS FOR THE OTHER TO HAVE STARTED. Asked one after another, the
+// first would wait for a family that is not asked until it gives up, so the
+// layer would come back with a row saying it could not be asked.
+func TestTheFamiliesAreAskedSideBySide(t *testing.T) {
+	started := []chan struct{}{make(chan struct{}), make(chan struct{})}
+	meeting := func(mine, other int) Probe {
+		return func(ctx context.Context, _ [][]byte) ([]report.TrustStore, error) {
+			close(started[mine])
+			select {
+			case <-started[other]:
+				return nil, nil
+			case <-ctx.Done():
+				return nil, errors.New("the other family was not asked while this one was")
+			}
+		}
+	}
+
+	in := full()
+	in.Now = time.Now
+	in.Probes = map[string]Probe{descriptors[0].ID: meeting(0, 1), descriptors[1].ID: meeting(1, 0)}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	for _, finding := range Ask(ctx, in).Findings {
+		if finding.Kind == report.FindingTrustStore {
+			t.Errorf("the families were asked one after another: %s", finding.Summary)
+		}
+	}
+}
+
+// TestTheRowsComeInDescriptorOrderWhicheverFamilyAnswersFirst is the promise
+// fanout.Over exists to keep, through this layer: a family's rows sit at its
+// descriptor's place however long its runtime took.
+//
+// THE FIRST FAMILY ANSWERS LAST. It waits until the second has finished, so a
+// matrix assembled in the order answers arrived would put the second family's
+// row on top - and two runs on one machine would print their rows differently.
+func TestTheRowsComeInDescriptorOrderWhicheverFamilyAnswersFirst(t *testing.T) {
+	no, yesTrusts := false, true
+	early := aStore("git", "first", &yesTrusts, "")
+	late := aStore("curl", "second", &no, "")
+	late.StorePath = `C:\other.crt`
+
+	secondDone := make(chan struct{})
+	in := full()
+	in.Now = time.Now
+	in.Probes = map[string]Probe{
+		descriptors[0].ID: func(ctx context.Context, _ [][]byte) ([]report.TrustStore, error) {
+			select {
+			case <-secondDone:
+			case <-ctx.Done():
+			}
+			return []report.TrustStore{early}, nil
+		},
+		descriptors[1].ID: func(context.Context, [][]byte) ([]report.TrustStore, error) {
+			defer close(secondDone)
+			return []report.TrustStore{late}, nil
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var order []string
+	for _, finding := range Ask(ctx, in).Findings {
+		if finding.Kind == report.FindingTrustStore {
+			order = append(order, finding.TrustStore.Instance)
+		}
+	}
+	if strings.Join(order, ",") != "first,second" {
+		t.Errorf("the rows came out as %v, and the first family's row has to stay first", order)
+	}
+}
+
+// TestAProbeFallingOverTakesOnlyItsOwnFamilyWithIt is ADR118 point 4.
+//
+// THE FAMILIES NOW RUN UNDER fanout.Over, AND ITS recover WOULD TAKE THE WHOLE
+// LAYER. It hands a fall back as an error the layer reports for all its rows,
+// because it cannot know what the fall reached. A probe's fall reaches one
+// family, so askProbe has to catch it first - otherwise one runtime printing
+// something crypto/x509 cannot read would blank the matrix for every other.
+func TestAProbeFallingOverTakesOnlyItsOwnFamilyWithIt(t *testing.T) {
+	yesTrusts := true
+	in := full()
+	in.Probes = map[string]Probe{
+		descriptors[0].ID: func(context.Context, [][]byte) ([]report.TrustStore, error) {
+			panic("keytool printed a block crypto/x509 could not read")
+		},
+		descriptors[1].ID: func(context.Context, [][]byte) ([]report.TrustStore, error) {
+			return []report.TrustStore{aStore("git", "standing", &yesTrusts, "")}, nil
+		},
+	}
+
+	got := Ask(context.Background(), in)
+	if got.Reason == status.ReasonProbeError {
+		t.Fatalf("one probe falling over took the whole layer with it: %s", got.Detail)
+	}
+	fell, stood := false, false
+	for _, finding := range got.Findings {
+		if finding.Kind != report.FindingTrustStore {
+			continue
+		}
+		fell = fell || strings.Contains(finding.TrustStore.NotAssessed, "fell over")
+		stood = stood || finding.TrustStore.Instance == "standing"
+	}
+	if !fell || !stood {
+		t.Errorf("the family that fell over has its row: %v, the family beside it has its row: %v - want both", fell, stood)
+	}
+}
+
+// TestOurOwnCodeFallingOverAroundAProbeIsTheLayersDefect is the error fanout.Over
+// hands back, which askProbe never produces - R-1, the rule L3 and L4 follow.
+//
+// THE CLOCK IS THE ONE PIECE OF OUR OWN WIRING THE WALK CALLS OUTSIDE EVERY
+// PROBE, so it is how this test reaches that path. What falls there has an
+// unknown reach, so the layer says it could not finish rather than shipping the
+// rows beside it.
+func TestOurOwnCodeFallingOverAroundAProbeIsTheLayersDefect(t *testing.T) {
+	in := probesOf(func(context.Context, [][]byte) ([]report.TrustStore, error) { return nil, nil })
+	in.Now = func() time.Time { panic("the clock fell over") }
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	var got Result
+	func() {
+		defer func() {
+			if cause := recover(); cause != nil {
+				t.Fatalf("our own code falling over took the report with it: %v", cause)
+			}
+		}()
+		got = Ask(ctx, in)
+	}()
+	if got.Status != status.Unknown || got.Reason != status.ReasonProbeError {
+		t.Errorf("our own code falling over came out as %s/%s, want UNKNOWN/probe_error", got.Status, got.Reason)
+	}
+	if !strings.Contains(got.Detail, "could not finish") || !strings.Contains(got.Detail, "the clock fell over") {
+		t.Errorf("the sentence does not say the layer could not finish, and why: %q", got.Detail)
+	}
+	if got.Findings != nil {
+		t.Errorf("a layer that could not finish shipped rows: %v", got.Findings)
 	}
 }
 

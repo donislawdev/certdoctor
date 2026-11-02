@@ -191,6 +191,11 @@ var intraLayerEdges = map[string][]string{
 	"internal/core/trust": {
 		"internal/core/report",
 		"internal/core/status",
+		// The shared fan-out, for the runtime families rather than for addresses
+		// - ADR118, decided by the owner after OBS203 measured Java starved by
+		// the share arithmetic. The same edge as L3 and L4 and for ADR45's
+		// reason: one promise about running side by side, kept in one place.
+		"internal/core/fanout",
 	},
 	"internal/core/tcp": {
 		"internal/core/report",

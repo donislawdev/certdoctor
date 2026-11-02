@@ -1124,10 +1124,12 @@ func trustInput(o *options, env environment, parsed *url.URL) trust.Input {
 		// Both values come from this environment rather than being read inside
 		// the layer, so an assessment stays reproducible from its input.
 		Machine: trust.Machine{OS: env.platform.OS, Home: env.home, NodeExtraCACerts: nodeExtraCACerts(env)},
-		// The clock and the per-probe cap, so that a probe running somebody
-		// else's process gets a SHARE of what this layer has left rather than all
-		// of it - R-5. Without them a spent budget came out as access_denied,
-		// which accuses this machine's permissions of our own arithmetic.
+		// The clock and the per-probe cap - R-5. The cap is the layer's own
+		// budget, so inside a run it never binds below the layer's deadline: each
+		// family is handed everything the layer has left (ADR118), and the cap is
+		// what limits one where no deadline arrives. Without the two a spent
+		// budget came out as access_denied, which accuses this machine's
+		// permissions of our own arithmetic.
 		Now:      env.now,
 		PerProbe: budget(o.probeTimeout),
 	}

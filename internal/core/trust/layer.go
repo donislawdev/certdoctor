@@ -87,7 +87,7 @@ type Input struct {
 	// nothing else. When that context expired every store came back unassessed
 	// and the verdict said access_denied - "certdoctor was not allowed to read
 	// this" - about stores nobody had failed to read. Zero means no cap of its
-	// own, and the share of the layer's remaining time still applies.
+	// own, and the layer's own deadline still applies.
 	PerProbe time.Duration
 }
 
@@ -107,7 +107,7 @@ const (
 	noOthers = "no way to learn whether other addresses presented other chains was supplied, so one address's chain could not be told from the server's"
 	noOS     = "no platform was supplied, so a command this machine could run could not be written"
 	noProbes = "no probes were supplied, so nothing on this machine was asked"
-	noClock  = "no clock was supplied, so no probe could be given a share of the time this layer has left"
+	noClock  = "no clock was supplied, so how long a probe may run inside the time this layer has left could not be worked out"
 	nothing  = "the server presented no certificate, so there was nothing for any store to judge"
 	noneHere = "no runtime this program knows how to ask was found on this machine"
 	// plaintextTarget is its own sentence because "the server presented no
@@ -116,14 +116,20 @@ const (
 	plaintextTarget = "the target does not use TLS, so there is no certificate for any store to judge"
 )
 
-// Ask walks every declared probe and reports what each store made of the chain.
+// Ask asks every declared probe and reports what each store made of the chain.
 //
-// SEQUENTIALLY, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT. ADR15 point 3
-// anticipated a branch per probe here, and it may still arrive - but docs/23
-// forbids optimising before measuring, and a fan-out would need a fourth entry
-// on the concurrency allowlists to buy a saving nobody has measured yet. When a
-// measurement shows the probes do not fit the budget, the shared fan-out in
-// internal/core/fanout is what they will use - never a second copy of it.
+// THE FAMILIES ARE ASKED SIDE BY SIDE - ADR118, decided by the owner after a
+// measurement. They used to be asked one after another, each handed its share
+// of what the layer had left, and that was the right call while nobody had
+// measured otherwise. Then the families grew from four to seven, and Java -
+// third in line - was handed about two seconds for seven keytool runs that take
+// about four and a half on the owner's machine: four or five of its seven rows
+// came back unassessed on a layer whose budget was nowhere near spent (OBS203).
+// The budget was enough; the division was not.
+//
+// THE FAN-OUT IS THE SHARED ONE in internal/core/fanout, never a second copy,
+// and it costs no entry on any concurrency list - the file that calls it starts
+// nothing itself.
 func Ask(ctx context.Context, in Input) Result {
 	if broken := in.breach(); broken != "" {
 		return Result{Status: status.Unknown, Reason: status.ReasonProbeError, Detail: broken}
@@ -145,7 +151,16 @@ func Ask(ctx context.Context, in Input) Result {
 	// port was answering something else.
 	whole := in.ChainComplete()
 
-	rows, timedOut := in.walkProbes(ctx, chain)
+	rows, timedOut, fell := in.walkProbes(ctx, chain)
+	if fell != nil {
+		// OUR OWN CODE FELL OVER AROUND A PROBE, AND THE WHOLE LAYER SAYS SO - the
+		// rule L3 and L4 follow, R-1. A probe falling over is not this: askProbe
+		// has already turned that into its family's row. What reaches here fell
+		// outside every probe, so its reach is unknown, and the rows beside it
+		// came from the same walk.
+		return Result{Status: status.Unknown, Reason: status.ReasonProbeError,
+			Detail: "this layer could not finish: " + fell.Error()}
+	}
 	// A ROW THAT DEFERS GETS ITS ANSWER BEFORE ANYTHING IS COUNTED - ADR108 part
 	// 4. Counting first would report curl on Schannel as unassessed on every run
 	// on Windows, which is the warning this part exists to remove.
@@ -220,72 +235,91 @@ func tallyOf(rows []row, timedOut int) tally {
 // split is OBS85's named moment taken before anything new was added to this
 // layer rather than after: breaking a function up once the mutation entries are
 // green turns evidence just collected into evidence to collect again.
-func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, int) {
-	var rows []row
-	timedOut := 0
-
-	// HOW MANY PROBES ARE LEFT TO ASK, COUNTED BEFORE THE FIRST ONE RUNS - R-5.
-	// The share arithmetic needs a divisor, and one taken inside the loop would
-	// shrink as the loop advanced, so the last probe would be handed everything
-	// that was left - which is the starvation ADR36 removed from L1.
-	left := 0
+//
+// The error is our own code falling over around a probe, never a probe's own
+// failure - see fanOut.
+func (in Input) walkProbes(ctx context.Context, chain [][]byte) ([]row, int, error) {
+	var families []family
 	for _, descriptor := range descriptors {
-		if _, present := in.Probes[descriptor.ID]; present {
-			left++
+		if probe, present := in.Probes[descriptor.ID]; present {
+			families = append(families, family{descriptor: descriptor, probe: probe})
 		}
 	}
 
-	for _, descriptor := range descriptors {
-		probe, present := in.Probes[descriptor.ID]
-		if !present {
-			continue
-		}
-		probeCtx, done, remaining := in.share(ctx, left)
-		left--
-		if remaining == 0 {
-			// NOT A REFUSAL AND NOT AN EMPTY STORE. Nothing was asked, so nothing
-			// was denied - this row is about our budget.
-			rows = append(rows, unaskable(descriptor, errNoTimeLeft))
-			timedOut++
-			continue
-		}
-		stores, err := askProbe(probeCtx, probe, chain)
-		// THE BUDGET IS ASKED ABOUT ITSELF, RATHER THAN READ OFF A PROBE'S
-		// ERROR. Every probe in this tree turns a failure into a row and
-		// returns no error at all - java/probe.go, curl/probe.go, git/probe.go
-		// all end in "return stores, nil" - so the line below it was the only
-		// witness, and it never fired outside a test. That is why R-5's counter
-		// could grow one way only: through the remaining == 0 branch above, for
-		// a probe that never started.
-		//
-		// IT IS READ BEFORE done(), NOT AFTER. Cancelling replaces the
-		// deadline's error with context.Canceled, which is a different fact -
-		// somebody stopped this run - and counting it as a timeout would blame
-		// the clock for a person pressing Ctrl-C.
-		//
-		// A probe that finished everything and only then ran out of time still
-		// increments this, and that is harmless: the verdict reads the counter
-		// only when NOTHING could be assessed.
-		expired := errors.Is(probeCtx.Err(), context.DeadlineExceeded)
-		if done != nil {
-			done()
-		}
-		if expired || errors.Is(err, context.DeadlineExceeded) {
+	answers, fell := in.fanOut(ctx, chain, families)
+	if fell != nil {
+		return nil, 0, fell
+	}
+
+	var rows []row
+	timedOut := 0
+	for _, answered := range answers {
+		if answered.timedOut {
 			timedOut++
 		}
-		if err != nil {
+		if answered.err != nil {
 			// ONE PROBE FAILING DOES NOT SINK THE LAYER. It becomes a row saying
 			// so, because "we could not ask git" is a different fact from "git
 			// does not trust this" and inviolable rule 15 wants the difference
 			// visible rather than averaged away.
-			rows = append(rows, unaskable(descriptor, err))
+			rows = append(rows, unaskable(answered.descriptor, answered.err))
 			continue
 		}
-		for _, store := range stores {
+		for _, store := range answered.stores {
 			rows = append(rows, row{store: store})
 		}
 	}
-	return rows, timedOut
+	return rows, timedOut, nil
+}
+
+// answer is what one family said, before its stores become rows.
+type answer struct {
+	descriptor Descriptor
+	stores     []report.TrustStore
+	err        error
+	// timedOut says this family's own budget ran out, which the verdict needs
+	// when nothing at all could be assessed - R-5.
+	timedOut bool
+}
+
+// askFamily asks one family's probe inside the time that family may have.
+//
+// IT DECIDES NOTHING EITHER, and it is a function of its own because it is what
+// runs on each family's goroutine: everything here is about one family, and
+// nothing here reads another's answer.
+func (in Input) askFamily(ctx context.Context, asked family, chain [][]byte) answer {
+	probeCtx, done, remaining := in.allowance(ctx)
+	if remaining == 0 {
+		// NOT A REFUSAL AND NOT AN EMPTY STORE. Nothing was asked, so nothing
+		// was denied - this row is about our budget.
+		return answer{descriptor: asked.descriptor, err: errNoTimeLeft, timedOut: true}
+	}
+	stores, err := askProbe(probeCtx, asked.probe, chain)
+	// THE BUDGET IS ASKED ABOUT ITSELF, RATHER THAN READ OFF A PROBE'S ERROR.
+	// Every probe in this tree turns a failure into a row and returns no error
+	// at all - java/probe.go, curl/probe.go, git/probe.go all end in "return
+	// stores, nil" - so the line below it was the only witness, and it never
+	// fired outside a test. That is why R-5's counter could grow one way only:
+	// through the remaining == 0 branch above, for a probe that never started.
+	//
+	// IT IS READ BEFORE done(), NOT AFTER. Cancelling replaces the deadline's
+	// error with context.Canceled, which is a different fact - somebody stopped
+	// this run - and counting it as a timeout would blame the clock for a person
+	// pressing Ctrl-C.
+	//
+	// A probe that finished everything and only then ran out of time still
+	// counts, and that is harmless: the verdict reads the counter only when
+	// NOTHING could be assessed.
+	expired := errors.Is(probeCtx.Err(), context.DeadlineExceeded)
+	if done != nil {
+		done()
+	}
+	return answer{
+		descriptor: asked.descriptor,
+		stores:     stores,
+		err:        err,
+		timedOut:   expired || errors.Is(err, context.DeadlineExceeded),
+	}
 }
 
 // findingsFrom turns the collected rows into what the report carries, once the
@@ -330,20 +364,22 @@ func (in Input) findingsFrom(rows []row, whole, closed bool) []report.Finding {
 // second spelling of it is a second place for one fact.
 var errNoTimeLeft = errors.New("this layer had no time left to ask, so this store was never read")
 
-// share is one probe's slice of whatever the layer has left - R-5, and the
-// arithmetic is ADR36's.
+// allowance is how long one family may run: whatever the layer has left, capped
+// by PerProbe - ADR118, which replaced the share of ADR70 part 1.
 //
-// IT IS WRITTEN HERE RATHER THAN SHARED WITH L1, AND THE REASON IS MEASURED
-// RATHER THAN AESTHETIC. The two are the same shape and carry different
-// vocabulary - queries against probes - and the mutation register anchors on an
-// exact string inside one named file, so neither copy disarms the other's entry.
-// That is the harm OBS50 measured, and it does not arise here. A THIRD copy
-// would be the moment to extract it.
+// THERE IS NO DIVISION ANY MORE, AND THAT IS THE WHOLE CHANGE. The families run
+// side by side, so each can be given the layer's whole remaining time - dividing
+// it among them was what kept one slow family from eating the others' turns, and
+// with no turns to eat it only starved Java (OBS203). The cap is what still keeps
+// one family from holding the layer for its whole budget.
+//
+// IT IS NO LONGER THE SAME SHAPE AS L1's SHARE, so the reason a third copy would
+// be the moment to extract the arithmetic does not reach this function now.
 //
 // A layer with no deadline at all falls back to the probe's own cap, and to no
 // cap when there is not one - the same two answers, and the same OBS62 trap, as
 // every other budget in this program.
-func (in Input) share(ctx context.Context, probesLeft int) (context.Context, context.CancelFunc, time.Duration) {
+func (in Input) allowance(ctx context.Context) (context.Context, context.CancelFunc, time.Duration) {
 	deadline, set := ctx.Deadline()
 	if !set {
 		if in.PerProbe > 0 {
@@ -355,9 +391,6 @@ func (in Input) share(ctx context.Context, probesLeft int) (context.Context, con
 	remaining := deadline.Sub(in.Now())
 	if remaining <= 0 {
 		return ctx, nil, 0
-	}
-	if probesLeft > 1 {
-		remaining /= time.Duration(probesLeft)
 	}
 	if in.PerProbe > 0 && in.PerProbe < remaining {
 		remaining = in.PerProbe
@@ -423,35 +456,30 @@ func summaryOf(store report.TrustStore) string {
 	}
 }
 
-// unaskable is the row for a probe that could not run at all.
 // askProbe runs one probe and turns a panic into an ordinary error, so that a
 // probe falling over becomes a row like any other failure.
 //
-// WHY THIS LAYER NEEDS IT AND THE OTHERS DID NOT NOTICE. L3 and L4 reach code
-// this program does not own too, but they reach it under fanout.Over, whose
-// goroutines catch their own panics because nothing else can - ADR67. This layer
-// asks its probes in a plain sequential loop, so before this existed a panic
-// went straight past it to the recover in main: the exit code stayed inside the
-// table and the whole report went with it, after every layer had finished and
-// every store had been read. That is the inversion the orchestrator forbids in
-// so many words - a probe that cannot answer degrades, and it degrades ALONE.
+// WHY IT EXISTS. Before it, this layer asked its probes in a plain sequential
+// loop, so a panic went straight past it to the recover in main: the exit code
+// stayed inside the table and the whole report went with it, after every layer
+// had finished and every store had been read. That is the inversion the
+// orchestrator forbids in so many words - a probe that cannot answer degrades,
+// and it degrades ALONE.
 //
 // AND THE PROBES HERE ARE THE ONES MOST EXPOSED. They pull PEM out of keytool's
 // output, INI out of a gitconfig somebody else wrote, and hand certificates
 // from the wire to crypto/x509. None of that is ours and none of it promised
 // not to panic.
 //
-// IT IS A SECOND recover IN THIS TREE AND THAT IS DELIBERATE RATHER THAN
-// OVERLOOKED. Routing this through fanout.Over would consume the existing one
-// and costs no exemption - measured, internal/core/tcp/fanout.go and
-// internal/core/handshake/fanout.go both call it and neither is on any
-// concurrency list. It was refused for what it would invite: this layer asks
-// its probes ONE AT A TIME because they share one budget by division, and a
-// fan-out primitive sitting here is an invitation to raise the one to N without
-// going back through that arithmetic. The two recovers also answer different
-// questions - a goroutine's panic cannot reach its caller at all, this one can
-// and is deliberately turned into a row - and the mutation register keeps them
-// apart by file, so neither entry blunts the other.
+// IT STAYS NOW THAT THE FAMILIES RUN UNDER fanout.Over, WHICH HAS A recover OF
+// ITS OWN - ADR118 point 4. That one answers a different question: it catches a
+// goroutine's panic because nothing else can, and hands it back as an error the
+// layer must report as a whole, the way L3 and L4 do, because it cannot say
+// which rows the fall reached. A probe falling over is not that. Its reach is
+// one family, so this turns it into that family's row before fanout.Over ever
+// sees it, and the other families' rows stay in the report. The mutation
+// register keeps the two recovers apart by file, so neither entry blunts the
+// other.
 //
 // The named returns are what let the deferred function replace both: a probe
 // that fell over has no stores, and handing back whatever it managed to append
@@ -465,6 +493,7 @@ func askProbe(ctx context.Context, probe Probe, chain [][]byte) (stores []report
 	return probe(ctx, chain)
 }
 
+// unaskable is the row for a probe that could not run at all.
 func unaskable(descriptor Descriptor, err error) row {
 	return row{
 		store: report.TrustStore{
