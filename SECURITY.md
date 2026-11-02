@@ -29,7 +29,9 @@ These are deliberate limits, written down so you do not spend time on them:
 
 ## Supported versions
 
-The project is **pre-release**. There is no shipped version yet, so there is nothing to backport to. When the first release ships, this section will say which versions receive fixes.
+**Only the latest release receives fixes.** A fix ships as a new release, and the one before it is not patched - there are no backports and no long-term line. Please check that a problem still happens on the latest release before reporting it, and against `main` if you build from source.
+
+Before 1.0.0 a release may also change the shape of `--json`, so a pipeline that parses it should read [CHANGELOG.md](CHANGELOG.md) before it updates.
 
 ## What to expect
 

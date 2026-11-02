@@ -135,12 +135,71 @@ day the refused root is your own company's.
 
 ## Download and run
 
-**Download a binary.** Take the archive for your system from the
-[releases page](https://github.com/donislawdev/certdoctor/releases/latest), unpack it and run
-`certdoctor`. It is one file with nothing to install. The Windows and macOS binaries are signed, and
-every release carries `SHA256SUMS`.
+**Download a release.** Take the archive for your system from the
+[releases page](https://github.com/donislawdev/certdoctor/releases/latest) and unpack it. There is
+nothing to install.
 
-**With Go installed** (1.27.2 or newer):
+| Your system | The archive | What you run |
+|---|---|---|
+| Windows on x64 | `certdoctor_<version>_windows_amd64.zip` | `certdoctor.exe`, signed |
+| Windows on Arm | `certdoctor_<version>_windows_arm64.zip` | `certdoctor.exe`, signed |
+| Linux on x64 | `certdoctor_<version>_linux_amd64.tar.gz` | `./certdoctor`, one static file |
+| Linux on Arm | `certdoctor_<version>_linux_arm64.tar.gz` | `./certdoctor`, one static file |
+| macOS on Apple silicon | `certdoctor_<version>_macos_arm64.tar.gz` | `./certdoctor`, a link into `certdoctor.app`, signed and notarised |
+
+Every archive also carries `LICENSE`, `THIRD-PARTY-NOTICES.md` and this README. There is no build
+for Intel Macs.
+
+**On macOS, keep `certdoctor.app` and the `certdoctor` link together.** The signature and Apple's
+notarisation ticket belong to the bundle, so the program copied out of it on its own is not the
+program Apple checked.
+
+**On Linux, the binary needs no C library**, so the same file runs in Alpine, in Ubuntu and in an
+image with nothing else in it. `certdoctor --license` prints the notices that travel with it.
+
+### Check what you downloaded
+
+Each release lists the digest of every file it publishes in `verify-SHA256SUMS.txt`. Download it
+next to the archive, then:
+
+```
+sha256sum -c --ignore-missing verify-SHA256SUMS.txt        # Linux
+shasum -a 256 -c --ignore-missing verify-SHA256SUMS.txt    # macOS
+```
+
+On Windows, in PowerShell, `True` beside the archive means it is the file the release published:
+
+```
+$listed = (Get-Content verify-SHA256SUMS.txt) -replace ' .*'
+Get-FileHash certdoctor_*.zip | ForEach-Object { "$($_.Hash -in $listed)  $(Split-Path -Leaf $_.Path)" }
+```
+
+A digest file from the same page only proves that the two agree. What proves where they came from is
+a statement GitHub signed when the release was made, and the [GitHub CLI](https://cli.github.com/)
+checks it:
+
+```
+gh attestation verify <the archive> -R donislawdev/certdoctor --predicate-type https://spdx.dev/Document/v2.3
+```
+
+That statement is the bill of materials - every module compiled into the program, the Go toolchain
+included, with its licence and version - and it covers every file of the release. The predicate
+type has to be given, because without it `gh` asks for build provenance, which is a different
+statement. A **Linux** archive is exactly the bytes the build produced, so the build's own
+provenance answers for it too:
+
+```
+gh attestation verify <the archive> -R donislawdev/certdoctor
+```
+
+The Windows and macOS archives were signed after the build, so their bytes are no longer the
+build's, and that second command finds nothing for them by design. The signature answers for them
+instead: Windows checks it when the program starts, and on macOS `spctl -a -vv certdoctor.app` asks
+Gatekeeper.
+
+### Other ways to get it
+
+**With Go installed** (1.27.3 or newer):
 
 ```
 go install github.com/donislawdev/certdoctor/cmd/certdoctor@latest
@@ -157,8 +216,9 @@ CGO_ENABLED=0 go build ./cmd/certdoctor
 `CGO_ENABLED=0` gives the same static binary the releases carry, the one that runs in an Alpine
 image as it is.
 
-**Inside a container**, copy the Linux binary in and run it there - the report then describes the
-container, not the host:
+### Inside a container
+
+Copy the Linux binary in and run it there - the report then describes the container, not the host:
 
 ```
 docker cp certdoctor my-container:/tmp/certdoctor

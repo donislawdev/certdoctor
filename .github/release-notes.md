@@ -20,7 +20,7 @@ Check what you downloaded against `verify-SHA256SUMS.txt`, at the bottom of this
 
 > Keep `certdoctor.app` and the link together. A copy of the program taken out of the bundle on its own is refused, because the signature covers the bundle.
 
-**The Linux programs are not signed.** You may need `chmod +x`.
+**The Linux programs are not signed.** They come out of the archive ready to run.
 
 ## What you can check without trusting this page
 
