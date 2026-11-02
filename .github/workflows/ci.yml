@@ -188,6 +188,24 @@ jobs:
         shell: bash
         run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks=SA,U ./...
 
+      # The release scripts run on a tag, on the maintainer's machine and on a
+      # Mac, so a syntax error in one is otherwise found with a tag spent and a
+      # card in the reader. Parsed only, with the interpreters the runner
+      # carries: nothing is run, and the Python is parsed rather than compiled,
+      # so no bytecode is written into the checkout.
+      - name: the release scripts parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in .github/scripts/*.sh; do
+            bash -n "$script"
+            echo "$script parses"
+          done
+          for script in .github/scripts/*.py; do
+            python3 -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])' "$script"
+            echo "$script parses"
+          done
+
   # A security-adjacent tool with no dependencies still runs on a standard
   # library that gets advisories of its own, and the Go version is pinned in
   # go.mod - so the thing most likely to carry a known vulnerability here is

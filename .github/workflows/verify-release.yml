@@ -1,0 +1,381 @@
+# certdoctor release - the last phase: check the page a person actually sees.
+#
+# The build checks the tree and hands itself over, the signing script checks the
+# build before touching it and confirms the draft is complete, and the
+# attestation workflow checks the digest it was given against the files it
+# downloads. None of them looks at the PUBLISHED release, which is the one thing
+# a user sees. So this downloads what a user downloads and does what a user is
+# told to do, with the commands taken from the release notes rather than
+# invented here.
+#
+# What it does not check: the wording of the published page, which the
+# maintainer may edit by hand before publishing. internal/guard holds the note
+# the draft opens with to what it has to say.
+#
+# Read only, and that is not a detail: a verifier that can publish is not a
+# verifier any more.
+name: verify-release
+
+on:
+  release:
+    types: [published]
+  # Re-runnable by hand against any published tag, because "does that old
+  # release still verify" is worth being able to ask without cutting a new one.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published tag to check, for example v0.1.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # On a Mac, because nothing but a Mac reads a notarisation ticket, and a
+  # checksum says the bytes did not move and nothing about who signed them.
+  verify-macos:
+    name: check the macOS download the way a Mac does
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: which release this is
+        id: which
+        shell: bash
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${EVENT_TAG:-$INPUT_TAG}"
+          test -n "$tag" || { echo "no tag to check"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "checking $tag"
+
+      - name: download the macOS archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.which.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/published"
+          cd "$RUNNER_TEMP/published"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*macos*.tar.gz'
+          ls -l
+
+      - name: the bundle is signed by our certificate, stapled, and starts
+        shell: bash
+        env:
+          TAG: ${{ steps.which.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Read out of the file the signing script reads, so there is one copy
+          # of the digest rather than two that can drift apart.
+          pinned="$(awk '$1 == "apple-developer-id" { print $2 }' .github/signing-certificates.txt)"
+          printf '%s' "$pinned" | grep -qE '^[0-9a-f]{64}$' || {
+            echo "could not read the pinned Apple certificate out of .github/signing-certificates.txt"
+            exit 1
+          }
+          echo "pinned: $pinned"
+
+          cd "$RUNNER_TEMP/published"
+          archives=(*macos*.tar.gz)
+          if [ "${#archives[@]}" -ne 1 ] || [ ! -f "${archives[0]}" ]; then
+            echo "expected one macOS archive, found ${#archives[@]}"
+            exit 1
+          fi
+          archive="${archives[0]}"
+          work="unpacked"
+          rm -rf "$work"
+          mkdir -p "$work"
+          tar -xzf "$archive" -C "$work"
+
+          app="$work/certdoctor.app"
+          if [ ! -d "$app" ]; then
+            echo "$archive holds no certdoctor.app, so nothing in it can carry a ticket"
+            exit 1
+          fi
+          # What is beside the bundle has to be a link. A copy of the binary out
+          # there is refused by Gatekeeper, and ln makes a copy silently where
+          # links do not work.
+          if [ ! -L "$work/certdoctor" ]; then
+            echo "$archive does not carry a link called certdoctor beside the bundle"
+            exit 1
+          fi
+
+          codesign --verify --strict --deep "$app"
+          # The ticket, read out of the file itself. It does not depend on
+          # Gatekeeper being switched on, which is why it comes first.
+          xcrun stapler validate "$app"
+
+          certs="$(mktemp -d)"
+          codesign -d --extract-certificates="$certs/cert" "$app" > /dev/null 2>&1
+          actual="$(shasum -a 256 "$certs/cert0" | awk '{ print $1 }')"
+          rm -rf "$certs"
+          if [ "$actual" != "$pinned" ]; then
+            echo "$archive was signed by a DIFFERENT certificate: $actual"
+            exit 1
+          fi
+          echo "$archive: signed by the pinned certificate, stapled"
+
+          said="$("$work/certdoctor" --version | head -n 1)"
+          if [ "$said" != "certdoctor: ${TAG#v}" ]; then
+            echo "the program says \"$said\", and this release is ${TAG#v}"
+            exit 1
+          fi
+          echo "the link starts the program, which says $said"
+
+          # Gatekeeper last, and only when it is on. A runner with it disabled
+          # answers "accepted" to everything, and a check that cannot fail reads
+          # like proof.
+          if spctl --status 2>/dev/null | grep -q "assessments enabled"; then
+            spctl -a -vv -t exec "$app"
+            echo "Gatekeeper accepts the bundle"
+          else
+            echo "NOTE: Gatekeeper assessments are off on this runner, so spctl was not asked."
+            echo "The ticket and the certificate were checked above, and neither needs it."
+          fi
+
+  verify:
+    name: download what users download, then check it
+    # Windows, because one of these questions cannot be asked anywhere else: a
+    # checksum says the bytes did not change and nothing about who signed them.
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: which release this is
+        id: which
+        shell: bash
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${EVENT_TAG:-$INPUT_TAG}"
+          test -n "$tag" || { echo "no tag to check"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "checking $tag"
+
+      - name: download every published file
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.which.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p published
+          cd published
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"
+          ls -l
+
+      # A release missing one file looks almost exactly like a finished one,
+      # which is why this counts rather than glances. Five archives, the
+      # checksums, the bill of materials and the two statements.
+      - name: everything a release is made of is there
+        id: assets
+        continue-on-error: true
+        shell: bash
+        working-directory: published
+        env:
+          TAG: ${{ steps.which.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          missing=0
+          for os_arch in windows_amd64.zip windows_arm64.zip linux_amd64.tar.gz linux_arm64.tar.gz macos_arm64.tar.gz; do
+            name="certdoctor_${version}_${os_arch}"
+            if [ ! -f "$name" ]; then
+              echo "missing: $name"
+              missing=1
+            fi
+          done
+          shopt -s nullglob
+          archives=(*.zip *.tar.gz)
+          shopt -u nullglob
+          echo "archives: ${#archives[@]}"
+          if [ "${#archives[@]}" != "5" ]; then
+            echo "expected five archives"
+            missing=1
+          fi
+          # Named with the verify- prefix rather than by suffix alone, because
+          # the prefix is the only thing keeping these four at the end of the
+          # download list, and a suffix is happy with a file that lost it.
+          for needed in verify-SHA256SUMS.txt "verify-certdoctor_${version}.spdx.json" \
+              "verify-certdoctor_${version}.provenance.sigstore.json" \
+              "verify-certdoctor_${version}.sbom.sigstore.json"; do
+            if [ ! -f "$needed" ]; then
+              echo "missing: $needed"
+              missing=1
+            fi
+          done
+          test "$missing" = "0"
+          echo "every expected file is published"
+
+      - name: the checksums a user is told to compare
+        id: checksums
+        continue-on-error: true
+        shell: bash
+        working-directory: published
+        run: sha256sum -c verify-SHA256SUMS.txt
+
+      # Run against a real download, as written on the release page. The
+      # provenance one answers for the Linux archives, which nothing signed. The
+      # predicate type is given because gh asks for provenance unless told
+      # otherwise, and a wrong URI answers "no attestation found".
+      - name: the two commands the notes tell people to run
+        id: commands_api
+        continue-on-error: true
+        shell: bash
+        working-directory: published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.which.outputs.tag }}
+        run: |
+          set -euo pipefail
+          linux="certdoctor_${TAG#v}_linux_amd64.tar.gz"
+          windows="certdoctor_${TAG#v}_windows_amd64.zip"
+          echo "where it came from, on a file nothing signed: $linux"
+          gh attestation verify "$linux" -R "$GITHUB_REPOSITORY"
+          echo "what is inside, on a signed file: $windows"
+          gh attestation verify "$windows" -R "$GITHUB_REPOSITORY" \
+            --predicate-type https://spdx.dev/Document/v2.3
+
+      # The notes promise these work offline with --bundle, and a person behind
+      # a proxy that blocks the API is exactly who this program is for.
+      - name: the same two commands with no network to the API
+        id: commands_offline
+        continue-on-error: true
+        shell: bash
+        working-directory: published
+        env:
+          TAG: ${{ steps.which.outputs.tag }}
+        run: |
+          set -euo pipefail
+          linux="certdoctor_${TAG#v}_linux_amd64.tar.gz"
+          windows="certdoctor_${TAG#v}_windows_amd64.zip"
+          gh attestation verify "$linux" -R "$GITHUB_REPOSITORY" \
+            --bundle "verify-certdoctor_${TAG#v}.provenance.sigstore.json"
+          gh attestation verify "$windows" -R "$GITHUB_REPOSITORY" \
+            --bundle "verify-certdoctor_${TAG#v}.sbom.sigstore.json" \
+            --predicate-type https://spdx.dev/Document/v2.3
+
+      # The step this job runs on Windows for. Both archives, not the first one
+      # found: signing one of two and publishing the other unsigned is a mistake
+      # that looks like nothing at all on the page.
+      - name: both Windows programs are signed, stamped, by our certificate, and start
+        id: signatures
+        continue-on-error: true
+        shell: pwsh
+        working-directory: published
+        env:
+          TAG: ${{ steps.which.outputs.tag }}
+        run: |
+          $line = Select-String -Path ../.github/signing-certificates.txt -Pattern '^windows-code-signing\s+([0-9a-f]{64})\s'
+          if (-not $line) { throw "could not read the pinned certificate out of .github/signing-certificates.txt" }
+          $pinned = $line.Matches[0].Groups[1].Value
+          "pinned: $pinned"
+
+          $zips = @(Get-ChildItem -Filter *windows*.zip)
+          if ($zips.Count -ne 2) { throw "expected two Windows archives, found $($zips.Count)" }
+
+          foreach ($zip in $zips) {
+            $into = Join-Path $PWD ("unpacked_" + $zip.BaseName)
+            Expand-Archive -LiteralPath $zip.FullName -DestinationPath $into -Force
+            $programs = @(Get-ChildItem -Path $into -Recurse -Include *.exe)
+            if ($programs.Count -ne 1) { throw "$($zip.Name) holds $($programs.Count) programs, expected one" }
+            $program = $programs[0]
+
+            $sig = Get-AuthenticodeSignature -LiteralPath $program.FullName
+            "$($zip.Name) -> $($program.Name): $($sig.Status)"
+            if ($sig.Status -ne 'Valid') { throw "$($program.Name) in $($zip.Name): the signature status is $($sig.Status)" }
+            # Without a timestamp the signature dies when the certificate
+            # expires, so its absence is a defect rather than a detail.
+            if (-not $sig.TimeStamperCertificate) { throw "$($program.Name) in $($zip.Name): the signature carries no timestamp" }
+            $bytes = [System.Security.Cryptography.SHA256]::Create().ComputeHash($sig.SignerCertificate.RawData)
+            $actual = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
+            if ($actual -ne $pinned) { throw "$($program.Name) in $($zip.Name) was signed by a DIFFERENT certificate: $actual" }
+
+            # The runner is amd64, and Windows on amd64 does not run an arm64
+            # program, so only the build for this machine is started.
+            if ($zip.Name -like '*_windows_amd64.zip') {
+              $said = (& $program.FullName --version | Select-Object -First 1)
+              if ($said -ne "certdoctor: $($env:TAG.TrimStart('v'))") { throw "the program says '$said', and this release is $($env:TAG)" }
+              "$($program.Name) starts and says $said"
+            }
+          }
+          "both Windows programs are signed by the pinned certificate, each with a timestamp"
+
+      # The readme and the site point at /releases/latest, so "published" and
+      # "what people get" are the same thing only while this holds. Asked of the
+      # API rather than of the event, because a dispatch has no event and a
+      # prerelease is supposed to be skipped here.
+      - name: a full release is the one people are offered
+        id: latest
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.which.outputs.tag }}
+        run: |
+          set -euo pipefail
+          prerelease="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+          if [ "$prerelease" = "true" ]; then
+            echo "$TAG is a prerelease, so it must not be latest and is not checked here"
+            exit 0
+          fi
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          echo "latest is $latest, this release is $TAG"
+          test "$latest" = "$TAG"
+
+      # Every check above carries continue-on-error, so this step is reached
+      # whatever happened, and this is the one that decides. A person reads a
+      # release page once and wants the whole list of what is wrong with it,
+      # not the first line.
+      #
+      # outcome and not conclusion: continue-on-error rewrites conclusion to
+      # success and leaves outcome alone, so reading conclusion here would
+      # report every check as passing however it went.
+      - name: one verdict, not the first failure
+        if: always()
+        shell: bash
+        env:
+          ASSETS: ${{ steps.assets.outcome }}
+          CHECKSUMS: ${{ steps.checksums.outcome }}
+          COMMANDS_API: ${{ steps.commands_api.outcome }}
+          COMMANDS_OFFLINE: ${{ steps.commands_offline.outcome }}
+          SIGNATURES: ${{ steps.signatures.outcome }}
+          LATEST: ${{ steps.latest.outcome }}
+        run: |
+          set -euo pipefail
+          failed=0
+          report() {
+            printf '  %-52s %s\n' "$2" "$1"
+            if [ "$1" != "success" ]; then
+              failed=1
+            fi
+          }
+          echo "what this release page answers for:"
+          report "$ASSETS" "everything a release is made of is there"
+          report "$CHECKSUMS" "the checksums a user is told to compare"
+          report "$COMMANDS_API" "the commands the notes tell people to run"
+          report "$COMMANDS_OFFLINE" "the same commands with no network"
+          report "$SIGNATURES" "both Windows programs by our certificate"
+          report "$LATEST" "a full release is the one people are offered"
+          echo
+          if [ "$failed" != "0" ]; then
+            echo "This release page does not answer for itself."
+            echo "Every line above that is not success is a separate thing to fix,"
+            echo "and they are all listed rather than found one release at a time."
+            exit 1
+          fi
+          echo "the release page answers for itself"

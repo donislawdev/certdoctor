@@ -33,9 +33,10 @@ const noticesFile = "THIRD-PARTY-NOTICES.md"
 // list never names them the way it names the rest.
 const stdHeading = "Go standard library and runtime"
 
-// releaseTargets are the five builds ADR116 decision 2 ships. The list is
-// written here because the release workflow that builds them does not exist
-// yet, and a change to it is a change to that decision.
+// releaseTargets are the five builds ADR116 decision 2 ships. The decision is
+// written here, and TestTheReleaseBuildsTheTargetsTheNoticesAreCheckedFor holds
+// the release script and the CI matrix to it, so a change to any of the three
+// is a change to that decision.
 //
 // All five are asked, not one, because what is linked depends on the target -
 // a file the runtime builds for amd64 alone carries a notice the arm64 builds

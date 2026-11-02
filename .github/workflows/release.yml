@@ -1,0 +1,276 @@
+# certdoctor release - the first of three phases, and nothing here publishes.
+#
+# A tag starts a release and a person finishes it. This builds the five
+# archives, attests where they came from, and opens an EMPTY draft. The signing
+# happens on the maintainer's machine, where the Windows key is on a card that
+# cannot be exported and the Apple key is in a keychain on a Mac -
+# .github/scripts/sign_release.py, which then asks attest-release.yml for the
+# statement about the signed bytes. The maintainer publishes the draft, and
+# verify-release.yml checks the published page the way a user would. ADR116
+# decision 1, after the release pipeline of the maintainer's other Go project.
+#
+# Running this by hand from the Actions tab builds everything and attaches it to
+# the run, so the build can be tried without a tag being spent. The publish job
+# is the only one that writes anything, and it is fenced behind the tag.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# Read only by default. The one job that needs to write says so itself.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: the tree is green and the tag agrees with the code
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: set up go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # Asked of the program rather than read out of the source, so this cannot
+      # drift from what --version and every report will say.
+      - name: what version the code says
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          said="$(go run ./cmd/certdoctor --version | head -n 1)"
+          version="${said#certdoctor: }"
+          if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "--version said \"${said}\", which does not carry a version this can read."
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "the code says ${version}"
+
+      # The suite above is not the whole of CI - the coverage gate, staticcheck,
+      # govulncheck and the acceptance run against the binary all live in ci.yml
+      # and none of them runs here. Without this, the only thing between a red
+      # tree and a release is somebody remembering.
+      #
+      # Asked BY NAME rather than as "were all the checks green". A query for
+      # every check answers about whatever happened to report, so a workflow
+      # that never ran reads exactly like one that passed.
+      - name: ci was green on this exact commit
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          verdict="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=ci.yml --commit="${GITHUB_SHA}" \
+            --limit 1 --json status,conclusion \
+            --jq 'if length == 0 then "never ran" else .[0] | "\(.status) \(.conclusion)" end')"
+          echo "ci on ${GITHUB_SHA}: ${verdict}"
+          if [ "$verdict" != "completed success" ]; then
+            echo "The ci workflow on this commit says: ${verdict}."
+            echo "A release is built from a commit ci has passed, so push the commit,"
+            echo "wait for ci, and tag it only then."
+            exit 1
+          fi
+
+      # A release page points at the changelog, and a changelog with no section
+      # for this version points back at nothing. The other half matters more:
+      # entries left under Unreleased are changes that went out without being
+      # described.
+      - name: the changelog is closed for this version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          if ! awk -v heading="## [${version}]" 'index($0, heading) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
+            echo "CHANGELOG.md has no section for ${version}."
+            echo "Move what is under [Unreleased] into a dated section for this version first."
+            exit 1
+          fi
+          left="$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | grep -c '[^[:space:]]' || true)"
+          if [ "$left" != "0" ]; then
+            echo "CHANGELOG.md still has ${left} line(s) under [Unreleased]."
+            echo "Those are changes that would go out undescribed. Move them into ${version}."
+            exit 1
+          fi
+          echo "the changelog is closed for ${version}"
+
+      # The version is raised by the maintainer and nobody else. A tag that
+      # disagrees with the code would put one number on the release page and
+      # another in every report the release writes, and the report is the copy
+      # that turns up months later attached to somebody's question.
+      - name: the tag says the same as the code
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          code="${{ steps.version.outputs.version }}"
+          if [ "$tag" != "$code" ]; then
+            echo "The tag is ${GITHUB_REF_NAME} and certdoctor --version says ${code}."
+            echo "Raise the version in the code first, commit it, then tag that commit."
+            exit 1
+          fi
+          echo "the tag and the code agree on ${code}"
+
+      # Last, because it is the slow one and every check above can refuse in
+      # seconds. A release built from a red tree is the one kind of release that
+      # cannot be taken back, because the binaries are already on somebody's
+      # disk. The same command the ci test job runs on Linux.
+      - name: test with the race detector
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -count=1 ./...
+
+  build:
+    name: build and pack the five targets
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: set up go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # One runner cross compiles all five, because the program has no C in it.
+      # That is the same property the static build checks in ci.yml exist to
+      # keep, and building every target from one place keeps it visible.
+      #
+      # Into RUNNER_TEMP and never into the checkout: every binary records
+      # whether its tree had uncommitted changes, an untracked archive counts,
+      # and the bill of materials refuses such a build.
+      - name: build, write the bill of materials, pack
+        shell: bash
+        run: bash .github/scripts/build_release.sh "${{ needs.check.outputs.version }}" "$RUNNER_TEMP/release"
+
+      - name: keep the build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build
+          path: ${{ runner.temp }}/release/dist/*
+          if-no-files-found: error
+
+  publish:
+    name: attest the build and open an empty draft
+    needs: [check, build]
+    # The only job that writes anything, and the only one fenced behind a tag.
+    # Running this workflow by hand stops before here on purpose.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      # id-token mints the short lived token that signs the statement, and
+      # attestations writes it to this repository's store. Nothing else here
+      # needs either.
+      id-token: write
+      attestations: write
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: fetch the build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build
+          path: ${{ runner.temp }}/incoming
+
+      # build.sha256 rather than verify-SHA256SUMS.txt, and the difference is the
+      # point. These are the bytes the RUNNER made. The Windows and macOS
+      # archives are signed afterwards, which changes them, so the list a user
+      # checks is written on the maintainer's machine over what will be
+      # downloaded. This one names exactly what the statement below covers.
+      - name: one list of what this build produced
+        shell: bash
+        working-directory: ${{ runner.temp }}/incoming
+        run: |
+          set -euo pipefail
+          sha256sum -- * > build.sha256
+          cat build.sha256
+
+      # WHO built it and FROM WHAT: this repository, this commit, this workflow,
+      # a GitHub hosted runner - signed with a short lived identity. A signature
+      # says who vouches for a file and provenance says which source and which
+      # build produced it, so both are worth having. A stolen key cannot forge
+      # this, and a fork cannot claim to be this repository.
+      #
+      # It stays true for the Linux archives, which nothing signs. For the
+      # Windows and macOS ones it describes what the runner made before a person
+      # signed it, which is true and is not what anybody downloads - so those
+      # get a statement of their own in attest-release.yml.
+      - name: attest what this build produced
+        id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: ${{ runner.temp }}/incoming/build.sha256
+
+      # The statement travels with the build to the signing machine, which
+      # checks the archives against it before touching them.
+      - name: keep the statement with the build
+        shell: bash
+        run: cp "${{ steps.provenance.outputs.bundle-path }}" "$RUNNER_TEMP/incoming/build.provenance.sigstore.json"
+
+      # No assets. These are not the bytes a user gets, and an unsigned
+      # executable on a release page - even for a quarter of an hour - is an
+      # executable somebody downloads.
+      #
+      # A tag whose name carries a hyphen - v0.2.0-rc.1 - is a prerelease.
+      - name: open the draft, with nothing in it yet
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          flags=(--draft --title "${GITHUB_REF_NAME}" --notes-file .github/release-notes.md)
+          case "${GITHUB_REF_NAME}" in
+            *-*) flags+=(--prerelease) ;;
+          esac
+          gh release create "${GITHUB_REF_NAME}" --repo "$GITHUB_REPOSITORY" "${flags[@]}"
+          echo "drafted ${GITHUB_REF_NAME}, empty on purpose"
+
+      # The seam between where builds belong and where signatures belong. The
+      # name is what the signing script asks for.
+      - name: hand the build over
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-build-${{ github.ref_name }}
+          path: ${{ runner.temp }}/incoming/*
+          if-no-files-found: error
+
+      - name: what happens next
+        shell: bash
+        run: |
+          echo "Built, attested, and opened as an EMPTY DRAFT. Nothing is published."
+          echo
+          echo "On the machine with the card, with the Mac awake, from a clone of this repository:"
+          echo
+          echo "    python .github/scripts/sign_release.py ${GITHUB_REF_NAME} --macos-host user@mac"
+          echo
+          echo "It checks this build's provenance before touching it, signs the two Windows"
+          echo "programs with the card, hands the macOS archive to the Mac to be signed,"
+          echo "notarised and stapled, writes verify-SHA256SUMS.txt over what it made, uploads"
+          echo "everything to the draft and asks attest-release.yml for the statement about"
+          echo "the signed bytes. Then read the draft and publish it."

@@ -1,0 +1,34 @@
+# The certificates releases are signed with, pinned by the SHA-256 of their
+# DER bytes, and the day each one stops being able to sign.
+#
+# One line per certificate: a name, the digest, the expiry date. Blank lines and
+# lines starting with # are ignored. Read by .github/scripts/sign_release.py,
+# which refuses a file signed by any other certificate, and by
+# .github/workflows/verify-release.yml, which asks the same of the published
+# downloads. One written copy of each digest, so the two cannot drift apart.
+#
+# A digest rather than a name. A second code signing certificate on the same
+# machine - a renewal, a test one, one from another project - signs just as
+# willingly, and the release page looks identical either way. A renewal is a
+# DIFFERENT certificate, so its line here moves with it.
+#
+# Nothing about either certificate's subject is written here. Both carry the
+# maintainer's name, and both become public the first time a signed release
+# goes out, which is a thing to say once rather than to spread through a
+# repository.
+#
+# windows-code-signing: the key is on a cryptographic card and cannot be
+# exported, which is why signing is a step a person runs rather than a job on a
+# runner. Issued by Certum Code Signing 2021 CA. The same card signs the
+# maintainer's other projects, and these bytes were read from it.
+#
+# apple-developer-id: a Developer ID Application certificate in a keychain on
+# the maintainer's Mac, issued by Apple's Developer ID Certification Authority.
+# It sits in two keychains there, so "Developer ID Application" names two
+# entries and the digest is what makes the choice unambiguous.
+#
+# A signature outlives its certificate, because every one made for a release
+# carries a timestamp. Nothing new can be signed after the date.
+
+windows-code-signing 47b79ad3cfa53ef846cad03a59148f8c981d0b1196891e48b8c8d7982b10c148 2027-08-19
+apple-developer-id   c656a279aba94f535d6fcf9aff1ce05cd51295aea52295677ae5e1f1d7d77794 2029-10-27
