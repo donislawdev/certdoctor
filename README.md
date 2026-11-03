@@ -30,8 +30,8 @@ then does the part no other tool does: it asks **each trust store on the machine
 whether it trusts what the server presented, and prints the command that would fix each store that
 does not, with the real paths from your machine in it. `curl -v` and `openssl s_client` answer for
 one program. certdoctor answers for the Windows store, every Java installation, every `git`, every
-`curl`, every `node` and every Python it finds - and tells you whether the fault is on this machine
-at all.
+`curl`, every `node`, every Python and the `pip` of each it finds - and tells you whether the fault is
+on this machine at all.
 
 ⭐ **If it ended a "works on my machine" argument, leave a star.** That is how the next person
 staring at `PKIX path building failed` finds out it exists.
@@ -41,8 +41,8 @@ staring at `PKIX path building failed` finds out it exists.
 - **Say whose problem it is** - this machine, or the server. A server that does not send its
   intermediate certificate is named as the server's fault, with the evidence to paste into a ticket.
 - **One row per trust store, not per runtime** - the Windows store as your account sees it and as
-  services see it, the Linux CA bundle, every JDK and JRE separately, every `git` and `curl` it
-  finds. On the machine it was built on, one run reads seventeen stores.
+  services see it, the Linux CA bundle, every JDK and JRE separately, every `git`, `curl`, `node`,
+  Python and `pip` it finds. On the machine it was built on, one run reads sixteen stores.
 - **Print the command that fixes each store** - `certutil`, `keytool` with the real `cacerts` path of
   that JDK, an append to git's own bundle - and say when it needs administrator rights. It prints
   them. It never runs them.
@@ -98,7 +98,7 @@ certdoctor https://untrusted-root.badssl.com/
 certdoctor https://expired.badssl.com/
 ```
 
-> 13 of 13 store(s) do not trust the presented chain - a certificate in the path is past its
+> 16 of 16 store(s) do not trust the presented chain - a certificate in the path is past its
 > validity.
 
 The second one is where the trust matrix earns its place. Every store refuses, and every store that
@@ -298,7 +298,7 @@ it is several trust stores disagreeing.
 | `SSL certificate problem: ...` | `curl`, and `git` over HTTPS | every `git` and `curl` it finds, and which store each of them reads |
 | `x509: certificate signed by unknown authority` | programs written in Go | the platform store - the Windows store, or the Linux CA bundle |
 | `407 Proxy Authentication Required` | anything going through a proxy | which proxy applies to this URL, and whether it wants credentials |
-| `certificate verify failed: unable to get local issuer certificate` | Python, `pip` | every Python on PATH, by the list its `ssl` module trusts - `pip`'s own row is coming next |
+| `certificate verify failed: unable to get local issuer certificate` | Python, `pip` | every Python on PATH, by the list its `ssl` module trusts, and the `pip` of each by its own rule - this machine's store through truststore from pip 24.2, one CA file before it |
 | `certificate verify failed: Missing Authority Key Identifier`, `Basic Constraints of CA cert not marked critical` | Python 3.13 and newer | which certificate in the chain breaks which of OpenSSL's strict rules, which Python 3.13 turned on |
 | `SELF_SIGNED_CERT_IN_CHAIN` | Node.js, `npm` | every `node` on PATH, by the list that binary trusts - `npm`'s own `cafile` is not read yet |
 
@@ -330,7 +330,7 @@ not exist was a tool that checks every cause on the machine in front of you and 
 
 | Layer | Question it answers | Example of what it finds |
 |---|---|---|
-| `L0` Context | which of the 23 environment variables that decide trust and proxying are set | `HTTPS_PROXY` set while `https_proxy` is not - programs disagree about which one counts |
+| `L0` Context | which of the 25 environment variables that decide trust and proxying are set | `HTTPS_PROXY` set while `https_proxy` is not - programs disagree about which one counts |
 | `L1` Name resolution | what each resolver says, and what your system says | the two views sharing no address at all - what split horizon DNS looks like |
 | `L2` Proxy | which proxy this URL really goes through, and who decided that | a PAC script sending this host direct while every setting names a proxy |
 | `L3` TCP | which of the resolved addresses accept a connection | refused, unreachable and timed out told apart, per address |
@@ -399,8 +399,8 @@ every schema it emits, so a log from six months ago still says what produced it.
 
 A tool that quietly fails to look at something is worse than one that says what it cannot do.
 
-- **The trust matrix knows six families today** - the platform store on Windows and Linux, Java,
-  `git`, `curl`, Node.js and Python. `pip` comes next, then OpenSSL, .NET and
+- **The trust matrix knows seven families today** - the platform store on Windows and Linux, Java,
+  `git`, `curl`, Node.js, Python and `pip`. OpenSSL comes next, then .NET and
   PowerShell, Docker, Maven and Gradle, and apt. A Python started through an app alias in
   `WindowsApps` was measured with the Python install manager, not with Python from the Microsoft
   Store. OpenSSL's strict rules are applied as OpenSSL 3 has them, and two of them were measured

@@ -12,16 +12,21 @@ import (
 // helpGroups is the order the groups appear in. Declared rather than derived
 // from the switch list so that adding a switch cannot silently reorder the page
 // somebody reads every time they forget a flag name.
+//
+// A note is printed under the group's title. The one there is says the group's
+// switches are not built, and TestTheGroupTheHelpCallsNotBuiltIsRefused holds
+// it to what the program does with them, so it comes off the day they work.
 var helpGroups = []struct {
 	name  string
 	title string
+	note  string
 }{
-	{"input", "WHAT TO EXAMINE"},
-	{"output", "OUTPUT"},
-	{"containers", "CONTAINERS"},
-	{"channels", "CHANNELS"},
-	{"budget", "BUDGET"},
-	{"meta", "META"},
+	{"input", "WHAT TO EXAMINE", ""},
+	{"output", "OUTPUT", ""},
+	{"containers", "CONTAINERS", "Not built in this release. Each of these is accepted and refused with the reason."},
+	{"channels", "CHANNELS", ""},
+	{"budget", "BUDGET", ""},
+	{"meta", "META", ""},
 }
 
 // helpText renders --help.
@@ -58,6 +63,9 @@ func writeSwitches(b *strings.Builder) {
 	}
 	for _, group := range helpGroups {
 		fmt.Fprintf(b, "\n%s\n", group.title)
+		if group.note != "" {
+			fmt.Fprintf(b, "  %s\n", group.note)
+		}
 		for _, s := range switches {
 			if s.group != group.name {
 				continue
