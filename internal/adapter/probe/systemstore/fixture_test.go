@@ -69,6 +69,42 @@ func anAuthorityValid(t *testing.T, name string, from, until time.Time) issued {
 	return issued{certificate, key}
 }
 
+// anIntermediate is an authority the given one signed, valid around the fixed
+// test clock.
+func anIntermediate(t *testing.T, name string, by issued) issued {
+	t.Helper()
+	key := mustKey(t)
+	return issued{signedAuthority(t, pkix.Name{CommonName: name}, nil, key, by), key}
+}
+
+// aCrossCertificate is the given root's own name and key, signed by another
+// authority - the shape example.com sent on 2026-11-03, OBS207. A chain built
+// through it stops at the other authority, while the certificate below it still
+// names the root.
+func aCrossCertificate(t *testing.T, of, by issued) *x509.Certificate {
+	t.Helper()
+	return signedAuthority(t, of.certificate.Subject, of.certificate.SubjectKeyId, of.key, by)
+}
+
+// signedAuthority is a CA certificate for this name and key, signed by another.
+func signedAuthority(t *testing.T, subject pkix.Name, keyID []byte, key *ecdsa.PrivateKey, by issued) *x509.Certificate {
+	t.Helper()
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(3), Subject: subject, SubjectKeyId: keyID,
+		NotBefore: by.certificate.NotBefore, NotAfter: by.certificate.NotAfter,
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, by.certificate, &key.PublicKey, by.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return certificate
+}
+
 // leafOptions shapes one leaf.
 type leafOptions struct {
 	notBefore, notAfter time.Time

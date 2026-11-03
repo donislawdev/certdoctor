@@ -211,6 +211,46 @@ func TestARootTheServerSentIsWeighedByItsFingerprint(t *testing.T) {
 	}
 }
 
+// A CROSS-CERTIFICATE STOPS THE CHAIN AT AN AUTHORITY NO LIST NAMES, while the
+// certificate below it names a root the list does - example.com on 2026-11-03,
+// OBS207. Asked about the last certificate alone, this was a FAIL with a
+// command for a site every Windows machine with a network reaches.
+func TestACrossSignedChainIsWeighedByEveryIssuerInIt(t *testing.T) {
+	program := anAuthority(t, "a root in the program")
+	older := anAuthority(t, "an older authority on no list")
+	intermediate := anIntermediate(t, "an intermediate", program)
+	leaf := aLeaf(t, intermediate, leafOptions{})
+	chain := chainOf(partialChain, leaf.Raw, intermediate.certificate.Raw, aCrossCertificate(t, program, older).Raw)
+
+	if v := judged(chain, aListHolding(t, testClock, program.certificate), testClock); !v.isUndetermined(issuerOnTheList) {
+		t.Errorf("a chain ending in a cross-certificate of a root on the list was not undetermined: %+v", v)
+	}
+	// The twin: the same chain against a list naming neither root is the FAIL it
+	// always was, so the answer above came from the root on the list.
+	unrelated := aListHolding(t, testClock, anAuthority(t, "unrelated").certificate)
+	if v := judged(chain, unrelated, testClock); !v.isRefused(report.UnknownAuthority) {
+		t.Errorf("the same chain with its root on no list was not refused: %+v", v)
+	}
+}
+
+// A ROOT SENT IN ANOTHER EDITION - the same name and key as one on the list,
+// issued again with a different fingerprint. The listed edition is the one
+// Windows fetches, so the fingerprint is the first question and not the only
+// one.
+func TestARootSentInAnotherEditionIsWeighedByItsNameAndKey(t *testing.T) {
+	listed := anAuthority(t, "a root in the program")
+	edition := issued{signedAuthority(t, listed.certificate.Subject, listed.certificate.SubjectKeyId, listed.key, listed), listed.key}
+	chain := chainOf(untrustedRoot, aLeaf(t, edition, leafOptions{}).Raw, edition.certificate.Raw)
+
+	if v := judged(chain, aListHolding(t, testClock, listed.certificate), testClock); !v.isUndetermined(issuerOnTheList) {
+		t.Errorf("a root sent in another edition of one on the list was not undetermined: %+v", v)
+	}
+	unrelated := aListHolding(t, testClock, anAuthority(t, "unrelated").certificate)
+	if v := judged(chain, unrelated, testClock); !v.isRefused(report.UnknownAuthority) {
+		t.Errorf("the same root with nothing like it on the list was not refused: %+v", v)
+	}
+}
+
 // BOTH AMBIGUOUS BITS AT ONCE GO TO THE MISSING ISSUER - the chain stopped
 // before any root, so there is no root in hand to look up by fingerprint.
 func TestAPartialChainIsWeighedAsAMissingIssuerEvenWithTheOtherBit(t *testing.T) {
@@ -230,8 +270,17 @@ func TestAChainWithNothingToInspectIsUndetermined(t *testing.T) {
 			t.Errorf("status 0x%08X with no certificate: %+v", status, v)
 		}
 	}
-	if v := judged(chainOf(partialChain, []byte("garbage")), list, testClock); !v.isUndetermined("could not be parsed") {
-		t.Errorf("an unreadable last certificate: %+v", v)
+	// An unreadable certificate anywhere in the chain is a question the list was
+	// never asked - on either path, and below the last certificate too.
+	leaf := aLeaf(t, anAuthority(t, "private"), leafOptions{}).Raw
+	for _, b := range []built{
+		chainOf(partialChain, []byte("garbage")),
+		chainOf(partialChain, leaf, []byte("garbage"), leaf),
+		chainOf(untrustedRoot, leaf, []byte("garbage")),
+	} {
+		if v := judged(b, list, testClock); !v.isUndetermined("could not be parsed") {
+			t.Errorf("status 0x%08X with an unreadable certificate among %d: %+v", b.status, len(b.elements), v)
+		}
 	}
 }
 
@@ -241,7 +290,10 @@ func TestEveryJudgedRowSatisfiesTheContract(t *testing.T) {
 	program := anAuthority(t, "program")
 	private := anAuthority(t, "private")
 	list := aListHolding(t, testClock, program.certificate)
+	intermediate := anIntermediate(t, "intermediate", program)
 	shapes := []built{
+		chainOf(partialChain, aLeaf(t, intermediate, leafOptions{}).Raw, intermediate.certificate.Raw,
+			aCrossCertificate(t, program, private).Raw),
 		chainOf(0, aLeaf(t, program, leafOptions{}).Raw),
 		chainOf(partialChain, aLeaf(t, program, leafOptions{}).Raw),
 		chainOf(partialChain, aLeaf(t, private, leafOptions{}).Raw),

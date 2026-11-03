@@ -1197,6 +1197,29 @@ func TestTheShippedBinaryOffersNoCommandWhereNothingIsBroken(t *testing.T) {
 	if !strings.Contains(document, `"trust_store"`) {
 		t.Fatal("no trust store row reached the document, so nothing here says anything about commands")
 	}
+	rows := trustRowsIn(t, document)
+
+	// THIS HALF NEEDS NO HEALTHY MACHINE, so it is asked on every one: a store
+	// that trusts the chain has nothing to fix, whatever the others make of it.
+	var trusting int
+	var refusing, offering []string
+	for _, row := range rows {
+		switch {
+		case row.Trusts == nil:
+		case *row.Trusts:
+			trusting++
+		default:
+			refusing = append(refusing, row.String())
+		}
+		if row.Fix == nil {
+			continue
+		}
+		offering = append(offering, row.String())
+		if row.Trusts != nil && *row.Trusts {
+			t.Errorf("%s trusts the presented chain and still offers %q", row, row.Fix.Command)
+		}
+	}
+
 	// A PRECONDITION, NOT AN ASSERTION - and it was spelled as one until
 	// 2026-09-02, which is why this check was red on every CI runner while
 	// passing on the machine it was written on. Its own sentence says the case
@@ -1210,17 +1233,24 @@ func TestTheShippedBinaryOffersNoCommandWhereNothingIsBroken(t *testing.T) {
 	// NOBODY CHECKED. That banner is exactly the protection this needs: a
 	// precondition that quietly stopped being met would take this guard away
 	// without anybody noticing, which is the failure this file exists to catch.
-	if !strings.Contains(document, `"trusts_presented_chain": true`) {
-		t.Skip("NOT CHECKED: no store on this machine trusted the presented chain, so the case this check is " +
-			"about - a machine with nothing wrong with it - did not occur. This is a skip, not a pass.")
+	//
+	// EVERY ASSESSED STORE, NOT ONE OF THEM, SINCE 2026-11-03 - ADR126. Until
+	// then this asked for one trusting store and asserted what only a machine
+	// where every store trusts can promise. The public site moved to a chain one
+	// store on the macOS runner does not hold, and the check called that
+	// runner's missing root a defect in this program.
+	if trusting == 0 || len(refusing) > 0 {
+		t.Skipf("NOT CHECKED: %d store(s) here trusted the presented chain and these did not: %v - so the case "+
+			"this check is about, a machine with nothing wrong with it, did not occur. This is a skip, not a pass.",
+			trusting, refusing)
 	}
 
 	if !strings.Contains(document, `"fix": null`) {
 		t.Error("no row carries a null fix, so either the field is missing or every row was given a command")
 	}
 	if strings.Contains(document, `"command"`) {
-		t.Error("the report offers a command to run against a public site every store here trusts - " +
-			"advice invented for a machine with nothing wrong with it")
+		t.Errorf("the report offers a command to run against a public site every store here trusts - "+
+			"advice invented for a machine with nothing wrong with it, on: %v", offering)
 	}
 }
 

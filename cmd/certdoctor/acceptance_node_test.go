@@ -3,7 +3,6 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,7 +50,7 @@ func TestTheShippedBinaryStartsNodeWithoutNodeOptions(t *testing.T) {
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("the preload ran inside the node process this program started")
 	}
-	if len(trustRowsIn(t, r.stdout, "node")) == 0 {
+	if len(rowsOf(t, r.stdout, "node")) == 0 {
 		t.Fatalf("no node row in the report, so node was never asked and the marker proves nothing:\n%s", r.stdout)
 	}
 }
@@ -90,45 +89,13 @@ func TestTheShippedBinaryStartsNodeWithoutOpenSSLConf(t *testing.T) {
 	}
 
 	r := startProgram(t, invocation{env: []string{setting}}, aLoopbackTarget(t), "--json")
-	rows := trustRowsIn(t, r.stdout, "node")
+	rows := rowsOf(t, r.stdout, "node")
 	if len(rows) == 0 {
 		t.Fatalf("no node row in the report, so node was never asked and nothing is proven:\n%s", r.stdout)
 	}
-	for _, reason := range rows {
-		if strings.HasPrefix(reason, "node exited with") {
-			t.Errorf("the node this program started read OPENSSL_CONF: %s", reason)
+	for _, row := range rows {
+		if strings.HasPrefix(row.reason(), "node exited with") {
+			t.Errorf("the node this program started read OPENSSL_CONF: %s", row.reason())
 		}
 	}
-}
-
-// trustRowsIn is the not_assessed of every trust row of one runtime in a
-// report, empty for a row with a verdict.
-func trustRowsIn(t *testing.T, stdout, runtime string) []string {
-	t.Helper()
-	var document struct {
-		Layers []struct {
-			Findings []struct {
-				TrustStore *struct {
-					Runtime     string  `json:"runtime"`
-					NotAssessed *string `json:"not_assessed"`
-				} `json:"trust_store"`
-			} `json:"findings"`
-		} `json:"layers"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
-		t.Fatalf("decoding: %v", err)
-	}
-	var reasons []string
-	for _, layer := range document.Layers {
-		for _, finding := range layer.Findings {
-			if store := finding.TrustStore; store != nil && store.Runtime == runtime {
-				reason := ""
-				if store.NotAssessed != nil {
-					reason = *store.NotAssessed
-				}
-				reasons = append(reasons, reason)
-			}
-		}
-	}
-	return reasons
 }

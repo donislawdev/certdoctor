@@ -87,6 +87,22 @@ func (l programList) namesIssuerOf(c *x509.Certificate) bool {
 	return l.names[hex.EncodeToString(sum[:])]
 }
 
+// namesAnIssuerOf reports whether the list names the issuer of any certificate
+// in the chain, the way namesIssuerOf names one.
+//
+// ANY ONE IS ENOUGH, for the reason a single match is: it can only turn a FAIL
+// into an undetermined. A root on the list that some certificate in the chain
+// names is a path Windows could still complete by fetching it, whatever else
+// the server sent above that certificate - OBS207, a cross-certificate.
+func (l programList) namesAnIssuerOf(chain []*x509.Certificate) bool {
+	for _, c := range chain {
+		if l.namesIssuerOf(c) {
+			return true
+		}
+	}
+	return false
+}
+
 // The identifiers the list is wrapped in. Both are checked, so that a value
 // holding something else is refused rather than read as a list of roots.
 var (

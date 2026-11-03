@@ -164,14 +164,23 @@ const (
 // authority with no certificate on this machine and no address anywhere. Only
 // the last is something this machine will never trust, and it is the main
 // scenario of this product.
+//
+// THE LIST IS ASKED ABOUT EVERY CERTIFICATE WINDOWS PLACED, NOT THE LAST ONE.
+// Measured 2026-11-03 on example.com: the server sends its root as a
+// cross-certificate signed by an older authority, Windows stops the chain at
+// that cross-certificate, and the older authority is on no list - while the
+// root the certificate below it names is on the list, and is the one Windows
+// would fetch. Asking about the last certificate alone wrote a FAIL and a
+// command for a site every Windows machine with a network reaches.
 func missingIssuer(store *report.TrustStore, b built, list programList, now time.Time) {
-	last, why := lastCertificate(b)
+	chain, why := placed(b)
 	if why != "" {
 		store.NotAssessed = why
 		return
 	}
+	last := chain[len(chain)-1]
 	switch {
-	case list.available() && list.namesIssuerOf(last):
+	case list.available() && list.namesAnIssuerOf(chain):
 		store.NotAssessed = issuerOnTheList
 	case len(last.IssuingCertificateURL) > 0:
 		store.NotAssessed = issuerFetchable
@@ -186,17 +195,24 @@ func missingIssuer(store *report.TrustStore, b built, list programList, now time
 // IT IS THE SAME QUESTION ONE STEP LATER - docs/17 calls it E4, and no target
 // measured so far produced it: a server sending a root from the program that
 // this machine has not fetched. The list answers it by the root's own
-// fingerprint, because here the root is in hand.
+// fingerprint first, because here the root is in hand - and then the way the
+// missing issuer is answered, because a root sent in an older edition, under
+// the name and key of one on the list, is fetched in its listed edition.
 func untrustedSentRoot(store *report.TrustStore, b built, list programList, now time.Time) {
-	if len(b.elements) == 0 {
-		store.NotAssessed = noChainBuilt
+	sent, why := placed(b)
+	if why != "" {
+		store.NotAssessed = why
 		return
 	}
-	if list.available() && list.holdsRoot(b.elements[len(b.elements)-1].der) {
+	root := sent[len(sent)-1]
+	switch {
+	case list.available() && list.holdsRoot(root.Raw):
 		store.NotAssessed = sentRootOnTheList
-		return
+	case list.available() && list.namesAnIssuerOf(sent):
+		store.NotAssessed = issuerOnTheList
+	default:
+		absentEverywhere(store, list, now)
 	}
-	absentEverywhere(store, list, now)
 }
 
 // absentEverywhere is the last step: nothing here holds the root, nothing will
@@ -230,15 +246,24 @@ func (l programList) cannotRuleOut(now time.Time) string {
 	return ""
 }
 
-// lastCertificate is the certificate whose issuer Windows could not find.
-func lastCertificate(b built) (*x509.Certificate, string) {
+// placed is every certificate Windows put in the chain, leaf first - so the
+// last one is the certificate whose issuer is missing.
+//
+// ONE UNREADABLE CERTIFICATE MAKES THE WHOLE ANSWER UNDETERMINED. The list is
+// asked about each of them, and a certificate that cannot be read is a
+// question nobody asked - which may be the one that would have found the root.
+func placed(b built) ([]*x509.Certificate, string) {
 	if len(b.elements) == 0 {
 		return nil, noChainBuilt
 	}
-	certificate, err := x509.ParseCertificate(b.elements[len(b.elements)-1].der)
-	if err != nil {
-		return nil, fmt.Sprintf("the last certificate Windows could place in the chain could not be parsed (%v), "+
-			"so whether its issuer could be fetched is undetermined", err)
+	chain := make([]*x509.Certificate, 0, len(b.elements))
+	for _, e := range b.elements {
+		certificate, err := x509.ParseCertificate(e.der)
+		if err != nil {
+			return nil, fmt.Sprintf("a certificate Windows placed in the chain could not be parsed (%v), "+
+				"so whether its issuer could be fetched is undetermined", err)
+		}
+		chain = append(chain, certificate)
 	}
-	return certificate, ""
+	return chain, ""
 }

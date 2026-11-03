@@ -1597,9 +1597,10 @@ type Inspection struct {
 // three that can REFUSE, rather than notice afterwards.
 //
 // "INSPECTION" IS DELIBERATELY NOT ON IT. The careful sentence this program
-// prints when it cannot tell two situations apart says "TLS inspection looks
-// exactly like this and so does an organisation's own certificate authority",
-// and naming both readings is the opposite of an accusation. These four words
+// prints when it cannot tell situations apart says "TLS inspection looks
+// exactly like this, so does an organisation's own certificate authority and so
+// does a public authority", and naming every reading is the opposite of an
+// accusation. These four words
 // have no such use: each of them, on its own, tells somebody their traffic is
 // being read.
 var AccusingWords = []string{"intercept", "mitm", "eavesdrop", "man in the middle"}

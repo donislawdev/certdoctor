@@ -64,6 +64,37 @@ func TestWindowsReportsTheBitsJudgeIsBuiltOn(t *testing.T) {
 	}
 }
 
+// TestWindowsStopsAChainAtACrossCertificate is the measurement OBS207 rests on,
+// asked of the real library: a root sent as a cross-certificate, signed by an
+// authority nobody installed, is where Windows ends the chain - so the list
+// has to be asked about the certificates below it as well, and is.
+func TestWindowsStopsAChainAtACrossCertificate(t *testing.T) {
+	now := time.Now()
+	root := anAuthorityValid(t, "certdoctor test root", now.Add(-72*time.Hour), now.Add(24*time.Hour))
+	older := anAuthorityValid(t, "certdoctor older test root", now.Add(-72*time.Hour), now.Add(24*time.Hour))
+	intermediate := anIntermediate(t, "certdoctor test intermediate", root)
+	leaf := aLeaf(t, intermediate, leafOptions{notBefore: now.Add(-time.Hour), notAfter: now.Add(time.Hour)})
+	cross := aCrossCertificate(t, root, older)
+	list := aListHolding(t, now, root.certificate)
+
+	for _, e := range engines {
+		b, err := build(e.engine, [][]byte{leaf.Raw, intermediate.certificate.Raw, cross.Raw}, now)
+		if err != nil {
+			t.Fatalf("%s: Windows could not build the chain: %v", e.instance, err)
+		}
+		if b.status != partialChain {
+			t.Errorf("%s: status 0x%08X, want a partial chain", e.instance, b.status)
+		}
+		if n := len(b.elements); n != 3 || string(b.elements[n-1].der) != string(cross.Raw) {
+			t.Fatalf("%s: Windows placed %d certificate(s) and did not end at the cross-certificate, "+
+				"which is not the shape measured on example.com", e.instance, n)
+		}
+		if v := judged(b, list, now); !v.isUndetermined(issuerOnTheList) {
+			t.Errorf("%s: the chain Windows built was not undetermined with its root on the list: %+v", e.instance, v)
+		}
+	}
+}
+
 // TestTheIssuerAddressInACertificateIsNeverFetched is inviolable rule 16 in the
 // one place crypt32 would break it - ADR101. The address is written into the
 // certificate by the server under diagnosis, so this serves the issuer at it and

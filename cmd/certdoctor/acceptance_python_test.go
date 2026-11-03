@@ -39,7 +39,7 @@ func TestTheShippedBinaryStartsPythonWithoutPythonPath(t *testing.T) {
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("the planted module ran inside the python process this program started")
 	}
-	if len(trustRowsIn(t, r.stdout, "python")) == 0 {
+	if len(rowsOf(t, r.stdout, "python")) == 0 {
 		t.Fatalf("no python row in the report, so python was never asked and the marker proves nothing:\n%s", r.stdout)
 	}
 }
@@ -106,20 +106,20 @@ func TestTheShippedBinaryAsksPipWhatItReads(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	named := pipRowsIn(t, startProgram(t, invocation{env: []string{"REQUESTS_CA_BUNDLE=" + bundle}}, aLoopbackTarget(t),
-		"--json").stdout)
+	named := rowsOf(t, startProgram(t, invocation{env: []string{"REQUESTS_CA_BUNDLE=" + bundle}}, aLoopbackTarget(t),
+		"--json").stdout, "pip")
 	if len(named) == 0 {
 		t.Fatal("no pip row in the report, so pip was never asked")
 	}
 	for _, row := range named {
 		if !slices.Contains(row.SelectedBy, "REQUESTS_CA_BUNDLE") {
 			t.Errorf("the pip row of %s does not say REQUESTS_CA_BUNDLE named its file: %v (%s)", row.Instance,
-				row.SelectedBy, row.NotAssessed)
+				row.SelectedBy, row.reason())
 		}
 	}
 
-	proxied := pipRowsIn(t, startProgram(t, invocation{env: []string{"REQUESTS_CA_BUNDLE=" + bundle,
-		"PIP_CONFIG_FILE=" + config}}, aLoopbackTarget(t), "--json").stdout)
+	proxied := rowsOf(t, startProgram(t, invocation{env: []string{"REQUESTS_CA_BUNDLE=" + bundle,
+		"PIP_CONFIG_FILE=" + config}}, aLoopbackTarget(t), "--json").stdout, "pip")
 	for _, row := range proxied {
 		release, known := pipReleaseOf(row.Instance)
 		if !known {
@@ -159,38 +159,6 @@ func pipReleaseOf(interpreter string) ([2]int, bool) {
 		release[i] = n
 	}
 	return release, true
-}
-
-// pipRow is what TestTheShippedBinaryAsksPipWhatItReads reads of a pip row.
-type pipRow struct {
-	Runtime     string   `json:"runtime"`
-	Instance    string   `json:"instance"`
-	SelectedBy  []string `json:"selected_by"`
-	NotAssessed string   `json:"not_assessed"`
-}
-
-// pipRowsIn is every pip row in a report.
-func pipRowsIn(t *testing.T, stdout string) []pipRow {
-	t.Helper()
-	var document struct {
-		Layers []struct {
-			Findings []struct {
-				TrustStore *pipRow `json:"trust_store"`
-			} `json:"findings"`
-		} `json:"layers"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
-		t.Fatalf("decoding: %v", err)
-	}
-	var rows []pipRow
-	for _, layer := range document.Layers {
-		for _, finding := range layer.Findings {
-			if finding.TrustStore != nil && finding.TrustStore.Runtime == "pip" {
-				rows = append(rows, *finding.TrustStore)
-			}
-		}
-	}
-	return rows
 }
 
 // pythonOnPath is the interpreter a person typing python3, or else python, runs.

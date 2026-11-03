@@ -45,7 +45,7 @@ func TestTheShippedBinaryStartsCurlWithoutSSLKeyLogFile(t *testing.T) {
 	if _, err := os.Stat(keylog); err == nil {
 		t.Fatal("a curl this program started created the key log file")
 	}
-	if len(trustRowsIn(t, r.stdout, "curl")) == 0 {
+	if len(rowsOf(t, r.stdout, "curl")) == 0 {
 		t.Fatalf("no curl row in the report, so curl was never asked and the absent file proves nothing:\n%s", r.stdout)
 	}
 }

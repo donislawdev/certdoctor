@@ -175,7 +175,7 @@ func TestNoAccusationIsMadeOnAnyHolding(t *testing.T) {
 			}
 			// "inspection" inside the caveat's own hedge is the one legitimate
 			// use, and it is legitimate BECAUSE it names both readings.
-			if word == "intercept" && strings.Contains(sentence, "cannot tell those two apart") {
+			if word == "intercept" && strings.Contains(sentence, "cannot tell those three apart") {
 				continue
 			}
 			t.Errorf("the sentence accuses with %q on a holding that is a count: %q", word, sentence)
@@ -447,7 +447,9 @@ func TestANamedProductPromotesTheSentenceAndReplacesTheHedge(t *testing.T) {
 	// says this program cannot tell an appliance from a company's own authority,
 	// which stops being true the moment one is named - a report carrying both
 	// sentences contradicts itself in two adjacent lines.
-	if strings.Contains(authority.Caveat, "cannot tell those two apart") {
+	// The hedge is compared whole, so the next change to its wording cannot
+	// leave this check looking for a sentence that no longer exists.
+	if strings.Contains(authority.Caveat, caveats[report.HeldBySomeStores]) {
 		t.Errorf("kept the hedge that says the two cannot be told apart, beside a line telling them apart: %q",
 			authority.Caveat)
 	}

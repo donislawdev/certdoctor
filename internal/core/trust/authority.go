@@ -278,9 +278,13 @@ func holdingOf(trusting, refusing []string) report.AnchorHolding {
 var caveats = map[report.AnchorHolding]string{
 	report.HeldByAllStores: "this is what an ordinary publicly trusted authority looks like from here, " +
 		"and it is also what a private authority looks like once it has been deployed everywhere on a machine",
-	report.HeldBySomeStores: "TLS inspection looks exactly like this and so does an organisation's own certificate " +
-		"authority, and this program cannot tell those two apart from one connection - the issuer and the " +
-		"fingerprint beside this line are what somebody who can tell them apart would need",
+	// THREE READINGS, NOT TWO, SINCE 2026-11-03 - ADR126. A public authority
+	// some of these stores do not carry yet looks exactly the same, measured on
+	// example.com, and a hedge naming two causes reads as "it is one of these".
+	report.HeldBySomeStores: "TLS inspection looks exactly like this, so does an organisation's own certificate " +
+		"authority and so does a public authority some of these stores do not carry yet, and this program cannot " +
+		"tell those three apart from one connection - the issuer and the fingerprint beside this line are what " +
+		"somebody who can tell them apart would need",
 	report.HeldByNoStores: "no store assessed here accepts this signer, so this is not a question of one runtime " +
 		"being configured differently from another - a store this program does not read, a browser's own among " +
 		"them, is not covered by that",

@@ -99,8 +99,9 @@ import (
 // THE FIELD A CONSUMER WILL WANT TO MISREAD IS held_by, SO IT IS SPELLED OUT
 // HERE. It is a COUNT of stores, never a conclusion about anybody's network.
 // some_stores says the signer is present on this machine and did not arrive with
-// every runtime - which is what TLS inspection looks like and equally what an
-// organisation's own certificate authority looks like. Measured on the bench
+// every runtime - which is what TLS inspection looks like, equally what an
+// organisation's own certificate authority looks like, and what a public
+// authority looks like when some of the stores do not carry it yet. Measured on the bench
 // 2026-08-19: a middlebox and an honest internal server produced identical
 // values in every field of this body. A consumer turning some_stores into an
 // alert titled "interception" is making a claim this document does not make.
