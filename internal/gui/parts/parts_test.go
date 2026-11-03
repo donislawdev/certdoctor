@@ -147,6 +147,19 @@ func TestTheLayoutsAddWhatTheySay(t *testing.T) {
 	if got := Height(70, box()).MinSize().Height; got != 70 {
 		t.Errorf("Height is %v, want 70", got)
 	}
+	// A floor on each side, and the object's own size where it asks for more.
+	if got := AtLeast(70, 10, box()).MinSize(); got != fyne.NewSize(70, 20) {
+		t.Errorf("AtLeast is %v, want 70x20", got)
+	}
+	if got := AtLeast(10, 70, box()).MinSize(); got != fyne.NewSize(40, 70) {
+		t.Errorf("AtLeast is %v, want 40x70", got)
+	}
+	filled := box()
+	floored := AtLeast(70, 10, filled)
+	floored.Resize(fyne.NewSize(300, 200))
+	if got := filled.Size(); got != fyne.NewSize(300, 200) {
+		t.Errorf("AtLeast gives its object %v, want all of 300x200", got)
+	}
 
 	grow := box()
 	line := RowGrow(10, 1, box(), grow, box())

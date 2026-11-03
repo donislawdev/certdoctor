@@ -288,12 +288,36 @@ func (f fixed) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return m
 }
 
-func (f fixed) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+func (f fixed) Layout(objects []fyne.CanvasObject, size fyne.Size) { fill(objects, size) }
+
+// fill gives every object all of the room.
+func fill(objects []fyne.CanvasObject, size fyne.Size) {
 	for _, o := range objects {
 		o.Move(fyne.NewPos(0, 0))
 		o.Resize(size)
 	}
 }
+
+// floor asks for at least a width and a height, and gives its object all of
+// the room it gets.
+type floor struct{ width, height float32 }
+
+// AtLeast asks for at least this width and height, and more when its object
+// asks for more - the size a window may not be made smaller than, because the
+// toolkit keeps a window no smaller than what it holds (GUI rule 21).
+func AtLeast(w, h float32, o fyne.CanvasObject) *fyne.Container {
+	return fyne.NewContainerWithLayout(floor{width: w, height: h}, o)
+}
+
+func (f floor) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	m := fyne.NewSize(f.width, f.height)
+	for _, o := range objects {
+		m = m.Max(o.MinSize())
+	}
+	return m
+}
+
+func (f floor) Layout(objects []fyne.CanvasObject, size fyne.Size) { fill(objects, size) }
 
 // middle stands its object in the middle of the height it is given, at the
 // object's own height - for a short line inside a taller band.

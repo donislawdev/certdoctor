@@ -34,6 +34,12 @@ var externalImportAllowlist = map[string]bool{
 	"internal/adapter/pac/sandbox.go":   true,
 	"internal/adapter/pac/inject.go":    true,
 	"internal/adapter/pac/stopwatch.go": true,
+	// The system dialog of a window the toolkit could not open (ADR125 point
+	// 1), through golang.org/x/sys/windows - a typed MessageBox loading
+	// user32.dll from the system directory, so the file holds no unsafe. The
+	// toolkit already links the module into the window. The owner's decision
+	// (ADR127).
+	"cmd/certdoctor-gui/dialog_windows.go": true,
 }
 
 // externalImportPlaces names the one module allowed under a directory rather

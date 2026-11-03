@@ -69,6 +69,21 @@ var layerMap = []layerRule{
 		mayImportBelow: []string{"internal/core/", "internal/app/", "internal/adapter/"},
 		mayImportRoot:  true,
 	},
+	{
+		// The window's entry point (D21). It knows the command line only
+		// through the document it writes (ADR121), so it sees the window's own
+		// packages, the icon and the module root for the version - never the
+		// core, the run or an adapter. A rule of its own, more specific than
+		// cmd/, so the command line's entry point is not given the window.
+		location:       "cmd/certdoctor-gui/",
+		mayImportBelow: []string{"internal/gui/", "assets/icon/"},
+		mayImportRoot:  true,
+	},
+	{
+		// The application's picture as bytes, beside the file it embeds
+		// (ADR117). It imports nothing.
+		location: "assets/icon/",
+	},
 }
 
 // rootRule covers the package sitting directly in the module root.

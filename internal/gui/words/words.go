@@ -103,6 +103,16 @@ const (
 	ShowDetails   Key = "details.show"
 	HideDetails   Key = "details.hide"
 	CatalogueHint Key = "catalogue.hint"
+
+	// When the toolkit gave no window (ADR125 point 1), and the build with no
+	// window in it. The same sentence goes to standard error and, on Windows,
+	// to a system dialog. Two literals for the refusal rather than one built
+	// from pieces, so each reads whole. The cause is the toolkit's own
+	// sentence, quoted.
+	WindowRefusedTitle  Key = "refusal.title"
+	WindowRefused       Key = "refusal.window"
+	WindowRefusedCause  Key = "refusal.window.cause"
+	NoWindowInThisBuild Key = "refusal.nocgo"
 )
 
 var english = map[Key]string{
@@ -192,6 +202,11 @@ var english = map[Key]string{
 	ShowDetails:   "Show details",
 	HideDetails:   "Hide details",
 	CatalogueHint: "Every part of the window, in every state.",
+
+	WindowRefusedTitle:  "certdoctor could not open its window",
+	WindowRefused:       "The window could not be opened: the graphics toolkit was not given one. The window draws through OpenGL 2.1, which a virtual machine without 3D acceleration or a remote desktop session may not offer. The certdoctor command line in the same folder needs no graphics and diagnoses the same way - run \"certdoctor --help\". To get the window, use a graphics driver that provides OpenGL 2.1.",
+	WindowRefusedCause:  "The window could not be opened: the graphics toolkit was not given one. The toolkit said: %s. The window draws through OpenGL 2.1, which a virtual machine without 3D acceleration or a remote desktop session may not offer. The certdoctor command line in the same folder needs no graphics and diagnoses the same way - run \"certdoctor --help\". To get the window, use a graphics driver that provides OpenGL 2.1.",
+	NoWindowInThisBuild: "certdoctor-gui: this build has no window in it. It was compiled without cgo, which the graphics toolkit needs to reach OpenGL. The certdoctor command line needs neither and diagnoses the same way - run \"certdoctor --help\". To get the window, use a certdoctor-gui built for this system.",
 }
 
 // The words of the catalogue screen - the hidden screen that shows every

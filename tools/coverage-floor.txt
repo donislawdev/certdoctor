@@ -270,3 +270,17 @@ github.com/donislawdev/certdoctor/internal/gui/model 100
 github.com/donislawdev/certdoctor/internal/gui/parts 97
 github.com/donislawdev/certdoctor/internal/gui/screens 96
 github.com/donislawdev/certdoctor/internal/gui/words 100
+
+# The window's program (D21, ADR125 point 1) and the picture it shows. Measured
+# 2026-11-03: 58.9 on Windows with cgo, 98.0 on Linux with cgo in
+# golang:1.27-alpine with the graphics headers, 66.7 with cgo disabled. The
+# floor is the lowest of the three rounded down, because the runner decides
+# which build is measured - a C compiler on PATH means cgo.
+#
+# WHY WINDOWS IS SO MUCH LOWER, and that is the shape rather than a gap. On
+# Linux a test starts the window for real with no display and requires the
+# refusal, and that child process runs run() - on Windows and macOS a desktop
+# is there, so the window would open and the test skips. What stays unrun on
+# Windows is run() itself and the system dialog, which no test may show.
+github.com/donislawdev/certdoctor/cmd/certdoctor-gui 58
+github.com/donislawdev/certdoctor/assets/icon none

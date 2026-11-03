@@ -50,6 +50,21 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # THE GRAPHICS HEADERS THE WINDOW NEEDS ON LINUX (ADR124 (f)). The
+      # window's program imports the toolkit's desktop driver, which compiles
+      # the GLFW library in C for both X11 and Wayland, and a runner with a C
+      # compiler builds it with cgo - go vet, both test steps and the coverage
+      # gate. Measured in ubuntu:26.04 one package at a time: with the first two
+      # alone the build stops at wayland-client-core.h, with three at
+      # xkbcommon/xkbcommon.h. The same step stands in the staticcheck and
+      # known vulnerabilities jobs, which load the same packages.
+      - name: the graphics headers the window needs
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+
       # gofmt -l lists unformatted files and still exits 0. Used as a bare step
       # it would be a green gate that never blocks anything.
       - name: gofmt
@@ -184,6 +199,13 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # The window's packages compile with cgo here - see the same step in the
+      # test job.
+      - name: the graphics headers the window needs
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
       - name: staticcheck
         shell: bash
         run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks=SA,U ./...
@@ -224,6 +246,13 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # The window's packages compile with cgo here - see the same step in the
+      # test job.
+      - name: the graphics headers the window needs
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
       # THE PIN IS A MEASUREMENT AND NOT THE NEWEST NUMBER, and the version it
       # replaced is named here because the failure was invisible from the
       # owner's machine.
