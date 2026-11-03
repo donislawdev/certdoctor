@@ -156,8 +156,11 @@ golang.org/x/text v0.43.0
 # the author published under the same tag or commit, byte for byte, at the
 # address written beside it, and deps.dev was asked for the same version - all
 # fourteen were the same file (internal_tools/licencje-u-autora.ps1). Every one
-# is permissive and one way compatible with GPL-3.0 - an OPINION, not a source,
-# as at pprof above.
+# is permissive and one way compatible with GPLv3 - an OPINION, not a source,
+# as at pprof above. (Spelled GPLv3 in a group's paragraph on purpose:
+# internal_tools/licencje.ps1 reads the first licence identifier above a module
+# as its claim, and the paragraph opening a group is read with the first module
+# of that group.)
 #
 # THE VERSIONS ARE THE NEWEST RELEASES, not what the toolkit asks for, by the
 # rule of ADR102 and ADR115 - and for x/image that is a security fix rather
@@ -242,7 +245,7 @@ golang.org/x/sys v0.49.0
 # the file the author published under the same tag or commit, byte for byte,
 # at the address beside it, and deps.dev asked for the same version - eleven of
 # eleven the same file (internal_tools/licencje-u-autora.ps1). None carries a
-# NOTICE file. Every one permissive and one way compatible with GPL-3.0 - an
+# NOTICE file. Every one permissive and one way compatible with GPLv3 - an
 # OPINION, not a source. fsnotify and dbus stand at their newest releases
 # rather than the toolkit's (ADR124 (b)), the rest at what the toolkit asks for.
 
@@ -282,6 +285,14 @@ github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276
 # the zlib licence in glfw/LICENSE.md - "Copyright (c) 2002-2006 Marcus
 # Geelnard" and "2006-2019 Camilla Loewy" - and compiles it into the window, so
 # its notice travels with it (ADR124 (c)). deps.dev names Zlib for this reason.
+#
+# TWO MORE TEXTS, found by the notices guard following GLFW's #include and
+# missed by the review above it. On Windows GLFW compiles dinput.h and xinput.h
+# from its glfw/deps/mingw, which come from the Wine project under
+# LGPL-2.1-or-later - the FSF lists LGPLv2.1 as compatible with GPLv3, read at
+# https://www.gnu.org/licenses/license-list.html on 2026-11-03. On Linux it
+# compiles the client code of nine Wayland protocols, each under MIT. Both are
+# quoted in THIRD-PARTY-NOTICES-GUI.md.
 github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2
 
 # The desktop bus on Linux. BSD-2-Clause - "Copyright (c) 2013, Georg Reinke,
