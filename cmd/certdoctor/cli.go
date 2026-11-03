@@ -893,14 +893,17 @@ var standingNotes = []report.Note{
 	// pins this version has no way to know that from the number alone, and
 	// finding out from a broken pipeline is the expensive way to be told.
 	//
-	// IT DISAPPEARS AT THE FIRST RELEASE, and that is the whole design: a note
-	// that never goes away teaches people that notes are boilerplate, and then
-	// the one that mattered goes unread with the rest.
+	// IT DISAPPEARS AT 1.0.0, and that is the whole design: a note that never
+	// goes away teaches people that notes are boilerplate, and then the one that
+	// mattered goes unread with the rest. It points at CHANGELOG.md, where every
+	// change to the document is marked [contract], because the technical
+	// changelog is not part of the repository and nobody reading --json can
+	// open it.
 	{
 		Kind:  report.NoteUndetermined,
 		Field: "schema_version",
 		Detail: "this schema is still moving and will keep moving until certdoctor reaches 1.0.0 - " +
-			"pin this version only if you are prepared to update, and read the technical changelog before you do",
+			"pin this version only if you are prepared to update, and read CHANGELOG.md before you do",
 	},
 }
 

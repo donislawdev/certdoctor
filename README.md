@@ -63,12 +63,14 @@ staring at `PKIX path building failed` finds out it exists.
 - **Ship as one static binary** - nothing to install next to it, and it runs as it is inside Alpine
   and Ubuntu images.
 
-![certdoctor run against untrusted-root.badssl.com in a terminal: the system store trusts the site,
-both Java runtimes do not, and a keytool command is printed for each of them](.github/certdoctor-in-action.gif)
+![certdoctor run against untrusted-root.badssl.com, paged through less: the verdict at the top names
+the BadSSL root that the Java stores lack, then the trust matrix shows the system store trusting the
+site, both Java runtimes refusing it, and a keytool command for each](.github/certdoctor-in-action.gif)
 
-*A real run, recorded from the binary in a Linux container. BadSSL's public test root was added to
-the container's system store - the way a company root usually arrives - and the two Java runtimes in
-it were never told.*
+*A real run, recorded from the binary in a Linux container and paged through `less` - the verdict
+first, then a search for `L5`, the trust matrix. The few seconds the run takes are cut. BadSSL's
+public test root was added to the container's system store - the way a company root usually arrives -
+and the two Java runtimes in it were never told.*
 
 <!-- The star GIF goes here, recorded on this repository once it is public. -->
 
