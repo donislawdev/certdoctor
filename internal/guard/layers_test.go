@@ -346,6 +346,23 @@ func (r layerRule) describe() string {
 	return r.location
 }
 
+// TestARuleNamingAPackageAdmitsThatPackageAndNoNameLikeIt plants a part that
+// imports the look it may import and a package whose name merely begins the
+// same way, and expects the second alone to be reported.
+func TestARuleNamingAPackageAdmitsThatPackageAndNoNameLikeIt(t *testing.T) {
+	planted := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "imports_lookalike.go", "internal/gui/parts/planted.go")},
+	}
+	violations := checkLayerDirection(planted)
+	requireViolation(t, violations, "internal/gui/lookalike")
+	for _, v := range violations {
+		if strings.HasSuffix(v.Detail, "internal/gui/look - that points upwards") {
+			t.Errorf("the package the rule names was reported: %s", v.Detail)
+		}
+	}
+}
+
 // TestLayerImportDirection is the guard for "nothing points upwards".
 func TestLayerImportDirection(t *testing.T) {
 	tr := mustLoadModule(t)
