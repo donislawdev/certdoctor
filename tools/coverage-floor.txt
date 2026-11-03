@@ -248,3 +248,25 @@ github.com/donislawdev/certdoctor/internal/adapter/proxyauth 96
 # 2026-10-28 on Windows: 99.2 percent. There is no build tag in this package, so
 # every platform compiles the same files. The floor is that number rounded down.
 github.com/donislawdev/certdoctor/cmd/sbom 99
+
+# The window's packages (D21, ADR122). Their tests draw every part and every
+# screen with the toolkit's test driver, in an image and without a window, so
+# they run on all three runners with no display and no C compiler. Measured
+# 2026-11-03 on Windows, and on Linux in golang:1.27-alpine both with
+# CGO_ENABLED=1 and the race detector and without - the same numbers on every
+# run, because no file here carries a build tag. The floors are those numbers
+# rounded down. fonts carries two embedded files and no statement.
+#
+# WHAT THE REMAINDER IS in the three under 100, read from the profile that day:
+# the empty methods the toolkit's interfaces ask a button for (MouseMoved,
+# TypedRune, the renderer's Destroy), the states a matrix row and a layer
+# entry are pinned in only on the catalogue page, the save menu's choices,
+# which nothing opens until the window runs certdoctor, and single branches
+# of the palette page, the catalogue's matrix and a status mark.
+github.com/donislawdev/certdoctor/internal/gui/catalogue 98
+github.com/donislawdev/certdoctor/internal/gui/fonts none
+github.com/donislawdev/certdoctor/internal/gui/look 100
+github.com/donislawdev/certdoctor/internal/gui/model 100
+github.com/donislawdev/certdoctor/internal/gui/parts 97
+github.com/donislawdev/certdoctor/internal/gui/screens 96
+github.com/donislawdev/certdoctor/internal/gui/words 100

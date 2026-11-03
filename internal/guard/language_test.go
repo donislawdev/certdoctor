@@ -70,6 +70,8 @@ var proseFiles = []string{
 	"tools/expected-modules.txt",
 	"tools/probe-macos-truststore/go.mod",
 	"tools/probe-macos-truststore/main.go",
+	// The typeface's own licence, published with the fonts (ADR124).
+	"internal/gui/fonts/LICENSE.txt",
 }
 
 var polishWord = regexp.MustCompile(`(?i)\b(` + strings.Join(polishWords, "|") + `)\b`)

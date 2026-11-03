@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -69,7 +70,64 @@ func scannedFiles(t *testing.T, tr tree) []sourceFile {
 	for _, rel := range corpus {
 		files = append(files, sourceFile{rel: rel})
 	}
+	saved, err := savedDocuments(tr.root)
+	if err != nil {
+		t.Fatalf("the saved documents could not be listed: %v", err)
+	}
+	for _, rel := range saved {
+		files = append(files, sourceFile{rel: rel})
+	}
 	return files
+}
+
+// savedDocuments lists every JSON document kept as test data.
+//
+// HERE SINCE 2026-11-03, when the window's tests began reading reports
+// certdoctor really wrote. A saved report is the most direct way a home
+// directory reaches the tree: it lists every runtime the machine has, by the
+// path it was found at, and the three kept for the window were written on the
+// owner's machine and had the account replaced by hand before they went in.
+// The hand is what this guard is for.
+func savedDocuments(root string) ([]string, error) {
+	var found []string
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == "internal_tools" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		rel = filepath.ToSlash(rel)
+		if strings.Contains(rel, "/testdata/") && strings.HasSuffix(rel, ".json") {
+			found = append(found, rel)
+		}
+		return nil
+	})
+	sort.Strings(found)
+	return found, walkErr
+}
+
+// TestTheSavedDocumentsAreActuallyRead is the coverage half for them, the same
+// shape as the corpus above: clean documents read and documents skipped look
+// the same from the pass.
+func TestTheSavedDocumentsAreActuallyRead(t *testing.T) {
+	tr := mustLoadModule(t)
+	scanned := map[string]bool{}
+	for _, sf := range scannedFiles(t, tr) {
+		scanned[sf.rel] = true
+	}
+	for _, rel := range []string{"internal/gui/model/testdata/example-com.json", "internal/gui/model/testdata/wrong-host.json"} {
+		if !scanned[rel] {
+			t.Errorf("%s is a saved report and the personal data scan does not read it", rel)
+		}
+	}
 }
 
 // TestTheCorpusIsActuallyRead is the coverage half, and it is what the pass above

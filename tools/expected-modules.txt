@@ -35,6 +35,13 @@
 # sandbox exists but no layer calls it, so "go list -deps ./cmd/certdoctor"
 # reports our module alone. The five below arrive in the shipped binary when L2
 # starts asking, in P8-K3, and the binary grows then rather than now.
+#
+# IT WENT FROM FIFTEEN TO SEVENTY SIX ON 2026-11-03, with the window's first
+# code (D21, ADR124). The command line links exactly the five it linked before,
+# measured with "go list -deps ./cmd/certdoctor" that day. Fourteen more are
+# compiled into the window's packages, which no binary carries yet - the window
+# program arrives in a later commit, and with it the toolkit's own driver and
+# the modules only that driver needs, which stand in the third group until then.
 
 github.com/donislawdev/certdoctor
 
@@ -134,6 +141,94 @@ github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50
 # It moved on to v0.43.0 on 2026-10-14 with the other four.
 golang.org/x/text v0.43.0
 
+# --- compiled into the window's packages: full sieve, both questions blocking
+#
+# These reach a user with the window, so they are held to the same rigour as
+# the five above. Every licence file was compared on 2026-11-03 with the file
+# the author published under the same tag or commit, byte for byte, at the
+# address written beside it, and deps.dev was asked for the same version - all
+# fourteen were the same file (internal_tools/licencje-u-autora.ps1). Every one
+# is permissive and one way compatible with GPL-3.0 - an OPINION, not a source,
+# as at pprof above.
+#
+# THE VERSIONS ARE THE NEWEST RELEASES, not what the toolkit asks for, by the
+# rule of ADR102 and ADR115 - and for x/image that is a security fix rather
+# than tidying. At the toolkit's own v0.24.0, govulncheck v1.9.0 reported four
+# vulnerabilities REACHED from the window's code (GO-2026-5066, GO-2026-5062,
+# GO-2026-5032, GO-2026-4815), fixed by v0.43.0. Raised with it to their newest:
+# x/net, x/sys, uax29, go-runewidth, go-i18n and goldmark. The toolkit's own
+# tests gave the same results on both sets of versions (ADR124 (b)).
+
+# The toolkit. BSD-3-Clause - "Copyright (C) 2018 Fyne.io developers", read at
+# https://raw.githubusercontent.com/fyne-io/fyne/v2.8.2/LICENSE
+#
+# THIRD QUESTION OF THE SIEVE. It carries fonts under licences of their own -
+# Noto Sans and its symbols under OFL-1.1, DejaVu Sans Mono under the Bitstream
+# Vera licence, EmojiOne under MIT and CC-BY-4.0 - and 97 pictures and 15
+# translations, all compiled in (go:embed). It reads the system's language,
+# which is OBS206. Its app package, not imported yet, starts other programs to
+# open a link and writes the window's preferences (ADR124 (e)).
+fyne.io/fyne/v2 v2.8.2
+
+# Line breaking by Unicode rules. MIT - "Copyright (c) 2020 Matt Sherman", read at
+# https://raw.githubusercontent.com/clipperhouse/uax29/v2.7.0/LICENSE
+github.com/clipperhouse/uax29/v2 v2.7.0
+
+# SVG drawing, the toolkit's fork. BSD-3-Clause - "Copyright (c) 2018, Steven R
+# Wiley", read at
+# https://raw.githubusercontent.com/fyne-io/oksvg/a9af55fa95d9/LICENSE
+github.com/fyne-io/oksvg v0.2.1-0.20260918172519-a9af55fa95d9
+
+# Text drawing. "Unlicense OR BSD-3-Clause" and this program takes BSD-3-Clause -
+# "Copyright 2021 The go-text authors", read at
+# https://raw.githubusercontent.com/go-text/render/v0.2.1/LICENSE
+github.com/go-text/render v0.2.1
+
+# Text shaping. "Unlicense OR BSD-3-Clause", BSD-3-Clause taken - "Copyright
+# 2021 The go-text authors", read at
+# https://raw.githubusercontent.com/go-text/typesetting/v0.3.5/LICENSE
+#
+# THIRD QUESTION OF THE SIEVE: its harfbuzz package is a port of HarfBuzz and
+# carries HarfBuzz's own MIT licence, with its own list of copyright holders -
+# deps.dev names MIT beside the other two for this reason. It is compiled in,
+# so its notice travels with the window (ADR124 (c)).
+github.com/go-text/typesetting v0.3.5
+
+# The system's language. MIT - "Copyright (c) 2020 Alexis Jeandeau", read at
+# https://raw.githubusercontent.com/jeandeaual/go-locale/0ef82f21eade/LICENSE
+github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade
+
+# Width of characters on a line. MIT - "Copyright (c) 2016 Yasuhiro Matsumoto",
+# read at https://raw.githubusercontent.com/mattn/go-runewidth/v0.0.31/LICENSE
+github.com/mattn/go-runewidth v0.0.31
+
+# The toolkit's translations. MIT - "Copyright (c) 2014 Nick Snyder", read at
+# https://raw.githubusercontent.com/nicksnyder/go-i18n/v2.7.0/LICENSE
+github.com/nicksnyder/go-i18n/v2 v2.7.0
+
+# SVG drawing, the original the toolkit's fork stands on. BSD-3-Clause -
+# "Copyright (c) 2018, Steven R Wiley", read at
+# https://raw.githubusercontent.com/srwiley/oksvg/be6e8873101c/LICENSE
+github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
+
+# Vector rasterising. BSD-3-Clause - "Copyright (c) 2018, Steven R Wiley", read at
+# https://raw.githubusercontent.com/srwiley/rasterx/2ab79fcdd4ef/LICENSE
+github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
+
+# Markdown, which the toolkit's rich text reads and the window never hands it.
+# MIT - "Copyright (c) 2019 Yusuke Inuzuka", read at
+# https://raw.githubusercontent.com/yuin/goldmark/v1.8.7/LICENSE
+github.com/yuin/goldmark v1.8.7
+
+# Images, the network's extra packages and the system calls. BSD-3-Clause -
+# "Copyright 2009 The Go Authors", read at
+# https://raw.githubusercontent.com/golang/image/v0.47.0/LICENSE,
+# https://raw.githubusercontent.com/golang/net/v0.62.0/LICENSE and
+# https://raw.githubusercontent.com/golang/sys/v0.49.0/LICENSE
+golang.org/x/image v0.47.0
+golang.org/x/net v0.62.0
+golang.org/x/sys v0.49.0
+
 # --- in the module graph, NOT linked: looser rigour, versions still pinned
 #
 # Each of these is named by a dependency's go.mod for its own tests or tools.
@@ -149,12 +244,68 @@ golang.org/x/text v0.43.0
 # builds from it - so the move of that day took this group as far as the linked
 # modules take it, and no further.
 
+# THE TOOLKIT BROUGHT FORTY EIGHT MORE ON 2026-11-03. Most are named by its
+# go.mod for the parts of it the window does not compile yet - the desktop
+# driver (go-gl, glfw, systray, dbus, portal, fsnotify), the web and mobile
+# drivers, and its packaging tool fyne. Those of them the window program will
+# link move to the group above with it, each with its licence. testify and
+# its helpers are compiled into this module's tests, through the toolkit's
+# test package, and never into anything that is shipped. golang.org/x/sys left
+# this group for the one above at v0.49.0.
+
+fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4
+github.com/BurntSushi/toml v1.6.0
+github.com/FyshOS/fancyfs v0.0.1
+github.com/HugoSmits86/nativewebp v1.3.0
 github.com/Masterminds/semver/v3 v3.5.0
+github.com/akavel/rsrc v0.10.2
+github.com/anthonynsimon/bild v0.17.1
 github.com/chzyer/readline v1.5.1
+github.com/cpuguy83/go-md2man/v2 v2.0.7
+github.com/creack/pty v1.1.9
+github.com/davecgh/go-spew v1.1.1
 github.com/dop251/goja_nodejs v0.0.0-20211022123610-8dd9abb0616d
+github.com/fogleman/gg v1.3.0
+github.com/fsnotify/fsnotify v1.9.0
+github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8
+github.com/fyne-io/glfw-js v0.4.0
+github.com/fyne-io/image v0.1.1
+github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276
+github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2
+github.com/go-ole/go-ole v1.3.0
+github.com/go-text/typesetting-utils v0.0.0-20260419141703-4ffe8874dabc
 github.com/goccy/go-yaml v1.19.2
+github.com/godbus/dbus/v5 v5.2.2
+github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
+github.com/hack-pad/go-indexeddb v0.3.2
+github.com/hack-pad/safejs v0.1.0
 github.com/ianlancetaylor/demangle v0.0.0-20250417193237-f615e6bd150b
+github.com/inconshreveable/mousetrap v1.1.0
+github.com/jackmordaunt/icns/v2 v2.2.7
+github.com/josephspurrier/goversioninfo v1.7.0
+github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25
+github.com/kr/text v0.2.0
+github.com/lucor/goinfo v0.9.0
+github.com/mcuadros/go-version v0.0.0-20190830083331-035f6764e8d2
+github.com/natefinch/atomic v1.0.1
+github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
+github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e
+github.com/pmezard/go-difflib v1.0.0
+github.com/russross/blackfriday/v2 v2.1.0
+github.com/rymdport/portal v0.4.2
+github.com/spf13/cobra v1.10.2
+github.com/spf13/pflag v1.0.9
+github.com/stretchr/objx v0.5.2
+github.com/stretchr/testify v1.11.1
+github.com/urfave/cli/v2 v2.27.7
+github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1
+go.yaml.in/yaml/v3 v3.0.5
+golang.org/x/crypto v0.58.0
+golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a
 golang.org/x/mod v0.41.0
 golang.org/x/sync v0.24.0
-golang.org/x/sys v0.32.0
+golang.org/x/term v0.47.0
 golang.org/x/tools v0.51.0
+golang.org/x/tools/go/vcs v0.1.0-deprecated
+gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
+gopkg.in/yaml.v3 v3.0.1

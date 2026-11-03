@@ -36,6 +36,40 @@ var externalImportAllowlist = map[string]bool{
 	"internal/adapter/pac/stopwatch.go": true,
 }
 
+// externalImportPlaces names the one module allowed under a directory rather
+// than file by file - the window's toolkit - and the directories it may be
+// imported under.
+//
+// WHY A SECOND RULE NEXT TO THE LIST, decided by the owner on 2026-11-03
+// (ADR124 (h)). The toolkit is imported by most files of the window, so on the
+// list each new file of the window would be an edit to this guard, and an
+// edit made that often is one people learn to approve without reading. A pair
+// keeps what the list is for: the module is named, the place is named, and
+// the same module anywhere else, or any other module here, is still reported.
+// It is not a layer rule - "the window may import anything" is exactly the
+// rule the comment above the list turns down.
+var externalImportPlaces = []struct {
+	module string
+	under  []string
+}{
+	{module: "fyne.io/fyne/v2", under: []string{"internal/gui/", "cmd/certdoctor-gui/"}},
+}
+
+// placeAllows says whether this file may import this path by the rule above.
+func placeAllows(rel, importPath string) bool {
+	for _, p := range externalImportPlaces {
+		if importPath != p.module && !strings.HasPrefix(importPath, p.module+"/") {
+			continue
+		}
+		for _, dir := range p.under {
+			if strings.HasPrefix(rel, dir) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // TestOnlyAllowlistedFilesImportSomebodyElsesModule is the guard.
 func TestOnlyAllowlistedFilesImportSomebodyElsesModule(t *testing.T) {
 	tr := mustLoadModule(t)
@@ -80,6 +114,27 @@ func TestAnAllowlistedFileMayImportSomebodyElsesModule(t *testing.T) {
 	requireNoViolations(t, checkExternalImports(allowed), "an allowlisted file must be allowed to import its dependency")
 }
 
+// TestTheToolkitIsAllowedOnlyWhereItsPairSays holds the pair to both of its
+// halves: the toolkit is reported outside the window's directories, accepted
+// inside them, and another module inside them is still reported.
+func TestTheToolkitIsAllowedOnlyWhereItsPairSays(t *testing.T) {
+	const module = "github.com/donislawdev/certdoctor"
+	inCore := tree{modulePath: module, files: []sourceFile{loadFixture(t, "imports_toolkit.go", "internal/core/planted.go")}}
+	requireViolation(t, checkExternalImports(inCore), "fyne.io/fyne/v2/widget")
+
+	for _, rel := range []string{"internal/gui/planted.go", "cmd/certdoctor-gui/planted.go"} {
+		inWindow := tree{modulePath: module, files: []sourceFile{loadFixture(t, "imports_toolkit.go", rel)}}
+		requireNoViolations(t, checkExternalImports(inWindow), "the toolkit under "+rel)
+	}
+
+	// A directory whose name only begins like the window's is not the window.
+	beside := tree{modulePath: module, files: []sourceFile{loadFixture(t, "imports_toolkit.go", "internal/guiplanted/planted.go")}}
+	requireViolation(t, checkExternalImports(beside), "fyne.io/fyne/v2")
+
+	other := tree{modulePath: module, files: []sourceFile{loadFixture(t, "imports_outside.go", "internal/gui/planted.go")}}
+	requireViolation(t, checkExternalImports(other), "github.com/dop251/goja")
+}
+
 // TestTheExternalImportAllowlistNamesFilesThatExist keeps the list from rotting,
 // the same shape the concurrency lists carry: an entry pointing at a file nobody
 // wrote is an exemption lying in wait.
@@ -121,7 +176,7 @@ func checkExternalImports(tr tree) []Violation {
 				continue
 			}
 			first, _, _ := strings.Cut(imp.path, "/")
-			if !strings.Contains(first, ".") {
+			if !strings.Contains(first, ".") || placeAllows(sf.rel, imp.path) {
 				continue
 			}
 			violations = append(violations, Violation{

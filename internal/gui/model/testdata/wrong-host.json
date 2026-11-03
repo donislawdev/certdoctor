@@ -1,0 +1,1423 @@
+{
+  "schema_version": "2.3",
+  "tool": {
+    "name": "certdoctor",
+    "version": "0.1.0"
+  },
+  "run": {
+    "started_at": "2026-11-03T13:27:53.4480614Z",
+    "duration_ms": 3388,
+    "target": "https://wrong.host.badssl.com",
+    "privilege_level": "elevated",
+    "platform": {
+      "os": "windows",
+      "arch": "amd64",
+      "container": null
+    },
+    "redacted": false,
+    "budget_exceeded": false
+  },
+  "verdict": {
+    "status": "FAIL",
+    "sentence": "The server presented a certificate for *.badssl.com, badssl.com, and none of those names covers wrong.host.badssl.com - clients refuse that whatever they trust, so this is a fact about the server or about the name used to reach it. 1 of 6 diagnostic layers could not be assessed.",
+    "exit_code": 4
+  },
+  "layers": [
+    {
+      "id": "L0",
+      "name": "Context",
+      "status": "PASS",
+      "reason": null,
+      "detail": "read 25 environment variables that decide trust and proxying",
+      "findings": [
+        {
+          "kind": "environment_variable",
+          "summary": "HTTP_PROXY is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "HTTP_PROXY",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "http_proxy is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "http_proxy",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "HTTPS_PROXY is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "HTTPS_PROXY",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "https_proxy is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "https_proxy",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "ALL_PROXY is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "ALL_PROXY",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "all_proxy is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "all_proxy",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "NO_PROXY is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "NO_PROXY",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "no_proxy is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "no_proxy",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "SSL_CERT_FILE is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "SSL_CERT_FILE",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "SSL_CERT_DIR is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "SSL_CERT_DIR",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "CURL_CA_BUNDLE is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "CURL_CA_BUNDLE",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "CURL_SSL_BACKEND is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "CURL_SSL_BACKEND",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "REQUESTS_CA_BUNDLE is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "REQUESTS_CA_BUNDLE",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "NODE_EXTRA_CA_CERTS is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "NODE_EXTRA_CA_CERTS",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "NODE_TLS_REJECT_UNAUTHORIZED is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "NODE_TLS_REJECT_UNAUTHORIZED",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "NODE_USE_ENV_PROXY is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "NODE_USE_ENV_PROXY",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "NODE_USE_SYSTEM_CA is set",
+          "source": "detected",
+          "environment_variable": {
+            "name": "NODE_USE_SYSTEM_CA",
+            "value": "1",
+            "set": true,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "NODE_OPTIONS is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "NODE_OPTIONS",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "JAVA_TOOL_OPTIONS is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "JAVA_TOOL_OPTIONS",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "GIT_SSL_CAINFO is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "GIT_SSL_CAINFO",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "GIT_SSL_CAPATH is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "GIT_SSL_CAPATH",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "PIP_CERT is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "PIP_CERT",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "AWS_CA_BUNDLE is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "AWS_CA_BUNDLE",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "KUBERNETES_SERVICE_HOST is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "KUBERNETES_SERVICE_HOST",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "environment_variable",
+          "summary": "container is not set",
+          "source": "default",
+          "environment_variable": {
+            "name": "container",
+            "value": null,
+            "set": false,
+            "carried_credentials": false
+          },
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        }
+      ]
+    },
+    {
+      "id": "L1",
+      "name": "Name resolution",
+      "status": "PASS",
+      "reason": null,
+      "detail": "asked 1 resolver(s) for 2 record type(s) and got 2 answer(s), and the system view answered, and both views resolved this name to the same addresses",
+      "findings": [
+        {
+          "kind": "name_resolution",
+          "summary": "192.0.2.53 answered NOERROR for wrong.host.badssl.com A",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": {
+            "name": "wrong.host.badssl.com",
+            "view": "direct",
+            "resolver": "192.0.2.53",
+            "query_type": "A",
+            "response_code": "NOERROR",
+            "no_answer": null,
+            "addresses": [
+              "104.154.89.105"
+            ],
+            "duration_ms": 112,
+            "divergence": null
+          },
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "name_resolution",
+          "summary": "192.0.2.53 answered NODATA for wrong.host.badssl.com AAAA",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": {
+            "name": "wrong.host.badssl.com",
+            "view": "direct",
+            "resolver": "192.0.2.53",
+            "query_type": "AAAA",
+            "response_code": "NODATA",
+            "no_answer": null,
+            "addresses": [],
+            "duration_ms": 66,
+            "divergence": null
+          },
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "name_resolution",
+          "summary": "the system view resolved wrong.host.badssl.com to 1 address(es) through the resolver this platform uses",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": {
+            "name": "wrong.host.badssl.com",
+            "view": "system",
+            "resolver": null,
+            "query_type": null,
+            "response_code": null,
+            "no_answer": null,
+            "addresses": [
+              "104.154.89.105"
+            ],
+            "duration_ms": 8,
+            "divergence": "agree"
+          },
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        }
+      ]
+    },
+    {
+      "id": "L2",
+      "name": "Proxy",
+      "status": "UNKNOWN",
+      "reason": "undetermined",
+      "detail": "no place names a proxy directly, and this machine has automatic proxy discovery on, which this run did not perform - so a proxy may still apply to this URL and this run did not establish which",
+      "findings": [
+        {
+          "kind": "proxy_stack",
+          "summary": "the proxy environment variables this process was started with: no proxy named at all",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": {
+            "stack": "environment",
+            "read": true,
+            "detail": null,
+            "servers": [],
+            "selected": null,
+            "bypass": "",
+            "bypass_set": false,
+            "bypass_rules": null,
+            "pac_url": "",
+            "auto_detect": null,
+            "caveats": []
+          },
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "proxy_stack",
+          "summary": "the current user's Internet Settings, which Edge, Chrome and .NET follow: no proxy named at all",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": {
+            "stack": "wininet",
+            "read": true,
+            "detail": null,
+            "servers": [],
+            "selected": null,
+            "bypass": "",
+            "bypass_set": false,
+            "bypass_rules": null,
+            "pac_url": "",
+            "auto_detect": true,
+            "caveats": [
+              "this place has automatic proxy discovery on, and certdoctor does not perform that discovery, so a proxy found that way would not appear here"
+            ]
+          },
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "proxy_stack",
+          "summary": "this machine's default WinHTTP configuration, which services follow: no proxy named at all",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": {
+            "stack": "winhttp",
+            "read": true,
+            "detail": "this machine's default WinHTTP configuration names no proxy, so a service reading it connects direct",
+            "servers": [],
+            "selected": null,
+            "bypass": "",
+            "bypass_set": false,
+            "bypass_rules": null,
+            "pac_url": "",
+            "auto_detect": null,
+            "caveats": []
+          },
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "stack_divergence",
+          "summary": "comparing 3 place(s) this machine keeps proxy settings in: every stack that could be read names no proxy at all",
+          "source": "derived",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": {
+            "class": "agree_direct",
+            "stacks": [
+              "environment",
+              "wininet",
+              "winhttp"
+            ]
+          },
+          "pac_script": null,
+          "proxy_challenge": null
+        }
+      ]
+    },
+    {
+      "id": "L3",
+      "name": "TCP",
+      "status": "PASS",
+      "reason": null,
+      "detail": "1 of 1 address(es) accepted a connection",
+      "findings": [
+        {
+          "kind": "tcp_connect",
+          "summary": "104.154.89.105 on port 443: the connection was established",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": {
+            "address": "104.154.89.105",
+            "port": 443,
+            "outcome": "connected",
+            "duration_ms": 157
+          },
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        }
+      ]
+    },
+    {
+      "id": "L4",
+      "name": "TLS",
+      "status": "FAIL",
+      "reason": null,
+      "detail": "the server presented a certificate for *.badssl.com, badssl.com, and none of those names covers wrong.host.badssl.com - clients refuse that whatever they trust, so this is a fact about the server or about the name used to reach it",
+      "findings": [
+        {
+          "kind": "tls_handshake",
+          "summary": "104.154.89.105 on port 443 presented 3 certificate(s), and its certificate does not cover wrong.host.badssl.com",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": {
+            "address": "104.154.89.105",
+            "port": 443,
+            "completed": true,
+            "not_completed": null,
+            "version": "TLS 1.2",
+            "cipher_suite": 49199,
+            "cipher_suite_name": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+            "server_name": "wrong.host.badssl.com",
+            "alpn": "http/1.1",
+            "client_certificate_requested": false,
+            "leaf_fingerprint_sha256": "101154813e8fdab6ba4fab575185c1a13944bcec1d849ae2cd94a073494997e3",
+            "chain_complete": true,
+            "matches_first_address": null,
+            "name_covered": false,
+            "chain": [
+              {
+                "subject": "CN=*.badssl.com",
+                "issuer": "CN=YR1,O=Let's Encrypt,C=US",
+                "dns_names": [
+                  "*.badssl.com",
+                  "badssl.com"
+                ],
+                "not_before": "2026-09-29T20:02:56Z",
+                "not_after": "2026-12-28T20:02:55Z",
+                "fingerprint_sha256": "101154813e8fdab6ba4fab575185c1a13944bcec1d849ae2cd94a073494997e3",
+                "is_ca": false
+              },
+              {
+                "subject": "CN=YR1,O=Let's Encrypt,C=US",
+                "issuer": "CN=Root YR,O=ISRG,C=US",
+                "dns_names": [],
+                "not_before": "2025-09-03T00:00:00Z",
+                "not_after": "2028-09-02T23:59:59Z",
+                "fingerprint_sha256": "13949634d99cd6fd6aa80bc034fefacceb1969feef986586713ecdbb05758d3f",
+                "is_ca": true
+              },
+              {
+                "subject": "CN=Root YR,O=ISRG,C=US",
+                "issuer": "CN=ISRG Root X1,O=Internet Security Research Group,C=US",
+                "dns_names": [],
+                "not_before": "2026-05-13T00:00:00Z",
+                "not_after": "2032-09-02T23:59:59Z",
+                "fingerprint_sha256": "072639d0b140d5bffae16ad9c3f6cc6086040621f51ee61a6d46a8915c07cf76",
+                "is_ca": true
+              }
+            ]
+          },
+          "trust_store": null,
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        }
+      ]
+    },
+    {
+      "id": "L5",
+      "name": "Trust matrix",
+      "status": "PASS",
+      "reason": null,
+      "detail": "all 16 store(s) found trust the presented chain",
+      "findings": [
+        {
+          "kind": "signing_authority",
+          "summary": "CN=YR1,O=Let's Encrypt,C=US signed this certificate, and all 12 store(s) assessed here hold an anchor for it",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": null,
+          "signing_authority": {
+            "issuer": "CN=YR1,O=Let's Encrypt,C=US",
+            "leaf_fingerprint_sha256": "101154813e8fdab6ba4fab575185c1a13944bcec1d849ae2cd94a073494997e3",
+            "held_by": "all_stores",
+            "trusting_stores": [
+              "system-store CurrentUser",
+              "system-store LocalMachine",
+              "git C:\\Program Files\\Git\\ucrt64\\bin\\git.exe",
+              "java C:\\Program Files\\Java\\jre1.8.0_503",
+              "java C:\\Program Files (x86)\\Java\\jre1.8.0_501",
+              "java C:\\Program Files\\OpenJDK\\jdk-21.0.2",
+              "java C:\\Program Files\\OpenJDK\\jdk-22.0.1",
+              "java C:\\Program Files\\OpenJDK\\jdk-22.0.2",
+              "java C:\\Program Files\\OpenJDK\\jdk-25",
+              "java C:\\Program Files\\OpenJDK\\jdk-26.0.2.1",
+              "node C:\\Program Files\\nodejs\\node.exe",
+              "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe"
+            ],
+            "refusing_stores": [],
+            "caveat": "this is what an ordinary publicly trusted authority looks like from here, and it is also what a private authority looks like once it has been deployed everywhere on a machine",
+            "inspection": null
+          },
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "system-store CurrentUser trusts the presented chain (90 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "system-store",
+            "instance": "CurrentUser",
+            "variant": "",
+            "architecture": "",
+            "store_path": "",
+            "store_form": "system",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 90,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "system-store LocalMachine trusts the presented chain (90 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "system-store",
+            "instance": "LocalMachine",
+            "variant": "",
+            "architecture": "",
+            "store_path": "",
+            "store_form": "system",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 90,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "git C:\\Program Files\\Git\\ucrt64\\bin\\git.exe trusts the presented chain (120 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "git",
+            "instance": "C:\\Program Files\\Git\\ucrt64\\bin\\git.exe",
+            "variant": "",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\Git\\ucrt64\\etc\\ssl\\certs\\ca-bundle.crt",
+            "store_form": "file",
+            "backend": "openssl",
+            "defers_to": null,
+            "trust_anchor_count": 120,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
+              "PATH"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "git C:\\Program Files\\Git\\cmd\\git.exe trusts the presented chain (120 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "git",
+            "instance": "C:\\Program Files\\Git\\cmd\\git.exe",
+            "variant": "",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\Git\\ucrt64\\etc\\ssl\\certs\\ca-bundle.crt",
+            "store_form": "file",
+            "backend": "openssl",
+            "defers_to": null,
+            "trust_anchor_count": 120,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
+              "PATH"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files\\Java\\jre1.8.0_503 trusts the presented chain (112 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files\\Java\\jre1.8.0_503",
+            "variant": "jre",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\Java\\jre1.8.0_503\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 112,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files (x86)\\Java\\jre1.8.0_501 trusts the presented chain (112 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files (x86)\\Java\\jre1.8.0_501",
+            "variant": "jre",
+            "architecture": "x86",
+            "store_path": "C:\\Program Files (x86)\\Java\\jre1.8.0_501\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 112,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files\\OpenJDK\\jdk-21.0.2 trusts the presented chain (106 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files\\OpenJDK\\jdk-21.0.2",
+            "variant": "jdk",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\OpenJDK\\jdk-21.0.2\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 106,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files\\OpenJDK\\jdk-22.0.1 trusts the presented chain (108 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files\\OpenJDK\\jdk-22.0.1",
+            "variant": "jdk",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\OpenJDK\\jdk-22.0.1\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 108,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files\\OpenJDK\\jdk-22.0.2 trusts the presented chain (110 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files\\OpenJDK\\jdk-22.0.2",
+            "variant": "jdk",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\OpenJDK\\jdk-22.0.2\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 110,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files\\OpenJDK\\jdk-25 trusts the presented chain (113 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files\\OpenJDK\\jdk-25",
+            "variant": "jdk",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\OpenJDK\\jdk-25\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 113,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files\\OpenJDK\\jdk-26.0.2.1 trusts the presented chain (111 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files\\OpenJDK\\jdk-26.0.2.1",
+            "variant": "jdk",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\OpenJDK\\jdk-26.0.2.1\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 111,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
+              "JAVA_HOME",
+              "PATH"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "curl C:\\Program Files\\Git\\ucrt64\\bin\\curl.exe trusts the presented chain (90 anchors) - it judges by system-store CurrentUser, and Schannel also checks revocation at the addresses the server's certificate names, which this run does not contact",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "curl",
+            "instance": "C:\\Program Files\\Git\\ucrt64\\bin\\curl.exe",
+            "variant": "",
+            "architecture": "",
+            "store_path": "",
+            "store_form": "system",
+            "backend": "schannel",
+            "defers_to": {
+              "runtime": "system-store",
+              "instance": "CurrentUser"
+            },
+            "trust_anchor_count": 90,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
+              "PATH"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "curl C:\\Windows\\system32\\curl.exe trusts the presented chain (90 anchors) - it judges by system-store CurrentUser, and Schannel also checks revocation at the addresses the server's certificate names, which this run does not contact",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "curl",
+            "instance": "C:\\Windows\\system32\\curl.exe",
+            "variant": "",
+            "architecture": "",
+            "store_path": "",
+            "store_form": "system",
+            "backend": "schannel",
+            "defers_to": {
+              "runtime": "system-store",
+              "instance": "CurrentUser"
+            },
+            "trust_anchor_count": 90,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
+              "PATH"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "node C:\\Program Files\\nodejs\\node.exe trusts the presented chain (195 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "node",
+            "instance": "C:\\Program Files\\nodejs\\node.exe",
+            "variant": "",
+            "architecture": "",
+            "store_path": "",
+            "store_form": "builtin",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 195,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
+              "PATH",
+              "NODE_USE_SYSTEM_CA"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "python C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe trusts the presented chain (130 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "python",
+            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe",
+            "variant": "",
+            "architecture": "",
+            "store_path": "",
+            "store_form": "system",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 130,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
+              "PATH",
+              "pip",
+              "pip3",
+              "python"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe trusts the presented chain (120 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "pip",
+            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe",
+            "variant": "truststore",
+            "architecture": "",
+            "store_path": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\Lib\\site-packages\\pip\\_vendor\\certifi\\cacert.pem",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 120,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
+              "PATH",
+              "pip",
+              "pip3",
+              "python"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "kind": "undetermined",
+      "layer": null,
+      "field": "run.platform.container",
+      "reason": null,
+      "detail": "certdoctor does not detect containers yet, so this is left empty rather than answered no"
+    },
+    {
+      "kind": "not_implemented",
+      "layer": null,
+      "field": "layers",
+      "reason": null,
+      "detail": "diagnosis from inside a container is not built yet, so this report covers the machine it ran on and nothing else - to look inside a container, run certdoctor there"
+    },
+    {
+      "kind": "undetermined",
+      "layer": null,
+      "field": "schema_version",
+      "reason": null,
+      "detail": "this schema is still moving and will keep moving until certdoctor reaches 1.0.0 - pin this version only if you are prepared to update, and read CHANGELOG.md before you do"
+    },
+    {
+      "kind": "not_implemented",
+      "layer": null,
+      "field": "trust_matrix",
+      "reason": null,
+      "detail": "the trust matrix asks only the runtimes this build has probes for (system-store, git, java, curl, node, python, pip) - the other families are not asked yet, so an absent runtime here means nobody looked rather than nothing was found"
+    }
+  ]
+}

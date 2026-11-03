@@ -1,0 +1,340 @@
+// Package words is the catalogue every word the window writes comes from.
+// English only, and no translations: a key and its text. What the report
+// says - the verdict, a layer's sentence, a finding - comes from the report
+// and is not here.
+package words
+
+// Key names one piece of the window's own text.
+type Key string
+
+// RepositoryURL and SupportURL are where GitHub and Donate lead. Addresses
+// rather than words - the same in every language - so outside the map. In
+// the window the repository's address is to come from the one place the
+// program already names it (cmd/sbom), so the two cannot point apart.
+const (
+	RepositoryURL = "https://github.com/donislawdev/certdoctor"
+	SupportURL    = "https://donislawdev.com/support/"
+)
+
+const (
+	AppName           Key = "app.name"
+	StartTitle        Key = "start.title"
+	StartLead         Key = "start.lead"
+	StartPromise      Key = "start.promise"
+	TargetCard        Key = "target.card"
+	TargetLabel       Key = "target.label"
+	TargetHint        Key = "target.hint"
+	TargetExample     Key = "target.example"
+	OptionsCard       Key = "options.card"
+	OptionsNote       Key = "options.note"
+	OptPAC            Key = "opt.pac"
+	OptPACHint        Key = "opt.pac.hint"
+	OptPACExample     Key = "opt.pac.example"
+	OptTimeoutExample Key = "opt.timeout.example"
+	OptTimeout        Key = "opt.timeout"
+	OptTimeoutUnit    Key = "opt.timeout.unit"
+	OptRedact         Key = "opt.redact"
+	OptRedactHint     Key = "opt.redact.hint"
+	Diagnose          Key = "action.diagnose"
+	RunAgain          Key = "action.again"
+	NewTarget         Key = "action.new"
+	SaveReport        Key = "action.save"
+	Copy              Key = "action.copy"
+	Copied            Key = "action.copied"
+	Cancel            Key = "action.cancel"
+
+	VerdictCard  Key = "verdict.card"
+	ExitCode     Key = "verdict.exit"
+	Duration     Key = "verdict.duration"
+	Privilege    Key = "verdict.privilege"
+	Platform     Key = "verdict.platform"
+	LayersHead   Key = "layers.head"
+	FindingsHead Key = "findings.head"
+
+	ColTrusts   Key = "matrix.trusts"
+	ColRuntime  Key = "matrix.runtime"
+	ColInstance Key = "matrix.instance"
+	ColAnchors  Key = "matrix.anchors"
+	ColChosen   Key = "matrix.chosen"
+	TrustsYes   Key = "matrix.yes"
+	TrustsNo    Key = "matrix.no"
+	TrustsNot   Key = "matrix.notassessed"
+
+	ReportFor     Key = "report.for"
+	MatrixCard    Key = "matrix.card"
+	ShowCommand   Key = "matrix.show"
+	TargetCardNew Key = "target.cardnew"
+
+	RunningTitle   Key = "running.title"
+	RunningNote    Key = "running.note"
+	RunningElapsed Key = "running.elapsed"
+	RunningLayers  Key = "running.layers"
+	OptionsClosed  Key = "options.closed"
+	SaveJSON       Key = "save.json"
+	SaveJSONNote   Key = "save.json.note"
+	SaveHTML       Key = "save.html"
+	SaveHTMLNote   Key = "save.html.note"
+	SaveMD         Key = "save.md"
+	SaveMDNote     Key = "save.md.note"
+	EmptyLayer     Key = "layer.empty"
+	Back           Key = "action.back"
+	ShowFolder     Key = "action.folder"
+	MissingTitle   Key = "problem.missing.title"
+	MissingWhat    Key = "problem.missing.what"
+	MissingTodo    Key = "problem.missing.todo"
+	VersionTitle   Key = "problem.version.title"
+	VersionWhat    Key = "problem.version.what"
+	VersionTodo    Key = "problem.version.todo"
+	RefusedTitle   Key = "problem.refused.title"
+	RefusedTodo    Key = "problem.refused.todo"
+	CrashedTitle   Key = "problem.crashed.title"
+	CrashedWhat    Key = "problem.crashed.what"
+	CrashedTodo    Key = "problem.crashed.todo"
+	Printed        Key = "problem.printed"
+	LinkGitHub     Key = "link.github"
+	LinkDonate     Key = "link.donate"
+	LinkFailed     Key = "link.failed"
+	LinkFailedNote Key = "link.failed.note"
+
+	CommandHead   Key = "command.head"
+	CommandNote   Key = "command.note"
+	NeedsAdmin    Key = "command.admin"
+	Placeholder   Key = "command.placeholder"
+	ShowDetails   Key = "details.show"
+	HideDetails   Key = "details.hide"
+	CatalogueHint Key = "catalogue.hint"
+)
+
+var english = map[Key]string{
+	AppName:           "certdoctor",
+	StartTitle:        "Diagnose a connection",
+	StartLead:         "Follows the whole path to an address - name lookup, proxy, TCP and TLS - and asks every trust store on this machine whether it trusts the server.",
+	StartPromise:      "Nothing on this machine is changed. Fixes are commands for you to read, copy and run.",
+	TargetCard:        "Target",
+	TargetLabel:       "Address",
+	TargetHint:        "An https:// or http:// address, as you would type it into a browser.",
+	TargetExample:     "https://example.com",
+	OptionsCard:       "Options",
+	OptionsNote:       "The same switches as the command line. Leave them empty to use what this machine is set up with.",
+	OptPAC:            "PAC script",
+	OptPACHint:        "Use this proxy auto-config address instead of the one the system names.",
+	OptPACExample:     "http://proxy.example/proxy.pac",
+	OptTimeoutExample: "30",
+	OptTimeout:        "Time limit",
+	OptTimeoutUnit:    "seconds",
+	OptRedact:         "Mask names",
+	OptRedactHint:     "Replace host names and addresses in the report, for sharing it.",
+	Diagnose:          "Diagnose",
+	RunAgain:          "Run again",
+	NewTarget:         "New target",
+	SaveReport:        "Save report",
+	Copy:              "Copy",
+	Copied:            "Copied",
+	Cancel:            "Cancel",
+
+	VerdictCard:  "Verdict",
+	ExitCode:     "exit code",
+	Duration:     "took",
+	Privilege:    "ran",
+	Platform:     "on",
+	LayersHead:   "Layers",
+	FindingsHead: "Findings",
+
+	ColTrusts:   "Trusts this chain",
+	ColRuntime:  "Runtime",
+	ColInstance: "Where",
+	ColAnchors:  "Anchors",
+	ColChosen:   "Found by",
+	TrustsYes:   "Yes",
+	TrustsNo:    "No",
+	TrustsNot:   "Not assessed",
+
+	ReportFor:     "Report for",
+	MatrixCard:    "Trust stores on this machine",
+	ShowCommand:   "Command",
+	TargetCardNew: "What should certdoctor reach?",
+
+	RunningTitle:   "Diagnosing",
+	RunningNote:    "certdoctor follows the path layer by layer and writes the report when every layer has answered or the time limit is reached.",
+	RunningElapsed: "%.0f s of the %d s limit",
+	RunningLayers:  "Context, name lookup, proxy, TCP, TLS and every trust store on this machine",
+	OptionsClosed:  "System proxy settings, 30 s limit, names shown",
+	SaveJSON:       "JSON",
+	SaveJSONNote:   "The full report, for another tool or to open again here",
+	SaveHTML:       "HTML",
+	SaveHTMLNote:   "One page to read in a browser or attach to a ticket",
+	SaveMD:         "Markdown",
+	SaveMDNote:     "Text to paste into a ticket or a chat",
+	EmptyLayer:     "This layer has nothing to list on this machine.",
+	Back:           "Back",
+	ShowFolder:     "Show the folder",
+	MissingTitle:   "certdoctor is missing beside this window",
+	MissingWhat:    "The window runs the certdoctor program that came with it, from its own folder, and that program is not there.",
+	MissingTodo:    "Unpack the whole download again, so both programs stand in one folder.",
+	VersionTitle:   "certdoctor beside this window is another version",
+	VersionWhat:    "This window is %s and the certdoctor beside it says %s. A report of another version is not drawn, so nothing on screen can be wrong.",
+	VersionTodo:    "Unpack the whole download again, so both programs come from one release.",
+	RefusedTitle:   "certdoctor did not accept this",
+	RefusedTodo:    "Change the address or the options and try again.",
+	CrashedTitle:   "certdoctor stopped without a report",
+	CrashedWhat:    "The run ended before it wrote a report, so there is nothing to show.",
+	CrashedTodo:    "Run it again. If it stops again, the same command in a terminal shows the same message.",
+	Printed:        "What certdoctor printed",
+	LinkGitHub:     "GitHub",
+	LinkDonate:     "Donate",
+	LinkFailed:     "The page did not open",
+	LinkFailedNote: "This desktop did not hand it to a browser. Copy the address and open it yourself.",
+
+	CommandHead:   "Command to add the authority",
+	CommandNote:   "Read it before you run it. certdoctor never runs it for you.",
+	NeedsAdmin:    "Needs administrator rights",
+	Placeholder:   "Replace the parts in angle brackets before running it.",
+	ShowDetails:   "Show details",
+	HideDetails:   "Hide details",
+	CatalogueHint: "Every part of the window, in every state.",
+}
+
+// The words of the catalogue screen - the hidden screen that shows every
+// part in every state.
+const (
+	CatPalette    Key = "cat.palette"
+	CatSurfaces   Key = "cat.surfaces"
+	CatInks       Key = "cat.inks"
+	CatStatuses   Key = "cat.statuses"
+	CatAction     Key = "cat.action"
+	CatPairs      Key = "cat.pairs"
+	CatPairsNote  Key = "cat.pairs.note"
+	CatType       Key = "cat.type"
+	CatParts      Key = "cat.parts"
+	CatMarks      Key = "cat.marks"
+	CatBadges     Key = "cat.badges"
+	CatButtons    Key = "cat.buttons"
+	CatFields     Key = "cat.fields"
+	CatCommands   Key = "cat.commands"
+	CatMatrix     Key = "cat.matrix"
+	CatRail       Key = "cat.rail"
+	CatVerdict    Key = "cat.verdict"
+	CatRest       Key = "cat.rest"
+	CatHover      Key = "cat.hover"
+	CatPress      Key = "cat.press"
+	CatFocus      Key = "cat.focus"
+	CatDisabled   Key = "cat.disabled"
+	CatPrimary    Key = "cat.primary"
+	CatSecondary  Key = "cat.secondary"
+	CatQuiet      Key = "cat.quiet"
+	CatEmpty      Key = "cat.empty"
+	CatFilled     Key = "cat.filled"
+	CatChecked    Key = "cat.checked"
+	CatNeed       Key = "cat.need"
+	CatTextPair   Key = "cat.textpair"
+	CatShapePair  Key = "cat.shapepair"
+	CatSampleLong Key = "cat.sample.long"
+	CatOpen       Key = "cat.open"
+	CatSelected   Key = "cat.selected"
+	CatStates     Key = "cat.states"
+	CatQuietHeart Key = "cat.quiet.heart"
+	CatHeader     Key = "cat.header"
+	CatTrackStart Key = "cat.track.start"
+	CatTrackHalf  Key = "cat.track.half"
+	CatTrackFull  Key = "cat.track.full"
+)
+
+var catalogue = map[Key]string{
+	CatPalette:    "Palette",
+	CatSurfaces:   "Surfaces and edges",
+	CatInks:       "Inks",
+	CatStatuses:   "Statuses",
+	CatAction:     "Main action and keyboard",
+	CatPairs:      "Measured contrast",
+	CatPairsNote:  "WCAG 2.2: 4.5 for words (1.4.3), 3.0 for edges of controls, focus rings and marks (1.4.11). Measured from the values in look/palette.go, not judged by eye.",
+	CatType:       "Ladder of type",
+	CatParts:      "Parts",
+	CatMarks:      "Status marks - inline, row, verdict",
+	CatBadges:     "Badges, answers and chips",
+	CatButtons:    "Buttons",
+	CatFields:     "Boxes to type in and switches",
+	CatCommands:   "Commands",
+	CatMatrix:     "Trust matrix rows",
+	CatRail:       "Layer list",
+	CatVerdict:    "Verdict",
+	CatRest:       "rest",
+	CatHover:      "pointer over",
+	CatPress:      "pressed",
+	CatFocus:      "keyboard focus",
+	CatDisabled:   "disabled",
+	CatPrimary:    "Primary",
+	CatSecondary:  "Secondary",
+	CatQuiet:      "Quiet",
+	CatEmpty:      "empty",
+	CatFilled:     "filled",
+	CatChecked:    "on",
+	CatNeed:       "needs",
+	CatTextPair:   "words",
+	CatShapePair:  "edge or mark",
+	CatSampleLong: "A deliberately long name that keeps going well past the width the column was given",
+	CatOpen:       "open",
+	CatSelected:   "selected",
+	CatStates:     "States of a screen",
+	CatQuietHeart: "Quiet, heart",
+	CatHeader:     "Bar across the top",
+	CatTrackStart: "just started",
+	CatTrackHalf:  "under way",
+	CatTrackFull:  "at the limit",
+}
+
+// Kind is the name the window gives a kind of finding. The kinds are the
+// report's closed list (docs/18 section 3c); an unknown one is shown as the
+// report spells it.
+func Kind(kind string) string {
+	if s, ok := kinds[kind]; ok {
+		return s
+	}
+	return kind
+}
+
+var kinds = map[string]string{
+	"environment_variable": "Environment variable",
+	"name_resolution":      "Name lookup",
+	"tcp_connect":          "TCP connection",
+	"tls_handshake":        "TLS handshake",
+	"trust_store":          "Trust store",
+	"signing_authority":    "Who signed the certificate",
+	"proxy_stack":          "Proxy setting",
+	"stack_divergence":     "Proxy settings that disagree",
+	"pac_script":           "PAC script",
+	"proxy_challenge":      "Proxy sign-in",
+}
+
+// Reason is the name the window gives a reason for UNKNOWN. The reasons are
+// the report's closed list (docs/18 section 5).
+func Reason(code string) string {
+	if s, ok := reasons[code]; ok {
+		return s
+	}
+	return code
+}
+
+var reasons = map[string]string{
+	"unrecognized_output":  "Unrecognised output",
+	"timeout":              "Time limit reached",
+	"access_denied":        "Access denied",
+	"probe_error":          "A probe failed",
+	"skipped_budget":       "Skipped for time",
+	"transport_error":      "No answer on the wire",
+	"nothing_to_check":     "Nothing to check",
+	"undetermined":         "Undetermined",
+	"limit_exceeded":       "A limit of this program stopped it",
+	"credentials_required": "The proxy asks who you are",
+}
+
+// T is the text of a key. A key with no text comes back as itself in angle
+// brackets, so it cannot pass for a sentence.
+func T(k Key) string {
+	if s, ok := english[k]; ok {
+		return s
+	}
+	if s, ok := catalogue[k]; ok {
+		return s
+	}
+	return "<" + string(k) + ">"
+}

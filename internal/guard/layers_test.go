@@ -34,6 +34,34 @@ var layerMap = []layerRule{
 		location:       "internal/guard/",
 		mayImportBelow: nil,
 	},
+	// THE WINDOW, ONE FLOOR PER PACKAGE (D21, ADR121, ADR122). It is the one
+	// part of the tree that knows the toolkit, and it knows the report only as
+	// the document the command line writes - so the only thing of the core it
+	// may name is the status vocabulary, which is that document's contract as
+	// much as the core's (ADR6). Each package is its own floor rather than the
+	// window being one layer, because the window's packages do import each
+	// other and the direction between them is the point: a part does not know
+	// the screen it stands on, a screen does not know the catalogue that shows
+	// it (GUI rule 9). Written as packages with a closing slash, and matched
+	// against the imported package with one added, so naming look does not
+	// also admit a package called lookalike.
+	{location: "internal/gui/fonts/"},
+	{location: "internal/gui/words/"},
+	{location: "internal/gui/model/", mayImportBelow: []string{"internal/core/status/"}},
+	{location: "internal/gui/look/", mayImportBelow: []string{"internal/gui/fonts/"}},
+	{
+		location:       "internal/gui/parts/",
+		mayImportBelow: []string{"internal/gui/look/", "internal/gui/words/", "internal/gui/model/"},
+	},
+	{
+		location:       "internal/gui/screens/",
+		mayImportBelow: []string{"internal/gui/parts/", "internal/gui/look/", "internal/gui/words/", "internal/gui/model/"},
+	},
+	{
+		location: "internal/gui/catalogue/",
+		mayImportBelow: []string{"internal/gui/screens/", "internal/gui/parts/", "internal/gui/look/",
+			"internal/gui/words/", "internal/gui/model/"},
+	},
 	{
 		// Wiring. It is allowed to see every layer because that is its job, and
 		// it is the only thing allowed to reach the module root package.
@@ -508,7 +536,10 @@ func checkOurImport(sf sourceFile, rule layerRule, inside string, imp declaredIm
 		}
 		return nil
 	}
-	if !hasAnyPrefix(inside, rule.mayImportBelow) {
+	// With a slash added, so a rule naming one package with its closing slash
+	// matches that package and its children and no package whose name merely
+	// begins the same way. A rule naming a whole layer matches as before.
+	if !hasAnyPrefix(inside+"/", rule.mayImportBelow) {
 		return []Violation{{
 			File:   sf.rel,
 			Line:   imp.line,
