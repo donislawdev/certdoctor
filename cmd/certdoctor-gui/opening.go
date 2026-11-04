@@ -13,8 +13,11 @@ import (
 )
 
 // openOrRefuse shows w and runs the toolkit's loop only when the toolkit gave
-// it a window (ADR125 point 1). When it did not, refuse is called and the
-// answer is 1, the exit code a build with no window in it gives too.
+// it a window (ADR125 point 1). When it did not, the window is tried again
+// (ADR125 point 2): again answers the exit code of the process that carried
+// the second attempt, or why there was none - and then refuse is called with
+// that reason and the answer is 1, the exit code a build with no window in it
+// gives too.
 //
 // Read in fyne v2.8.2 (internal/driver/glfw/driver.go, initFailed and Quit):
 // when the window cannot be created before the loop runs, the toolkit logs why
@@ -35,10 +38,14 @@ import (
 // ShowAndRun is Show followed by Run and nothing else, so where the window
 // opens this is the same two calls in the same order. The question between
 // them is asked of the window's state, not of what the toolkit logged.
-func openOrRefuse(w fyne.Window, run func(), refuse func(panicked any)) int {
+func openOrRefuse(w fyne.Window, run func(), again func() (int, error), refuse func(why error, panicked any)) int {
 	panicked := show(w)
 	if !shown(w) {
-		refuse(panicked)
+		code, why := again()
+		if why == nil {
+			return code
+		}
+		refuse(why, panicked)
 		return 1
 	}
 	if panicked != nil {

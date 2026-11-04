@@ -37,6 +37,12 @@ var execAllowlist = map[string]bool{
 	// on the child stdin - are consumed rather than copied. A second file here
 	// would be one rule in two places, which is the measured shape of OBS50.
 	"internal/adapter/probe/exec.go": true,
+	// The window's one place (ADR125 point 7, announced in ADR121): the window
+	// started again for the software renderer, and the command line it is to
+	// run. What it starts is decided in the file itself rather than handed in,
+	// so unlike the entry above it is also held to the spawns it may make -
+	// spawnsAllowed in spawns_test.go.
+	"cmd/certdoctor-gui/processes.go": true,
 }
 
 // execPackages are the imports able to start another program.

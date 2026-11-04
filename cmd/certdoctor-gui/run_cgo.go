@@ -28,11 +28,26 @@ import (
 const appID = "dev.donislaw.certdoctor"
 
 // run opens the window and returns the exit code of the process: 0 when the
-// window was closed, 1 when the toolkit gave no window (ADR125 point 1).
-// Arguments are not read yet - the flags of the window arrive with the code
-// that needs them, and a window started from a shortcut with odd arguments
-// opens all the same.
-func run(_ []string, errOut io.Writer) int {
+// window was closed, 1 when the toolkit gave no window (ADR125 point 1), and
+// on Windows, when the first attempt gave none, the code of the second process
+// that tried with the software renderer (ADR125 point 2). The one flag read is
+// --software-gl, and every other argument is passed on to that second process
+// as it came - see readLaunch.
+func run(args []string, errOut io.Writer) int {
+	l := readLaunch(args)
+	// The software renderer, when asked for, before anything below asks the
+	// driver for anything: the toolkit's first request for OpenGL by name has to
+	// find it already mapped. A renderer that does not load is said out loud and
+	// the window goes on to the toolkit - which on the machine this exists for
+	// refuses, and the refusal then says the renderer was tried and why it
+	// could not be. On a machine with a driver the window opens drawn by the
+	// driver.
+	var loaded error
+	if l.softwareGL {
+		loaded = loadRendererBeside()
+		fmt.Fprintln(errOut, loadingSentence(loaded))
+	}
+
 	// The toolkit says why a window failed through the standard logger, so a
 	// copy is kept for the sentence of the refusal. The copy comes first, so a
 	// standard error that is not there - a program built for the windows
@@ -56,12 +71,21 @@ func run(_ []string, errOut io.Writer) int {
 	w.Resize(fyne.NewSize(look.WindowWidth, look.WindowHeight))
 	w.CenterOnScreen()
 
-	// The refusal goes to standard error for whatever started this, and to a
-	// system dialog for the person, because the window that would have
-	// carried it is what failed.
-	return openOrRefuse(w, a.Run, func(panicked any) {
+	// When the toolkit gave no window, tried again in a second process with the
+	// software renderer where one ships, and only then refused out loud. The
+	// refusal goes to standard error for whatever started this, and to a
+	// system dialog for the person, because the window that would have carried
+	// it is what failed - and it says what became of the renderer, when there
+	// is something to say. One dialog in all: a second process that refuses
+	// shows its own and this one only passes its code on.
+	return openOrRefuse(w, a.Run, secondAttemptFor(l, errOut).try, func(why error, panicked any) {
 		sentence := refusal(causeFrom(said.String(), panicked))
 		fmt.Fprintln(errOut, sentence)
-		sayInADialog(words.T(words.WindowRefusedTitle), sentence)
+		body := sentence
+		if renderer := rendererSentence(why, loaded); renderer != "" {
+			fmt.Fprintln(errOut, renderer)
+			body += "\n\n" + renderer
+		}
+		sayInADialog(words.T(words.WindowRefusedTitle), body)
 	})
 }

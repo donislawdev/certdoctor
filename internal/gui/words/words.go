@@ -113,6 +113,20 @@ const (
 	WindowRefused       Key = "refusal.window"
 	WindowRefusedCause  Key = "refusal.window.cause"
 	NoWindowInThisBuild Key = "refusal.nocgo"
+
+	// The second attempt at a window, with the software renderer shipped
+	// beside it on Windows (ADR125 point 2): the note before the second start,
+	// what a window asked for the renderer says about loading it, and what the
+	// refusal adds about the renderer. Where a sentence takes %s it is a path
+	// or the system's own words, without their full stop.
+	SoftwareAgain       Key = "software.again"
+	SoftwareDrawing     Key = "software.drawing"
+	SoftwareNotShipped  Key = "software.notshipped"
+	SoftwareNotLoaded   Key = "software.notloaded"
+	SoftwareNotBeside   Key = "software.notbeside"
+	SoftwareNotReadable Key = "software.notreadable"
+	SoftwareStartFailed Key = "software.startfailed"
+	SoftwareDidNotHelp  Key = "software.didnothelp"
 )
 
 var english = map[Key]string{
@@ -207,6 +221,15 @@ var english = map[Key]string{
 	WindowRefused:       "The window could not be opened: the graphics toolkit was not given one. The window draws through OpenGL 2.1, which a virtual machine without 3D acceleration or a remote desktop session may not offer. The certdoctor command line in the same folder needs no graphics and diagnoses the same way - run \"certdoctor --help\". To get the window, use a graphics driver that provides OpenGL 2.1.",
 	WindowRefusedCause:  "The window could not be opened: the graphics toolkit was not given one. The toolkit said: %s. The window draws through OpenGL 2.1, which a virtual machine without 3D acceleration or a remote desktop session may not offer. The certdoctor command line in the same folder needs no graphics and diagnoses the same way - run \"certdoctor --help\". To get the window, use a graphics driver that provides OpenGL 2.1.",
 	NoWindowInThisBuild: "certdoctor-gui: this build has no window in it. It was compiled without cgo, which the graphics toolkit needs to reach OpenGL. The certdoctor command line needs neither and diagnoses the same way - run \"certdoctor --help\". To get the window, use a certdoctor-gui built for this system.",
+
+	SoftwareAgain:       "The first attempt to open the window gave no window - usually a graphics driver without OpenGL 2.1. Starting again with the software renderer from the opengl folder beside the program.",
+	SoftwareDrawing:     "This window is drawn by the software renderer from the opengl folder beside the program (Mesa llvmpipe), not by the graphics driver. Everything works, and drawing is slower than with a driver that provides OpenGL 2.1.",
+	SoftwareNotShipped:  "No software renderer ships for this system, so --software-gl changes nothing here.",
+	SoftwareNotLoaded:   "The software renderer from the opengl folder beside the program could not be loaded: %s.",
+	SoftwareNotBeside:   "The software renderer was not tried: %s is missing. It ships in the opengl folder of the Windows archive - put that folder back next to certdoctor-gui.exe and start the window again.",
+	SoftwareNotReadable: "The software renderer was not tried: a file of it beside the program could not be read (%s). Check who may read the opengl folder next to certdoctor-gui.exe.",
+	SoftwareStartFailed: "The software renderer was not tried: starting the window again did not work (%s).",
+	SoftwareDidNotHelp:  "The software renderer from the opengl folder beside the program was loaded, and the graphics toolkit still could not open a window with it.",
 }
 
 // The words of the catalogue screen - the hidden screen that shows every

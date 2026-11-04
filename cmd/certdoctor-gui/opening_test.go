@@ -20,20 +20,6 @@ import (
 	"github.com/donislawdev/certdoctor/internal/gui/words"
 )
 
-// childVariable asks the test binary to be the window instead of running the
-// tests - see TestAWindowWithNoDisplayIsRefusedRatherThanLeftWaiting.
-const childVariable = "CERTDOCTOR_GUI_TEST_CHILD"
-
-// TestMain is the window itself when the variable asks for it. Run from here
-// rather than from a test because the toolkit's loop belongs to the main
-// goroutine, and TestMain is the only code of a test binary that runs there.
-func TestMain(m *testing.M) {
-	if os.Getenv(childVariable) == "1" {
-		os.Exit(run(nil, os.Stderr))
-	}
-	os.Exit(m.Run())
-}
-
 // native is a window that answers with a handle in one of the toolkit's
 // contexts. Everything but showing it and asking for its handle is left to the
 // embedded interface, which nothing here calls.
@@ -53,30 +39,57 @@ func (n native) Show() {
 
 func (n native) RunNative(f func(any)) { f(n.context) }
 
+// notAgain is a second attempt that was not taken, for the tests that are about
+// the refusal - what try answers on a system nothing ships for.
+var notAgain = func() (int, error) { return 0, notShipped{"linux"} }
+
 // TestAWindowTheToolkitDidNotGiveIsRefused - the loop is never run, the refusal
-// is said, and the code is 1. Then the same with a window the toolkit gave, which
-// runs and is not refused.
+// is said with the reason the second attempt gave, and the code is 1. Then the
+// same with a window the toolkit gave, which runs, is not tried again and is
+// not refused.
 func TestAWindowTheToolkitDidNotGiveIsRefused(t *testing.T) {
-	showed, ran, refused := false, false, false
+	showed, ran, refused, tried := false, false, false, false
 	var handedOver any = "untouched"
-	refuse := func(panicked any) { refused, handedOver = true, panicked }
+	var reason error
+	refuse := func(why error, panicked any) { refused, reason, handedOver = true, why, panicked }
+	again := func() (int, error) { tried = true; return notAgain() }
 	absent := native{context: driver.X11WindowContext{}, showed: &showed}
-	if code := openOrRefuse(absent, func() { ran = true }, refuse); code != 1 {
+	if code := openOrRefuse(absent, func() { ran = true }, again, refuse); code != 1 {
 		t.Errorf("a window with no handle gave code %d, want 1", code)
 	}
-	if !showed || ran || !refused || handedOver != nil {
-		t.Errorf("a window with no handle: showed %v, ran %v, refused %v with %v - want it shown, refused with "+
-			"no panic and never run", showed, ran, refused, handedOver)
+	if !showed || ran || !tried || !refused || handedOver != nil {
+		t.Errorf("a window with no handle: showed %v, ran %v, tried again %v, refused %v with %v - want it shown, "+
+			"tried again, refused with no panic and never run", showed, ran, tried, refused, handedOver)
+	}
+	if !errors.As(reason, new(notShipped)) {
+		t.Errorf("the refusal was handed %v, want the reason the second attempt gave", reason)
 	}
 
-	showed, ran, refused = false, false, false
+	showed, ran, refused, tried = false, false, false, false
 	present := native{context: driver.X11WindowContext{WindowHandle: 1}, showed: &showed}
-	if code := openOrRefuse(present, func() { ran = true }, refuse); code != 0 {
+	if code := openOrRefuse(present, func() { ran = true }, again, refuse); code != 0 {
 		t.Errorf("a window with a handle gave code %d, want 0", code)
 	}
-	if !showed || !ran || refused {
-		t.Errorf("a window with a handle: showed %v, ran %v, refused %v - want it shown and run, never refused",
-			showed, ran, refused)
+	if !showed || !ran || tried || refused {
+		t.Errorf("a window with a handle: showed %v, ran %v, tried again %v, refused %v - want it shown and run, "+
+			"never tried again or refused", showed, ran, tried, refused)
+	}
+}
+
+// TestASecondAttemptThatRanAnswersForTheWindow - when the second process ran,
+// its exit code is the answer, whatever it is, and this process neither runs
+// its loop nor refuses: a second process that refused has shown its own
+// refusal, and a second dialog would say the same thing twice.
+func TestASecondAttemptThatRanAnswersForTheWindow(t *testing.T) {
+	for _, code := range []int{0, 1, childStartedRight} {
+		showed, ran, refused := false, false, false
+		absent := native{context: driver.WindowsWindowContext{}, showed: &showed}
+		got := openOrRefuse(absent, func() { ran = true }, func() (int, error) { return code, nil },
+			func(error, any) { refused = true })
+		if got != code || ran || refused {
+			t.Errorf("a second process that answered %d: the window answered %d, ran %v, refused %v - want %d, "+
+				"never run and never refused", code, got, ran, refused, code)
+		}
 	}
 }
 
@@ -88,7 +101,7 @@ func TestAPanicThatLeftNoWindowIsARefusal(t *testing.T) {
 	showed, ran := false, false
 	var handedOver any
 	absent := native{context: driver.X11WindowContext{}, showed: &showed, panics: "NotInitialized"}
-	if code := openOrRefuse(absent, func() { ran = true }, func(p any) { handedOver = p }); code != 1 {
+	if code := openOrRefuse(absent, func() { ran = true }, notAgain, func(_ error, p any) { handedOver = p }); code != 1 {
 		t.Errorf("a panic with no window gave code %d, want 1", code)
 	}
 	if ran || handedOver != "NotInitialized" {
@@ -102,7 +115,7 @@ func TestAPanicThatLeftNoWindowIsARefusal(t *testing.T) {
 			t.Errorf("a panic with a window standing came out as %v, want the panic itself", got)
 		}
 	}()
-	openOrRefuse(present, func() { ran = true }, func(any) { t.Error("a panic with a window standing was refused") })
+	openOrRefuse(present, func() { ran = true }, notAgain, func(error, any) { t.Error("a panic with a window standing was refused") })
 	t.Error("a panic with a window standing was swallowed")
 }
 
@@ -194,7 +207,7 @@ func TestAWindowWithNoDisplayIsRefusedRatherThanLeftWaiting(t *testing.T) {
 		}
 		env = append(env, kv)
 	}
-	env = append(env, childVariable+"=1", "HOME="+home, "XDG_CONFIG_HOME="+home, "XDG_CACHE_HOME="+home)
+	env = append(env, childVariable+"="+childWindow, "HOME="+home, "XDG_CONFIG_HOME="+home, "XDG_CACHE_HOME="+home)
 
 	const limit = time.Minute
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
