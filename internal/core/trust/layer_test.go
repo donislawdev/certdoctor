@@ -375,6 +375,29 @@ func TestTheSummarySaysWhichOfTheThreeStatesThisIs(t *testing.T) {
 	}
 }
 
+// What the Go library could not read is not a key of the JSON, so the summary
+// is the only way it reaches anybody - ADR128, decided by the owner - and a row
+// that judges by another store's answer says it as that store does.
+func TestTheSummaryOfATrustSaysWhatTheStoreHeldUnread(t *testing.T) {
+	store := aStore("python", "/usr/bin/python3", yes(true), "")
+	store.TrustAnchorCount, store.UnreadableCount = 127, 1
+	const want = "python /usr/bin/python3 trusts the presented chain (127 anchors, and 1 certificate(s) in the store " +
+		"the Go library could not read)"
+	if got := summaryOf(store); got != want {
+		t.Errorf("the summary of a trust beside a certificate Go could not read is %q", got)
+	}
+	deferring := trustedByTheStore(aStore("curl", "/usr/bin/curl", nil, "it judges by system-store"), store,
+		"system-store ubuntu")
+	if deferring.store.UnreadableCount != 1 || !strings.Contains(deferring.summary, "127 anchors, and 1 certificate(s)") {
+		t.Errorf("the row judging by that store says %q and counts %d unread", deferring.summary,
+			deferring.store.UnreadableCount)
+	}
+	store.UnreadableCount = 0
+	if got := summaryOf(store); got != "python /usr/bin/python3 trusts the presented chain (127 anchors)" {
+		t.Errorf("the summary of a store read whole is %q", got)
+	}
+}
+
 // The detail of a refusal is not a key of the JSON, so the summary is the only
 // way it reaches anybody - ADR112, decided by the owner.
 func TestTheSummaryOfARefusalSaysWhatItWasAbout(t *testing.T) {

@@ -257,6 +257,7 @@ func Undetermined(store *report.TrustStore, why string) {
 	store.TrustFailure = ""
 	store.RefusalDetail = ""
 	store.TrustAnchorCount = 0
+	store.UnreadableCount = 0
 	store.NotAssessed = why
 }
 

@@ -311,13 +311,17 @@ func (m machine) onWindows(store report.TrustStore, a answer, p pipAnswer, verif
 // endsAChain says a PEM bundle holds a self-signed certificate, the only kind
 // that ends a chain on truststore's exclusive engine - measured with probe S28,
 // where an intermediate alone in PIP_CERT was refused on Windows.
+//
+// ONE THE GO LIBRARY CANNOT READ MAY BE SUCH A CERTIFICATE, so a list holding it
+// is not one that cannot close the chain, and the row does not take the answer
+// of Windows for it - ADR128.
 func endsAChain(bundle []byte) bool {
 	for rest := bundle; ; {
 		var block *pem.Block
 		if block, rest = pem.Decode(rest); block == nil {
 			return false
 		}
-		if certificate, err := x509.ParseCertificate(block.Bytes); err == nil && probe.SelfSigned(certificate) {
+		if certificate, err := x509.ParseCertificate(block.Bytes); err != nil || probe.SelfSigned(certificate) {
 			return true
 		}
 	}
@@ -419,6 +423,9 @@ var keyUsage = asn1.ObjectIdentifier{2, 5, 29, 15}
 // its names, its key identifiers and the algorithm of its signature, and only
 // the names are compared here; and a Netscape certificate type marking a CA,
 // which Go does not read, is not taken as one.
+//
+// ONE THE GO LIBRARY CANNOT READ IS KEPT, for the verifier to count - ADR128.
+// Whether Python would hand it to Windows cannot be told from here.
 func authoritiesOnly(bundle []byte) []byte {
 	var kept bytes.Buffer
 	for rest := bundle; ; {
@@ -426,8 +433,7 @@ func authoritiesOnly(bundle []byte) []byte {
 		if block, rest = pem.Decode(rest); block == nil {
 			break
 		}
-		certificate, err := x509.ParseCertificate(block.Bytes)
-		if err != nil || !authority(certificate) {
+		if certificate, err := x509.ParseCertificate(block.Bytes); err == nil && !authority(certificate) {
 			continue
 		}
 		_ = pem.Encode(&kept, block)

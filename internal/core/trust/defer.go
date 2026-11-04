@@ -126,9 +126,10 @@ func trustedByTheStore(store, target report.TrustStore, name string) row {
 	trusted := true
 	store.TrustsPresentedChain = &trusted
 	store.TrustAnchorCount = target.TrustAnchorCount
+	store.UnreadableCount = target.UnreadableCount
 	store.NotAssessed = ""
-	summary := fmt.Sprintf("%s %s trusts the presented chain (%d anchors) - it judges by %s",
-		store.Runtime, store.Instance, store.TrustAnchorCount, name)
+	summary := fmt.Sprintf("%s %s trusts the presented chain (%s) - it judges by %s",
+		store.Runtime, store.Instance, anchorsOf(store), name)
 	if beyond := beyondTheStore(store); beyond != "" {
 		summary += ", and " + beyond
 	}

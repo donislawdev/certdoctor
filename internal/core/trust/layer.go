@@ -445,7 +445,7 @@ func summaryOf(store report.TrustStore) string {
 	case store.TrustsPresentedChain == nil:
 		return fmt.Sprintf("%s %s could not be assessed: %s", store.Runtime, store.Instance, store.NotAssessed)
 	case *store.TrustsPresentedChain:
-		return fmt.Sprintf("%s %s trusts the presented chain (%d anchors)", store.Runtime, store.Instance, store.TrustAnchorCount)
+		return fmt.Sprintf("%s %s trusts the presented chain (%s)", store.Runtime, store.Instance, anchorsOf(store))
 	case store.RefusalDetail != "":
 		// THE DETAIL REACHES EVERY SURFACE THROUGH THIS LINE - it is not a key of
 		// the JSON, decided by the owner 2026-10-21 (ADR112).
@@ -454,6 +454,18 @@ func summaryOf(store report.TrustStore) string {
 	default:
 		return fmt.Sprintf("%s %s does NOT trust the presented chain (%d anchors)", store.Runtime, store.Instance, store.TrustAnchorCount)
 	}
+}
+
+// anchorsOf is the count a trusting row gives, with the certificates of the
+// store the Go library could not read beside it - ADR128 - so 127 anchors read
+// out of a store of 128 do not read as the whole store. Only a row that trusts
+// carries such a count, so only this line says it.
+func anchorsOf(store report.TrustStore) string {
+	if store.UnreadableCount == 0 {
+		return fmt.Sprintf("%d anchors", store.TrustAnchorCount)
+	}
+	return fmt.Sprintf("%d anchors, and %d certificate(s) in the store the Go library could not read",
+		store.TrustAnchorCount, store.UnreadableCount)
 }
 
 // askProbe runs one probe and turns a panic into an ordinary error, so that a

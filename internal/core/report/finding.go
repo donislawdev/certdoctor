@@ -1015,6 +1015,18 @@ type TrustStore struct {
 	// a verdict, and it is not a secret - it is not redacted, for the same
 	// reason a fingerprint is not.
 	TrustAnchorCount int
+	// UnreadableCount is how many certificates of this store the Go library
+	// could not read, beside the anchors it did - ADR128, decided by the owner
+	// 2026-11-04. Measured on macOS 27.2: /private/etc/ssl/cert.pem held 128
+	// certificates, the Python reading it loaded 128, and Go refused one for its
+	// negative serial number. It is set only on a row that trusts, because a
+	// refusal beside such a certificate is one this program cannot stand behind,
+	// and the row says why it has no verdict instead.
+	//
+	// IT IS NOT PART OF THE JSON, as RefusalDetail is not - decided by the owner
+	// 2026-11-04. The row's summary carries it to every surface, and adding it to
+	// the schema later is a MINOR change.
+	UnreadableCount int
 
 	// TrustsPresentedChain is L5's answer and is nil when the store could not be
 	// assessed at all. NIL IS A THIRD STATE, not a false: "this store does not
@@ -1379,18 +1391,8 @@ func (t *TrustStore) breach() string {
 			t.Variant, PipTruststore, PipCertifi)
 	}
 
-	// THE THIRD STATE IS CHECKED IN BOTH DIRECTIONS. An unassessed store with no
-	// reason is silence about a failure, and an assessed one carrying a reason
-	// says two things at once - either way a consumer cannot tell "does not
-	// trust" from "could not be read", which is the one distinction this row
-	// exists to make.
-	switch {
-	case t.TrustsPresentedChain == nil && t.NotAssessed == "":
-		return "gives no verdict on the presented chain and does not say why, and silence about a failure is forbidden"
-	case t.TrustsPresentedChain != nil && t.NotAssessed != "":
-		return "gives a verdict on the presented chain and also says why it could not"
-	case t.TrustsPresentedChain == nil && t.TrustAnchorCount != 0:
-		return "could not read the store and still counts anchors in it, which nothing could have counted"
+	if broken := t.stateBreach(); broken != "" {
+		return broken
 	}
 
 	// A REFUSAL SAYS WHICH WAY, AND ONLY A REFUSAL MAY. The pairing is checked in
@@ -1418,6 +1420,32 @@ func (t *TrustStore) breach() string {
 		return broken
 	}
 	return t.remediationBreach()
+}
+
+// stateBreach refuses a row whose verdict, reason and counts do not agree.
+//
+// THE THIRD STATE IS CHECKED IN BOTH DIRECTIONS. An unassessed store with no
+// reason is silence about a failure, and an assessed one carrying a reason
+// says two things at once - either way a consumer cannot tell "does not
+// trust" from "could not be read", which is the one distinction this row
+// exists to make.
+func (t *TrustStore) stateBreach() string {
+	switch {
+	case t.TrustsPresentedChain == nil && t.NotAssessed == "":
+		return "gives no verdict on the presented chain and does not say why, and silence about a failure is forbidden"
+	case t.TrustsPresentedChain != nil && t.NotAssessed != "":
+		return "gives a verdict on the presented chain and also says why it could not"
+	case t.TrustsPresentedChain == nil && t.TrustAnchorCount != 0:
+		return "could not read the store and still counts anchors in it, which nothing could have counted"
+	case t.UnreadableCount < 0:
+		return fmt.Sprintf("reports %d certificates it could not read, which is not a count", t.UnreadableCount)
+	// ONLY A ROW THAT TRUSTS COUNTS WHAT IT COULD NOT READ - ADR128. A refusal
+	// beside such a certificate may be the Go library's alone, and a row that
+	// judged nothing has nothing to count beside.
+	case t.UnreadableCount > 0 && (t.TrustsPresentedChain == nil || !*t.TrustsPresentedChain):
+		return "counts certificates it could not read beside a chain it did not trust, and such a refusal cannot be told"
+	}
+	return ""
 }
 
 // deferralBreach refuses a pointer at another row that could not mean anything.

@@ -51,10 +51,11 @@ func VerifySelfSignedAnchors(store *report.TrustStore, anchorsPEM []byte, chain 
 
 // verify is the one rule both functions above apply - selfSignedOnly is the
 // only thing that differs between them. It hands back the chains it built and
-// every certificate the store holds, for a runtime that judges those further.
+// every certificate the store holds, for a runtime that judges those further,
+// and what it could not read, for one that refuses after it.
 func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now time.Time,
-	selfSignedOnly bool) (built [][]*x509.Certificate, stored []*x509.Certificate) {
-	roots, held, stored, anchors := anchorsIn(anchorsPEM, selfSignedOnly)
+	selfSignedOnly bool) (built [][]*x509.Certificate, stored []*x509.Certificate, skipped unread) {
+	roots, held, stored, anchors, skipped := anchorsIn(anchorsPEM, selfSignedOnly)
 	store.TrustAnchorCount = anchors
 
 	if anchors == 0 {
@@ -63,19 +64,19 @@ func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now tim
 			store.NotAssessed = "the store holds no self-signed certificate this program could read, and only one of " +
 				"those ends a chain for this runtime"
 		}
-		return nil, nil
+		return nil, nil, skipped
 	}
 	if len(chain) == 0 {
 		store.NotAssessed = "no chain was presented, so this store had nothing to judge"
 		store.TrustAnchorCount = 0
-		return nil, nil
+		return nil, nil, skipped
 	}
 
 	leaf, err := x509.ParseCertificate(chain[0])
 	if err != nil {
 		store.NotAssessed = fmt.Sprintf("the presented leaf could not be parsed: %v", err)
 		store.TrustAnchorCount = 0
-		return nil, nil
+		return nil, nil, skipped
 	}
 	intermediates := held
 	seen := append([]*x509.Certificate{leaf}, stored...)
@@ -102,24 +103,63 @@ func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now tim
 	if failure == report.OtherFailure && carriesKeyGoRefuses(seen) {
 		store.NotAssessed = refusedByGo
 		store.TrustAnchorCount = 0
-		return nil, nil
+		return nil, nil, skipped
 	}
 	store.TrustsPresentedChain = &trusts
 	store.TrustFailure = failure
-	return built, stored
+	store.UnreadableCount = skipped.count
+	if skipped.overturns(store) {
+		return nil, nil, skipped
+	}
+	return built, stored, skipped
+}
+
+// unread is what anchorsIn could not read - how many certificates the Go
+// library refused to parse, and the first reason it gave.
+type unread struct {
+	count int
+	first error
+}
+
+// overturns takes away a refusal the store made while it held a certificate
+// the Go library could not read, and says why there is no verdict - ADR128,
+// decided by the owner 2026-11-04. It reports whether it did.
+//
+// THE CHAIN MAY END AT THAT CERTIFICATE FOR THE PROGRAM JUDGED HERE. Measured on
+// macOS 27.2: Go refused EC-ACC in /private/etc/ssl/cert.pem for its negative
+// serial number and the Python reading the same file loaded it, so a chain whose
+// one path runs through it is refused here and accepted there. A trust stands,
+// because the path Go built is a path whatever else the store holds.
+//
+// NOT GODEBUG=x509negativeserial=1. Reading such a certificate as an anchor
+// would claim Go builds a path through it, and Go refuses to - and a store holds
+// certificates Go cannot read for more reasons than one.
+//
+// EVERY REFUSAL A STORE WRITES IS ASKED, so this is called where one is written:
+// at the end of verify, and after the strict rules.
+func (u unread) overturns(store *report.TrustStore) bool {
+	if u.count == 0 || store.TrustsPresentedChain == nil || *store.TrustsPresentedChain {
+		return false
+	}
+	Undetermined(store, fmt.Sprintf("this store holds %d certificate(s) the Go library could not read (the first: %v), "+
+		"which the program judged here may read and end the chain at, so whether it accepts this chain cannot be told",
+		u.count, u.first))
+	return true
 }
 
 // anchorsIn reads a PEM bundle into the certificates that end a chain and the
-// ones that only help build it, and hands back every certificate it read. With
-// selfSignedOnly false every certificate is an anchor and held stays empty.
-func anchorsIn(anchorsPEM []byte, selfSignedOnly bool) (roots, held *x509.CertPool, stored []*x509.Certificate, anchors int) {
+// ones that only help build it, and hands back every certificate it read and
+// what it could not. With selfSignedOnly false every certificate is an anchor
+// and held stays empty.
+func anchorsIn(anchorsPEM []byte, selfSignedOnly bool) (roots, held *x509.CertPool, stored []*x509.Certificate,
+	anchors int, skipped unread) {
 	roots, held = x509.NewCertPool(), x509.NewCertPool()
 	rest := anchorsPEM
 	for {
 		var block *pem.Block
 		block, rest = pem.Decode(rest)
 		if block == nil {
-			return roots, held, stored, anchors
+			return roots, held, stored, anchors, skipped
 		}
 		if block.Type != "CERTIFICATE" {
 			continue
@@ -127,7 +167,12 @@ func anchorsIn(anchorsPEM []byte, selfSignedOnly bool) (roots, held *x509.CertPo
 		certificate, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
 			// One unreadable entry in somebody's store is not a reason to throw
-			// away the rest of it.
+			// away the rest of it - and it is counted, because the program judged
+			// here may read it - ADR128.
+			skipped.count++
+			if skipped.first == nil {
+				skipped.first = err
+			}
 			continue
 		}
 		stored = append(stored, certificate)

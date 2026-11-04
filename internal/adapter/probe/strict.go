@@ -50,7 +50,7 @@ func (f OpenSSLFlags) PartialChain() bool { return f&flagPartialChain != 0 }
 // authority key identifier and one whose basic constraints were not critical,
 // and the rest are read from the source.
 func VerifyStrictly(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now time.Time, flags OpenSSLFlags) {
-	built, stored := verify(store, anchorsPEM, chain, now, !flags.PartialChain())
+	built, stored, skipped := verify(store, anchorsPEM, chain, now, !flags.PartialChain())
 	if store.TrustsPresentedChain == nil || !*store.TrustsPresentedChain {
 		return
 	}
@@ -71,6 +71,9 @@ func VerifyStrictly(store *report.TrustStore, anchorsPEM []byte, chain [][]byte,
 		store.TrustsPresentedChain = &refused
 		store.TrustFailure = report.NonconformingCertificate
 		store.RefusalDetail = breach
+		// WITH ITS OWN CERTIFICATES FIRST OpenSSL may take one this program could
+		// not read, and build a chain that keeps to the rules - ADR128.
+		skipped.overturns(store)
 	}
 }
 

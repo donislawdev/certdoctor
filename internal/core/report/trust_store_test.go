@@ -230,6 +230,16 @@ func TestARefusalMaySayWhatItWasAbout(t *testing.T) {
 	}
 }
 
+// A trust stands beside certificates the Go library could not read - ADR128
+// part 2 - so the one row that may count them is accepted.
+func TestATrustingRowMayCountWhatItCouldNotRead(t *testing.T) {
+	store := aReadableStore()
+	store.UnreadableCount = 1
+	if got := store.breach(); got != "" {
+		t.Errorf("a trust beside a certificate Go could not read was rejected: %q", got)
+	}
+}
+
 // A command with nothing to fill in is legitimate and must not be mistaken for
 // an incomplete one - the empty slice is the answer, the nil is the defect.
 func TestARemediationWithNothingToFillInIsAccepted(t *testing.T) {
@@ -384,17 +394,61 @@ func TestTheTrustStoreRefusesWhatItMustRefuse(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			store := aReadableStore()
-			c.spoil(&store)
-			got := store.breach()
-			if got == "" {
-				t.Fatalf("%s was accepted", c.name)
-			}
-			if !strings.Contains(got, c.says) {
-				t.Errorf("the refusal does not name what it defends: %q, wanted it to mention %q", got, c.says)
-			}
-		})
+		t.Run(c.name, func(t *testing.T) { requireRefused(t, c.spoil, c.says) })
+	}
+}
+
+// TestTheTrustStoreRefusesACountOfWhatItCouldNotRead - ADR128. A refusal beside
+// a certificate Go could not read may be the Go library's alone, and is no
+// verdict this program can stand behind, so only a row that trusts may count.
+func TestTheTrustStoreRefusesACountOfWhatItCouldNotRead(t *testing.T) {
+	cases := []struct {
+		name  string
+		spoil func(*TrustStore)
+		says  string
+	}{
+		{
+			name:  "a negative count of certificates it could not read",
+			spoil: func(s *TrustStore) { s.UnreadableCount = -1 },
+			says:  "could not read, which is not a count",
+		},
+		{
+			name: "a refusal beside certificates it could not read",
+			spoil: func(s *TrustStore) {
+				s.TrustsPresentedChain = trusts(false)
+				s.TrustFailure = UnknownAuthority
+				s.UnreadableCount = 1
+			},
+			says: "beside a chain it did not trust",
+		},
+		{
+			name: "certificates it could not read counted where nothing was judged",
+			spoil: func(s *TrustStore) {
+				s.TrustsPresentedChain = nil
+				s.NotAssessed = "the keystore did not open"
+				s.TrustAnchorCount = 0
+				s.UnreadableCount = 1
+			},
+			says: "beside a chain it did not trust",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) { requireRefused(t, c.spoil, c.says) })
+	}
+}
+
+// requireRefused spoils a readable store one way and holds the contract to
+// refusing it for the reason named.
+func requireRefused(t *testing.T, spoil func(*TrustStore), says string) {
+	t.Helper()
+	store := aReadableStore()
+	spoil(&store)
+	got := store.breach()
+	if got == "" {
+		t.Fatal("the spoiled store was accepted")
+	}
+	if !strings.Contains(got, says) {
+		t.Errorf("the refusal does not name what it defends: %q, wanted it to mention %q", got, says)
 	}
 }
 

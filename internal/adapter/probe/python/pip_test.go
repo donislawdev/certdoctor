@@ -313,6 +313,31 @@ func TestPipOnWindowsDoesNotDeferWhatItCouldNotRead(t *testing.T) {
 	}
 }
 
+// A LIST HOLDING A CERTIFICATE GO CANNOT READ DOES NOT DEFER EITHER - ADR128. pip
+// asks Windows first and its list after, so taking the answer of Windows would
+// make a refusal by this account's store pip's own, while the list might close
+// the chain through the certificate this program could not read.
+func TestPipOnWindowsDoesNotDeferBesideACertificateGoCannotRead(t *testing.T) {
+	b := newBench(t)
+	certifi := abs("/pip/cacert.pem")
+	a := listing(0x8000)
+	a.Pip = onTruststore(certifi)
+	a.Pip.TruststoreLoads = nil
+	junk := []byte{1, 2, 3}
+	for name, list := range map[string]string{
+		"beside a root that refuses":   pemOf(b.other, junk),
+		"beside an intermediate alone": pemOf(b.inter, junk),
+	} {
+		_, pip := both(t, "windows", a, b.chain(), func(w *world) { w.disk.put(certifi, list) })
+		if pip.DefersTo != nil || pip.TrustsPresentedChain != nil {
+			t.Errorf("%s the list is %s and defers to %+v", name, trustOf(pip), pip.DefersTo)
+		}
+	}
+	if kept := authoritiesOnly([]byte(pemOf(b.root, junk, b.leaf))); string(kept) != pemOf(b.root, junk) {
+		t.Errorf("the bundle handed to Windows kept %q", kept)
+	}
+}
+
 // A pip WITHOUT TRUSTSTORE READS ONE FILE: the one named for verification takes
 // certifi's place rather than joining it - requests, read - and the rule is
 // urllib3's flags.
