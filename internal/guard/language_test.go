@@ -72,6 +72,11 @@ var proseFiles = []string{
 	"tools/probe-macos-truststore/main.go",
 	// The typeface's own licence, published with the fonts (ADR124).
 	"internal/gui/fonts/LICENSE.txt",
+	// The copy of the OpenGL binding is a module of its own, so the module walk
+	// skips it - and its note and the one file the patch changes are ours
+	// (ADR125). The rest of the copy is the published module's text.
+	"third_party/go-gl-gl/PATCH.md",
+	"third_party/go-gl-gl/v2.1/gl/procaddr.go",
 }
 
 var polishWord = regexp.MustCompile(`(?i)\b(` + strings.Join(polishWords, "|") + `)\b`)

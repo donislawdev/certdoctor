@@ -275,7 +275,12 @@ github.com/fyne-io/image v0.1.1
 
 # The OpenGL binding the window draws through. MIT - "Copyright (c) 2014 Eric
 # Woroshow", read at https://raw.githubusercontent.com/go-gl/gl/4566fea9a276/LICENSE
-github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276
+# Replaced by a copy in third_party/go-gl-gl with one change on Windows, so the
+# window does not import opengl32.dll at load time (ADR125) - the arrow is the
+# replace directive as go list prints it, so this gate also sees it go away.
+# The copy is held to the published version plus that change by a guard in
+# internal/guard, and its PATCH.md carries the sum go.sum no longer does.
+github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276 => ./third_party/go-gl-gl
 
 # The window and its input. BSD-3-Clause for the binding - "Copyright (c) 2012
 # The glfw3-go Authors", read at

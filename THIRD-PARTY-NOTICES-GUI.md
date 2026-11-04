@@ -1610,6 +1610,13 @@ This document is licensed under the SGI Free Software B License.
 For details, see http://oss.sgi.com/projects/FreeB.
 ```
 
+The window is built from a copy of this module kept in `third_party/go-gl-gl`
+of this repository, with one change in `v2.1/gl`: on Windows the binding no
+longer links `opengl32.dll`, so the window does not import it when it starts
+and can load a software renderer first on a machine whose graphics driver
+offers no OpenGL. `third_party/go-gl-gl/PATCH.md` says exactly what changed
+and why. The licence and the statements above are the module's own, unchanged.
+
 Source: <https://github.com/go-gl/gl>
 
 ---

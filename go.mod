@@ -103,3 +103,17 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// THE OPENGL BINDING OF THE WINDOW IS A COPY WITH ONE CHANGE, AND THE COMMAND
+// LINE DOES NOT LINK IT. The published module links opengl32.dll on Windows, so
+// the window imports it at load time and the system's copy is mapped before any
+// code of ours runs - measured 2026-11-04 on the window binary. A window that
+// has to start again with a software renderer on a machine with no OpenGL
+// (ADR125) needs that name free until it loads the renderer itself.
+//
+// What changed, why, and the sum of the version copied are in
+// third_party/go-gl-gl/PATCH.md. go.sum no longer carries this module, so the
+// pin lives there and a guard in internal/guard holds the copy to the published
+// version plus exactly that change. The version required above stays the one
+// the toolkit asks for, and moving it means taking a new copy, not editing this.
+replace github.com/go-gl/gl => ./third_party/go-gl-gl
