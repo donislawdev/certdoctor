@@ -17,31 +17,33 @@ const (
 )
 
 const (
-	AppName           Key = "app.name"
-	StartTitle        Key = "start.title"
-	StartLead         Key = "start.lead"
-	StartPromise      Key = "start.promise"
-	TargetCard        Key = "target.card"
-	TargetLabel       Key = "target.label"
-	TargetHint        Key = "target.hint"
-	TargetExample     Key = "target.example"
-	OptionsCard       Key = "options.card"
-	OptionsNote       Key = "options.note"
-	OptPAC            Key = "opt.pac"
-	OptPACHint        Key = "opt.pac.hint"
-	OptPACExample     Key = "opt.pac.example"
-	OptTimeoutExample Key = "opt.timeout.example"
-	OptTimeout        Key = "opt.timeout"
-	OptTimeoutUnit    Key = "opt.timeout.unit"
-	OptRedact         Key = "opt.redact"
-	OptRedactHint     Key = "opt.redact.hint"
-	Diagnose          Key = "action.diagnose"
-	RunAgain          Key = "action.again"
-	NewTarget         Key = "action.new"
-	SaveReport        Key = "action.save"
-	Copy              Key = "action.copy"
-	Copied            Key = "action.copied"
-	Cancel            Key = "action.cancel"
+	AppName         Key = "app.name"
+	StartTitle      Key = "start.title"
+	StartLead       Key = "start.lead"
+	StartPromise    Key = "start.promise"
+	TargetCard      Key = "target.card"
+	TargetLabel     Key = "target.label"
+	TargetHint      Key = "target.hint"
+	TargetExample   Key = "target.example"
+	OptionsCard     Key = "options.card"
+	OptionsNote     Key = "options.note"
+	OptPAC          Key = "opt.pac"
+	OptPACHint      Key = "opt.pac.hint"
+	OptPACExample   Key = "opt.pac.example"
+	OptTimeout      Key = "opt.timeout"
+	OptTimeoutHint  Key = "opt.timeout.hint"
+	OptLayerTimeout Key = "opt.layertimeout"
+	OptLayerHint    Key = "opt.layertimeout.hint"
+	OptTimeoutUnit  Key = "opt.timeout.unit"
+	OptRedact       Key = "opt.redact"
+	OptRedactHint   Key = "opt.redact.hint"
+	Diagnose        Key = "action.diagnose"
+	RunAgain        Key = "action.again"
+	NewTarget       Key = "action.new"
+	SaveReport      Key = "action.save"
+	Copy            Key = "action.copy"
+	Copied          Key = "action.copied"
+	Cancel          Key = "action.cancel"
 
 	VerdictCard  Key = "verdict.card"
 	ExitCode     Key = "verdict.exit"
@@ -130,31 +132,33 @@ const (
 )
 
 var english = map[Key]string{
-	AppName:           "certdoctor",
-	StartTitle:        "Diagnose a connection",
-	StartLead:         "Follows the whole path to an address - name lookup, proxy, TCP and TLS - and asks every trust store on this machine whether it trusts the server.",
-	StartPromise:      "Nothing on this machine is changed. Fixes are commands for you to read, copy and run.",
-	TargetCard:        "Target",
-	TargetLabel:       "Address",
-	TargetHint:        "An https:// or http:// address, as you would type it into a browser.",
-	TargetExample:     "https://example.com",
-	OptionsCard:       "Options",
-	OptionsNote:       "The same switches as the command line. Leave them empty to use what this machine is set up with.",
-	OptPAC:            "PAC script",
-	OptPACHint:        "Use this proxy auto-config address instead of the one the system names.",
-	OptPACExample:     "http://proxy.example/proxy.pac",
-	OptTimeoutExample: "30",
-	OptTimeout:        "Time limit",
-	OptTimeoutUnit:    "seconds",
-	OptRedact:         "Mask names",
-	OptRedactHint:     "Replace host names and addresses in the report, for sharing it.",
-	Diagnose:          "Diagnose",
-	RunAgain:          "Run again",
-	NewTarget:         "New target",
-	SaveReport:        "Save report",
-	Copy:              "Copy",
-	Copied:            "Copied",
-	Cancel:            "Cancel",
+	AppName:         "certdoctor",
+	StartTitle:      "Diagnose a connection",
+	StartLead:       "Follows the whole path to an address - name lookup, proxy, TCP and TLS - and asks every trust store on this machine whether it trusts the server.",
+	StartPromise:    "Nothing on this machine is changed. Fixes are commands for you to read, copy and run.",
+	TargetCard:      "Target",
+	TargetLabel:     "Address",
+	TargetHint:      "An https:// or http:// address, as you would type it into a browser.",
+	TargetExample:   "https://example.com",
+	OptionsCard:     "Options",
+	OptionsNote:     "The same switches as the command line. A field left empty does what the command line does without its switch.",
+	OptPAC:          "PAC script",
+	OptPACHint:      "Also read this proxy auto-config script and say where it sends the address.",
+	OptPACExample:   "http://proxy.example/proxy.pac",
+	OptTimeout:      "Time limit",
+	OptTimeoutHint:  "For the whole run. Zero means no limit.",
+	OptLayerTimeout: "Layer time limit",
+	OptLayerHint:    "For each layer on its own. Zero means no limit.",
+	OptTimeoutUnit:  "seconds",
+	OptRedact:       "Mask names",
+	OptRedactHint:   "Replace host names, paths and user names, for sharing the report. Credentials are masked either way.",
+	Diagnose:        "Diagnose",
+	RunAgain:        "Run again",
+	NewTarget:       "New target",
+	SaveReport:      "Save report",
+	Copy:            "Copy",
+	Copied:          "Copied",
+	Cancel:          "Cancel",
 
 	VerdictCard:  "Verdict",
 	ExitCode:     "exit code",
@@ -182,7 +186,7 @@ var english = map[Key]string{
 	RunningNote:    "certdoctor follows the path layer by layer and writes the report when every layer has answered or the time limit is reached.",
 	RunningElapsed: "%.0f s of the %d s limit",
 	RunningLayers:  "Context, name lookup, proxy, TCP, TLS and every trust store on this machine",
-	OptionsClosed:  "System proxy settings, 30 s limit, names shown",
+	OptionsClosed:  "System proxy settings, default time limits, names shown",
 	SaveJSON:       "JSON",
 	SaveJSONNote:   "The full report, for another tool or to open again here",
 	SaveHTML:       "HTML",

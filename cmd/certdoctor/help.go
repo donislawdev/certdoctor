@@ -7,6 +7,7 @@ import (
 
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	"github.com/donislawdev/certdoctor/internal/core/switches"
 )
 
 // helpGroups is the order the groups appear in. Declared rather than derived
@@ -58,7 +59,7 @@ func helpText() string {
 
 func writeSwitches(b *strings.Builder) {
 	width := 0
-	for _, s := range switches {
+	for _, s := range switches.All {
 		width = max(width, len(switchSpelling(s)))
 	}
 	for _, group := range helpGroups {
@@ -66,25 +67,25 @@ func writeSwitches(b *strings.Builder) {
 		if group.note != "" {
 			fmt.Fprintf(b, "  %s\n", group.note)
 		}
-		for _, s := range switches {
-			if s.group != group.name {
+		for _, s := range switches.All {
+			if s.Group != group.name {
 				continue
 			}
-			fmt.Fprintf(b, "  %-*s  %s\n", width, switchSpelling(s), s.summary)
+			fmt.Fprintf(b, "  %-*s  %s\n", width, switchSpelling(s), s.Summary)
 		}
 	}
 }
 
 // switchSpelling is how one switch is written on the page: every accepted
 // spelling, then its placeholder.
-func switchSpelling(s switchDecl) string {
-	spellings := []string{"--" + s.name}
-	for _, alias := range s.aliases {
+func switchSpelling(s switches.Switch) string {
+	spellings := []string{"--" + s.Name}
+	for _, alias := range s.Aliases {
 		spellings = append(spellings, "-"+alias)
 	}
 	line := strings.Join(spellings, ", ")
-	if s.arg != "" {
-		line += " " + s.arg
+	if s.TakesValue() {
+		line += " " + s.Arg
 	}
 	return line
 }

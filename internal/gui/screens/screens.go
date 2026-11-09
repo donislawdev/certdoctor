@@ -14,6 +14,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/gui/look"
 	"github.com/donislawdev/certdoctor/internal/gui/model"
 	"github.com/donislawdev/certdoctor/internal/gui/parts"
+	"github.com/donislawdev/certdoctor/internal/gui/request"
 	"github.com/donislawdev/certdoctor/internal/gui/words"
 )
 
@@ -38,34 +39,53 @@ func Links() []fyne.CanvasObject {
 	}
 }
 
-// Start is the first screen: what to diagnose, and the switches the command
-// line takes. Diagnose is the one primary action.
-func Start(icon fyne.Resource, version string, optionsOpen bool) (fyne.CanvasObject, *widget.Entry) {
-	address := widget.NewEntry()
-	address.SetPlaceHolder(words.T(words.TargetExample))
-	diagnose := parts.NewButton(parts.Primary, words.T(words.Diagnose), theme.SearchIcon(), nil)
+// StartForm is what the start screen hands to whoever runs the window: the
+// address field, the one primary action, and the form read as a request.
+type StartForm struct {
+	Address  *widget.Entry
+	Diagnose *parts.Button
+	typed    map[string]*widget.Entry
+	ticked   map[string]*widget.Check
+}
 
-	pac := widget.NewEntry()
-	pac.SetPlaceHolder(words.T(words.OptPACExample))
-	timeout := widget.NewEntry()
-	timeout.SetPlaceHolder(words.T(words.OptTimeoutExample))
-	redact := widget.NewCheck("", nil)
+// Request reads the form as it stands now.
+func (f *StartForm) Request() request.Request {
+	r := request.Request{Address: f.Address.Text, Typed: map[string]string{}, Ticked: map[string]bool{}}
+	for name, e := range f.typed {
+		r.Typed[name] = e.Text
+	}
+	for name, c := range f.ticked {
+		r.Ticked[name] = c.Checked
+	}
+	return r
+}
 
+// Start is the first screen: what to diagnose, and the switches of the
+// command line the window offers, one field each, in the order and with the
+// words the window's list of them gives (ADR121 point 3). Diagnose is the one
+// primary action.
+func Start(icon fyne.Resource, version string, optionsOpen bool) (fyne.CanvasObject, *StartForm) {
+	form := &StartForm{
+		Address:  widget.NewEntry(),
+		Diagnose: parts.NewButton(parts.Primary, words.T(words.Diagnose), theme.SearchIcon(), nil),
+		typed:    map[string]*widget.Entry{},
+		ticked:   map[string]*widget.Check{},
+	}
+	form.Address.SetPlaceHolder(words.T(words.TargetExample))
+
+	var fields []fyne.CanvasObject
+	for _, o := range request.Offered {
+		fields = append(fields, parts.Field(words.T(o.Label), form.control(o), words.T(o.Hint)))
+	}
 	target := parts.Card(words.T(words.TargetCardNew), nil,
 		parts.Stack(look.GapTight,
-			parts.RowGrow(look.GapButtons, 0, address, diagnose),
+			parts.RowGrow(look.GapButtons, 0, form.Address, form.Diagnose),
 			parts.Para(parts.CaptionMuted, words.T(words.TargetHint)),
 		),
 	)
 	options := parts.Fold(words.T(words.OptionsCard), words.T(words.OptionsClosed), optionsOpen,
 		parts.Para(parts.CaptionMuted, words.T(words.OptionsNote)),
-		parts.Form(
-			parts.Field(words.T(words.OptPAC), pac, words.T(words.OptPACHint)),
-			parts.Field(words.T(words.OptTimeout), parts.Row(look.GapInline,
-				parts.Width(look.FieldWidthShort, timeout),
-				parts.Middle(parts.Text(parts.BodyMuted, words.T(words.OptTimeoutUnit)))), ""),
-			parts.Field(words.T(words.OptRedact), parts.Height(look.ControlHeight, parts.Own(redact)), words.T(words.OptRedactHint)),
-		),
+		parts.Form(fields...),
 	)
 	intro := parts.Stack(look.GapRow,
 		parts.Text(parts.Title, words.T(words.StartTitle)),
@@ -76,7 +96,31 @@ func Start(icon fyne.Resource, version string, optionsOpen bool) (fyne.CanvasObj
 		parts.Stack(look.GapCard, intro, target, options, promise)))
 	page := container.NewBorder(head(icon, version), nil, nil, nil,
 		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body)))
-	return page, address
+	return page, form
+}
+
+// control is the field one option is set with, kept by its switch so the form
+// can be read back. A number of seconds is a short field with its unit beside
+// it, showing the number an empty field means.
+func (f *StartForm) control(o request.Option) fyne.CanvasObject {
+	switch o.Control() {
+	case request.Tick:
+		tick := widget.NewCheck("", nil)
+		f.ticked[o.Switch] = tick
+		return parts.Height(look.ControlHeight, parts.Own(tick))
+	case request.Seconds:
+		seconds := widget.NewEntry()
+		seconds.SetPlaceHolder(strconv.Itoa(o.Default))
+		f.typed[o.Switch] = seconds
+		return parts.Row(look.GapInline,
+			parts.Width(look.FieldWidthShort, seconds),
+			parts.Middle(parts.Text(parts.BodyMuted, words.T(words.OptTimeoutUnit))))
+	default:
+		line := widget.NewEntry()
+		line.SetPlaceHolder(words.T(o.Example))
+		f.typed[o.Switch] = line
+		return line
+	}
 }
 
 // Report is the screen after a run: what was diagnosed and the actions on

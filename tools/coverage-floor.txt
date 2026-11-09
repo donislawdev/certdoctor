@@ -271,6 +271,13 @@ github.com/donislawdev/certdoctor/internal/gui/parts 97
 github.com/donislawdev/certdoctor/internal/gui/screens 96
 github.com/donislawdev/certdoctor/internal/gui/words 100
 
+# The command line's switches, declared once for it and for the window
+# (ADR121 point 3), and the window's run request built from them. Both are
+# tables and pure functions with no build tag, measured 2026-11-09 at 100 on
+# Windows.
+github.com/donislawdev/certdoctor/internal/core/switches 100
+github.com/donislawdev/certdoctor/internal/gui/request 100
+
 # The window's program (D21, ADR125 point 1) and the picture it shows. Measured
 # 2026-11-03: 58.9 on Windows with cgo, 98.0 on Linux with cgo in
 # golang:1.27-alpine with the graphics headers, 66.7 with cgo disabled. The

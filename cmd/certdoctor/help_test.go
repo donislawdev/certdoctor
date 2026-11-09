@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	"github.com/donislawdev/certdoctor/internal/core/switches"
 )
 
 // TestTheGroupTheHelpCallsNotBuiltIsRefused holds the note on a help group to
@@ -23,28 +24,28 @@ func TestTheGroupTheHelpCallsNotBuiltIsRefused(t *testing.T) {
 
 	page := helpText()
 	noted := 0
-	for _, s := range switches {
-		if s.arg == "" || s.numeric {
+	for _, s := range switches.All {
+		if !s.TakesValue() || s.Numeric {
 			continue
 		}
-		h := invoke("https://example.com", "--"+s.name, "x")
+		h := invoke("https://example.com", "--"+s.Name, "x")
 		refusedAsNotBuilt := strings.Contains(h.stderr.String(), "not built")
-		note := notes[s.group]
+		note := notes[s.Group]
 
 		if note == "" {
 			if refusedAsNotBuilt {
 				t.Errorf("--%s is refused as not built, and its group in --help carries no note saying so: %q",
-					s.name, h.stderr.String())
+					s.Name, h.stderr.String())
 			}
 			continue
 		}
 		noted++
 		if !strings.Contains(page, note) {
-			t.Errorf("the note on the group of --%s is not on the help page", s.name)
+			t.Errorf("the note on the group of --%s is not on the help page", s.Name)
 		}
 		if h.code != exitcode.Config {
 			t.Errorf("--%s sits under %q and ended %d rather than being refused: %q",
-				s.name, note, h.code, h.stderr.String())
+				s.Name, note, h.code, h.stderr.String())
 		}
 	}
 	if noted == 0 {

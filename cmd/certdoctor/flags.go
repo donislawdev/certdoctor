@@ -10,22 +10,14 @@ import (
 	"time"
 
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	"github.com/donislawdev/certdoctor/internal/core/switches"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/pac"
 )
 
-// Default budgets.
-//
-// These are the starting proposals from the architecture document and NOBODY
-// HAS MEASURED THEM. They are written here with that said out loud, because a
-// number in code reads like a measurement to the next person who finds it. The
-// sign that the overall one is wrong is a person walking away before the run
-// ends. The sign that the layer one is wrong is layers timing out on a healthy
-// machine.
-const (
-	defaultBudgetSeconds      = 60
-	defaultLayerBudgetSeconds = 10
-)
+// The default budgets and the shortest one that can be honoured are part of
+// the published surface - the help prints them - so they are declared with the
+// switches, in internal/core/switches, and the window reads the same numbers.
 
 // maxBudgetSeconds caps both budgets at a day.
 //
@@ -37,18 +29,9 @@ const (
 // unreachable.
 const maxBudgetSeconds = 86400
 
-// minBudgetSeconds is the shortest limit that can actually be honoured.
-//
-// The other end of the same defence against arithmetic, and it fails in the
-// worse direction. A duration is a whole number of nanoseconds, so a budget of
-// 1e-30 seconds truncates to zero - and zero is the documented way of asking
-// for NO limit. Somebody typing the strictest budget they could think of got an
-// unlimited run, which is the exact opposite of what they asked for and is
-// silent about it.
-//
-// A millisecond is also below what the clock can resolve on some platforms, and
-// that is said in the message rather than left as a surprise.
-const minBudgetSeconds = 0.001
+// minBudgetSeconds is the other end of the same defence, explained where it is
+// declared.
+const minBudgetSeconds = switches.MinBudgetSeconds
 
 // options is one parsed command line.
 type options struct {
@@ -105,35 +88,13 @@ func configFault(format string, args ...any) *fault {
 	return &fault{code: exitcode.Config, message: fmt.Sprintf(format, args...)}
 }
 
-// switchDecl declares one command line switch, once.
-//
-// Both the parser and the help text are built from this list, so they cannot
-// describe two different tools. The guard that checks every accepted switch is
-// documented still runs over the rendered help, because a switch registered
-// straight onto the flag set would bypass this table and nothing else would
-// notice.
-type switchDecl struct {
-	name string
-	// aliases are additional accepted spellings. They exist for -h, which
-	// people type without thinking and which should not end in a usage error.
-	aliases []string
-	// arg is the placeholder shown in help, empty for a switch taking no value.
-	arg string
-	// numeric says the value is a number, so a value that is not one can be
-	// refused here rather than by the flag package. See checkNumericValue.
-	numeric bool
-	group   string
-	summary string
-	bind    func(fs *flag.FlagSet, o *options)
-}
-
 // numericSwitches is the set of switch names whose value has to be a number,
 // built from the one declaration rather than listed a second time.
 var numericSwitches = func() map[string]bool {
 	names := map[string]bool{}
-	for _, s := range switches {
-		if s.numeric {
-			names[s.name] = true
+	for _, s := range switches.All {
+		if s.Numeric {
+			names[s.Name] = true
 		}
 	}
 	return names
@@ -205,96 +166,43 @@ func formatFor(name string) (formatDecl, bool) {
 	return formatDecl{}, false
 }
 
-// switches is the whole flag surface, in the order help presents it.
-var switches = []switchDecl{
-	{
-		name: "format", arg: "<" + strings.Join(formatNames(), "|") + ">", group: "output",
-		summary: "how to write the report. Defaults to terminal",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.format, "format", "terminal", "") },
+// binds says where each switch of the published surface (switches.All) puts
+// what it was given, keyed by its name.
+//
+// The surface itself - names, values, the help sentences - is declared once in
+// internal/core/switches, which the window reads too (ADR121 point 3). What is
+// here is the part only this program has: a field of options. One entry for
+// every declared switch and none besides, which TestEveryDeclaredSwitchIsBound
+// holds in both directions - a declared switch without an entry would be
+// documented and then refused as unknown. The guard that checks every
+// accepted switch is documented still runs over the rendered help, because a
+// switch registered straight onto the flag set would bypass both lists and
+// nothing else would notice.
+var binds = map[string]func(fs *flag.FlagSet, o *options){
+	"format":  func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.format, "format", "terminal", "") },
+	"json":    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.jsonAlias, "json", false, "") },
+	"out":     func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.out, "out", "-", "") },
+	"redact":  func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.redact, "redact", false, "") },
+	"pac-url": func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.pacURL, "pac-url", "", "") },
+	"in":      func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.in, "in", "", "") },
+	"image":   func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.image, "image", "", "") },
+	"compare": func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.compare, "compare", "", "") },
+	"quiet":   func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.quiet, "quiet", false, "") },
+	"verbose": func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.verbose, "verbose", false, "") },
+	"no-color": func(fs *flag.FlagSet, o *options) {
+		fs.BoolVar(&o.noColor, "no-color", false, "")
 	},
-	{
-		name: "json", group: "output",
-		summary: "the same as --format json",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.jsonAlias, "json", false, "") },
+	"timeout": func(fs *flag.FlagSet, o *options) {
+		fs.Float64Var(&o.timeout, "timeout", switches.DefaultBudgetSeconds, "")
 	},
-	{
-		name: "out", arg: "<path>", group: "output",
-		summary: "where to write the report. A single dash means standard output, which is the default",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.out, "out", "-", "") },
+	"probe-timeout": func(fs *flag.FlagSet, o *options) {
+		fs.Float64Var(&o.probeTimeout, "probe-timeout", switches.DefaultLayerBudgetSeconds, "")
 	},
-	{
-		name: "redact", group: "output",
-		summary: "mask host names, paths and user names. Credentials are masked with or without it",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.redact, "redact", false, "") },
-	},
-	{
-		name: "pac-url", arg: "<url>", group: "input",
-		summary: "also read this proxy auto-configuration script and say where it sends the target",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.pacURL, "pac-url", "", "") },
-	},
-	{
-		name: "in", arg: "<container>", group: "containers",
-		summary: "diagnose from inside a running container",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.in, "in", "", "") },
-	},
-	{
-		name: "image", arg: "<image>", group: "containers",
-		summary: "diagnose from inside a throwaway container built from an image",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.image, "image", "", "") },
-	},
-	{
-		name: "compare", arg: "host,container", group: "containers",
-		summary: "show the host and the container side by side. Needs --in or --image",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.compare, "compare", "", "") },
-	},
-	{
-		name: "quiet", group: "channels",
-		summary: "keep the log on standard error down to failures",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.quiet, "quiet", false, "") },
-	},
-	{
-		name: "verbose", group: "channels",
-		summary: "say more on standard error about what is happening",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.verbose, "verbose", false, "") },
-	},
-	{
-		name: "no-color", group: "channels",
-		summary: "never colour the output. NO_COLOR in the environment does the same",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.noColor, "no-color", false, "") },
-	},
-	{
-		name: "timeout", arg: "<seconds>", numeric: true, group: "budget",
-		summary: fmt.Sprintf("limit for the whole run in seconds, at least %g. Zero means no limit. Defaults to %d",
-			minBudgetSeconds, defaultBudgetSeconds),
-		bind: func(fs *flag.FlagSet, o *options) {
-			fs.Float64Var(&o.timeout, "timeout", defaultBudgetSeconds, "")
-		},
-	},
-	{
-		name: "probe-timeout", arg: "<seconds>", numeric: true, group: "budget",
-		summary: fmt.Sprintf("limit for one layer in seconds, at least %g. Zero means no limit. Defaults to %d",
-			minBudgetSeconds, defaultLayerBudgetSeconds),
-		bind: func(fs *flag.FlagSet, o *options) {
-			fs.Float64Var(&o.probeTimeout, "probe-timeout", defaultLayerBudgetSeconds, "")
-		},
-	},
-	{
-		name: "version", group: "meta",
-		summary: "print the version of the tool and of every schema it emits",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.showVersion, "version", false, "") },
-	},
-	{
-		name: "license", group: "meta",
-		summary: "print the licence, then the notices of the third party code in this binary",
-		bind:    func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.showLicense, "license", false, "") },
-	},
-	{
-		name: "help", aliases: []string{"h"}, group: "meta",
-		summary: "print this text",
-		bind: func(fs *flag.FlagSet, o *options) {
-			fs.BoolVar(&o.showHelp, "help", false, "")
-			fs.BoolVar(&o.showHelp, "h", false, "")
-		},
+	"version": func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.showVersion, "version", false, "") },
+	"license": func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.showLicense, "license", false, "") },
+	"help": func(fs *flag.FlagSet, o *options) {
+		fs.BoolVar(&o.showHelp, "help", false, "")
+		fs.BoolVar(&o.showHelp, "h", false, "")
 	},
 }
 
@@ -310,8 +218,16 @@ func newFlagSet() (*flag.FlagSet, *options) {
 	fs := flag.NewFlagSet(toolName, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {}
-	for _, s := range switches {
-		s.bind(fs, o)
+	for _, s := range switches.All {
+		bind, ok := binds[s.Name]
+		if !ok {
+			// A declared switch with nowhere to put its value is a mistake in
+			// this file, and every run would refuse the switch the help names.
+			// Said at the first parse rather than left as a refusal that blames
+			// the person who typed it.
+			panic("the switch --" + s.Name + " is declared and has no place in options")
+		}
+		bind(fs, o)
 	}
 	return fs, o
 }
