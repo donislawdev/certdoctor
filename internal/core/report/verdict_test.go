@@ -113,7 +113,14 @@ const (
 	noBundle        = "there is no CA bundle at any of the places Go and the common distributions keep one, so this platform has no store to judge the chain with - on Debian and Ubuntu the ca-certificates package is what installs it"
 	notFetched      = "the issuer this chain needs is on this machine's copy of Microsoft's root program list and is not installed yet - Windows fetches such a root when it first needs one and this program does not, so whether this store would trust the chain is undetermined"
 	onSchannel      = "this build uses schannel, which reads the platform store rather than a file - the system-store probe answers for it"
+	l4Ended         = "this program's own TLS library ended the handshake with 1 of 1 address(es) itself (tls: failed to parse certificate from server: x509: negative serial number), so whether another client would complete it cannot be told here"
 )
+
+// endedHere is L4 when this program's own TLS library ended every handshake
+// it could not complete - ADR129.
+func endedHere() LayerResult {
+	return LayerResult{ID: layer.TLS, Status: status.Unknown, Reason: status.ReasonUndetermined, Detail: l4Ended}
+}
 
 // TestTheVerdictNamesTheCauseInTheDecisiveLayersWords is the product's promise
 // after the arithmetic: the top line says WHAT is wrong, in the words of the
@@ -414,6 +421,25 @@ var causeScenarios = []struct {
 			row(layer.TrustMatrix, status.Unknown, "none of the 1 store(s) found could be assessed",
 				storeUndetermined(RuntimeSystemStore, "ubuntu", noBundle))},
 		want: "Everything assessed passed, but " + wantsCreds + ". 2 of 6 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "OBS211 our own TLS library ended the handshake, measured with probe S30: the top line says so instead of blaming the server",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			endedHere(), row(layer.TrustMatrix, status.Unknown, "no certificate from the server reached this program")},
+		want: "Everything assessed passed, but " + l4Ended + ". 2 of 6 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "the proxy wants credentials AND our library ended the handshake: one but, the proxy's first in layer order",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
+			{ID: layer.Proxy, Status: status.Unknown, Reason: status.ReasonCredentialsRequired, Detail: wantsCreds},
+			pass(layer.TCP), endedHere(), row(layer.TrustMatrix, status.Unknown, "no certificate from the server reached this program")},
+		want: "Everything assessed passed, but " + wantsCreds + ". 3 of 6 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "an L4 that could not be assessed for another reason is not quoted: the code decides, never the words",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			row(layer.TLS, status.Unknown, l4Ended), row(layer.TrustMatrix, status.Unknown, "no certificate from the server reached this program")},
+		want: "Everything assessed passed. 2 of 6 diagnostic layers could not be assessed.",
 	},
 	{
 		name: "S-5 with the platform's row undetermined: a failure outranks it, the server is still to blame, and only the assessed stores are counted",

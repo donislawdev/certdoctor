@@ -415,7 +415,8 @@ func TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields(t *testing.T) {
 	// THE STATUS IS PER CASE AND ADR58 IS WHY. Four of these are a server, or the
 	// network in front of it, answering or failing to. The fifth is OUR OWN
 	// allowed set refusing, so no handshake was ever attempted - and FAIL there
-	// says every server refused, about servers nothing spoke to.
+	// says every server refused, about servers nothing spoke to. The sixth is our
+	// own TLS library ending the handshake - ADR129, the same argument.
 	for _, tc := range []struct {
 		err        error
 		wantStatus status.Status
@@ -425,6 +426,7 @@ func TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields(t *testing.T) {
 		{ErrNotReached, status.Fail},
 		{ErrRefusedByRule, status.Unknown},
 		{errors.New("nobody wrote a case for this"), status.Fail},
+		{EndedHere{Words: "x509: negative serial number"}, status.Unknown},
 	} {
 		err := tc.err
 		in := workingInput(func(context.Context, string, int, string) (Presented, error) {

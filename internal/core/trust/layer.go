@@ -108,7 +108,11 @@ const (
 	noOS     = "no platform was supplied, so a command this machine could run could not be written"
 	noProbes = "no probes were supplied, so nothing on this machine was asked"
 	noClock  = "no clock was supplied, so how long a probe may run inside the time this layer has left could not be worked out"
-	nothing  = "the server presented no certificate, so there was nothing for any store to judge"
+	// nothing is TRUE WHY EVER THE CHAIN IS EMPTY - ADR129. It used to say the
+	// server presented no certificate, and measured with probe S30 a server had
+	// sent two: our own TLS library could not read one of them. No handshake
+	// completing, and one completing without a certificate, end here too.
+	nothing  = "no certificate from the server reached this program, so there was nothing for any store to judge"
 	noneHere = "no runtime this program knows how to ask was found on this machine"
 	// plaintextTarget is its own sentence because "the server presented no
 	// certificate" would say a server was asked, and on an http:// target none

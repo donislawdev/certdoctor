@@ -118,7 +118,7 @@ func codeFor(counts map[status.Status]int, total int) exitcode.Code {
 
 // sentenceFor picks the verdict sentence.
 //
-// Five shapes, in this order:
+// Six shapes, in this order:
 //
 //   - nothing assessed: the settled sentence, because "nothing could be
 //     assessed" reads better than "6 of 6 could not be assessed" and says the
@@ -131,6 +131,9 @@ func codeFor(counts map[status.Status]int, total int) exitcode.Code {
 //   - no failure, but the proxy this URL goes through wants credentials: said
 //     out loud, because this program connects directly and a runtime that
 //     goes through the proxy does not.
+//   - no failure, but this program's own TLS library ended the handshakes it
+//     could not complete: said out loud, because nothing about TLS was judged.
+//     See handshakeEndedHere.
 //   - no failure, but the platform's own store could not judge the chain: said
 //     out loud too, because every program without a store of its own judges
 //     by that one. See platformStoreUndetermined.
@@ -158,6 +161,9 @@ func sentenceFor(results []LayerResult, counts map[status.Status]int) string {
 	}
 	if demand, ok := credentialsDemand(results); ok {
 		return everythingAssessedPassed + ", but " + demand + tail(counts, total, false)
+	}
+	if why, ok := handshakeEndedHere(results); ok {
+		return everythingAssessedPassed + ", but " + why + tail(counts, total, false)
 	}
 	if why, ok := platformStoreUndetermined(results); ok {
 		return everythingAssessedPassed + ", but " + why + tail(counts, total, false)
@@ -363,6 +369,29 @@ func credentialsDemand(results []LayerResult) (string, bool) {
 	for _, r := range results {
 		if r.ID == layer.Proxy && r.Status == status.Unknown &&
 			r.Reason == status.ReasonCredentialsRequired && r.Detail != "" {
+			return period(r.Detail), true
+		}
+	}
+	return "", false
+}
+
+// handshakeEndedHere returns L4's own account of handshakes this program's TLS
+// library ended itself, when that is the layer's reason for not knowing -
+// ADR129, closing OBS211.
+//
+// MEASURED 2026-11-09 WITH PROBE S30: a chain carrying a certificate with a
+// negative serial number. Every other client on the machine completed the
+// handshake, and the top line read "None of the 1 address(es) completed a TLS
+// handshake" with the exit code of a diagnosis. Without this clause the same run
+// would now read "Everything assessed passed" and a count, over a layer that
+// assessed nothing about TLS at all.
+//
+// IN LAYER ORDER, LIKE THE OTHER TWO: after the proxy, before the platform's
+// store. Recognised by the reason, the code L4 gives no other outcome.
+func handshakeEndedHere(results []LayerResult) (string, bool) {
+	for _, r := range results {
+		if r.ID == layer.TLS && r.Status == status.Unknown &&
+			r.Reason == status.ReasonUndetermined && r.Detail != "" {
 			return period(r.Detail), true
 		}
 	}

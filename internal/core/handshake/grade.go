@@ -45,11 +45,9 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	// not the one L5 judges, and travels to L5 so its sentence can say so.
 	others := 0
 
-	// THE TWO OUTCOMES THAT NEVER LEFT THIS MACHINE, counted in the same walk as
-	// everything else here - ADR58. Both are ours: one is this layer running out
-	// of its own budget before an address came up, the other is our own allowed
-	// set refusing the address.
-	skipped, refused := 0, 0
+	// THE OUTCOMES NO SERVER CAN BE BLAMED FOR, counted in the same walk as
+	// everything else here - ADR58 and ADR129.
+	var missed unheard
 
 	// EVERY LEAF IS ASKED ABOUT THE NAME, NOT ONLY THE CARRIER'S - ADR106. Each
 	// address presented its own, and one path handing out a certificate for a
@@ -74,10 +72,8 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 					others++
 				}
 			}
-		case errors.Is(o.err, errNotAttempted):
-			skipped++
-		case errors.Is(o.err, ErrRefusedByRule):
-			refused++
+		default:
+			missed.count(o.err)
 		}
 		findings = append(findings, in.row(o, i == carrier, matches, sameChain))
 	}
@@ -88,22 +84,11 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	// L5 asks it in order to decide whether a store can be advised at all - and
 	// the case it most needs it for is the FAIL below.
 	graded := Result{Detail: detail, Findings: findings, ChainWhole: complete, OtherChains: others}
+	if completed == 0 && missed.settle(&graded, len(addresses)) {
+		return graded
+	}
 
 	switch {
-	case completed == 0 && skipped+refused > 0:
-		// A VERDICT AGAINST THESE SERVERS REQUIRES THAT THIS LAYER FINISHED
-		// TRYING - ADR58. Both counts are ours: this layer running out of its own
-		// budget, and our own allowed set refusing. With nothing completed and
-		// some addresses never spoken to, FAIL says every server refused a
-		// handshake - about servers nothing said hello to.
-		//
-		// ErrNotReached is deliberately NOT one of the two counted. L4 is handed
-		// only the addresses L3 connected to, so it cannot ordinarily see one -
-		// and if it ever does, L3 tried and failed, which is a fact about the
-		// network rather than about our budget.
-		graded.Status = status.Unknown
-		graded.Reason = status.ReasonForNothingAttempted(skipped)
-		graded.Detail = notFinishedDetail(skipped, refused, len(addresses))
 	// THREE FAILURES, ONE BRANCH - the sentence above them, from detailFor, is
 	// what tells them apart.
 	//
@@ -138,6 +123,67 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 		graded.Status = status.Pass
 	}
 	return graded
+}
+
+// unheard counts, by reason, the addresses that gave this layer no answer it
+// can hold against a server - and every one of the reasons is on our side.
+type unheard struct {
+	// skipped and refused NEVER LEFT THIS MACHINE - ADR58: this layer running
+	// out of its own budget before an address came up, and our own allowed set
+	// refusing the address.
+	skipped, refused int
+	// ended LEFT THIS MACHINE AND WAS ENDED BY IT - ADR129: our own TLS library
+	// stopped the handshake. first is the first such address's account, the one
+	// the layer's line quotes.
+	ended int
+	first EndedHere
+}
+
+// count records one address that did not complete a handshake.
+//
+// ErrNotReached is deliberately NOT counted. L4 is handed only the addresses L3
+// connected to, so it cannot ordinarily see one - and if it ever does, L3 tried
+// and failed, which is a fact about the network rather than about our budget.
+// ErrRejected and ErrTimeout are the servers' and the network's answers.
+func (u *unheard) count(err error) {
+	var ended EndedHere
+	switch {
+	case errors.Is(err, errNotAttempted):
+		u.skipped++
+	case errors.Is(err, ErrRefusedByRule):
+		u.refused++
+	case errors.As(err, &ended):
+		if u.ended == 0 {
+			u.first = ended
+		}
+		u.ended++
+	}
+}
+
+// settle answers for a layer where no handshake completed, when some address
+// gave no answer that can be held against its server, and says whether it did.
+func (u unheard) settle(graded *Result, addresses int) bool {
+	switch {
+	case u.skipped+u.refused > 0:
+		// A VERDICT AGAINST THESE SERVERS REQUIRES THAT THIS LAYER FINISHED
+		// TRYING - ADR58. Both counts are ours. With nothing completed and some
+		// addresses never spoken to, FAIL says every server refused a handshake -
+		// about servers nothing said hello to.
+		graded.Status = status.Unknown
+		graded.Reason = status.ReasonForNothingAttempted(u.skipped)
+		graded.Detail = notFinishedDetail(u.skipped, u.refused, addresses)
+	case u.ended > 0:
+		// THE SAME RULE ONE STEP FURTHER - ADR129. These addresses were spoken
+		// to, and it was our own library that stopped: on the bench every other
+		// client completed the handshake it ended, so FAIL would blame a server
+		// for an answer we could not read.
+		graded.Status = status.Unknown
+		graded.Reason = status.ReasonUndetermined
+		graded.Detail = endedDetail(u.ended, addresses, u.first.Words)
+	default:
+		return false
+	}
+	return true
 }
 
 // nameTally is what the leaves of every completed address said about the name
@@ -377,6 +423,7 @@ func certificatesFor(chain []Certificate) []report.Certificate {
 // "the server did not complete a handshake" rather than as one of the specific
 // diagnoses, because each of those sends a person somewhere particular.
 func reasonFor(err error) string {
+	var ended EndedHere
 	switch {
 	case err == nil:
 		return "the handshake did not complete and no reason was given, which is a defect on our side"
@@ -388,8 +435,25 @@ func reasonFor(err error) string {
 		return "the connection could not be opened, which layer L3 has already reported"
 	case errors.Is(err, ErrTimeout):
 		return "nothing answered before the deadline"
+	case errors.As(err, &ended):
+		return ended.Error() + undecided
 	}
 	return "the server did not complete a TLS handshake"
+}
+
+// undecided is what a handshake this program's own library ended leaves open -
+// ADR129. Other clients read certificates by other rules, and on the bench every
+// one of them completed the handshake this program's library would not.
+const undecided = ", so whether another client would complete it cannot be told here"
+
+// endedDetail is the layer's line when no handshake completed and this
+// program's own library ended at least one of them - ADR129.
+//
+// THE COUNT IS OF THE ADDRESSES OUR LIBRARY ENDED, and the rows beside it say
+// what happened on the rest. The words quoted are the first such address's.
+func endedDetail(ended, total int, words string) string {
+	return fmt.Sprintf("this program's own TLS library ended the handshake with %d of %d address(es) itself (%s)",
+		ended, total, words) + undecided
 }
 
 // summaryFor is the sentence a surface prints when it has no special handling

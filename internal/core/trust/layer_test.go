@@ -144,6 +144,12 @@ func TestNoPresentedChainIsNothingToJudge(t *testing.T) {
 	if !strings.Contains(got.Detail, "nothing for any store") {
 		t.Errorf("detail does not say why: %q", got.Detail)
 	}
+	// ADR129: the chain is empty whenever nothing READ one, and measured with
+	// probe S30 the server had presented two. The sentence claims only what is
+	// known, that none reached this program.
+	if strings.Contains(got.Detail, "presented no") || !strings.Contains(got.Detail, "reached this program") {
+		t.Errorf("detail claims to know what the server presented: %q", got.Detail)
+	}
 }
 
 // A runtime that is not installed sits OUTSIDE the matrix - docs/20 rule 1.

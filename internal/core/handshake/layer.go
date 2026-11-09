@@ -64,6 +64,31 @@ var (
 	ErrTimeout = errors.New("nothing answered before the deadline")
 )
 
+// EndedHere - THIS PROGRAM'S OWN TLS LIBRARY ended the handshake, before it had
+// read and accepted the certificates the server sent - ADR129, closing OBS211.
+//
+// MEASURED 2026-11-09 WITH PROBE S30: a server whose chain carried a certificate
+// with a negative serial number. OpenSSL, Python, Node, curl on schannel and
+// Java all completed that handshake, and this layer said the server did not.
+// crypto/tls reads every certificate the server sends BEFORE it asks whether to
+// verify anything, so skipping verification - ADR46 - does not help: a
+// certificate the library cannot read ends the handshake on our side, with
+// nothing left to show.
+//
+// IT IS A TYPE RATHER THAN A SENTINEL because it carries the library's own
+// words, and they are the only account of why there is. They are SHOWN and
+// never matched - inviolable rule 19 - so the adapter decides by the shape of
+// the error, and this package only quotes it.
+type EndedHere struct {
+	// Words is what the library said, already bounded by the adapter: it can
+	// quote text from a certificate, and the server chose that text.
+	Words string
+}
+
+func (e EndedHere) Error() string {
+	return "this program's own TLS library ended the handshake itself (" + e.Words + ")"
+}
+
 // Certificate is one certificate as this program reports it.
 //
 // IT IS OUR OWN TYPE AND NOT crypto/x509's, deliberately. The core never parses

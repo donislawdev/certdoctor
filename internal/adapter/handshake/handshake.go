@@ -14,8 +14,11 @@ package handshake
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
+	"io"
 	"net"
+	"unicode/utf8"
 
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	core "github.com/donislawdev/certdoctor/internal/core/handshake"
@@ -96,6 +99,11 @@ func negotiate(ctx context.Context, conn net.Conn, serverName string) (core.Pres
 	// goroutine, so nothing here is shared between goroutines - the fan-out gives
 	// every address its own call and its own closure.
 	requested := false
+	// read is set by the library itself once it has read every certificate the
+	// server sent and accepted them - the hook below runs only then, after the
+	// parse in verifyServerCertificate (go1.27.3). Written and read on this
+	// goroutine, like requested.
+	read := false
 
 	client := tls.Client(conn, &tls.Config{
 		// THE NAME IS SENT SEPARATELY FROM THE ADDRESS AND THAT IS THE POINT OF
@@ -133,13 +141,14 @@ func negotiate(ctx context.Context, conn net.Conn, serverName string) (core.Pres
 		// WHAT IT DELIBERATELY DOES NOT DO, WRITTEN DOWN BECAUSE IT IS A REAL
 		// DIAGNOSTIC GAP: a server speaking only TLS 1.0 or 1.1 - an internal
 		// appliance, which is exactly the machine this tool is for - is refused
-		// by US, and the row says "the server did not complete a TLS handshake"
-		// without saying who declined. Answering that properly means trying again
-		// at a lower floor and reporting the old version as the finding, which is
-		// a new behaviour and a new sentence rather than a constant. Open
-		// question O10 is the other half of it: a real 1.0 server usually offers
-		// only cipher suites Go has removed, so the version alone would not
-		// settle the retry.
+		// by US. Since ADR129 the row says so when the server answers with its
+		// old version: our own library ended the handshake, in its own words,
+		// and the layer says it cannot tell whether another client would
+		// complete it. Answering that properly means trying again at a lower
+		// floor and reporting the old version as the finding, which is a new
+		// behaviour and a new sentence rather than a constant. Open question O10
+		// is the other half of it: a real 1.0 server usually offers only cipher
+		// suites Go has removed, so the version alone would not settle the retry.
 		MinVersion: tls.VersionTLS12,
 
 		NextProtos: alpn,
@@ -153,10 +162,21 @@ func negotiate(ctx context.Context, conn net.Conn, serverName string) (core.Pres
 			requested = true
 			return &tls.Certificate{}, nil
 		},
+
+		// IT RECORDS AND NEVER REFUSES - this is not verification coming back
+		// in through a side door. With InsecureSkipVerify the library hands it
+		// no verified chains, and it answers nil whatever arrives. What it says
+		// is WHERE a failed handshake stopped: past this point the library had
+		// read the server's certificates, so a failure after it is about what
+		// the server did next - ADR129.
+		VerifyPeerCertificate: func([][]byte, [][]*x509.Certificate) error {
+			read = true
+			return nil
+		},
 	})
 
 	if err := client.HandshakeContext(ctx); err != nil {
-		return core.Presented{}, failure(err)
+		return core.Presented{}, failure(err, read)
 	}
 	return presented(client.ConnectionState(), serverName, requested), nil
 }
@@ -198,13 +218,63 @@ func presented(state tls.ConnectionState, serverName string, requested bool) cor
 // THE DEFAULT IS "the server would not complete a handshake" rather than any
 // sharper claim. An unanticipated failure must not be reported as a timeout,
 // because a timeout sends a person to look at their firewall.
-func failure(err error) error {
+//
+// THE ONE EXCEPTION IS A FAILURE OUR OWN LIBRARY MADE BEFORE IT HAD READ THE
+// SERVER'S CERTIFICATES - ADR129. read says whether it got that far, and
+// endedHere whether anything from the other side or the wire is in the error.
+func failure(err error, read bool) error {
 	var timeout net.Error
 	switch {
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return core.ErrTimeout
 	case errors.As(err, &timeout) && timeout.Timeout():
 		return core.ErrTimeout
+	case !read && endedHere(err):
+		return core.EndedHere{Words: bounded(err.Error())}
 	}
 	return core.ErrRejected
+}
+
+// endedHere says the error carries nothing that came from the server or from
+// the wire, so the library ended the handshake by its own decision.
+//
+// DECIDED BY THE SHAPE OF THE ERROR, NEVER BY ITS TEXT - inviolable rule 19.
+// Read in src/crypto/tls of go1.27.3: an alert the server sent arrives as a
+// *net.OpError, and so does an alert the library sends when the server's message
+// is malformed or out of order - both a fact about the server. A connection the
+// server closed arrives as io.EOF or io.ErrUnexpectedEOF, and something that is
+// not TLS at all as a RecordHeaderError. What the library refuses for reasons of
+// its own - a certificate it cannot read, a version below our floor, a key it
+// will not use - it reports with a bare errors.New, and that is the only shape
+// left.
+//
+// THE DIRECTION OF A MISTAKE IS SAFE. A future library wrapping a server's
+// refusal in a new shape turns a FAIL into an UNKNOWN, never into a PASS - and
+// the test with a certificate Go cannot read catches the opposite drift.
+func endedHere(err error) bool {
+	var op *net.OpError
+	var header tls.RecordHeaderError
+	return !errors.As(err, &op) && !errors.As(err, &header) &&
+		!errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+// wordsLimit is how much of the library's own words a row may quote.
+//
+// A CEILING, BECAUSE THE SERVER CHOSE SOME OF THEM. crypto/x509 quotes a field
+// it could not parse - a URI from the subjectAltName, for one - and a server
+// may send a certificate message of hundreds of kilobytes, so without it one
+// row could carry all of that onto the top line of the report.
+const wordsLimit = 240
+
+// bounded cuts the library's words at wordsLimit bytes, on a character
+// boundary, and says it did.
+func bounded(words string) string {
+	if len(words) <= wordsLimit {
+		return words
+	}
+	cut := wordsLimit
+	for cut > 0 && !utf8.RuneStart(words[cut]) {
+		cut--
+	}
+	return words[:cut] + "..."
 }

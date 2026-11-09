@@ -449,19 +449,23 @@ func TestAConnectionThatCannotOpenIsNotDiagnosedTwice(t *testing.T) {
 //
 // A default of "timeout" would send a person to look at their firewall for a
 // server that answered immediately and refused, so anything nobody wrote a case
-// for has to arrive as the weaker claim.
+// for has to arrive as the weaker claim. Since ADR129 the weakest claim of all
+// belongs to a failure our own library made before it read the certificates -
+// TestTheLibraryEndingTheHandshakeIsToldFromTheServerEndingIt has those.
 func TestFailureNamesWhatHappenedRatherThanGuessing(t *testing.T) {
-	if got := failure(context.DeadlineExceeded); !errors.Is(got, core.ErrTimeout) {
-		t.Errorf("a deadline mapped to %v", got)
+	for _, read := range []bool{false, true} {
+		if got := failure(context.DeadlineExceeded, read); !errors.Is(got, core.ErrTimeout) {
+			t.Errorf("a deadline mapped to %v", got)
+		}
+		if got := failure(context.Canceled, read); !errors.Is(got, core.ErrTimeout) {
+			t.Errorf("a cancelled attempt mapped to %v", got)
+		}
+		if got := failure(&net.DNSError{IsTimeout: true}, read); !errors.Is(got, core.ErrTimeout) {
+			t.Errorf("a timeout reported by the network layer mapped to %v", got)
+		}
 	}
-	if got := failure(context.Canceled); !errors.Is(got, core.ErrTimeout) {
-		t.Errorf("a cancelled attempt mapped to %v", got)
-	}
-	if got := failure(errors.New("something new")); !errors.Is(got, core.ErrRejected) {
-		t.Errorf("an unrecognised failure mapped to %v, and it must not claim to be a diagnosis", got)
-	}
-	if got := failure(&net.DNSError{IsTimeout: true}); !errors.Is(got, core.ErrTimeout) {
-		t.Errorf("a timeout reported by the network layer mapped to %v", got)
+	if got := failure(errors.New("something new"), true); !errors.Is(got, core.ErrRejected) {
+		t.Errorf("an unrecognised failure after the certificates were read mapped to %v, and it must not claim to be a diagnosis", got)
 	}
 }
 
