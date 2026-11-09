@@ -246,7 +246,20 @@ import (
 // carries a verdict, and a chain that breaks one of those rules - an
 // intermediate without an authority key identifier, one whose basic constraints
 // are not critical - is a false with this value, which no store fix repairs.
-const SchemaVersion = "2.3"
+//
+// 2.4 ADDS ONE FIELD, verdict.layer - ADR123, decided by the owner. A MINOR by
+// rule 2: nothing removed, nothing renamed, no meaning changed. It names the
+// layer the sentence speaks about: the decisive one of a failing run, which is
+// not the first red row, and in a run without a failure the layer of the one
+// "but". It is null when the sentence names no layer - everything passed,
+// nothing could be assessed, or a count stands in for a cause.
+//
+// WHAT CHANGES FOR A CONSUMER THAT ALREADY SHIPPED. Nothing it reads. One that
+// picked the first layer with the verdict's status, to show the reader where
+// to look, can take this field instead and stop disagreeing with the sentence.
+// The human surfaces carry no such field: they say the layer in the sentence's
+// own words, and the field is for a program - the owner's decision.
+const SchemaVersion = "2.4"
 
 // JSON renders the machine readable report.
 //
@@ -296,6 +309,9 @@ type jsonPlatform struct {
 type jsonVerdict struct {
 	Status   string `json:"status"`
 	Sentence string `json:"sentence"`
+	// Layer is the identifier of the layer the sentence speaks about, and null
+	// when it speaks about none - ADR123.
+	Layer *string `json:"layer"`
 	// ExitCode repeats what the process returns. The redundancy is deliberate:
 	// a report saved to a file keeps information the process exit status
 	// cannot.
@@ -750,6 +766,7 @@ func documentFor(r report.Report) jsonReport {
 		Verdict: jsonVerdict{
 			Status:   Label(r.Verdict.Status),
 			Sentence: r.Verdict.Sentence,
+			Layer:    optional(r.Verdict.Layer.String()),
 			ExitCode: r.Verdict.ExitCode.Int(),
 		},
 		Layers: layersOf(r),

@@ -6,8 +6,44 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/donislawdev/certdoctor/internal/core/layer"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 )
+
+// TestTheDocumentSaysWhichLayerTheVerdictIsAbout is ADR123 on the one surface
+// that carries it as a field: the layer's identifier, or null when the sentence
+// names no layer - never an empty string, which a consumer would have to know
+// to read as "none", and never a missing key, which the schema refuses.
+func TestTheDocumentSaysWhichLayerTheVerdictIsAbout(t *testing.T) {
+	for _, c := range []struct {
+		about layer.ID
+		want  any
+	}{
+		{layer.TLS, "L4"},
+		{layer.TrustMatrix, "L5"},
+		{"", nil},
+	} {
+		r := everyStatusReport()
+		r.Verdict.Layer = c.about
+		document, err := Encode(r)
+		if err != nil {
+			t.Fatalf("encoding failed: %v", err)
+		}
+		if err := ValidateDocument(document); err != nil {
+			t.Errorf("a verdict about %q no longer matches the schema: %v", c.about, err)
+		}
+		var decoded struct {
+			Verdict map[string]any `json:"verdict"`
+		}
+		if err := json.Unmarshal(document, &decoded); err != nil {
+			t.Fatalf("the document does not decode: %v", err)
+		}
+		got, present := decoded.Verdict["layer"]
+		if !present || got != c.want {
+			t.Errorf("a verdict about %q is written as layer %v (present: %v), want %v", c.about, got, present, c.want)
+		}
+	}
+}
 
 // TestBothSurfacesSayTheSameThingAboutAByteThatIsNotText is finding 13 of the
 // external review, and it is a defect in the DIFFERENCE rather than in either

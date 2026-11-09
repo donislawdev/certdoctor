@@ -19,6 +19,15 @@ import (
 type Verdict struct {
 	Status   status.Status
 	Sentence string
+	// Layer is the layer the sentence speaks about, or empty when it speaks
+	// about none - ADR123, decided by the owner. It is the decisive layer of a
+	// failing run, and in a run without a failure the layer of the one "but".
+	//
+	// IT COMES FROM THE SAME RUNG AS THE SENTENCE, never from a second walk over
+	// the rows, because the decisive layer is not the first red row and a second
+	// walk would be a second ladder. A program showing the report - the window -
+	// opens on this layer instead of rebuilding that ladder from the statuses.
+	Layer    layer.ID
 	ExitCode exitcode.Code
 }
 
@@ -60,9 +69,11 @@ func Assess(results []LayerResult) Verdict {
 	for _, r := range results {
 		counts[r.Status]++
 	}
+	sentence, about := sentenceFor(results, counts)
 	return Verdict{
 		Status:   worstOf(results),
-		Sentence: sentenceFor(results, counts),
+		Sentence: sentence,
+		Layer:    about,
 		ExitCode: codeFor(counts, len(results)),
 	}
 }
@@ -116,7 +127,7 @@ func codeFor(counts map[status.Status]int, total int) exitcode.Code {
 	}
 }
 
-// sentenceFor picks the verdict sentence.
+// sentenceFor picks the verdict sentence and the layer it speaks about.
 //
 // Six shapes, in this order:
 //
@@ -146,32 +157,36 @@ func codeFor(counts map[status.Status]int, total int) exitcode.Code {
 // finds three more layers that were never assessed. The verdict is the line
 // people act on, so the counts of further failures, of warnings and of layers
 // not assessed stay on it, after the cause.
-func sentenceFor(results []LayerResult, counts map[status.Status]int) string {
+//
+// THE LAYER IS EMPTY WHEREVER THE SENTENCE NAMES NONE: nothing assessed, the
+// success sentences, and a count standing in for a cause - which the rung that
+// found a failing row with nothing to quote would otherwise still point at.
+func sentenceFor(results []LayerResult, counts map[status.Status]int) (string, layer.ID) {
 	total := len(results)
 	unknown := counts[status.Unknown]
 	switch {
 	case total == 0 || unknown == total:
-		return nothingAssessed
+		return nothingAssessed, ""
 	case counts[status.Fail] > 0:
-		cause, named := causeOf(results)
+		cause, about, named := causeOf(results)
 		if !named {
-			cause = fmt.Sprintf("Failures in %d of %d diagnostic layers.", counts[status.Fail], total)
+			cause, about = fmt.Sprintf("Failures in %d of %d diagnostic layers.", counts[status.Fail], total), ""
 		}
-		return cause + tail(counts, total, named)
+		return cause + tail(counts, total, named), about
 	}
-	if demand, ok := credentialsDemand(results); ok {
-		return everythingAssessedPassed + ", but " + demand + tail(counts, total, false)
+	if demand, about, ok := credentialsDemand(results); ok {
+		return everythingAssessedPassed + ", but " + demand + tail(counts, total, false), about
 	}
-	if why, ok := handshakeEndedHere(results); ok {
-		return everythingAssessedPassed + ", but " + why + tail(counts, total, false)
+	if why, about, ok := handshakeEndedHere(results); ok {
+		return everythingAssessedPassed + ", but " + why + tail(counts, total, false), about
 	}
-	if why, ok := platformStoreUndetermined(results); ok {
-		return everythingAssessedPassed + ", but " + why + tail(counts, total, false)
+	if why, about, ok := platformStoreUndetermined(results); ok {
+		return everythingAssessedPassed + ", but " + why + tail(counts, total, false), about
 	}
 	if unknown == 0 && counts[status.Warn] == 0 {
-		return everythingPassed
+		return everythingPassed, ""
 	}
-	return everythingAssessedPassed + "." + tail(counts, total, false)
+	return everythingAssessedPassed + "." + tail(counts, total, false), ""
 }
 
 // tail is what follows the cause: the counts the sentence used to consist of.
@@ -224,36 +239,46 @@ func tail(counts map[status.Status]int, total int, causeNamed bool) string {
 // own words, so that a failure a future layer produces is never reported as a
 // count alone. L0 does not fail today, and L2 fails since ADR114 when a proxy
 // this URL goes through refuses the connection.
-func causeOf(results []LayerResult) (string, bool) {
+//
+// EVERY RUNG RETURNS THE LAYER OF THE ROW IT STANDS ON - ADR123. A server that
+// withheld its issuer is said in L4's words and decided on the trust rung, so
+// the layer is L5: the rung is what ADR123 names, and L4 only warned.
+func causeOf(results []LayerResult) (string, layer.ID, bool) {
 	if r, ok := failing(results, layer.Resolution); ok {
-		return directly(results, r.Detail)
+		cause, named := directly(results, r.Detail)
+		return cause, r.ID, named
 	}
 	if r, ok := failing(results, layer.TCP); ok {
-		return directly(results, r.Detail)
+		cause, named := directly(results, r.Detail)
+		return cause, r.ID, named
 	}
 	if r, ok := failing(results, layer.TrustMatrix); ok {
 		if a := signingAuthority(r); a != nil && a.SigningAuthority.Inspection != nil {
-			return authorityCause(r, *a), true
+			return authorityCause(r, *a), r.ID, true
 		}
 	}
 	if r, ok := failing(results, layer.TLS); ok {
-		return directly(results, r.Detail)
+		cause, named := directly(results, r.Detail)
+		return cause, r.ID, named
 	}
 	if r, ok := failing(results, layer.TrustMatrix); ok {
 		if a := signingAuthority(r); a != nil && a.SigningAuthority.HeldBy == HeldBySomeStores {
-			return authorityCause(r, *a), true
+			return authorityCause(r, *a), r.ID, true
 		}
 		if withheld, ok := issuerWithheld(results, r); ok {
-			return directly(results, withheld)
+			cause, named := directly(results, withheld)
+			return cause, r.ID, named
 		}
-		return trustCause(r)
+		cause, named := trustCause(r)
+		return cause, r.ID, named
 	}
 	for _, id := range layer.All {
 		if r, ok := failing(results, id); ok {
-			return sentence(r.Detail)
+			cause, named := sentence(r.Detail)
+			return cause, r.ID, named
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // directly is the sentence of a layer that measured the direct route, with one
@@ -364,15 +389,17 @@ func failing(results []LayerResult, id layer.ID) (LayerResult, bool) {
 }
 
 // credentialsDemand returns the proxy layer's own account of a proxy that
-// asked for credentials, when that is the layer's reason for not knowing.
-func credentialsDemand(results []LayerResult) (string, bool) {
+// asked for credentials, when that is the layer's reason for not knowing, and
+// that layer. The three "but" clauses return the row they quote, so the layer
+// the verdict points at is the one whose words it carries - ADR123.
+func credentialsDemand(results []LayerResult) (string, layer.ID, bool) {
 	for _, r := range results {
 		if r.ID == layer.Proxy && r.Status == status.Unknown &&
 			r.Reason == status.ReasonCredentialsRequired && r.Detail != "" {
-			return period(r.Detail), true
+			return period(r.Detail), r.ID, true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // handshakeEndedHere returns L4's own account of handshakes this program's TLS
@@ -388,14 +415,14 @@ func credentialsDemand(results []LayerResult) (string, bool) {
 //
 // IN LAYER ORDER, LIKE THE OTHER TWO: after the proxy, before the platform's
 // store. Recognised by the reason, the code L4 gives no other outcome.
-func handshakeEndedHere(results []LayerResult) (string, bool) {
+func handshakeEndedHere(results []LayerResult) (string, layer.ID, bool) {
 	for _, r := range results {
 		if r.ID == layer.TLS && r.Status == status.Unknown &&
 			r.Reason == status.ReasonUndetermined && r.Detail != "" {
-			return period(r.Detail), true
+			return period(r.Detail), r.ID, true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // platformStoreUndetermined returns the summary of the first row for the
@@ -421,16 +448,16 @@ func handshakeEndedHere(results []LayerResult) (string, bool) {
 //
 // THE SUMMARY IS QUOTED, NOT THE REASON ALONE, because it names the store and
 // Windows has two of them. It is the row's own text, masked before this runs.
-func platformStoreUndetermined(results []LayerResult) (string, bool) {
+func platformStoreUndetermined(results []LayerResult) (string, layer.ID, bool) {
 	for _, r := range results {
 		for _, f := range r.Findings {
 			if f.Kind == FindingTrustStore && f.TrustStore != nil && f.TrustStore.Runtime == RuntimeSystemStore &&
 				f.TrustStore.TrustsPresentedChain == nil && f.Summary != "" {
-				return period(f.Summary), true
+				return period(f.Summary), r.ID, true
 			}
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // signingAuthority returns the signing-authority finding of a trust row that

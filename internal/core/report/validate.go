@@ -151,6 +151,12 @@ func validateVerdict(r Report, add func(string, ...any)) {
 	if r.Verdict.Sentence != want.Sentence {
 		add("the verdict reads %q while the rows beneath it call for %q", r.Verdict.Sentence, want.Sentence)
 	}
+	// The layer is compared for the reason the sentence is: a program opening
+	// the report on it - ADR123 - shows whatever the document says, and a layer
+	// beside a sentence about another one sends the reader to the wrong rows.
+	if r.Verdict.Layer != want.Layer {
+		add("the verdict points at layer %q while the rows beneath it call for %q", r.Verdict.Layer, want.Layer)
+	}
 	// Kept alongside the comparison above rather than folded into it. The two
 	// fire together, and this one names the worst case in the words it deserves
 	// instead of leaving a reader to diff two sentences.

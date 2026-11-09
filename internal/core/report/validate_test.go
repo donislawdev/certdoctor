@@ -92,6 +92,36 @@ func TestValidateRejectsAVerdictSentenceThatDisagreesWithItsLayers(t *testing.T)
 	requireRejected(t, r, "while the rows beneath it call for")
 }
 
+// TestValidateRejectsAVerdictPointingAtTheWrongLayer is ADR123 held at run
+// time: a program opens the report on the layer the verdict names, so a layer
+// that disagrees with the rows sends the reader somewhere the sentence is not
+// about. Each case is one the other two cannot stand in for - a layer where
+// none is called for, the wrong one, and none where one is.
+func TestValidateRejectsAVerdictPointingAtTheWrongLayer(t *testing.T) {
+	failing := func() Report {
+		r := wellFormedReport()
+		r.Layers[0].Status = status.Fail
+		r.Layers[0].Reason = status.ReasonUnparseable
+		r.Layers[0].Detail = "something failed"
+		r.Verdict = Assess(r.Layers)
+		return r
+	}
+	for name, point := range map[string]func(*Report){
+		"a layer over a verdict that names none": func(r *Report) { *r = wellFormedReport(); r.Verdict.Layer = layer.TLS },
+		"another layer than the decisive one":    func(r *Report) { *r = failing(); r.Verdict.Layer = layer.TLS },
+		"no layer where the sentence names one":  func(r *Report) { *r = failing(); r.Verdict.Layer = "" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var r Report
+			point(&r)
+			requireRejected(t, r, "points at layer")
+		})
+	}
+	if r := failing(); r.Verdict.Layer != r.Layers[0].ID {
+		t.Fatalf("the fixture's verdict points at %q, not at the failing row %q", r.Verdict.Layer, r.Layers[0].ID)
+	}
+}
+
 // TestValidateRejectsAReportThatDoesNotSayWhenItWasTaken keeps a report from
 // carrying a timestamp from the year one, which reads as a real moment to
 // anything that parses it.

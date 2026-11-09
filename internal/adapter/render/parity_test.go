@@ -195,6 +195,13 @@ func TestEverySurfaceCarriesWhatTheRunItselfSays(t *testing.T) {
 			// maps 5 to whatever it calls inconclusive - so requiring the word
 			// everywhere would be requiring a label, not a measurement.
 			strconv.Itoa(document.Verdict.ExitCode.Int()),
+			// VERDICT.LAYER IS NOT ON THIS LIST, AND THAT IS THE OWNER'S DECISION
+			// - ADR123, inviolable rule 12 weighed. The two human surfaces say
+			// which layer the verdict is about in the sentence's own words, which
+			// is checked above. The field exists for a program that opens the
+			// report on that layer, and a marker beside the sentence would be a
+			// second way of saying what the sentence already says.
+			//
 			// The layer identifier and its status word. A page that showed
 			// findings without saying which layer reached which verdict would
 			// leave a reader to guess the one thing the report is organised by.

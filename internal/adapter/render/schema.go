@@ -49,8 +49,10 @@ var schema = object(map[string]node{
 		"budget_exceeded": boolean(),
 	}),
 	"verdict": object(map[string]node{
-		"status":    text(),
-		"sentence":  text(),
+		"status":   text(),
+		"sentence": text(),
+		// Null when the sentence names no layer - ADR123.
+		"layer":     nullable(text()),
 		"exit_code": number(),
 	}),
 	"layers": array(object(map[string]node{
