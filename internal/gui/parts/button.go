@@ -5,7 +5,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -39,46 +38,29 @@ const (
 // look is the toolkit author's decision.
 type Button struct {
 	widget.BaseWidget
+	touch
 	Kind     Kind
 	Label    string
 	Icon     fyne.Resource
 	OnTapped func()
 
-	hovered, pressed, focused, disabled bool
-	pinned                              *State
+	// fits is everything the button will say, when its words change: it is
+	// as wide as the widest from the start, so nothing beside it moves.
+	fits []string
 }
 
 // NewButton makes a button.
 func NewButton(k Kind, label string, icon fyne.Resource, tapped func()) *Button {
 	b := &Button{Kind: k, Label: label, Icon: icon, OnTapped: tapped}
+	b.self = b
 	b.ExtendBaseWidget(b)
 	return b
 }
 
 // Pin shows the button in one state for good. For the catalogue only.
 func (b *Button) Pin(s State) *Button {
-	b.pinned = &s
-	if s == Disabled {
-		b.disabled = true
-	}
-	b.Refresh()
+	b.pin(s)
 	return b
-}
-
-func (b *Button) state() State {
-	switch {
-	case b.pinned != nil:
-		return *b.pinned
-	case b.disabled:
-		return Disabled
-	case b.pressed:
-		return Press
-	case b.hovered:
-		return Hover
-	case b.focused:
-		return Focused
-	}
-	return Rest
 }
 
 func (b *Button) Tapped(*fyne.PointEvent) {
@@ -88,24 +70,11 @@ func (b *Button) Tapped(*fyne.PointEvent) {
 	b.OnTapped()
 }
 
-func (b *Button) MouseIn(*desktop.MouseEvent)    { b.hovered = true; b.Refresh() }
-func (b *Button) MouseMoved(*desktop.MouseEvent) {}
-func (b *Button) MouseOut()                      { b.hovered = false; b.Refresh() }
-func (b *Button) MouseDown(*desktop.MouseEvent)  { b.pressed = true; b.Refresh() }
-func (b *Button) MouseUp(*desktop.MouseEvent)    { b.pressed = false; b.Refresh() }
-func (b *Button) FocusGained()                   { b.focused = true; b.Refresh() }
-func (b *Button) FocusLost()                     { b.focused = false; b.Refresh() }
-func (b *Button) TypedRune(rune)                 {}
 func (b *Button) TypedKey(k *fyne.KeyEvent) {
-	if k.Name == fyne.KeySpace || k.Name == fyne.KeyReturn || k.Name == fyne.KeyEnter {
+	if presses(k) {
 		b.Tapped(nil)
 	}
 }
-func (b *Button) Disable()       { b.disabled = true; b.Refresh() }
-func (b *Button) Enable()        { b.disabled = false; b.Refresh() }
-func (b *Button) Disabled() bool { return b.disabled }
-
-func (b *Button) Cursor() desktop.Cursor { return desktop.PointerCursor }
 
 func (b *Button) CreateRenderer() fyne.WidgetRenderer {
 	r := &buttonRenderer{b: b}
@@ -199,7 +168,11 @@ func (r *buttonRenderer) Refresh() {
 }
 
 func (r *buttonRenderer) MinSize() fyne.Size {
-	w := r.label.MinSize().Width + 2*look.InsetControl
+	words := r.label.MinSize().Width
+	for _, f := range r.b.fits {
+		words = max(words, fyne.MeasureText(f, r.label.TextSize, r.label.TextStyle).Width)
+	}
+	w := words + 2*look.InsetControl
 	if r.b.Icon != nil {
 		w += look.IconControl + look.GapInline
 	}

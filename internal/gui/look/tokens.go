@@ -4,6 +4,8 @@
 // a value, so a change of look is a change in this package and nowhere else.
 package look
 
+import "time"
+
 // The scale of distances. Every gap in the window is one of these steps, and
 // a distance that fits no role below gets a role here rather than a bare
 // step at the call site.
@@ -173,4 +175,11 @@ const (
 	// found the report needing 988.
 	WindowMinWidth  = 1000
 	WindowMinHeight = 640
+)
+
+// Times the window shows something for.
+const (
+	// CopiedFor is how long Copy says Copied after a press: long enough to be
+	// read at a glance, short enough that the next press is told again.
+	CopiedFor = 2 * time.Second
 )

@@ -39,10 +39,12 @@ func Links() []fyne.CanvasObject {
 }
 
 // StartForm is what the start screen hands to whoever runs the window: the
-// address field, the one primary action, and the form read as a request.
+// address field, the one primary action, the fold holding the options, and
+// the form read as a request.
 type StartForm struct {
 	Address  *widget.Entry
 	Diagnose *parts.Button
+	Options  *parts.Pressable
 	typed    map[string]*widget.Entry
 	ticked   map[string]*widget.Check
 }
@@ -87,7 +89,7 @@ func Start(icon fyne.Resource, version string, optionsOpen, software bool) (fyne
 			parts.Para(parts.CaptionMuted, words.T(words.TargetHint)),
 		),
 	)
-	options := parts.Fold(words.T(words.OptionsCard), words.T(words.OptionsClosed), optionsOpen,
+	form.Options = parts.Fold(words.T(words.OptionsCard), words.T(words.OptionsClosed), optionsOpen,
 		parts.Para(parts.CaptionMuted, words.T(words.OptionsNote)),
 		parts.Form(fields...),
 	)
@@ -95,7 +97,7 @@ func Start(icon fyne.Resource, version string, optionsOpen, software bool) (fyne
 		parts.Text(parts.Title, words.T(words.StartTitle)),
 		parts.Para(parts.BodyMuted, words.T(words.StartLead)),
 	)
-	sections := []fyne.CanvasObject{intro, target, options, parts.Para(parts.CaptionMuted, words.T(words.StartPromise))}
+	sections := []fyne.CanvasObject{intro, target, form.Options, parts.Para(parts.CaptionMuted, words.T(words.StartPromise))}
 	if software {
 		sections = append(sections, parts.Para(parts.CaptionMuted, words.T(words.SoftwareDrawing)))
 	}
@@ -130,22 +132,49 @@ func (f *StartForm) control(o request.Option) fyne.CanvasObject {
 	}
 }
 
-// ReportActions are the actions of the report screen, for whoever runs the
-// window to wire: back to the form, save what this run made, run it again.
-type ReportActions struct {
+// ReportView is the report screen as whoever runs the window wires it: back
+// to the form, save what this run made, run it again - and the layer shown.
+type ReportView struct {
 	New, Save, Again *parts.Button
+
+	rail   *parts.Rail
+	shown  *fyne.Container
+	report model.Report
+	// pages is each layer's page, made the first time it is chosen and kept,
+	// so a command opened in one layer is still open on coming back to it.
+	pages map[int]fyne.CanvasObject
+}
+
+// Chosen is the layer the screen shows.
+func (v *ReportView) Chosen() int { return v.rail.Chosen() }
+
+// show puts the page of layer i beside the rail.
+func (v *ReportView) show(i int) {
+	page, ok := v.pages[i]
+	if !ok {
+		page = layerDetail(v.report.Layers[i], -1)
+		v.pages[i] = page
+	}
+	v.shown.Objects = []fyne.CanvasObject{page}
+	v.shown.Refresh()
 }
 
 // Report is the screen after a run: what was diagnosed and the actions on
 // it, the verdict, then the layers down the side in the report's order and
-// the chosen layer beside them.
-func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.CanvasObject, *ReportActions) {
-	act := &ReportActions{
-		New:   parts.NewButton(parts.Quiet, words.T(words.NewTarget), theme.NavigateBackIcon(), nil),
-		Save:  parts.NewButton(parts.Secondary, words.T(words.SaveReport), theme.DocumentSaveIcon(), nil),
-		Again: parts.NewButton(parts.Primary, words.T(words.RunAgain), theme.ViewRefreshIcon(), nil),
+// the chosen layer beside them. selected is the layer it opens on, and open
+// the store of that layer whose command it opens on, -1 for none.
+func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.CanvasObject, *ReportView) {
+	v := &ReportView{
+		New:    parts.NewButton(parts.Quiet, words.T(words.NewTarget), theme.NavigateBackIcon(), nil),
+		Save:   parts.NewButton(parts.Secondary, words.T(words.SaveReport), theme.DocumentSaveIcon(), nil),
+		Again:  parts.NewButton(parts.Primary, words.T(words.RunAgain), theme.ViewRefreshIcon(), nil),
+		rail:   parts.NewRail(words.T(words.LayersHead), r.Layers, selected),
+		report: r,
+		pages:  map[int]fyne.CanvasObject{selected: layerDetail(r.Layers[selected], open)},
 	}
-	actions := parts.Row(look.GapButtons, act.New, act.Save, act.Again)
+	v.shown = parts.Stack(0, v.pages[selected])
+	v.rail.OnChosen = v.show
+	actions := parts.Row(look.GapButtons, v.New, v.Save, v.Again)
 	title := parts.RowGrow(look.GapCard, 0,
 		parts.Middle(parts.Stack(look.GapTight,
 			parts.Text(parts.CaptionStrong, words.T(words.ReportFor)),
@@ -153,11 +182,9 @@ func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.Ca
 		)),
 		parts.Middle(actions),
 	)
-	rail := parts.Width(look.RailWidth, parts.Rail(words.T(words.LayersHead), r.Layers, selected))
-	detail := layerDetail(r.Layers[selected], open)
-	lower := parts.RowTop(look.GapCard, 1, rail, detail)
+	lower := parts.RowTop(look.GapCard, 1, parts.Width(look.RailWidth, v.rail), v.shown)
 	body := parts.Column(look.PageWidth, parts.Pad(look.InsetPage, parts.Stack(look.GapCard, title, parts.Verdict(r), lower)))
-	return container.NewBorder(head(icon, r.Version), nil, nil, nil, container.NewVScroll(body)), act
+	return container.NewBorder(head(icon, r.Version), nil, nil, nil, container.NewVScroll(body)), v
 }
 
 // SaveChoices is what Save report offers: the three formats the command

@@ -44,9 +44,9 @@ type window struct {
 // the software renderer shipped beside it (ADR125 point 2).
 func newWindow(w fyne.Window, icon fyne.Resource, version string, software bool, port flow.Port) *window {
 	win := &window{w: w, icon: icon, version: version, flow: flow.New(version), port: port, wait: waitFor, now: time.Now}
-	// The options open: the fold that puts them away does not open and close
-	// yet, and options nobody can reach are options the window does not offer.
-	win.start, win.form = screens.Start(icon, version, true, software)
+	// The options put away: most runs need only the address, and the fold
+	// says in one line what is in it.
+	win.start, win.form = screens.Start(icon, version, false, software)
 	win.form.Diagnose.OnTapped = win.diagnose
 	win.form.Address.OnSubmitted = func(string) { win.diagnose() }
 	win.form.Address.OnChanged = func(string) { win.ready() }

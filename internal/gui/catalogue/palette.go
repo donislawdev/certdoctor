@@ -47,13 +47,16 @@ func Pairs() []Pair {
 	// The example inside an empty box to type in.
 	pair(look.InkFaint, look.Sunken, text)
 	// A status word on the page (the list of layers), on a card (the
-	// verdict), on a chosen entry, and inside its own badge on each.
+	// verdict), on a chosen entry, and inside its own badge on each - and on
+	// an entry under the pointer, where the list lights it.
 	for _, t := range []look.Tone{look.TonePass, look.ToneWarn, look.ToneFail, look.ToneUnknown} {
 		hue := look.ToneRole(t)
 		for _, back := range []look.Role{look.Page, look.Surface, look.Raised} {
 			pair(hue, back, text)
 			add(string(hue), look.Colour(hue), "its tint on "+string(back), look.Tint(t, back), text)
 		}
+		// An entry of the list of layers under the pointer.
+		pair(hue, look.Hovered, text)
 		pair(look.InkOnStatus, hue, shape)
 	}
 	for _, back := range []look.Role{look.Accent, look.AccentHovered, look.AccentPressed} {

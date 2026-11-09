@@ -127,10 +127,10 @@ func commands(r model.Report) fyne.CanvasObject {
 	}
 	long := `keytool -importcert -noprompt -trustcacerts -alias certdoctor-authority -file "<certificate.pem>" -keystore "C:\Program Files\OpenJDK\jdk-26.0.2.1\lib\security\cacerts" -storepass changeit`
 	return parts.Card(words.T(words.CatCommands), nil,
-		parts.Command(user.Command, user.NeedsAdmin, user.Elevation, user.Caveat, nil),
-		parts.Command(machine.Command, machine.NeedsAdmin, machine.Elevation, machine.Caveat,
-			parts.NewButton(parts.Secondary, words.T(words.Copied), theme.ConfirmIcon(), nil)),
-		parts.Command(long, true, machine.Elevation, "", nil),
+		labelled(words.CatRest, parts.Command(user.Command, user.NeedsAdmin, user.Elevation, user.Caveat, nil)),
+		labelled(words.CatCopied, parts.Command(machine.Command, machine.NeedsAdmin, machine.Elevation, machine.Caveat,
+			parts.CopyButton(machine.Command, true))),
+		labelled(words.CatSampleLong, parts.Command(long, true, machine.Elevation, "", nil)),
 	)
 }
 
@@ -149,13 +149,28 @@ func matrix(r model.Report) fyne.CanvasObject {
 	long := yes
 	long.Instance = `C:\Users\jdoe\AppData\Local\Programs\A deliberately long folder name\that keeps going\python.exe`
 	long.ChosenBy = []string{"PATH", "py launcher", "registry"}
-	rows := []fyne.CanvasObject{
-		parts.MatrixHead(), parts.Rule(),
-		labelledRow(words.CatRest, parts.MatrixRow(yes, false, parts.Rest)),
-		labelledRow(words.CatHover, parts.MatrixRow(no, false, parts.Hover)),
-		labelledRow(words.CatFocus, parts.MatrixRow(not, false, parts.Focused)),
-		labelledRow(words.CatSampleLong, parts.MatrixRow(long, false, parts.Rest)),
-		labelledRow(words.CatOpen, parts.MatrixRow(no, true, parts.Rest)),
+	// A store with a command to open in every state the pointer and the
+	// keyboard put it in, open, and one with nothing to open, which takes
+	// neither.
+	rows := []fyne.CanvasObject{parts.MatrixHead(), parts.Rule()}
+	for _, s := range []struct {
+		store model.Store
+		open  bool
+		state parts.State
+		name  words.Key
+	}{
+		{no, false, parts.Rest, words.CatRest},
+		{no, false, parts.Hover, words.CatHover},
+		{no, false, parts.Focused, words.CatFocus},
+		{no, true, parts.Rest, words.CatOpen},
+		{long, false, parts.Rest, words.CatSampleLong},
+		{not, false, parts.Rest, words.CatNothing},
+	} {
+		row := parts.StoreRow(s.store, s.open)
+		if s.store.Command != "" {
+			row.Pin(s.state)
+		}
+		rows = append(rows, labelledRow(s.name, row))
 	}
 	return parts.Card(words.T(words.CatMatrix), nil, parts.Stack(look.GapTight, rows...))
 }
@@ -169,20 +184,21 @@ func rail(r model.Report) fyne.CanvasObject {
 	long := l[2]
 	long.Name = words.T(words.CatSampleLong)
 	items := []struct {
-		layer    model.Layer
-		selected bool
-		state    parts.State
-		name     words.Key
+		layer  model.Layer
+		chosen bool
+		state  parts.State
+		name   words.Key
 	}{
 		{l[5], true, parts.Rest, words.CatSelected},
 		{l[0], false, parts.Rest, words.CatRest},
 		{l[2], false, parts.Hover, words.CatHover},
 		{l[4], false, parts.Focused, words.CatFocus},
+		{l[5], true, parts.Focused, words.CatSelFocus},
 		{long, false, parts.Rest, words.CatSampleLong},
 	}
 	var cells []fyne.CanvasObject
 	for _, it := range items {
-		cells = append(cells, parts.Width(look.RailWidth, labelled(it.name, parts.RailItem(it.layer, it.selected, it.state))))
+		cells = append(cells, parts.Width(look.RailWidth, labelled(it.name, parts.RailEntry(it.layer, it.chosen).Pin(it.state))))
 	}
 	return parts.Card(words.T(words.CatRail), nil, parts.Row(look.GapCard, cells[:3]...), parts.Row(look.GapCard, cells[3:]...))
 }
@@ -253,10 +269,13 @@ func screenStates() fyne.CanvasObject {
 		parts.Width(look.SheetColumn/2, labelled(words.CatChanging,
 			parts.NewChanging(parts.BodyMuted, fmt.Sprintf(words.T(words.RunningElapsed), "12", "60")))),
 	)
-	folds := parts.RowTop(look.GapCard, -1,
-		parts.Width(look.SheetColumn, parts.Fold(words.T(words.OptionsCard), words.T(words.OptionsClosed), false)),
-		parts.Width(look.SheetColumn, parts.Fold(words.T(words.OptionsCard), words.T(words.OptionsClosed), true,
-			parts.Para(parts.CaptionMuted, words.T(words.OptionsNote)))),
+	fold := func(open bool, s parts.State, name words.Key) fyne.CanvasObject {
+		return parts.Width(look.SheetColumn, labelled(name, parts.Fold(words.T(words.OptionsCard), words.T(words.OptionsClosed), open,
+			parts.Para(parts.CaptionMuted, words.T(words.OptionsNote))).Pin(s)))
+	}
+	folds := parts.Stack(look.GapCard,
+		parts.RowTop(look.GapCard, -1, fold(false, parts.Rest, words.CatRest), fold(false, parts.Hover, words.CatHover)),
+		parts.RowTop(look.GapCard, -1, fold(false, parts.Focused, words.CatFocus), fold(true, parts.Hover, words.CatOpen)),
 	)
 	menus := parts.RowTop(look.GapCard, -1,
 		labelled(words.CatRest, parts.Menu(screens.SaveChoices(), -1)),

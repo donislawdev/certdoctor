@@ -320,6 +320,9 @@ const (
 	CatTrackHalf  Key = "cat.track.half"
 	CatTrackFull  Key = "cat.track.full"
 	CatChanging   Key = "cat.changing"
+	CatCopied     Key = "cat.copied"
+	CatNothing    Key = "cat.nothing"
+	CatSelFocus   Key = "cat.selected.focus"
 )
 
 var catalogue = map[Key]string{
@@ -364,6 +367,9 @@ var catalogue = map[Key]string{
 	CatTrackHalf:  "under way",
 	CatTrackFull:  "at the limit",
 	CatChanging:   "set again while the screen stands",
+	CatCopied:     "just copied",
+	CatNothing:    "nothing to open",
+	CatSelFocus:   "selected, keyboard focus",
 }
 
 // Kind is the name the window gives a kind of finding. The kinds are the

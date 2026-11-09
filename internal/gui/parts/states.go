@@ -1,6 +1,8 @@
 package parts
 
 import (
+	"image/color"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/theme"
@@ -73,7 +75,27 @@ func (r *trackRenderer) Destroy()                     {}
 
 // Fold is a card whose body can be put away: the head names it, says in one
 // line what is inside when it is closed, and carries the sign that it opens.
-func Fold(title, closedLine string, open bool, body ...fyne.CanvasObject) fyne.CanvasObject {
+// The head is pressed to open and close it, and what was typed in the body
+// stays there while it is put away.
+//
+// The room inside the card is the room of a card - InsetCard round it, GapRow
+// between the head and the body - but the head's part of it is the head's,
+// so the band lit under the pointer is the whole of the card's top.
+func Fold(title, closedLine string, open bool, body ...fyne.CanvasObject) *Pressable {
+	inside := Inset(look.InsetCard, 0, look.InsetCard, look.InsetCard, Stack(look.GapRow, body...))
+	return NewPressable(func(s State, open bool) (fyne.CanvasObject, fyne.CanvasObject) {
+		card := canvas.NewRectangle(look.Colour(look.Surface))
+		card.CornerRadius = look.RadiusCard
+		card.StrokeColor = look.Colour(look.EdgeCard)
+		card.StrokeWidth = look.Hairline
+		return card, foldHead(title, closedLine, s, open)
+	}, inside, open)
+}
+
+// foldHead is the band across the top of a fold: the sign, the name, and
+// the line saying what is inside when it is closed. It keeps a hairline
+// inside the card's edge, so lit or ringed it never covers it.
+func foldHead(title, closedLine string, s State, open bool) fyne.CanvasObject {
 	icon := theme.MenuExpandIcon()
 	if open {
 		icon = theme.MenuDropDownIcon()
@@ -81,15 +103,32 @@ func Fold(title, closedLine string, open bool, body ...fyne.CanvasObject) fyne.C
 	sign := canvas.NewImageFromResource(theme.NewColoredResource(icon, fyne.ThemeColorName(look.InkMuted)))
 	sign.FillMode = canvas.ImageFillContain
 	sign.SetMinSize(fyne.NewSquareSize(look.IconControl))
-	head := []fyne.CanvasObject{Middle(sign), Middle(Text(Heading, title))}
+	words := []fyne.CanvasObject{Middle(sign), Middle(Text(Heading, title))}
 	if !open {
-		head = append(head, Middle(Clip(CaptionMuted, closedLine)))
+		words = append(words, Middle(Clip(CaptionMuted, closedLine)))
 	}
-	rows := []fyne.CanvasObject{RowGrow(look.GapInline, 2, head...)}
+
+	band := canvas.NewRectangle(color.Transparent)
+	switch s {
+	case Hover, Press:
+		band.FillColor = look.Colour(look.Hovered)
+	case Focused:
+		band.StrokeColor = look.Colour(look.Focus)
+		band.StrokeWidth = look.StrokeFocus
+	}
+	// Rounded where the card is: all four corners when the band is the whole
+	// card, the top two when the body hangs under it.
+	inner := float32(look.RadiusCard - look.Hairline)
+	band.TopLeftCornerRadius, band.TopRightCornerRadius = inner, inner
+	under, below := float32(look.Hairline), float32(look.InsetCard-look.Hairline)
 	if open {
-		rows = append(rows, body...)
+		under, below = 0, look.GapRow
+	} else {
+		band.BottomLeftCornerRadius, band.BottomRightCornerRadius = inner, inner
 	}
-	return Panel(look.Surface, look.EdgeCard, look.RadiusCard, Pad(look.InsetCard, Stack(look.GapRow, rows...)))
+	room := float32(look.InsetCard - look.Hairline)
+	return Inset(look.Hairline, look.Hairline, look.Hairline, under, Layers(band,
+		Inset(room, room, room, below, RowGrow(look.GapInline, 2, words...))))
 }
 
 // MenuItem is one choice of a menu: a name and a line saying what it is for.

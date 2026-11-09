@@ -125,40 +125,60 @@ func TrustTone(t model.Trust) (look.Tone, words.Key) {
 	return look.ToneUnknown, words.TrustsNot
 }
 
-// MatrixRow is one store. open shows its command under it, and state is
-// how the pointer or the keyboard lights it.
-func MatrixRow(s model.Store, open bool, state State) fyne.CanvasObject {
-	tone, word := TrustTone(s.Trust)
-	over := look.Surface
-	if state == Hover || state == Focused || open {
-		over = look.Raised
+// StoreRow is one store of the matrix. A store with a command is pressed to
+// show the command under its line and pressed again to put it away; one
+// with none has nothing to open, so it takes neither the pointer nor the
+// keyboard.
+func StoreRow(s model.Store, open bool) *Pressable {
+	var command fyne.CanvasObject
+	if s.Command != "" {
+		command = Inset(look.InsetCell+look.ColTrusts+look.InsetCell, 0, look.InsetCell, look.InsetRow,
+			Command(s.Command, s.NeedsAdmin, s.Elevation, s.Caveat, nil))
 	}
-	chosen := strings.Join(s.ChosenBy, ", ")
-	line := matrixLine([]fyne.CanvasObject{
+	row := NewPressable(func(state State, open bool) (fyne.CanvasObject, fyne.CanvasObject) {
+		over := rowSurface(state, open)
+		return rowFace(state, over), storeLine(s, open, over)
+	}, command, open && command != nil)
+	if command == nil {
+		row.Disable()
+	}
+	return row
+}
+
+// rowSurface is what a row of the matrix stands on: raised under the
+// pointer, under the keyboard and while it is open, so the eye follows it
+// across the columns.
+func rowSurface(state State, open bool) look.Role {
+	switch {
+	case open, state == Hover, state == Press, state == Focused:
+		return look.Raised
+	}
+	return look.Surface
+}
+
+// rowFace is the surface behind a whole row - its line and what is open
+// under it - ringed when the row holds the keyboard.
+func rowFace(state State, over look.Role) fyne.CanvasObject {
+	face := canvas.NewRectangle(look.Colour(over))
+	face.CornerRadius = look.RadiusControl
+	if state == Focused {
+		face.StrokeColor = look.Colour(look.Focus)
+		face.StrokeWidth = look.StrokeFocus
+	}
+	return face
+}
+
+// storeLine is the line of a store's columns.
+func storeLine(s model.Store, open bool, over look.Role) fyne.CanvasObject {
+	tone, word := TrustTone(s.Trust)
+	return Inset(0, look.InsetRow, 0, look.InsetRow, matrixLine([]fyne.CanvasObject{
 		Own(Pill(tone, words.T(word), over)),
 		Middle(Clip(Strong, s.Runtime)),
 		Middle(Clip(MonoMuted, s.Instance)),
 		Middle(Number(Body, strconv.Itoa(s.Anchors))),
-		Middle(Clip(BodyMuted, chosen)),
+		Middle(Clip(BodyMuted, strings.Join(s.ChosenBy, ", "))),
 		toggle(s.Command != "", open),
-	})
-	rows := []fyne.CanvasObject{Inset(0, look.InsetRow, 0, look.InsetRow, line)}
-	if open && s.Command != "" {
-		rows = append(rows, Inset(look.InsetCell+look.ColTrusts+look.InsetCell, 0, look.InsetCell, look.InsetRow,
-			Command(s.Command, s.NeedsAdmin, s.Elevation, s.Caveat, nil)))
-	}
-	face := canvas.NewRectangle(look.Colour(over))
-	face.CornerRadius = look.RadiusControl
-	objects := []fyne.CanvasObject{face}
-	if state == Focused {
-		ring := canvas.NewRectangle(look.Colour(look.Raised))
-		ring.CornerRadius = look.RadiusControl
-		ring.StrokeColor = look.Colour(look.Focus)
-		ring.StrokeWidth = look.StrokeFocus
-		objects = []fyne.CanvasObject{ring}
-	}
-	objects = append(objects, Stack(0, rows...))
-	return Layers(objects...)
+	}))
 }
 
 // toggle is the sign at the end of a row that opens to show a command: a
@@ -185,7 +205,7 @@ func Matrix(stores []model.Store, open int) fyne.CanvasObject {
 		if i > 0 {
 			rows = append(rows, Rule())
 		}
-		rows = append(rows, MatrixRow(s, i == open, Rest))
+		rows = append(rows, StoreRow(s, i == open))
 	}
 	return Stack(0, rows...)
 }

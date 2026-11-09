@@ -87,6 +87,10 @@ func TestDiagnoseWaitsForAnAddress(t *testing.T) {
 // again, and go back to the form with what was typed still there.
 func TestARunGoesFromTheFormToItsReportAndBack(t *testing.T) {
 	win, h, now := testWindow(t)
+	if win.form.Options.Open() {
+		t.Error("the window opens with the options out - most runs need only the address")
+	}
+	win.form.Options.Tapped(nil)
 	win.form.Address.SetText("https://example.com")
 	win.form.Address.OnSubmitted("https://example.com")
 	if len(h.runs) != 1 || win.flow.Phase() != flow.Running {
@@ -125,8 +129,9 @@ func TestARunGoesFromTheFormToItsReportAndBack(t *testing.T) {
 		t.Fatalf("a refusal left the window on %d", win.flow.Phase())
 	}
 	win.back()
-	if win.flow.Phase() != flow.Starting || win.form.Address.Text != "https://example.com" {
-		t.Errorf("Back is on %d with the address %q - the form has to be as it was left", win.flow.Phase(), win.form.Address.Text)
+	if win.flow.Phase() != flow.Starting || win.form.Address.Text != "https://example.com" || !win.form.Options.Open() {
+		t.Errorf("Back is on %d with the address %q, options open %v - the form has to be as it was left",
+			win.flow.Phase(), win.form.Address.Text, win.form.Options.Open())
 	}
 }
 
