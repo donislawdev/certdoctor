@@ -278,6 +278,12 @@ github.com/donislawdev/certdoctor/internal/gui/words 100
 github.com/donislawdev/certdoctor/internal/core/switches 100
 github.com/donislawdev/certdoctor/internal/gui/request 100
 
+# The window's run from the request to the answer, without the toolkit
+# (ADR121 point 2): what came of a run and the screen it leads to. Pure
+# functions and a state with no build tag, measured 2026-11-09 at 100 on
+# Windows and run on Linux and macOS.
+github.com/donislawdev/certdoctor/internal/gui/flow 100
+
 # The window's program (D21, ADR125 point 1) and the picture it shows. Measured
 # 2026-11-03: 58.9 on Windows with cgo, 98.0 on Linux with cgo in
 # golang:1.27-alpine with the graphics headers, 66.7 with cgo disabled. The

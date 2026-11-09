@@ -31,18 +31,23 @@ import (
 type approvedSpawn struct {
 	call string // os/exec.Command - the call, with the path of its package
 	from string // os.Executable - what answers its first argument, spelled the same way
+	// asks is, for a from that is a function of the file itself, the call that
+	// function has to make: the program's path is worked out there, so the
+	// entry holds that function to the question it is approved for.
+	asks string
 	why  string
 }
 
 // spawnsAllowed names, for each window file on execAllowlist, the spawns it is
 // allowed - one entry per spawn, so a second copy of an approved one is not
-// forgiven for being identical. The command line the window is to run
-// (ADR121) arrives here as the second entry of the same file, never as a
-// second file.
+// forgiven for being identical. The command line the window runs (ADR121) is
+// the second entry of the same file, never a second file.
 var spawnsAllowed = map[string][]approvedSpawn{
 	"cmd/certdoctor-gui/processes.go": {
 		{call: "os/exec.Command", from: "os.Executable",
 			why: "the window started again by the path os.Executable answers, for the software renderer (ADR125 point 2) - see ourselves there"},
+		{call: "os/exec.CommandContext", from: "commandLine", asks: "os.Executable",
+			why: "certdoctor in the window's own folder, by the path os.Executable answers and never the search path (ADR121 point 1) - see commandLine there"},
 	},
 }
 
@@ -96,8 +101,72 @@ func TestEveryProgramTheWindowStartsIsNamed(t *testing.T) {
 				t.Errorf("spawnsAllowed forgives %s %s handed what %s answers, and the file has no such spawn",
 					sf.rel, op.call, op.from)
 			}
+			for _, problem := range unasked(sf, approved) {
+				t.Error(problem)
+			}
 		}
 	}
+}
+
+// TestAFunctionAnEntryNamesAsksWhatTheEntrySays is the canary of the check
+// above: the function a path is worked out in has to be declared in the
+// registered file and make the call its entry names - not merely carry the
+// name the entry spells.
+func TestAFunctionAnEntryNamesAsksWhatTheEntrySays(t *testing.T) {
+	const window = "cmd/certdoctor-gui/processes.go"
+	entry := []approvedSpawn{{call: "os/exec.CommandContext", from: "commandLine", asks: "os.Executable"}}
+	header := "package main\n\nimport (\n\t\"context\"\n\t\"os\"\n\t\"os/exec\"\n)\n\n"
+	spawn := "func run(ctx context.Context) {\n\tprogram, _ := commandLine()\n\t_ = exec.CommandContext(ctx, program)\n}\n"
+	for _, c := range []struct {
+		label, src string
+		problems   int
+	}{
+		{"a function that asks", header + spawn + "\nfunc commandLine() (string, error) {\n\texe, err := os.Executable()\n\treturn exe, err\n}\n", 0},
+		{"a function that asks something else", header + spawn + "\nfunc commandLine() (string, error) { return os.Args[0], nil }\n", 1},
+		{"a function declared somewhere else", header + spawn, 1},
+		{"a function that asks under another import name", "package main\n\nimport (\n\t\"context\"\n\tsys \"os\"\n\t\"os/exec\"\n)\n\n" +
+			spawn + "\nfunc commandLine() (string, error) { return sys.Executable() }\n", 0},
+	} {
+		if got := unasked(sourceFrom(t, window, c.src), entry); len(got) != c.problems {
+			t.Errorf("%s gave %q, want %d problem(s)", c.label, got, c.problems)
+		}
+	}
+}
+
+// unasked is what is wrong with the functions the entries of sf name: one
+// that is not declared in sf, or one that does not make the call its entry
+// says it asks.
+func unasked(sf sourceFile, approved []approvedSpawn) []string {
+	paths, _ := importPaths(sf.file)
+	var problems []string
+	for _, op := range approved {
+		if op.asks == "" {
+			continue
+		}
+		var fn *ast.FuncDecl
+		for _, decl := range sf.file.Decls {
+			if d, ok := decl.(*ast.FuncDecl); ok && d.Recv == nil && d.Name.Name == op.from {
+				fn = d
+			}
+		}
+		if fn == nil {
+			problems = append(problems, fmt.Sprintf("spawnsAllowed says %s works out its program in %s, and %s does not declare it",
+				sf.rel, op.from, sf.rel))
+			continue
+		}
+		asked := false
+		ast.Inspect(fn, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok && spelled(call.Fun, paths) == op.asks {
+				asked = true
+			}
+			return true
+		})
+		if !asked {
+			problems = append(problems, fmt.Sprintf("%s in %s does not call %s, which its entry in spawnsAllowed says it asks",
+				op.from, sf.rel, op.asks))
+		}
+	}
+	return problems
 }
 
 // TestAnEntryWithNoSpawnBehindItIsReported is the canary of the last check
@@ -160,6 +229,11 @@ func TestARegisteredFileIsForgivenOneSpawnAndNoMore(t *testing.T) {
 		{"the approved spawn under another name", "package main\n\nimport (\n\t\"os\"\n\trun \"os/exec\"\n)\n\nfunc f() {\n\texe, _ := os.Executable()\n\t_ = run.Command(exe)\n}\n", window, 0},
 		{"another program under another name", "package main\n\nimport run \"os/exec\"\n\nfunc f() { _ = run.Command(\"curl\") }\n", window, 1},
 		{"a spawn behind a dot import", "package main\n\nimport . \"os/exec\"\n\nfunc f() { _ = Command(\"curl\") }\n", window, 1},
+		// The program of CommandContext is its second argument: the approved
+		// spawn passes when that one is the approved program, and the context
+		// coming from the approved call does not stand in for it.
+		{"the approved program handed to CommandContext", header + "func f(ctx any) {\n\tprogram, _ := commandLine()\n\t_ = exec.CommandContext(ctx, program)\n}\n", window, 0},
+		{"a context from the approved call and another program", header + "func f() {\n\tctx, _ := commandLine()\n\t_ = exec.CommandContext(ctx, \"curl\")\n}\n", window, 1},
 		// Outside the lists. A file importing os/exec is checkExec's finding,
 		// and the calls that need no os/exec are this guard's in every file.
 		{"the approved spawn in a file not registered for it", header + approved, "internal/adapter/dns/planted.go", 1},
@@ -330,13 +404,24 @@ func spelled(e ast.Expr, paths map[string]string) string {
 	return ""
 }
 
-// firstArgumentSource is what a call's first argument is bound to, or nothing
-// when the call has none.
+// programAt is where a spawn call takes the program, for the calls that do not
+// take it first: CommandContext takes the context first, ShellExecute a window
+// and a verb. Until 2026-11-09 the guard read the first argument of every call
+// and so followed the context of a CommandContext - nothing in the tree called
+// it then, and the first entry that did showed it.
+var programAt = map[string]int{
+	"os/exec.CommandContext":                1,
+	"golang.org/x/sys/windows.ShellExecute": 2,
+}
+
+// firstArgumentSource is what the argument naming a call's program is bound
+// to, or nothing when the call has no such argument.
 func firstArgumentSource(call *ast.CallExpr, fn *ast.FuncDecl, paths map[string]string) string {
-	if len(call.Args) == 0 {
+	at := programAt[spelled(call.Fun, paths)]
+	if len(call.Args) <= at {
 		return ""
 	}
-	return boundTo(fn, call.Args[0], paths)
+	return boundTo(fn, call.Args[at], paths)
 }
 
 // boundTo is the call an argument was answered by: the argument itself when it

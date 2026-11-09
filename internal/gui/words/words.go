@@ -93,10 +93,32 @@ const (
 	CrashedWhat    Key = "problem.crashed.what"
 	CrashedTodo    Key = "problem.crashed.todo"
 	Printed        Key = "problem.printed"
-	LinkGitHub     Key = "link.github"
-	LinkDonate     Key = "link.donate"
-	LinkFailed     Key = "link.failed"
-	LinkFailedNote Key = "link.failed.note"
+
+	// What became of a run that gave no report to draw (ADR121): the cases
+	// the window tells apart, each with what happened and what to do. Where a
+	// sentence takes %s it is a path, a version, a number of seconds or the
+	// system's own words without their full stop.
+	CrashedWhatCode     Key = "problem.crashed.whatcode"
+	SchemaWhat          Key = "problem.version.schema"
+	NotStartedTitle     Key = "problem.notstarted.title"
+	NotStartedWhat      Key = "problem.notstarted.what"
+	NotStartedTodo      Key = "problem.notstarted.todo"
+	UnreadableTitle     Key = "problem.unreadable.title"
+	UnreadableLong      Key = "problem.unreadable.long"
+	UnreadableNotReport Key = "problem.unreadable.notreport"
+	UnreadableExit      Key = "problem.unreadable.exit"
+	UnreadableEmpty     Key = "problem.unreadable.empty"
+	UnreadableNoHead    Key = "problem.unreadable.nohead"
+	UnreadableTodo      Key = "problem.unreadable.todo"
+	OverranTitle        Key = "problem.overran.title"
+	OverranWhat         Key = "problem.overran.what"
+	OverranTodo         Key = "problem.overran.todo"
+	PrintedCut          Key = "problem.printed.cut"
+	RunningNoLimit      Key = "running.nolimit"
+	LinkGitHub          Key = "link.github"
+	LinkDonate          Key = "link.donate"
+	LinkFailed          Key = "link.failed"
+	LinkFailedNote      Key = "link.failed.note"
 
 	CommandHead   Key = "command.head"
 	CommandNote   Key = "command.note"
@@ -184,7 +206,7 @@ var english = map[Key]string{
 
 	RunningTitle:   "Diagnosing",
 	RunningNote:    "certdoctor follows the path layer by layer and writes the report when every layer has answered or the time limit is reached.",
-	RunningElapsed: "%.0f s of the %d s limit",
+	RunningElapsed: "%s s of the %s s limit",
 	RunningLayers:  "Context, name lookup, proxy, TCP, TLS and every trust store on this machine",
 	OptionsClosed:  "System proxy settings, default time limits, names shown",
 	SaveJSON:       "JSON",
@@ -197,7 +219,7 @@ var english = map[Key]string{
 	Back:           "Back",
 	ShowFolder:     "Show the folder",
 	MissingTitle:   "certdoctor is missing beside this window",
-	MissingWhat:    "The window runs the certdoctor program that came with it, from its own folder, and that program is not there.",
+	MissingWhat:    "The window runs the certdoctor program that came with it, from its own folder, and %s is not there.",
 	MissingTodo:    "Unpack the whole download again, so both programs stand in one folder.",
 	VersionTitle:   "certdoctor beside this window is another version",
 	VersionWhat:    "This window is %s and the certdoctor beside it says %s. A report of another version is not drawn, so nothing on screen can be wrong.",
@@ -208,10 +230,28 @@ var english = map[Key]string{
 	CrashedWhat:    "The run ended before it wrote a report, so there is nothing to show.",
 	CrashedTodo:    "Run it again. If it stops again, the same command in a terminal shows the same message.",
 	Printed:        "What certdoctor printed",
-	LinkGitHub:     "GitHub",
-	LinkDonate:     "Donate",
-	LinkFailed:     "The page did not open",
-	LinkFailedNote: "This desktop did not hand it to a browser. Copy the address and open it yourself.",
+
+	CrashedWhatCode:     "The run ended with exit code %d (%s) before it wrote a report, so there is nothing to show.",
+	SchemaWhat:          "This window draws reports of schema %s, and the certdoctor beside it wrote schema %s. A report of another schema is not drawn, so nothing on screen can be wrong.",
+	NotStartedTitle:     "certdoctor beside this window did not start",
+	NotStartedWhat:      "The system did not start %s: %s.",
+	NotStartedTodo:      "Check that this account may run the file, or unpack the whole download again.",
+	UnreadableTitle:     "certdoctor wrote a report this window cannot read",
+	UnreadableLong:      "The report is longer than %d MB, the most this window reads.",
+	UnreadableNotReport: "What it wrote is not a report: %s.",
+	UnreadableExit:      "The report says the run ended with exit code %d, and the program ended with %d.",
+	UnreadableEmpty:     "The report has no layers to show.",
+	UnreadableNoHead:    "What it wrote does not say which version of certdoctor wrote it, or in which schema.",
+	UnreadableTodo:      "Run the same address in a terminal with certdoctor --json to see what it writes, and report it on GitHub.",
+	OverranTitle:        "certdoctor did not finish in time",
+	OverranWhat:         "It was still running %s s after its %s s limit, so the window stopped it.",
+	OverranTodo:         "Run it again. If it stops again, the same address in a terminal shows where certdoctor waits.",
+	PrintedCut:          "(the rest is longer than this window shows)",
+	RunningNoLimit:      "%s s, with no time limit",
+	LinkGitHub:          "GitHub",
+	LinkDonate:          "Donate",
+	LinkFailed:          "The page did not open",
+	LinkFailedNote:      "This desktop did not hand it to a browser. Copy the address and open it yourself.",
 
 	CommandHead:   "Command to add the authority",
 	CommandNote:   "Read it before you run it. certdoctor never runs it for you.",
@@ -279,6 +319,7 @@ const (
 	CatTrackStart Key = "cat.track.start"
 	CatTrackHalf  Key = "cat.track.half"
 	CatTrackFull  Key = "cat.track.full"
+	CatChanging   Key = "cat.changing"
 )
 
 var catalogue = map[Key]string{
@@ -322,6 +363,7 @@ var catalogue = map[Key]string{
 	CatTrackStart: "just started",
 	CatTrackHalf:  "under way",
 	CatTrackFull:  "at the limit",
+	CatChanging:   "set again while the screen stands",
 }
 
 // Kind is the name the window gives a kind of finding. The kinds are the

@@ -19,19 +19,12 @@ import (
 // the published surface - the help prints them - so they are declared with the
 // switches, in internal/core/switches, and the window reads the same numbers.
 
-// maxBudgetSeconds caps both budgets at a day.
-//
-// Not a guess about what anybody wants - a defence against arithmetic. A
-// duration is nanoseconds in a signed 64 bit integer, so a budget of 1e300
-// seconds overflows into something negative and a run given "an enormous
-// timeout" would skip every layer instead. A day is absurdly generous for a
-// tool whose own proposal is sixty seconds, and it makes the overflow
-// unreachable.
-const maxBudgetSeconds = 86400
-
-// minBudgetSeconds is the other end of the same defence, explained where it is
-// declared.
-const minBudgetSeconds = switches.MinBudgetSeconds
+// maxBudgetSeconds and minBudgetSeconds are the two ends of one defence against
+// arithmetic, explained where they are declared.
+const (
+	maxBudgetSeconds = switches.MaxBudgetSeconds
+	minBudgetSeconds = switches.MinBudgetSeconds
+)
 
 // options is one parsed command line.
 type options struct {

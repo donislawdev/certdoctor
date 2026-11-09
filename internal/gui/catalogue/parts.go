@@ -1,6 +1,8 @@
 package catalogue
 
 import (
+	"fmt"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -245,9 +247,11 @@ func Parts(icon fyne.Resource, r model.Report) (fyne.CanvasObject, fyne.Focusabl
 // could not run.
 func screenStates() fyne.CanvasObject {
 	tracks := parts.Row(look.GapCard,
-		parts.Width(look.SheetColumn/2, labelled(words.CatTrackStart, parts.Track(0))),
-		parts.Width(look.SheetColumn/2, labelled(words.CatTrackHalf, parts.Track(0.4))),
-		parts.Width(look.SheetColumn/2, labelled(words.CatTrackFull, parts.Track(1))),
+		parts.Width(look.SheetColumn/2, labelled(words.CatTrackStart, parts.NewTrack(0))),
+		parts.Width(look.SheetColumn/2, labelled(words.CatTrackHalf, parts.NewTrack(0.4))),
+		parts.Width(look.SheetColumn/2, labelled(words.CatTrackFull, parts.NewTrack(1))),
+		parts.Width(look.SheetColumn/2, labelled(words.CatChanging,
+			parts.NewChanging(parts.BodyMuted, fmt.Sprintf(words.T(words.RunningElapsed), "12", "60")))),
 	)
 	folds := parts.RowTop(look.GapCard, -1,
 		parts.Width(look.SheetColumn, parts.Fold(words.T(words.OptionsCard), words.T(words.OptionsClosed), false)),

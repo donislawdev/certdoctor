@@ -58,6 +58,9 @@ func TestTheSchemaConstantIsReadAndNothingElse(t *testing.T) {
 		{"a variable of the name", "package p\n\nvar SchemaVersion = \"9.3\"\n", "", false},
 		{"a constant of another name", "package p\n\nconst Schema = \"9.4\"\n", "", false},
 		{"a constant that is not a string", "package p\n\nconst SchemaVersion = 9\n", "", false},
+		// A rune unquotes as well as a string does, so only the kind of the
+		// literal tells it from the version.
+		{"a rune constant", "package p\n\nconst SchemaVersion = 'x'\n", "", false},
 	} {
 		got, found := stringConstant(sourceFrom(t, "p/p.go", c.src).file, "SchemaVersion")
 		if got != c.want || found != c.found {

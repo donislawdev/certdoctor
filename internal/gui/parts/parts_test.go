@@ -200,7 +200,7 @@ func TestEveryPartBuildsAndDraws(t *testing.T) {
 		Problem("certdoctor stopped", "what", "todo", "printed", NewButton(Primary, "Back", nil, nil)),
 		Problem("certdoctor stopped", "", "todo", "", NewButton(Primary, "Back", nil, nil)),
 		Empty("nothing here"),
-		Track(0), Track(0.5), Track(1), Track(2),
+		NewTrack(0), NewTrack(0.5), NewTrack(1), NewTrack(2), NewChanging(BodyMuted, "12 s"),
 		Row(look.GapInline, Mark(look.TonePass, look.MarkInline), Badge(model.Fail, look.Page),
 			Pill(look.ToneWarn, "word", look.Surface), Chip(theme.InfoIcon(), "chip", look.Surface), AppMark(nil)),
 		Text(Title, "title"), Para(Lead, "lead"), Code(Mono, "code"), Clip(Heading, "clipped"),
@@ -232,4 +232,28 @@ func sample(t *testing.T) model.Report {
 		t.Fatal(err)
 	}
 	return r
+}
+
+// TestATrackAndALineChangeInPlace - the running screen moves the track and
+// sets the time again while it stands: the share is held between nothing and
+// all and drawn as that much of the width, and the words are the ones set.
+func TestATrackAndALineChangeInPlace(t *testing.T) {
+	newApp(t)
+	track := NewTrack(0.2)
+	line := NewChanging(BodyMuted, "1 s")
+	w := test.NewTempWindow(t, Stack(0, track, line))
+	w.Resize(fyne.NewSize(400, 100))
+	for _, c := range []struct{ set, want float32 }{{0.5, 0.5}, {2, 1}, {-1, 0}, {0.25, 0.25}, {0.25, 0.25}} {
+		track.SetShare(c.set)
+		over := test.TempWidgetRenderer(t, track).Objects()[1]
+		if track.Share() != c.want || over.Size().Width < track.Size().Width*c.want-0.5 || over.Size().Width > track.Size().Width*c.want+0.5 {
+			t.Errorf("set to %v: share %v, drawn %v of %v - want %v of it", c.set, track.Share(), over.Size().Width, track.Size().Width, c.want)
+		}
+	}
+	for _, words := range []string{"2 s", "2 s", "10 s of the 60 s limit"} {
+		line.Set(words)
+		if line.Words() != words {
+			t.Errorf("set to %q, shows %q", words, line.Words())
+		}
+	}
 }

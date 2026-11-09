@@ -14,8 +14,6 @@ import (
 	"github.com/donislawdev/certdoctor"
 	"github.com/donislawdev/certdoctor/assets/icon"
 	"github.com/donislawdev/certdoctor/internal/gui/look"
-	"github.com/donislawdev/certdoctor/internal/gui/parts"
-	"github.com/donislawdev/certdoctor/internal/gui/screens"
 	"github.com/donislawdev/certdoctor/internal/gui/words"
 )
 
@@ -64,10 +62,10 @@ func run(args []string, errOut io.Writer) int {
 	a.SetIcon(picture)
 	a.Settings().SetTheme(look.Theme())
 	w := a.NewWindow(words.T(words.AppName))
-	start, _ := screens.Start(picture, certdoctor.Version, false)
-	// The smallest the window may be made (GUI rule 21): the toolkit keeps a
-	// window no smaller than what it holds, so what it holds says so.
-	w.SetContent(parts.AtLeast(look.WindowMinWidth, look.WindowMinHeight, start))
+	// Drawn by the software renderer when it was asked for and it loaded -
+	// which the start screen says (ADR125 point 2).
+	win := newWindow(w, picture, certdoctor.Version, l.softwareGL && loaded == nil, commandLinePort{})
+	win.showStart()
 	w.Resize(fyne.NewSize(look.WindowWidth, look.WindowHeight))
 	w.CenterOnScreen()
 

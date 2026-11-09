@@ -133,6 +133,14 @@ var sandboxAllowlist = map[string]bool{
 	// interrupt code we did not write. ADR8 permits executing a PAC file under
 	// five conditions; this file is how the third of them is enforced.
 	"internal/adapter/pac/stopwatch.go": true,
+	// The window's wait for the command line it runs - the owner's decision of
+	// 2026-11-09, recorded with ADR121. The same shape as the stopwatch: one go
+	// statement and nothing shared, because the answer goes back through the
+	// toolkit's own fyne.Do the way the stopwatch's goes back through goja's
+	// interrupt. Without it the window stops drawing for the length of a run
+	// and Cancel cannot be pressed. The clock on the running screen needs no
+	// goroutine: the toolkit ticks an animation from its own loop.
+	"cmd/certdoctor-gui/waiting.go": true,
 }
 
 // signalAllowlist is the FIFTH list, and the second-widest of the four narrow

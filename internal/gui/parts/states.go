@@ -4,6 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/donislawdev/certdoctor/internal/gui/look"
 	"github.com/donislawdev/certdoctor/internal/gui/words"
@@ -13,23 +14,62 @@ import (
 // has used out of its budget. A share, not a promise of what is left - the
 // command line says nothing until it is done, so the window shows time and
 // never invents progress through the layers.
-func Track(share float32) fyne.CanvasObject {
+//
+// A widget rather than a container, because the running screen moves it every
+// second while the screen stands: set in place, nothing around it is laid out
+// again, and the Cancel beside it keeps its hover and its focus (GUI rule 3).
+type Track struct {
+	widget.BaseWidget
+	share float32
+}
+
+// NewTrack is a track with share of it gone, held between nothing and all.
+func NewTrack(share float32) *Track {
+	t := &Track{share: max(0, min(1, share))}
+	t.ExtendBaseWidget(t)
+	return t
+}
+
+// SetShare moves the track to share, held between nothing and all.
+func (t *Track) SetShare(share float32) {
 	share = max(0, min(1, share))
+	if share == t.share {
+		return
+	}
+	t.share = share
+	t.Refresh()
+}
+
+// Share is how much of the track has gone.
+func (t *Track) Share() float32 { return t.share }
+
+func (t *Track) CreateRenderer() fyne.WidgetRenderer {
 	under := canvas.NewRectangle(look.Colour(look.Raised))
 	under.CornerRadius = look.TrackHeight / 2
 	over := canvas.NewRectangle(look.Colour(look.Accent))
 	over.CornerRadius = look.TrackHeight / 2
-	return Height(look.TrackHeight, fyne.NewContainerWithLayout(trackLayout{share}, under, over))
+	return &trackRenderer{track: t, under: under, over: over}
 }
 
-type trackLayout struct{ share float32 }
-
-func (t trackLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(0, look.TrackHeight) }
-
-func (t trackLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	objects[0].Resize(size)
-	objects[1].Resize(fyne.NewSize(size.Width*t.share, size.Height))
+type trackRenderer struct {
+	track       *Track
+	under, over *canvas.Rectangle
 }
+
+func (r *trackRenderer) MinSize() fyne.Size { return fyne.NewSize(0, look.TrackHeight) }
+
+func (r *trackRenderer) Layout(size fyne.Size) {
+	r.under.Resize(size)
+	r.over.Resize(fyne.NewSize(size.Width*r.track.share, size.Height))
+}
+
+func (r *trackRenderer) Refresh() {
+	r.Layout(r.track.Size())
+	canvas.Refresh(r.over)
+}
+
+func (r *trackRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.under, r.over} }
+func (r *trackRenderer) Destroy()                     {}
 
 // Fold is a card whose body can be put away: the head names it, says in one
 // line what is inside when it is closed, and carries the sign that it opens.

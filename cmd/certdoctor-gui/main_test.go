@@ -7,14 +7,18 @@ import (
 )
 
 // childVariable asks the test binary to be something other than the tests: the
-// window itself (childWindow - see TestAWindowWithNoDisplayIsRefusedRatherThanLeftWaiting)
-// or a second process that reports what it was started with (childAgain - see
-// TestASecondStartHandsOverTheFlagTheDriverAndTheCode).
+// window itself (childWindow - see TestAWindowWithNoDisplayIsRefusedRatherThanLeftWaiting),
+// a second process that reports what it was started with (childAgain - see
+// TestASecondStartHandsOverTheFlagTheDriverAndTheCode), or, for
+// TestTheCommandLineBesideTheWindowIsRun, a window that runs the command line
+// beside it (childPort) and the command line it runs (childCommandLine).
 const childVariable = "CERTDOCTOR_GUI_TEST_CHILD"
 
 const (
-	childWindow = "1"
-	childAgain  = "again"
+	childWindow      = "1"
+	childAgain       = "again"
+	childCommandLine = "commandline"
+	childPort        = "port"
 )
 
 // The exit codes of a childAgain process: started the way startAgain has to
@@ -40,6 +44,10 @@ func TestMain(m *testing.M) {
 			os.Exit(childStartedRight)
 		}
 		os.Exit(childStartedWrong)
+	case childCommandLine:
+		os.Exit(actAsCommandLine(os.Args[1:]))
+	case childPort:
+		os.Exit(actAsWindow(os.Args[1:]))
 	}
 	os.Exit(m.Run())
 }

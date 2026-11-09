@@ -140,7 +140,7 @@ func TestTheLimitIsTheTypedNumberOrTheDefault(t *testing.T) {
 		want  float64
 	}{
 		{"", def}, {"   ", def}, {"90", 90}, {" 2.5 ", 2.5}, {"0", 0}, {"1,5", def}, {"-3", def},
-		{"NaN", def}, {"Inf", def}, {"ten", def}, {"1e2", 100},
+		{"NaN", def}, {"Inf", def}, {"ten", def}, {"1e2", 100}, {"86400", 86400}, {"86401", def}, {"1e300", def},
 	} {
 		r := Request{Typed: map[string]string{budgetSwitch: c.typed, "probe-timeout": "7"}}
 		if got := r.Limit(); got != c.want {

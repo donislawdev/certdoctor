@@ -38,9 +38,10 @@ var layerMap = []layerRule{
 	// part of the tree that knows the toolkit, and it knows the report only as
 	// the document the command line writes - so the only things of the core it
 	// may name are the status vocabulary, which is that document's contract as
-	// much as the core's (ADR6), and the command line's switches, which are the
+	// much as the core's (ADR6), the command line's switches, which are the
 	// contract of what a run can be asked for and which the window's form is
-	// built from (ADR121 point 3). Each package is its own floor rather than the
+	// built from (ADR121 point 3), and its exit codes, which are the contract of
+	// how a run ended (ADR3). Each package is its own floor rather than the
 	// window being one layer, because the window's packages do import each
 	// other and the direction between them is the point: a part does not know
 	// the screen it stands on, a screen does not know the catalogue that shows
@@ -51,6 +52,16 @@ var layerMap = []layerRule{
 	{location: "internal/gui/words/"},
 	{location: "internal/gui/model/", mayImportBelow: []string{"internal/core/status/"}},
 	{location: "internal/gui/request/", mayImportBelow: []string{"internal/core/switches/", "internal/gui/words/"}},
+	// The run from the request to the answer, without the toolkit. It names
+	// the command line's exit codes, the third contract of the command line
+	// the window may know - the owner's decision of 2026-11-09 - so that a
+	// refusal of the options is told apart from a run that broke without a
+	// second copy of the frozen table (ADR3).
+	{
+		location: "internal/gui/flow/",
+		mayImportBelow: []string{"internal/core/exitcode/", "internal/gui/model/", "internal/gui/request/",
+			"internal/gui/words/"},
+	},
 	{location: "internal/gui/look/", mayImportBelow: []string{"internal/gui/fonts/"}},
 	{
 		location:       "internal/gui/parts/",

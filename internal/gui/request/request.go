@@ -145,11 +145,14 @@ func (r Request) Ready() bool { return strings.TrimSpace(r.Address) != "" }
 // will not take - negative, written with a comma, shorter than a millisecond -
 // is refused by the command line within moments, in its own words, and the
 // time shown until then does not matter. So anything that is not a number of
-// seconds at all reads as the default here rather than as a second judgement.
+// seconds the command line could take reads as the default here rather than
+// as a second judgement - above a day included, so what is shown, and the
+// window's own deadline worked out from it, stays a number a duration can
+// hold.
 func (r Request) Limit() float64 {
 	typed := strings.TrimSpace(r.Typed[budgetSwitch])
 	seconds, err := strconv.ParseFloat(typed, 64)
-	if typed == "" || err != nil || seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+	if typed == "" || err != nil || seconds < 0 || seconds > switches.MaxBudgetSeconds || math.IsNaN(seconds) {
 		return switches.DefaultBudgetSeconds
 	}
 	return seconds

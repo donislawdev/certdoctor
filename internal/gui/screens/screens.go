@@ -3,7 +3,6 @@
 package screens
 
 import (
-	"fmt"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -64,7 +63,12 @@ func (f *StartForm) Request() request.Request {
 // command line the window offers, one field each, in the order and with the
 // words the window's list of them gives (ADR121 point 3). Diagnose is the one
 // primary action.
-func Start(icon fyne.Resource, version string, optionsOpen bool) (fyne.CanvasObject, *StartForm) {
+//
+// software says the window is drawn by the software renderer shipped beside
+// it rather than by the graphics driver (ADR125 point 2). Said here, on the
+// screen a person sees first after a double click, because the standard error
+// that says it too is one they do not see - and only when it is so.
+func Start(icon fyne.Resource, version string, optionsOpen, software bool) (fyne.CanvasObject, *StartForm) {
 	form := &StartForm{
 		Address:  widget.NewEntry(),
 		Diagnose: parts.NewButton(parts.Primary, words.T(words.Diagnose), theme.SearchIcon(), nil),
@@ -91,9 +95,12 @@ func Start(icon fyne.Resource, version string, optionsOpen bool) (fyne.CanvasObj
 		parts.Text(parts.Title, words.T(words.StartTitle)),
 		parts.Para(parts.BodyMuted, words.T(words.StartLead)),
 	)
-	promise := parts.Para(parts.CaptionMuted, words.T(words.StartPromise))
+	sections := []fyne.CanvasObject{intro, target, options, parts.Para(parts.CaptionMuted, words.T(words.StartPromise))}
+	if software {
+		sections = append(sections, parts.Para(parts.CaptionMuted, words.T(words.SoftwareDrawing)))
+	}
 	body := parts.Column(look.ColumnWidth, parts.Inset(0, look.InsetPage, 0, look.InsetPage,
-		parts.Stack(look.GapCard, intro, target, options, promise)))
+		parts.Stack(look.GapCard, sections...)))
 	page := container.NewBorder(head(icon, version), nil, nil, nil,
 		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body)))
 	return page, form
@@ -123,16 +130,22 @@ func (f *StartForm) control(o request.Option) fyne.CanvasObject {
 	}
 }
 
+// ReportActions are the actions of the report screen, for whoever runs the
+// window to wire: back to the form, save what this run made, run it again.
+type ReportActions struct {
+	New, Save, Again *parts.Button
+}
+
 // Report is the screen after a run: what was diagnosed and the actions on
 // it, the verdict, then the layers down the side in the report's order and
 // the chosen layer beside them.
-func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.CanvasObject, *parts.Button) {
-	save := parts.NewButton(parts.Secondary, words.T(words.SaveReport), theme.DocumentSaveIcon(), nil)
-	actions := parts.Row(look.GapButtons,
-		parts.NewButton(parts.Quiet, words.T(words.NewTarget), theme.NavigateBackIcon(), nil),
-		save,
-		parts.NewButton(parts.Primary, words.T(words.RunAgain), theme.ViewRefreshIcon(), nil),
-	)
+func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.CanvasObject, *ReportActions) {
+	act := &ReportActions{
+		New:   parts.NewButton(parts.Quiet, words.T(words.NewTarget), theme.NavigateBackIcon(), nil),
+		Save:  parts.NewButton(parts.Secondary, words.T(words.SaveReport), theme.DocumentSaveIcon(), nil),
+		Again: parts.NewButton(parts.Primary, words.T(words.RunAgain), theme.ViewRefreshIcon(), nil),
+	}
+	actions := parts.Row(look.GapButtons, act.New, act.Save, act.Again)
 	title := parts.RowGrow(look.GapCard, 0,
 		parts.Middle(parts.Stack(look.GapTight,
 			parts.Text(parts.CaptionStrong, words.T(words.ReportFor)),
@@ -144,7 +157,7 @@ func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.Ca
 	detail := layerDetail(r.Layers[selected], open)
 	lower := parts.RowTop(look.GapCard, 1, rail, detail)
 	body := parts.Column(look.PageWidth, parts.Pad(look.InsetPage, parts.Stack(look.GapCard, title, parts.Verdict(r), lower)))
-	return container.NewBorder(head(icon, r.Version), nil, nil, nil, container.NewVScroll(body)), save
+	return container.NewBorder(head(icon, r.Version), nil, nil, nil, container.NewVScroll(body)), act
 }
 
 // SaveChoices is what Save report offers: the three formats the command
@@ -211,32 +224,60 @@ func groups(findings []model.Finding) []group {
 	return out
 }
 
+// RunningView is what the running screen hands to whoever runs the window:
+// Cancel, and the time used, set in place every second while the screen
+// stands.
+type RunningView struct {
+	Cancel *parts.Button
+	time   *parts.Changing
+	track  *parts.Track
+}
+
+// Show sets the time used: the words, the share of the limit gone, and whether
+// there is a limit to draw a share of - without one the track is not shown,
+// because a bar that never fills says something false.
+func (v *RunningView) Show(text string, share float32, bounded bool) {
+	v.time.Set(text)
+	v.track.SetShare(share)
+	if bounded {
+		v.track.Show()
+	} else {
+		v.track.Hide()
+	}
+}
+
+// Words are the time used as the screen says it now.
+func (v *RunningView) Words() string { return v.time.Words() }
+
 // Running is the screen while the command line works: what is being
 // diagnosed, the time used out of the limit, and Cancel.
-func Running(icon fyne.Resource, version, target string, elapsed float64, limit int) fyne.CanvasObject {
+func Running(icon fyne.Resource, version, target string) (fyne.CanvasObject, *RunningView) {
+	v := &RunningView{
+		Cancel: parts.NewButton(parts.Secondary, words.T(words.Cancel), theme.CancelIcon(), nil),
+		time:   parts.NewChanging(parts.BodyMuted, ""),
+		track:  parts.NewTrack(0),
+	}
 	card := parts.Card("", nil,
 		parts.Stack(look.GapTight,
 			parts.Text(parts.CaptionStrong, words.T(words.RunningTitle)),
 			parts.Clip(parts.Title, target),
 		),
 		parts.Para(parts.BodyMuted, words.T(words.RunningLayers)),
-		parts.Track(float32(elapsed/float64(limit))),
-		parts.RowGrow(look.GapButtons, 0,
-			parts.Middle(parts.Text(parts.BodyMuted, fmt.Sprintf(words.T(words.RunningElapsed), elapsed, limit))),
-			parts.NewButton(parts.Secondary, words.T(words.Cancel), theme.CancelIcon(), nil),
-		),
+		v.track,
+		parts.RowGrow(look.GapButtons, 0, parts.Middle(v.time), v.Cancel),
 		parts.Para(parts.CaptionMuted, words.T(words.RunningNote)),
 	)
 	body := parts.Column(look.ColumnWidth, parts.Inset(0, look.InsetPage, 0, look.InsetPage, card))
 	return container.NewBorder(head(icon, version), nil, nil, nil,
-		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body)))
+		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body))), v
 }
 
-// Trouble is the screen when certdoctor itself could not run.
-func Trouble(icon fyne.Resource, version, title, what, todo, printed string) fyne.CanvasObject {
-	card := parts.Problem(title, what, todo, printed,
-		parts.NewButton(parts.Primary, words.T(words.Back), theme.NavigateBackIcon(), nil))
+// Trouble is the screen when certdoctor itself could not run, and Back, which
+// leads to the form as it was.
+func Trouble(icon fyne.Resource, version, title, what, todo, printed string) (fyne.CanvasObject, *parts.Button) {
+	back := parts.NewButton(parts.Primary, words.T(words.Back), theme.NavigateBackIcon(), nil)
+	card := parts.Problem(title, what, todo, printed, back)
 	body := parts.Column(look.ColumnWidth, parts.Inset(0, look.InsetPage, 0, look.InsetPage, card))
 	return container.NewBorder(head(icon, version), nil, nil, nil,
-		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body)))
+		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body))), back
 }

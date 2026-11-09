@@ -70,6 +70,17 @@ const (
 // that is said in the message rather than left as a surprise.
 const MinBudgetSeconds = 0.001
 
+// MaxBudgetSeconds caps both budgets at a day.
+//
+// Not a guess about what anybody wants - a defence against arithmetic. A
+// duration is nanoseconds in a signed 64 bit integer, so a budget of 1e300
+// seconds overflows into something negative and a run given "an enormous
+// timeout" would skip every layer instead. A day is absurdly generous for a
+// tool whose own proposal is sixty seconds, and it makes the overflow
+// unreachable. Declared here beside the shortest, because the window works out
+// a time of its own from what was typed and meets the same arithmetic.
+const MaxBudgetSeconds = 86400
+
 // Formats are the values --format accepts, in the order the help names them.
 var Formats = []string{"terminal", "json", "md", "html"}
 

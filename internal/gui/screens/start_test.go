@@ -20,7 +20,7 @@ import (
 // option the screen does not show, ends in the wrong command line.
 func TestTheStartFormIsReadBackAsTheRequestItShows(t *testing.T) {
 	newApp(t)
-	page, form := Start(icon(t), "0.1.0", true)
+	page, form := Start(icon(t), "0.1.0", true, false)
 	w := test.NewWindow(page)
 	defer w.Close()
 

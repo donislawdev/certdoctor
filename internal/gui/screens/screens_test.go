@@ -102,16 +102,22 @@ func everyScreen(t *testing.T) []screen {
 	ic := icon(t)
 	var all []screen
 	for _, open := range []bool{false, true} {
-		all = append(all, screen{fmt.Sprintf("start (options open %v)", open), func() fyne.CanvasObject {
-			o, _ := Start(ic, "0.1.0", open)
-			return o
-		}})
+		for _, software := range []bool{false, true} {
+			all = append(all, screen{fmt.Sprintf("start (options open %v, software %v)", open, software), func() fyne.CanvasObject {
+				o, _ := Start(ic, "0.1.0", open, software)
+				return o
+			}})
+		}
 	}
 	for _, name := range []string{"example-com.json", "untrusted-root.json", "wrong-host.json"} {
 		r := fixture(t, name)
-		all = append(all, screen{"running " + name, func() fyne.CanvasObject {
-			return Running(ic, r.Version, r.Target, 12, 30)
-		}})
+		for _, bounded := range []bool{true, false} {
+			all = append(all, screen{fmt.Sprintf("running %s (limit %v)", name, bounded), func() fyne.CanvasObject {
+				o, v := Running(ic, r.Version, r.Target)
+				v.Show(fmt.Sprintf(words.T(words.RunningElapsed), "12", "60"), 0.2, bounded)
+				return o
+			}})
+		}
 		for layer := range r.Layers {
 			all = append(all, screen{fmt.Sprintf("report %s %s", name, r.Layers[layer].ID), func() fyne.CanvasObject {
 				o, _ := Report(ic, r, layer, 0)
@@ -119,18 +125,22 @@ func everyScreen(t *testing.T) []screen {
 			}})
 		}
 	}
-	for _, trouble := range [][3]words.Key{
-		{words.MissingTitle, words.MissingWhat, words.MissingTodo},
-		{words.VersionTitle, words.VersionWhat, words.VersionTodo},
+	for _, trouble := range []struct {
+		title words.Key
+		what  string
+		todo  words.Key
+	}{
+		{words.MissingTitle, fmt.Sprintf(words.T(words.MissingWhat), longPrinted), words.MissingTodo},
+		{words.NotStartedTitle, fmt.Sprintf(words.T(words.NotStartedWhat), longPrinted, "Access is denied"), words.NotStartedTodo},
+		{words.VersionTitle, fmt.Sprintf(words.T(words.VersionWhat), "0.1.0", "0.2.0"), words.VersionTodo},
 		{words.RefusedTitle, "", words.RefusedTodo},
-		{words.CrashedTitle, words.CrashedWhat, words.CrashedTodo},
+		{words.CrashedTitle, fmt.Sprintf(words.T(words.CrashedWhatCode), 1, "RUNTIME"), words.CrashedTodo},
+		{words.UnreadableTitle, fmt.Sprintf(words.T(words.UnreadableNotReport), longPrinted), words.UnreadableTodo},
+		{words.OverranTitle, fmt.Sprintf(words.T(words.OverranWhat), "30", "60"), words.OverranTodo},
 	} {
-		all = append(all, screen{"trouble " + string(trouble[0]), func() fyne.CanvasObject {
-			what := ""
-			if trouble[1] != "" {
-				what = words.T(trouble[1])
-			}
-			return Trouble(ic, "0.1.0", words.T(trouble[0]), what, words.T(trouble[2]), longPrinted)
+		all = append(all, screen{"trouble " + string(trouble.title), func() fyne.CanvasObject {
+			o, _ := Trouble(ic, "0.1.0", words.T(trouble.title), trouble.what, words.T(trouble.todo), longPrinted)
+			return o
 		}})
 	}
 	return all
