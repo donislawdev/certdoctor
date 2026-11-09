@@ -751,8 +751,13 @@ func documentFor(r report.Report) jsonReport {
 			// runs inside one second carried the same timestamp, so a pair of
 			// saved reports could not be put in order - and putting two reports
 			// side by side is what --compare exists for.
-			StartedAt:      r.Run.StartedAt.UTC().Format(time.RFC3339Nano),
-			DurationMS:     r.Run.Duration.Milliseconds(),
+			StartedAt: r.Run.StartedAt.UTC().Format(time.RFC3339Nano),
+			// ROUNDED, AS EVERY PAGE OF THE SAME RUN ROUNDS IT. Milliseconds()
+			// alone cuts the fraction off, so a run of 1.6 ms was 1 here and
+			// 2ms on the page beside it - two surfaces of one run disagreeing,
+			// and a page written again from this document (--from) saying a
+			// different number from the page the run wrote.
+			DurationMS:     r.Run.Duration.Round(time.Millisecond).Milliseconds(),
 			Target:         r.Run.Target,
 			PrivilegeLevel: r.Run.PrivilegeLevel.String(),
 			Platform: jsonPlatform{

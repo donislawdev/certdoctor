@@ -248,6 +248,9 @@ certdoctor https://api.example.com/ --format html --out report.html
 # JSON for a pipeline, validated against its schema before it is printed
 certdoctor https://api.example.com/ --json > report.json
 
+# The same report as a page later, from the JSON, without running anything again
+certdoctor --from report.json --format html --out report.html
+
 # Ask about a PAC script your machine does not name, which is the only way to ask on Linux
 certdoctor https://api.example.com/ --pac-url http://wpad.example.com/proxy.pac
 ```
@@ -389,6 +392,11 @@ anything is printed:
 
 A `WARN` alone does not fail a build. `certdoctor --version` prints the version of the tool and of
 every schema it emits, so a log from six months ago still says what produced it.
+
+`--from` turns a saved `--json` report into another format and ends with `0` once it is written,
+whatever the report found, so a later step that only makes a page does not fail the build a second
+time. The verdict's own code stays in the report as `verdict.exit_code`. On Windows PowerShell 5.1,
+save the JSON with `--out` rather than `>`, which writes UTF-16 there.
 
 ```yaml
 - name: can the build agent reach the registry

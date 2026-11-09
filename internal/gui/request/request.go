@@ -55,6 +55,11 @@ var Offered = []Option{
 	{Switch: "redact", Label: words.OptRedact, Hint: words.OptRedactHint},
 }
 
+// MaxReport is the largest saved report the command line reads with --from,
+// so the window keeps no more of a run's output than Save report can hand
+// back to it.
+const MaxReport = switches.MaxReport
+
 // NotOffered is every switch the window leaves to the command line, with the
 // reason. The reasons are for whoever reads this file - the window does not
 // show them.
@@ -62,6 +67,7 @@ var NotOffered = map[string]string{
 	"format": "the window reads the report itself, and Save report chooses the format of a copy",
 	"json":   "the window always asks for the document it reads",
 	"out":    "Save report chooses where a copy is written",
+	"from":   "Save report hands the report the window drew to it, and the form starts a new run",
 	// The day these are built, TestTheGroupTheHelpCallsNotBuiltIsRefused in
 	// cmd/certdoctor goes red over the note in the help, and these three come
 	// here into Offered with it.

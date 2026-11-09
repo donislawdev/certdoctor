@@ -45,6 +45,15 @@ type options struct {
 	// because a shell variable did not expand must not read as "no script".
 	pacURLSet bool
 
+	// from names a report saved earlier, or "-" for standard input. A run that
+	// has one makes no diagnosis: it writes that report again.
+	from string
+
+	// given holds the name of every switch written out on the command line,
+	// which the flag package cannot tell from its default. --from refuses the
+	// switches that shape a run, and a default --timeout shapes nothing.
+	given map[string]bool
+
 	in      string
 	image   string
 	compare string
@@ -177,6 +186,7 @@ var binds = map[string]func(fs *flag.FlagSet, o *options){
 	"out":     func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.out, "out", "-", "") },
 	"redact":  func(fs *flag.FlagSet, o *options) { fs.BoolVar(&o.redact, "redact", false, "") },
 	"pac-url": func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.pacURL, "pac-url", "", "") },
+	"from":    func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.from, "from", "", "") },
 	"in":      func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.in, "in", "", "") },
 	"image":   func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.image, "image", "", "") },
 	"compare": func(fs *flag.FlagSet, o *options) { fs.StringVar(&o.compare, "compare", "", "") },
@@ -245,7 +255,9 @@ func parse(args []string) (*options, *fault) {
 	// Asked of the flag set rather than inferred from the value, because the
 	// default and an explicit --format terminal are the same string and mean
 	// different things next to --json.
+	o.given = map[string]bool{}
 	fs.Visit(func(f *flag.Flag) {
+		o.given[f.Name] = true
 		switch f.Name {
 		case "format":
 			o.formatSet = true
@@ -358,6 +370,9 @@ func takesValue(fs *flag.FlagSet, name string) bool {
 // check applies the consistency rules. Every one of them ends in a code from
 // the table and a sentence saying what to do instead.
 func (o *options) check() *fault {
+	if o.given["from"] {
+		return o.checkFrom()
+	}
 	if o.target == "" {
 		return usageFault(
 			"no URL was given. %s needs to know what to diagnose, for example: %s https://example.com",

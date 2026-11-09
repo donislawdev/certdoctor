@@ -55,11 +55,13 @@ type Process struct {
 // The most the window keeps of what the command line writes. A report is tens
 // of kilobytes - the three in model/testdata are 50 to 60 - so 32 MiB is room
 // for a machine with hundreds of stores and still a bound on memory for a
-// program beside the window that writes without end. Standard error carries a
-// sentence, or a stack when something panicked, and the window shows its first
-// lines only.
+// program beside the window that writes without end. It is the command line's
+// own bound on a saved report it reads with --from, declared once with the
+// switches, so a report the window drew is one Save report can hand back.
+// Standard error carries a sentence, or a stack when something panicked, and
+// the window shows its first lines only.
 const (
-	MaxDocument = 32 << 20
+	MaxDocument = request.MaxReport
 	MaxPrinted  = 64 << 10
 )
 

@@ -49,6 +49,12 @@ func FuzzCommandLineAlwaysEndsWithADeclaredCode(f *testing.F) {
 		{"https://example.com", "--redact", "--out", "x"},
 		{"file:///etc/passwd"},
 		{"https://", "--quiet", "--verbose"},
+		{"--from", savedPath, "--format", "html"},
+		{"--from", savedPath, "--json", "--out", "again.json"},
+		{"--from", "-"},
+		{"--from", ""},
+		{"--from", savedPath, "https://example.com"},
+		{"--from", savedPath, "--redact", "--timeout", "5"},
 	}
 	for _, seed := range seeds {
 		f.Add(strings.Join(seed, "\n"))

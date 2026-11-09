@@ -29,6 +29,13 @@ var remediationAllowlist = map[string]bool{
 	// the three conditions that gate them live together, so that reading one is
 	// reading the other.
 	"internal/core/trust/fix.go": true,
+	// Added 2026-11-09 with --from, by the owner's decision (ADR121 (c)). It
+	// does not build a command: it reads back one fix.go built, from the
+	// document the run wrote, and decides nothing - report.Validate checks the
+	// three conditions again on what it read, and a document whose fix breaks
+	// one is refused. Without the line a page written from a saved report
+	// would carry no command where the run's page carried one.
+	"internal/adapter/render/decode.go": true,
 }
 
 // TestNothingOutsideTheAllowlistBuildsARemediationCommand is the rule turned

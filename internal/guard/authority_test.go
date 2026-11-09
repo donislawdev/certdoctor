@@ -39,6 +39,12 @@ var authorityAllowlist = map[string]bool{
 	// the careful sentence attached to each live together, so that reading one
 	// is reading the others.
 	"internal/core/trust/authority.go": true,
+	// Added 2026-11-09 with --from, by the owner's decision (ADR121 (c)). It
+	// judges no authority: it reads back the one authority.go judged, from the
+	// document the run wrote, and report.Validate checks the holding and its
+	// lists again on what it read. Without the line a page written from a
+	// saved report would carry no signer where the run's page carried one.
+	"internal/adapter/render/decode.go": true,
 }
 
 // TestNothingOutsideTheAllowlistJudgesASigningAuthority is the rule turned into

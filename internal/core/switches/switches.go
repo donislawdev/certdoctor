@@ -84,6 +84,14 @@ const MaxBudgetSeconds = 86400
 // Formats are the values --format accepts, in the order the help names them.
 var Formats = []string{"terminal", "json", "md", "html"}
 
+// MaxReport is the largest saved report --from reads, in bytes, and so the
+// most the window keeps of what a run writes: a report the window drew is one
+// it can hand back to be saved. A report is tens of kilobytes - the three in
+// internal/gui/model/testdata are 50 to 60 - so this is room for a machine with
+// hundreds of stores and still a bound on what a file from somebody else can
+// make this program hold in memory.
+const MaxReport = 32 << 20
+
 // All is the whole flag surface, in the order the help presents it.
 var All = []Switch{
 	{
@@ -105,6 +113,11 @@ var All = []Switch{
 	{
 		Name: "pac-url", Arg: "<url>", Group: "input",
 		Summary: "also read this proxy auto-configuration script and say where it sends the target",
+	},
+	{
+		Name: "from", Arg: "<file>", Group: "input",
+		Summary: "instead of a URL: write a report saved earlier with --json again, in the format asked for, " +
+			"without running anything. A single dash reads it from standard input",
 	},
 	{
 		Name: "in", Arg: "<container>", Group: "containers",

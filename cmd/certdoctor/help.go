@@ -42,9 +42,12 @@ func helpText() string {
 
 	fmt.Fprintf(&b, "%s - work out why this machine, or this container, cannot reach a URL\n", toolName)
 	b.WriteString("\nUSAGE\n")
-	fmt.Fprintf(&b, "  %s <url> [options]\n\n", toolName)
-	b.WriteString("  The URL is required and needs an explicit http:// or https:// scheme.\n")
+	fmt.Fprintf(&b, "  %s <url> [options]\n", toolName)
+	fmt.Fprintf(&b, "  %s --from <file> [options]\n\n", toolName)
+	b.WriteString("  The URL needs an explicit http:// or https:// scheme.\n")
 	b.WriteString("  Without one there is no way to tell a host name from a port number.\n")
+	b.WriteString("  --from takes the place of the URL: it runs nothing, writes the saved report\n")
+	b.WriteString("  in the format asked for, and ends with 0 once it is written.\n")
 
 	writeSwitches(&b)
 	writeExitCodes(&b)

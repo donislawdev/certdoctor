@@ -15,6 +15,7 @@ import (
 
 	certdoctor "github.com/donislawdev/certdoctor"
 	"github.com/donislawdev/certdoctor/internal/adapter/dns"
+	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/adapter/pac"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
@@ -68,8 +69,16 @@ type environment struct {
 	// would change its mind is exactly the sort this layer reports.
 	lookupEnv func(name string) (string, bool)
 	// writeFile puts a finished report at a path the user named. It is the only
-	// way this package can reach the file system.
+	// way this package writes to the file system.
 	writeFile func(path string, data []byte) error
+	// readSaved opens the saved report --from names, through the guarded file
+	// port with switches.MaxReport as its limit. Reading a report a person
+	// named is the one other thing this package does with a file.
+	readSaved file.Source
+	// stdin hands over standard input for --from -, or errNothingPiped when it
+	// is a terminal - nobody pipes a report into one, and waiting for it to be
+	// typed would look like a hang.
+	stdin func() (io.Reader, error)
 
 	// nameservers enumerates the resolvers this machine is configured to use.
 	//
@@ -191,6 +200,9 @@ func execute(ctx context.Context, args []string, env environment) exitcode.Code 
 	}
 	if code, handled := answerMetaSwitch(o, env); handled {
 		return code
+	}
+	if o.given["from"] {
+		return rewrite(o, env)
 	}
 	return diagnose(ctx, o, env)
 }

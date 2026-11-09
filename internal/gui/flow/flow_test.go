@@ -307,3 +307,16 @@ func TestProgressIsTheTimeAgainstTheLimit(t *testing.T) {
 		t.Errorf("a run with no limit shows %+v", p)
 	}
 }
+
+// TestTheWindowKeepsNoMoreThanSaveReportCanHandBack holds the window's bound on
+// a run's output to the command line's bound on a saved report: a report the
+// window drew is one Save report hands back to certdoctor --from, and a window
+// keeping more would draw reports it could not save.
+func TestTheWindowKeepsNoMoreThanSaveReportCanHandBack(t *testing.T) {
+	if MaxDocument > request.MaxReport {
+		t.Errorf("the window keeps %d bytes of a run and --from reads %d", MaxDocument, request.MaxReport)
+	}
+	if MaxDocument < 1<<20 {
+		t.Errorf("the window keeps %d bytes of a run, less than a report of a machine with many stores", MaxDocument)
+	}
+}
