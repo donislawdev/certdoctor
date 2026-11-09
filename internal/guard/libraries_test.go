@@ -117,7 +117,7 @@ func TestEveryLibraryIsLoadedFromAKnownPlace(t *testing.T) {
 		}
 	}
 	for rel := range libraryLoadsAllowed {
-		if !treeHas(tr, rel) {
+		if _, ok := fileOf(tr, rel); !ok {
 			t.Errorf("libraryLoadsAllowed names %s, which is not in the tree", rel)
 		}
 	}
@@ -282,14 +282,4 @@ func loadFindings(sf sourceFile) []loadFinding {
 		})
 	}
 	return found
-}
-
-// treeHas reports whether the tree holds a file at rel.
-func treeHas(tr tree, rel string) bool {
-	for _, sf := range tr.files {
-		if sf.rel == rel {
-			return true
-		}
-	}
-	return false
 }

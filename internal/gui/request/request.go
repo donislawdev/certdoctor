@@ -11,6 +11,8 @@
 package request
 
 import (
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/donislawdev/certdoctor/internal/core/switches"
@@ -128,3 +130,30 @@ func (r Request) Args() []string {
 	}
 	return append(args, "--", strings.TrimSpace(r.Address))
 }
+
+// Ready reports whether there is an address to diagnose. Whether it is one
+// the command line can read is the command line's question, answered in its
+// own words.
+func (r Request) Ready() bool { return strings.TrimSpace(r.Address) != "" }
+
+// Limit is the time the whole run is given, in seconds, for the window to
+// draw the time used against: the number typed for the time limit when it
+// reads as one, and the command line's default otherwise. Zero is no limit,
+// as on the command line.
+//
+// Read only to show the time, never to refuse it. A number the command line
+// will not take - negative, written with a comma, shorter than a millisecond -
+// is refused by the command line within moments, in its own words, and the
+// time shown until then does not matter. So anything that is not a number of
+// seconds at all reads as the default here rather than as a second judgement.
+func (r Request) Limit() float64 {
+	typed := strings.TrimSpace(r.Typed[budgetSwitch])
+	seconds, err := strconv.ParseFloat(typed, 64)
+	if typed == "" || err != nil || seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+		return switches.DefaultBudgetSeconds
+	}
+	return seconds
+}
+
+// budgetSwitch is the switch the time limit of the whole run is typed for.
+const budgetSwitch = "timeout"

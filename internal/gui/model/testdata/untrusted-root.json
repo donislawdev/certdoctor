@@ -1,12 +1,12 @@
 {
-  "schema_version": "2.3",
+  "schema_version": "2.4",
   "tool": {
     "name": "certdoctor",
     "version": "0.1.0"
   },
   "run": {
-    "started_at": "2026-11-03T13:27:49.2557149Z",
-    "duration_ms": 4137,
+    "started_at": "2026-11-09T18:39:41.8086411Z",
+    "duration_ms": 3505,
     "target": "https://untrusted-root.badssl.com",
     "privilege_level": "elevated",
     "platform": {
@@ -20,6 +20,7 @@
   "verdict": {
     "status": "FAIL",
     "sentence": "CN=BadSSL Untrusted Root Certificate Authority,O=BadSSL,L=San Francisco,ST=California,C=US signed this certificate, and none of the 11 store(s) assessed here holds an anchor for it. 1 of 6 diagnostic layers could not be assessed.",
+    "layer": "L5",
     "exit_code": 4
   },
   "layers": [
@@ -554,7 +555,7 @@
             "addresses": [
               "104.154.89.105"
             ],
-            "duration_ms": 67,
+            "duration_ms": 107,
             "divergence": null
           },
           "tcp_connect": null,
@@ -579,7 +580,7 @@
             "response_code": "NODATA",
             "no_answer": null,
             "addresses": [],
-            "duration_ms": 62,
+            "duration_ms": 118,
             "divergence": null
           },
           "tcp_connect": null,
@@ -606,7 +607,7 @@
             "addresses": [
               "104.154.89.105"
             ],
-            "duration_ms": 9,
+            "duration_ms": 8,
             "divergence": "agree"
           },
           "tcp_connect": null,
@@ -751,7 +752,7 @@
             "address": "104.154.89.105",
             "port": 443,
             "outcome": "connected",
-            "duration_ms": 178
+            "duration_ms": 153
           },
           "tls_handshake": null,
           "trust_store": null,
@@ -788,7 +789,7 @@
             "server_name": "untrusted-root.badssl.com",
             "alpn": "http/1.1",
             "client_certificate_requested": false,
-            "leaf_fingerprint_sha256": "6ea5001fb32cf4e813e98eda3491f52da63f3910a9d33fd4ed012cfc608c520a",
+            "leaf_fingerprint_sha256": "8b143a9be181735204c17554511216beaef4008e69f1045a49d6fd2c28bc7ef3",
             "chain_complete": true,
             "matches_first_address": null,
             "name_covered": true,
@@ -800,9 +801,9 @@
                   "*.badssl.com",
                   "badssl.com"
                 ],
-                "not_before": "2026-10-27T21:00:20Z",
-                "not_after": "2028-10-26T21:00:20Z",
-                "fingerprint_sha256": "6ea5001fb32cf4e813e98eda3491f52da63f3910a9d33fd4ed012cfc608c520a",
+                "not_before": "2026-11-03T21:00:28Z",
+                "not_after": "2028-11-02T21:00:28Z",
+                "fingerprint_sha256": "8b143a9be181735204c17554511216beaef4008e69f1045a49d6fd2c28bc7ef3",
                 "is_ca": false
               },
               {
@@ -830,7 +831,7 @@
       "name": "Trust matrix",
       "status": "FAIL",
       "reason": null,
-      "detail": "16 of 16 store(s) do not trust the presented chain",
+      "detail": "16 of 17 store(s) do not trust the presented chain, and 1 could not be assessed",
       "findings": [
         {
           "kind": "signing_authority",
@@ -843,7 +844,7 @@
           "trust_store": null,
           "signing_authority": {
             "issuer": "CN=BadSSL Untrusted Root Certificate Authority,O=BadSSL,L=San Francisco,ST=California,C=US",
-            "leaf_fingerprint_sha256": "6ea5001fb32cf4e813e98eda3491f52da63f3910a9d33fd4ed012cfc608c520a",
+            "leaf_fingerprint_sha256": "8b143a9be181735204c17554511216beaef4008e69f1045a49d6fd2c28bc7ef3",
             "held_by": "no_stores",
             "trusting_stores": [],
             "refusing_stores": [
@@ -857,7 +858,7 @@
               "java C:\\Program Files\\OpenJDK\\jdk-22.0.2",
               "java C:\\Program Files\\OpenJDK\\jdk-25",
               "java C:\\Program Files\\OpenJDK\\jdk-26.0.2.1",
-              "node C:\\Program Files\\nodejs\\node.exe"
+              "java C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3"
             ],
             "caveat": "no store assessed here accepts this signer, so this is not a question of one runtime being configured differently from another - a store this program does not read, a browser's own among them, is not covered by that",
             "inspection": null
@@ -1278,12 +1279,53 @@
             "trusts_presented_chain": false,
             "not_assessed": null,
             "selected_by": [
-              "JAVA_HOME",
               "PATH"
             ],
             "trust_failure": "unknown_authority",
             "fix": {
               "command": "\"C:\\Program Files\\OpenJDK\\jdk-26.0.2.1\\bin\\keytool\" -importcert -trustcacerts -keystore \"C:\\Program Files\\OpenJDK\\jdk-26.0.2.1\\lib\\security\\cacerts\" -storepass changeit -alias \"\u003calias\u003e\" -file \"\u003ccertificate.pem\u003e\"",
+              "placeholders": [
+                "\u003calias\u003e",
+                "\u003ccertificate.pem\u003e"
+              ],
+              "requires_elevation": true,
+              "elevation": "this store is outside this account's own files, so it belongs to every account on the machine",
+              "caveat": "installing a newer build of this runtime brings its own store and does not carry this certificate across, and the line is for the Command Prompt (cmd.exe) - PowerShell runs it only with \u0026 and a space put before it"
+            }
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3 does NOT trust the presented chain (106 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3",
+            "variant": "jdk",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 106,
+            "trusts_presented_chain": false,
+            "not_assessed": null,
+            "selected_by": [
+              "JAVA_HOME",
+              "PATH"
+            ],
+            "trust_failure": "unknown_authority",
+            "fix": {
+              "command": "\"C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3\\bin\\keytool\" -importcert -trustcacerts -keystore \"C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3\\lib\\security\\cacerts\" -storepass changeit -alias \"\u003calias\u003e\" -file \"\u003ccertificate.pem\u003e\"",
               "placeholders": [
                 "\u003calias\u003e",
                 "\u003ccertificate.pem\u003e"
@@ -1371,7 +1413,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "node C:\\Program Files\\nodejs\\node.exe does NOT trust the presented chain (195 anchors)",
+          "summary": "node C:\\Program Files\\nodejs\\node.exe could not be assessed: this store holds 1 certificate(s) the Go library could not read (the first: x509: RSA modulus is not a positive number), which the program judged here may read and end the chain at, so whether it accepts this chain cannot be told",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1386,23 +1428,15 @@
             "store_form": "builtin",
             "backend": "",
             "defers_to": null,
-            "trust_anchor_count": 195,
-            "trusts_presented_chain": false,
-            "not_assessed": null,
+            "trust_anchor_count": 0,
+            "trusts_presented_chain": null,
+            "not_assessed": "this store holds 1 certificate(s) the Go library could not read (the first: x509: RSA modulus is not a positive number), which the program judged here may read and end the chain at, so whether it accepts this chain cannot be told",
             "selected_by": [
               "PATH",
               "NODE_USE_SYSTEM_CA"
             ],
-            "trust_failure": "unknown_authority",
-            "fix": {
-              "command": "setx NODE_EXTRA_CA_CERTS \"\u003ccertificate.pem\u003e\"",
-              "placeholders": [
-                "\u003ccertificate.pem\u003e"
-              ],
-              "requires_elevation": false,
-              "elevation": null,
-              "caveat": "put the certificate file's full path in place of \u003ccertificate.pem\u003e - setx keeps it for this account and only windows opened afterwards read it, so a node already running, and this window, keep the old value"
-            }
+            "trust_failure": null,
+            "fix": null
           },
           "signing_authority": null,
           "proxy_stack": null,
@@ -1412,7 +1446,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "python C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe does NOT trust the presented chain (130 anchors)",
+          "summary": "python C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE does NOT trust the presented chain (130 anchors)",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1420,7 +1454,7 @@
           "tls_handshake": null,
           "trust_store": {
             "runtime": "python",
-            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe",
+            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE",
             "variant": "",
             "architecture": "",
             "store_path": "",
@@ -1455,7 +1489,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe does NOT trust the presented chain (90 anchors) - it judges by system-store CurrentUser, which refuses it",
+          "summary": "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE does NOT trust the presented chain (90 anchors) - it judges by system-store CurrentUser, which refuses it",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1463,7 +1497,7 @@
           "tls_handshake": null,
           "trust_store": {
             "runtime": "pip",
-            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe",
+            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE",
             "variant": "truststore",
             "architecture": "",
             "store_path": "",

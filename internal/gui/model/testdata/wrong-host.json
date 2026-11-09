@@ -1,12 +1,12 @@
 {
-  "schema_version": "2.3",
+  "schema_version": "2.4",
   "tool": {
     "name": "certdoctor",
     "version": "0.1.0"
   },
   "run": {
-    "started_at": "2026-11-03T13:27:53.4480614Z",
-    "duration_ms": 3388,
+    "started_at": "2026-11-09T18:39:45.5280125Z",
+    "duration_ms": 3857,
     "target": "https://wrong.host.badssl.com",
     "privilege_level": "elevated",
     "platform": {
@@ -20,6 +20,7 @@
   "verdict": {
     "status": "FAIL",
     "sentence": "The server presented a certificate for *.badssl.com, badssl.com, and none of those names covers wrong.host.badssl.com - clients refuse that whatever they trust, so this is a fact about the server or about the name used to reach it. 1 of 6 diagnostic layers could not be assessed.",
+    "layer": "L4",
     "exit_code": 4
   },
   "layers": [
@@ -554,7 +555,7 @@
             "addresses": [
               "104.154.89.105"
             ],
-            "duration_ms": 112,
+            "duration_ms": 51,
             "divergence": null
           },
           "tcp_connect": null,
@@ -579,7 +580,7 @@
             "response_code": "NODATA",
             "no_answer": null,
             "addresses": [],
-            "duration_ms": 66,
+            "duration_ms": 52,
             "divergence": null
           },
           "tcp_connect": null,
@@ -751,7 +752,7 @@
             "address": "104.154.89.105",
             "port": 443,
             "outcome": "connected",
-            "duration_ms": 157
+            "duration_ms": 154
           },
           "tls_handshake": null,
           "trust_store": null,
@@ -839,11 +840,11 @@
       "name": "Trust matrix",
       "status": "PASS",
       "reason": null,
-      "detail": "all 16 store(s) found trust the presented chain",
+      "detail": "all 17 store(s) found trust the presented chain",
       "findings": [
         {
           "kind": "signing_authority",
-          "summary": "CN=YR1,O=Let's Encrypt,C=US signed this certificate, and all 12 store(s) assessed here hold an anchor for it",
+          "summary": "CN=YR1,O=Let's Encrypt,C=US signed this certificate, and all 13 store(s) assessed here hold an anchor for it",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -865,8 +866,9 @@
               "java C:\\Program Files\\OpenJDK\\jdk-22.0.2",
               "java C:\\Program Files\\OpenJDK\\jdk-25",
               "java C:\\Program Files\\OpenJDK\\jdk-26.0.2.1",
+              "java C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3",
               "node C:\\Program Files\\nodejs\\node.exe",
-              "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe"
+              "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE"
             ],
             "refusing_stores": [],
             "caveat": "this is what an ordinary publicly trusted authority looks like from here, and it is also what a private authority looks like once it has been deployed everywhere on a machine",
@@ -1202,6 +1204,38 @@
             "trusts_presented_chain": true,
             "not_assessed": null,
             "selected_by": [
+              "PATH"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3 trusts the presented chain (106 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3",
+            "variant": "jdk",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 106,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
               "JAVA_HOME",
               "PATH"
             ],
@@ -1286,7 +1320,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "node C:\\Program Files\\nodejs\\node.exe trusts the presented chain (195 anchors)",
+          "summary": "node C:\\Program Files\\nodejs\\node.exe trusts the presented chain (195 anchors, and 1 certificate(s) in the store the Go library could not read)",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1319,7 +1353,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "python C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe trusts the presented chain (130 anchors)",
+          "summary": "python C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE trusts the presented chain (130 anchors)",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1327,7 +1361,7 @@
           "tls_handshake": null,
           "trust_store": {
             "runtime": "python",
-            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe",
+            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE",
             "variant": "",
             "architecture": "",
             "store_path": "",
@@ -1354,7 +1388,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe trusts the presented chain (120 anchors)",
+          "summary": "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE trusts the presented chain (118 anchors)",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1362,14 +1396,14 @@
           "tls_handshake": null,
           "trust_store": {
             "runtime": "pip",
-            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe",
+            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE",
             "variant": "truststore",
             "architecture": "",
             "store_path": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\Lib\\site-packages\\pip\\_vendor\\certifi\\cacert.pem",
             "store_form": "file",
             "backend": "",
             "defers_to": null,
-            "trust_anchor_count": 120,
+            "trust_anchor_count": 118,
             "trusts_presented_chain": true,
             "not_assessed": null,
             "selected_by": [

@@ -1,12 +1,12 @@
 {
-  "schema_version": "2.3",
+  "schema_version": "2.4",
   "tool": {
     "name": "certdoctor",
     "version": "0.1.0"
   },
   "run": {
-    "started_at": "2026-11-03T13:27:44.9561681Z",
-    "duration_ms": 4238,
+    "started_at": "2026-11-09T18:39:37.2541356Z",
+    "duration_ms": 4378,
     "target": "https://example.com",
     "privilege_level": "elevated",
     "platform": {
@@ -19,7 +19,8 @@
   },
   "verdict": {
     "status": "FAIL",
-    "sentence": "CN=Cloudflare TLS Issuing ECC CA 3,O=SSL Corporation,C=US signed this certificate, and 10 store(s) assessed here hold an anchor for it and 2 do not. Without it: system-store, curl, python. 1 of 6 diagnostic layers could not be assessed.",
+    "sentence": "CN=Cloudflare TLS Issuing ECC CA 3,O=SSL Corporation,C=US signed this certificate, and 11 store(s) assessed here hold an anchor for it and 1 do not. Without it: python. 1 of 6 diagnostic layers could not be assessed.",
+    "layer": "L5",
     "exit_code": 4
   },
   "layers": [
@@ -552,10 +553,10 @@
             "response_code": "NOERROR",
             "no_answer": null,
             "addresses": [
-              "104.20.23.154",
-              "172.66.147.243"
+              "172.66.147.243",
+              "104.20.23.154"
             ],
-            "duration_ms": 28,
+            "duration_ms": 33,
             "divergence": null
           },
           "tcp_connect": null,
@@ -583,7 +584,7 @@
               "2606:4700:10::6814:179a",
               "2606:4700:10::ac42:93f3"
             ],
-            "duration_ms": 29,
+            "duration_ms": 26,
             "divergence": null
           },
           "tcp_connect": null,
@@ -608,10 +609,10 @@
             "response_code": null,
             "no_answer": null,
             "addresses": [
-              "104.20.23.154",
-              "172.66.147.243"
+              "172.66.147.243",
+              "104.20.23.154"
             ],
-            "duration_ms": 9,
+            "duration_ms": 8,
             "divergence": "superset"
           },
           "tcp_connect": null,
@@ -748,15 +749,15 @@
       "findings": [
         {
           "kind": "tcp_connect",
-          "summary": "104.20.23.154 on port 443: the connection was established",
+          "summary": "172.66.147.243 on port 443: the connection was established",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
           "tcp_connect": {
-            "address": "104.20.23.154",
+            "address": "172.66.147.243",
             "port": 443,
             "outcome": "connected",
-            "duration_ms": 30
+            "duration_ms": 26
           },
           "tls_handshake": null,
           "trust_store": null,
@@ -768,15 +769,15 @@
         },
         {
           "kind": "tcp_connect",
-          "summary": "172.66.147.243 on port 443: the connection was established",
+          "summary": "104.20.23.154 on port 443: the connection was established",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
           "tcp_connect": {
-            "address": "172.66.147.243",
+            "address": "104.20.23.154",
             "port": 443,
             "outcome": "connected",
-            "duration_ms": 30
+            "duration_ms": 26
           },
           "tls_handshake": null,
           "trust_store": null,
@@ -837,13 +838,13 @@
       "findings": [
         {
           "kind": "tls_handshake",
-          "summary": "104.20.23.154 on port 443 presented 4 certificate(s)",
+          "summary": "172.66.147.243 on port 443 presented 4 certificate(s)",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
           "tcp_connect": null,
           "tls_handshake": {
-            "address": "104.20.23.154",
+            "address": "172.66.147.243",
             "port": 443,
             "completed": true,
             "not_completed": null,
@@ -908,13 +909,13 @@
         },
         {
           "kind": "tls_handshake",
-          "summary": "172.66.147.243 on port 443 presented the same chain as the first address",
+          "summary": "104.20.23.154 on port 443 presented the same chain as the first address",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
           "tcp_connect": null,
           "tls_handshake": {
-            "address": "172.66.147.243",
+            "address": "104.20.23.154",
             "port": 443,
             "completed": true,
             "not_completed": null,
@@ -944,11 +945,11 @@
       "name": "Trust matrix",
       "status": "FAIL",
       "reason": null,
-      "detail": "5 of 16 store(s) do not trust the presented chain",
+      "detail": "1 of 17 store(s) do not trust the presented chain, and 4 could not be assessed",
       "findings": [
         {
           "kind": "signing_authority",
-          "summary": "CN=Cloudflare TLS Issuing ECC CA 3,O=SSL Corporation,C=US signed this certificate, and 10 store(s) assessed here hold an anchor for it and 2 do not",
+          "summary": "CN=Cloudflare TLS Issuing ECC CA 3,O=SSL Corporation,C=US signed this certificate, and 11 store(s) assessed here hold an anchor for it and 1 do not",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -968,14 +969,14 @@
               "java C:\\Program Files\\OpenJDK\\jdk-22.0.2",
               "java C:\\Program Files\\OpenJDK\\jdk-25",
               "java C:\\Program Files\\OpenJDK\\jdk-26.0.2.1",
+              "java C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3",
               "node C:\\Program Files\\nodejs\\node.exe",
-              "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe"
+              "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE"
             ],
             "refusing_stores": [
-              "system-store CurrentUser",
-              "system-store LocalMachine"
+              "python C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE"
             ],
-            "caveat": "TLS inspection looks exactly like this and so does an organisation's own certificate authority, and this program cannot tell those two apart from one connection - the issuer and the fingerprint beside this line are what somebody who can tell them apart would need",
+            "caveat": "TLS inspection looks exactly like this, so does an organisation's own certificate authority and so does a public authority some of these stores do not carry yet, and this program cannot tell those three apart from one connection - the issuer and the fingerprint beside this line are what somebody who can tell them apart would need",
             "inspection": null
           },
           "proxy_stack": null,
@@ -985,7 +986,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "system-store CurrentUser does NOT trust the presented chain (90 anchors)",
+          "summary": "system-store CurrentUser could not be assessed: the issuer this chain needs is on this machine's copy of Microsoft's root program list and is not installed yet - Windows fetches such a root when it first needs one and this program does not, so whether this store would trust the chain is undetermined",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1000,20 +1001,12 @@
             "store_form": "system",
             "backend": "",
             "defers_to": null,
-            "trust_anchor_count": 90,
-            "trusts_presented_chain": false,
-            "not_assessed": null,
+            "trust_anchor_count": 0,
+            "trusts_presented_chain": null,
+            "not_assessed": "the issuer this chain needs is on this machine's copy of Microsoft's root program list and is not installed yet - Windows fetches such a root when it first needs one and this program does not, so whether this store would trust the chain is undetermined",
             "selected_by": [],
-            "trust_failure": "unknown_authority",
-            "fix": {
-              "command": "certutil -user -addstore Root \"\u003ccertificate.pem\u003e\"",
-              "placeholders": [
-                "\u003ccertificate.pem\u003e"
-              ],
-              "requires_elevation": false,
-              "elevation": null,
-              "caveat": "Windows asks for confirmation in a dialog before it adds a root to this account's store, and services running as other accounts do not read it - the LocalMachine command reaches them too"
-            }
+            "trust_failure": null,
+            "fix": null
           },
           "signing_authority": null,
           "proxy_stack": null,
@@ -1023,7 +1016,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "system-store LocalMachine does NOT trust the presented chain (90 anchors)",
+          "summary": "system-store LocalMachine could not be assessed: the issuer this chain needs is on this machine's copy of Microsoft's root program list and is not installed yet - Windows fetches such a root when it first needs one and this program does not, so whether this store would trust the chain is undetermined",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1038,20 +1031,12 @@
             "store_form": "system",
             "backend": "",
             "defers_to": null,
-            "trust_anchor_count": 90,
-            "trusts_presented_chain": false,
-            "not_assessed": null,
+            "trust_anchor_count": 0,
+            "trusts_presented_chain": null,
+            "not_assessed": "the issuer this chain needs is on this machine's copy of Microsoft's root program list and is not installed yet - Windows fetches such a root when it first needs one and this program does not, so whether this store would trust the chain is undetermined",
             "selected_by": [],
-            "trust_failure": "unknown_authority",
-            "fix": {
-              "command": "certutil -addstore Root \"\u003ccertificate.pem\u003e\"",
-              "placeholders": [
-                "\u003ccertificate.pem\u003e"
-              ],
-              "requires_elevation": true,
-              "elevation": "the LocalMachine store is read by every account and every service on this machine, so changing it needs administrator rights",
-              "caveat": "programs that carry a store of their own - git and java among them - do not read this one, so their rows need their own commands"
-            }
+            "trust_failure": null,
+            "fix": null
           },
           "signing_authority": null,
           "proxy_stack": null,
@@ -1324,6 +1309,38 @@
             "trusts_presented_chain": true,
             "not_assessed": null,
             "selected_by": [
+              "PATH"
+            ],
+            "trust_failure": null,
+            "fix": null
+          },
+          "signing_authority": null,
+          "proxy_stack": null,
+          "stack_divergence": null,
+          "pac_script": null,
+          "proxy_challenge": null
+        },
+        {
+          "kind": "trust_store",
+          "summary": "java C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3 trusts the presented chain (106 anchors)",
+          "source": "detected",
+          "environment_variable": null,
+          "name_resolution": null,
+          "tcp_connect": null,
+          "tls_handshake": null,
+          "trust_store": {
+            "runtime": "java",
+            "instance": "C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3",
+            "variant": "jdk",
+            "architecture": "x64",
+            "store_path": "C:\\Program Files\\OpenJDK\\jdk-27.0.1.0.3\\lib\\security\\cacerts",
+            "store_form": "file",
+            "backend": "",
+            "defers_to": null,
+            "trust_anchor_count": 106,
+            "trusts_presented_chain": true,
+            "not_assessed": null,
+            "selected_by": [
               "JAVA_HOME",
               "PATH"
             ],
@@ -1338,7 +1355,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "curl C:\\Program Files\\Git\\ucrt64\\bin\\curl.exe does NOT trust the presented chain (90 anchors) - it judges by system-store CurrentUser, which refuses it",
+          "summary": "curl C:\\Program Files\\Git\\ucrt64\\bin\\curl.exe could not be assessed: it judges by system-store CurrentUser, which could not be assessed",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1356,13 +1373,13 @@
               "runtime": "system-store",
               "instance": "CurrentUser"
             },
-            "trust_anchor_count": 90,
-            "trusts_presented_chain": false,
-            "not_assessed": null,
+            "trust_anchor_count": 0,
+            "trusts_presented_chain": null,
+            "not_assessed": "it judges by system-store CurrentUser, which could not be assessed",
             "selected_by": [
               "PATH"
             ],
-            "trust_failure": "unknown_authority",
+            "trust_failure": null,
             "fix": null
           },
           "signing_authority": null,
@@ -1373,7 +1390,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "curl C:\\Windows\\system32\\curl.exe does NOT trust the presented chain (90 anchors) - it judges by system-store CurrentUser, which refuses it",
+          "summary": "curl C:\\Windows\\system32\\curl.exe could not be assessed: it judges by system-store CurrentUser, which could not be assessed",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1391,13 +1408,13 @@
               "runtime": "system-store",
               "instance": "CurrentUser"
             },
-            "trust_anchor_count": 90,
-            "trusts_presented_chain": false,
-            "not_assessed": null,
+            "trust_anchor_count": 0,
+            "trusts_presented_chain": null,
+            "not_assessed": "it judges by system-store CurrentUser, which could not be assessed",
             "selected_by": [
               "PATH"
             ],
-            "trust_failure": "unknown_authority",
+            "trust_failure": null,
             "fix": null
           },
           "signing_authority": null,
@@ -1408,7 +1425,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "node C:\\Program Files\\nodejs\\node.exe trusts the presented chain (195 anchors)",
+          "summary": "node C:\\Program Files\\nodejs\\node.exe trusts the presented chain (195 anchors, and 1 certificate(s) in the store the Go library could not read)",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1441,7 +1458,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "python C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe does NOT trust the presented chain (130 anchors)",
+          "summary": "python C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE does NOT trust the presented chain (130 anchors)",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1449,7 +1466,7 @@
           "tls_handshake": null,
           "trust_store": {
             "runtime": "python",
-            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe",
+            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE",
             "variant": "",
             "architecture": "",
             "store_path": "",
@@ -1484,7 +1501,7 @@
         },
         {
           "kind": "trust_store",
-          "summary": "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe trusts the presented chain (120 anchors)",
+          "summary": "pip C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE trusts the presented chain (118 anchors)",
           "source": "detected",
           "environment_variable": null,
           "name_resolution": null,
@@ -1492,14 +1509,14 @@
           "tls_handshake": null,
           "trust_store": {
             "runtime": "pip",
-            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.exe",
+            "instance": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\python.EXE",
             "variant": "truststore",
             "architecture": "",
             "store_path": "C:\\Users\\jdoe\\AppData\\Local\\Programs\\Python\\Python315\\Lib\\site-packages\\pip\\_vendor\\certifi\\cacert.pem",
             "store_form": "file",
             "backend": "",
             "defers_to": null,
-            "trust_anchor_count": 120,
+            "trust_anchor_count": 118,
             "trusts_presented_chain": true,
             "not_assessed": null,
             "selected_by": [

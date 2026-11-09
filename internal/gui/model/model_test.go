@@ -7,9 +7,9 @@ import (
 )
 
 // The three reports in testdata were written by certdoctor 0.1.0 with --json
-// on 2026-11-03, against example.com and two hosts of badssl.com, and kept
-// with the parts that named the machine they ran on replaced: the account in
-// profile paths and the address of the local resolver.
+// on 2026-11-09 (schema 2.4), against example.com and two hosts of badssl.com,
+// and kept with the parts that named the machine they ran on replaced: the
+// account in profile paths and the address of the local resolver.
 
 // TestTheWindowReadsTheReportsItIsDrawnFrom reads each of them and checks the
 // facts the screens are built from.
@@ -17,18 +17,19 @@ func TestTheWindowReadsTheReportsItIsDrawnFrom(t *testing.T) {
 	for _, c := range []struct {
 		file, target   string
 		layerStatus    []Status
+		decisive       string
 		yes, no, fixes int
 	}{
-		{"example-com.json", "https://example.com", []Status{Pass, Pass, Unknown, Pass, Pass, Fail}, 11, 5, 3},
-		{"untrusted-root.json", "https://untrusted-root.badssl.com", []Status{Pass, Pass, Unknown, Pass, Pass, Fail}, 0, 16, 13},
-		{"wrong-host.json", "https://wrong.host.badssl.com", []Status{Pass, Pass, Unknown, Pass, Fail, Pass}, 16, 0, 0},
+		{"example-com.json", "https://example.com", []Status{Pass, Pass, Unknown, Pass, Pass, Fail}, "L5", 12, 1, 1},
+		{"untrusted-root.json", "https://untrusted-root.badssl.com", []Status{Pass, Pass, Unknown, Pass, Pass, Fail}, "L5", 0, 16, 13},
+		{"wrong-host.json", "https://wrong.host.badssl.com", []Status{Pass, Pass, Unknown, Pass, Fail, Pass}, "L4", 17, 0, 0},
 	} {
 		r := read(t, c.file)
-		if r.Target != c.target || r.Version != "0.1.0" || r.OS != "windows" {
-			t.Errorf("%s: target %q, version %q, system %q", c.file, r.Target, r.Version, r.OS)
+		if r.Target != c.target || r.Version != "0.1.0" || r.OS != "windows" || r.Schema != SchemaVersion {
+			t.Errorf("%s: target %q, version %q, system %q, schema %q", c.file, r.Target, r.Version, r.OS, r.Schema)
 		}
-		if r.Verdict.Status != Fail || r.Verdict.ExitCode != 4 || r.Verdict.Sentence == "" {
-			t.Errorf("%s: verdict %+v", c.file, r.Verdict)
+		if r.Verdict.Status != Fail || r.Verdict.ExitCode != 4 || r.Verdict.Sentence == "" || r.Verdict.Layer != c.decisive {
+			t.Errorf("%s: verdict %+v, want it about %s", c.file, r.Verdict, c.decisive)
 		}
 		if len(r.Layers) != len(c.layerStatus) {
 			t.Fatalf("%s: %d layers, want %d", c.file, len(r.Layers), len(c.layerStatus))
@@ -95,6 +96,33 @@ func TestAFixCarriesWhatTheCommandNeeds(t *testing.T) {
 	if s.Command != "keytool" || !s.NeedsAdmin || s.Elevation != "administrator" || s.Caveat != "in cmd.exe" ||
 		s.Anchors != 7 || len(s.ChosenBy) != 1 || r.Layers[0].Reason != "" {
 		t.Fatalf("read %+v", s)
+	}
+}
+
+// TestAVerdictAboutNoLayerIsReadAsNone - null is the sentence naming no layer
+// (ADR123), and a document from before the field has none either.
+func TestAVerdictAboutNoLayerIsReadAsNone(t *testing.T) {
+	for _, b := range []string{`{"verdict":{"layer":null}}`, `{"verdict":{}}`} {
+		r, err := Decode([]byte(b))
+		if err != nil || r.Verdict.Layer != "" {
+			t.Errorf("%s was read as a verdict about %q (%v)", b, r.Verdict.Layer, err)
+		}
+	}
+}
+
+// TestTheHeadIsReadOnItsOwn - the schema and the version are read from a
+// document whose other fields this window could not read, so another schema
+// is told apart from no document at all.
+func TestTheHeadIsReadOnItsOwn(t *testing.T) {
+	h, err := ReadHead([]byte(`{"schema_version":"3.0","tool":{"version":"0.2.0"},"verdict":{"exit_code":"four"}}`))
+	if err != nil || h.Schema != "3.0" || h.Version != "0.2.0" {
+		t.Errorf("read %+v (%v)", h, err)
+	}
+	if _, err := Decode([]byte(`{"schema_version":"3.0","verdict":{"exit_code":"four"}}`)); err == nil {
+		t.Error("a document the whole read cannot take was read - the head is what tells it apart")
+	}
+	if _, err := ReadHead([]byte("certdoctor: not a URL")); err == nil {
+		t.Error("words were read as a head")
 	}
 }
 

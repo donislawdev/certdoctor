@@ -129,3 +129,48 @@ func TestTheRequestBecomesTheCommandLineItSays(t *testing.T) {
 		}
 	}
 }
+
+// TestTheLimitIsTheTypedNumberOrTheDefault - the time shown against is the
+// number typed for the time limit, zero included, and the command line's
+// default for anything that is not a number of seconds.
+func TestTheLimitIsTheTypedNumberOrTheDefault(t *testing.T) {
+	def := float64(switches.DefaultBudgetSeconds)
+	for _, c := range []struct {
+		typed string
+		want  float64
+	}{
+		{"", def}, {"   ", def}, {"90", 90}, {" 2.5 ", 2.5}, {"0", 0}, {"1,5", def}, {"-3", def},
+		{"NaN", def}, {"Inf", def}, {"ten", def}, {"1e2", 100},
+	} {
+		r := Request{Typed: map[string]string{budgetSwitch: c.typed, "probe-timeout": "7"}}
+		if got := r.Limit(); got != c.want {
+			t.Errorf("a time limit typed as %q gives %v, want %v", c.typed, got, c.want)
+		}
+	}
+	if got := (Request{}).Limit(); got != def {
+		t.Errorf("a request with nothing typed gives %v, want the default %v", got, def)
+	}
+}
+
+// TestTheLimitIsReadFromTheWholeRunsSwitch - the switch Limit reads is the one
+// offered for the whole run's time, with the default the form shows for it.
+func TestTheLimitIsReadFromTheWholeRunsSwitch(t *testing.T) {
+	for _, o := range Offered {
+		if o.Switch == budgetSwitch {
+			if o.Control() != Seconds || o.Default != switches.DefaultBudgetSeconds {
+				t.Errorf("--%s is offered as %v with the default %d", budgetSwitch, o.Control(), o.Default)
+			}
+			return
+		}
+	}
+	t.Errorf("--%s, which the time shown is read from, is not offered by the window", budgetSwitch)
+}
+
+// TestARequestIsReadyWithAnAddress - spaces are no address.
+func TestARequestIsReadyWithAnAddress(t *testing.T) {
+	for address, want := range map[string]bool{"": false, " \t ": false, "example.com": true, " https://example.com ": true} {
+		if got := (Request{Address: address}).Ready(); got != want {
+			t.Errorf("the address %q is ready: %v, want %v", address, got, want)
+		}
+	}
+}
