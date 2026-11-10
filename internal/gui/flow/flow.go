@@ -19,12 +19,14 @@ import (
 )
 
 // Port runs the command line with args and answers what came of it (ADR121
-// point 2). The one implementation today starts certdoctor beside the window
+// point 2). input is what the run reads on standard input - the report the
+// window drew, when Save report hands it back with --from - and nil for
+// nothing. The one implementation today starts certdoctor beside the window
 // as a child process (cmd/certdoctor-gui/processes.go). An engine run inside
 // the window would be a second implementation of this, not a change to the
 // screens.
 type Port interface {
-	Run(ctx context.Context, args []string) Process
+	Run(ctx context.Context, args []string, input []byte) Process
 }
 
 // Process is what one run left behind.
@@ -124,6 +126,9 @@ func (f *Flow) Limit() float64 { return f.request.Limit() }
 
 // Elapsed is the time the running run has taken, in seconds.
 func (f *Flow) Elapsed(now time.Time) float64 { return now.Sub(f.began).Seconds() }
+
+// Began is when the last run began, by the window's clock.
+func (f *Flow) Began() time.Time { return f.began }
 
 // Begin starts a run of r.
 func (f *Flow) Begin(r request.Request, now time.Time) Run {

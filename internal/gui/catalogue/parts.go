@@ -252,8 +252,40 @@ func Parts(icon fyne.Resource, r model.Report) (fyne.CanvasObject, fyne.Focusabl
 		rail(r),
 		parts.Card(words.T(words.CatVerdict), nil, parts.Verdict(r)),
 		screenStates(),
+		saveDialogs(),
 	)
 	return page(words.CatParts, body), focus
+}
+
+// saveDialogs is the dialog Save report opens, in every step a copy goes
+// through, with a folder and a name as long as a real one gets and the
+// command line's own refusal at its full length.
+func saveDialogs() fyne.CanvasObject {
+	const (
+		folder = `C:\Users\jdoe\Documents\Reports for the ticket`
+		name   = "certdoctor-example.com-20261110T133005Z.html"
+	)
+	path := folder + `\` + name
+	steps := []struct {
+		name words.Key
+		show func(*screens.SaveView)
+	}{
+		{words.CatAsking, func(v *screens.SaveView) { v.Asking() }},
+		{words.CatUnusable, func(v *screens.SaveView) { v.Unusable(words.T(words.SaveForbidden)) }},
+		{words.CatTaken, func(v *screens.SaveView) { v.Taken(name) }},
+		{words.CatWriting, func(v *screens.SaveView) { v.Writing() }},
+		{words.CatFailed, func(v *screens.SaveView) {
+			v.Failed("moving the finished report to " + path + ": Access is denied.")
+		}},
+		{words.CatSaved, func(v *screens.SaveView) { v.Done(path) }},
+	}
+	var cells []fyne.CanvasObject
+	for i, s := range steps {
+		o, v := screens.SaveDialogFor(i%len(screens.SaveChoices()), folder, name)
+		s.show(v)
+		cells = append(cells, labelled(s.name, o))
+	}
+	return parts.Card(words.T(words.CatSave), nil, parts.Stack(look.GapCard, cells...))
 }
 
 // screenStates is the parts that stand for a state of a screen rather than for a
@@ -277,9 +309,19 @@ func screenStates() fyne.CanvasObject {
 		parts.RowTop(look.GapCard, -1, fold(false, parts.Rest, words.CatRest), fold(false, parts.Hover, words.CatHover)),
 		parts.RowTop(look.GapCard, -1, fold(false, parts.Focused, words.CatFocus), fold(true, parts.Hover, words.CatOpen)),
 	)
+	// The menu Save report opens, with one choice in each state the pointer
+	// and the keyboard put it in.
+	menu := func(row int, s parts.State, name words.Key) fyne.CanvasObject {
+		m, rows := parts.Menu(screens.SaveChoices(), nil, nil)
+		if row >= 0 {
+			rows[row].Pin(s)
+		}
+		return labelled(name, m)
+	}
 	menus := parts.RowTop(look.GapCard, -1,
-		labelled(words.CatRest, parts.Menu(screens.SaveChoices(), -1)),
-		labelled(words.CatHover, parts.Menu(screens.SaveChoices(), 1)),
+		menu(-1, parts.Rest, words.CatRest),
+		menu(1, parts.Hover, words.CatHover),
+		menu(0, parts.Focused, words.CatFocus),
 	)
 	notice := parts.Own(parts.Notice(words.T(words.LinkFailed), words.T(words.LinkFailedNote), words.RepositoryURL))
 	problem := parts.Problem(words.T(words.RefusedTitle), "", words.T(words.RefusedTodo), words.T(words.CatSampleLong),

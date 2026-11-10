@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io/fs"
@@ -50,13 +51,14 @@ type commandLinePort struct{}
 // No window of its own on Windows - certdoctor is a console program, and
 // started from a window it would flash one (S29, measured 2026-11-03: with the
 // flag neither it nor a console program it starts shows one). Its standard
-// input is nothing, its environment is the window's - the variables L0 reads
-// are the ones the person's programs see - and a run whose context ends is
+// input is input - the report Save report hands back - or nothing when that is
+// nil, its environment is the window's - the variables L0 reads are the ones
+// the person's programs see - and a run whose context ends is
 // asked to stop the way that system asks: an interrupt on Linux and macOS,
 // which the command line answers by ending its own children (ADR114), and on
 // Windows the end of the process, which its children outlive only until the
 // fixed script each one runs is done (OBS197).
-func (commandLinePort) Run(ctx context.Context, args []string) flow.Process {
+func (commandLinePort) Run(ctx context.Context, args []string, input []byte) flow.Process {
 	program, err := commandLine()
 	if err != nil {
 		return flow.Process{Program: commandLineFile, StartFailed: err}
@@ -64,6 +66,13 @@ func (commandLinePort) Run(ctx context.Context, args []string) flow.Process {
 	out, printed := flow.NewCapped(flow.MaxDocument), flow.NewCapped(flow.MaxPrinted)
 	cmd := exec.CommandContext(ctx, program, args...)
 	cmd.Stdout, cmd.Stderr = out, printed
+	if input != nil {
+		// Through a pipe the toolchain fills and closes, so the command line
+		// reads to the end of it - and a run that ends without reading all of
+		// it is not an error of ours: os/exec drops the broken pipe then
+		// (skipStdinCopyError, go1.27.3 exec_unix.go and exec_windows.go).
+		cmd.Stdin = bytes.NewReader(input)
+	}
 	cmd.SysProcAttr = withoutConsole()
 	cmd.Cancel = func() error { return askToStop(cmd.Process) }
 	cmd.WaitDelay = stopWait

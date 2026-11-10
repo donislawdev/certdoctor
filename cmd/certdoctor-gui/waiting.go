@@ -16,8 +16,9 @@ import (
 // channel, no select. An entry takes the guard off a file for that question
 // for ever, so the file holds the one function that needs it.
 
-// waitFor runs args through port beside the toolkit's loop and hands what came
-// of it to done on the toolkit's goroutine.
+// waitFor runs args through port beside the toolkit's loop, with input on the
+// run's standard input, and hands what came of it to done on the toolkit's
+// goroutine. A diagnosis and a saved copy of its report both come this way.
 //
 // Beside the loop, because a run takes up to its limit and a window that waits
 // for it on its own goroutine stops drawing, cannot be cancelled, and is called
@@ -27,9 +28,9 @@ import (
 // thread.go: "Developers should use this only from within goroutines they have
 // created"). The goroutine ends when the run does: port.Run returns when the
 // process has ended, and ctx is how the window ends it sooner.
-func waitFor(ctx context.Context, port flow.Port, args []string, done func(flow.Process)) {
+func waitFor(ctx context.Context, port flow.Port, args []string, input []byte, done func(flow.Process)) {
 	go func() {
-		answer := port.Run(ctx, args)
+		answer := port.Run(ctx, args, input)
 		fyne.Do(func() { done(answer) })
 	}()
 }

@@ -100,10 +100,7 @@ func foldHead(title, closedLine string, s State, open bool) fyne.CanvasObject {
 	if open {
 		icon = theme.MenuDropDownIcon()
 	}
-	sign := canvas.NewImageFromResource(theme.NewColoredResource(icon, fyne.ThemeColorName(look.InkMuted)))
-	sign.FillMode = canvas.ImageFillContain
-	sign.SetMinSize(fyne.NewSquareSize(look.IconControl))
-	words := []fyne.CanvasObject{Middle(sign), Middle(Text(Heading, title))}
+	words := []fyne.CanvasObject{Middle(mutedSign(icon, look.IconControl)), Middle(Text(Heading, title))}
 	if !open {
 		words = append(words, Middle(Clip(CaptionMuted, closedLine)))
 	}
@@ -131,27 +128,108 @@ func foldHead(title, closedLine string, s State, open bool) fyne.CanvasObject {
 		Inset(room, room, room, below, RowGrow(look.GapInline, 2, words...))))
 }
 
+// mutedSign is a sign of the toolkit's drawn in the muted ink at size: the
+// one shape of the fold's arrow, the mark of a problem and the mark of a
+// message, so all three change in one place.
+func mutedSign(icon fyne.Resource, size float32) fyne.CanvasObject {
+	sign := canvas.NewImageFromResource(theme.NewColoredResource(icon, fyne.ThemeColorName(look.InkMuted)))
+	sign.FillMode = canvas.ImageFillContain
+	sign.SetMinSize(fyne.NewSquareSize(size))
+	return sign
+}
+
 // MenuItem is one choice of a menu: a name and a line saying what it is for.
 type MenuItem struct {
 	Name, Note string
 }
 
 // Menu is a short list of choices standing over the screen, the way the
-// toolkit opens a pop-up: on the raised surface, with an edge, the row
-// under the pointer lit.
-func Menu(items []MenuItem, lit int) fyne.CanvasObject {
-	rows := make([]fyne.CanvasObject, len(items))
+// toolkit opens a pop-up: on the raised surface, with an edge. Each choice is
+// pressed like every other part of the window - lit under the pointer, ringed
+// while it holds the keyboard, chosen with a click, Space or Enter - and the
+// arrow keys move the keyboard from one choice to the next. chosen is called
+// with the index of the choice pressed, and leave when Escape is; either may
+// be nil. The rows come back too, so the window can give the first one the
+// keyboard and the catalogue can pin them in a state.
+func Menu(items []MenuItem, chosen func(int), leave func()) (fyne.CanvasObject, []*Pressable) {
+	rows := make([]*Pressable, len(items))
+	objects := make([]fyne.CanvasObject, len(items))
 	for i, it := range items {
-		face := canvas.NewRectangle(look.Colour(look.Raised))
-		if i == lit {
-			face.FillColor = look.Colour(look.Hovered)
+		row := NewPressable(menuRow(it), nil, false)
+		row.OnTapped = func() {
+			if chosen != nil {
+				chosen(i)
+			}
 		}
-		face.CornerRadius = look.RadiusControl
-		rows[i] = Layers(face, PadXY(look.InsetCell, look.GapInline, Stack(0,
-			Text(Strong, it.Name), Text(CaptionMuted, it.Note))))
+		row.keyed = func(k *fyne.KeyEvent) bool { return menuKey(rows, i, k, leave) }
+		rows[i], objects[i] = row, row
 	}
 	return Width(look.MenuWidth, Panel(look.Raised, look.EdgeControl, look.RadiusCard,
-		Pad(look.GapTight, Stack(0, rows...))))
+		Pad(look.GapTight, Stack(0, objects...)))), rows
+}
+
+// menuRow draws one choice of a menu in a state: lit under the pointer and
+// while pressed, ringed while it holds the keyboard - the way the head of a
+// fold is. The note wraps, so a long one makes the row taller rather than the
+// menu wider.
+func menuRow(it MenuItem) func(State, bool) (fyne.CanvasObject, fyne.CanvasObject) {
+	return func(s State, _ bool) (fyne.CanvasObject, fyne.CanvasObject) {
+		face := canvas.NewRectangle(color.Transparent)
+		face.CornerRadius = look.RadiusControl
+		switch s {
+		case Hover, Press:
+			face.FillColor = look.Colour(look.Hovered)
+		case Focused:
+			face.StrokeColor = look.Colour(look.Focus)
+			face.StrokeWidth = look.StrokeFocus
+		}
+		return face, PadXY(look.InsetCell, look.GapInline, Stack(0, Text(Strong, it.Name), Para(CaptionMuted, it.Note)))
+	}
+}
+
+// menuKey is a key typed into row i of a menu: the arrows move the keyboard
+// to the next row or the one before, round from the last to the first, and
+// Escape leaves. It says whether it took the key.
+func menuKey(rows []*Pressable, i int, k *fyne.KeyEvent, leave func()) bool {
+	switch k.Name {
+	case fyne.KeyDown:
+		focus(rows[(i+1)%len(rows)])
+	case fyne.KeyUp:
+		focus(rows[(i+len(rows)-1)%len(rows)])
+	case fyne.KeyEscape:
+		if leave != nil {
+			leave()
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+// focus gives p the keyboard on the canvas it is drawn on.
+func focus(p *Pressable) {
+	if c := fyne.CurrentApp().Driver().CanvasForObject(p); c != nil {
+		c.Focus(p)
+	}
+}
+
+// Message is what a dialog says under the form it is about: a sign in the
+// muted ink - never a status's hue, for the reason Problem gives - a line in
+// bold and a sentence under it. sign nil is a message with no sign, and
+// either line may be empty.
+func Message(sign fyne.Resource, title, sentence string) fyne.CanvasObject {
+	var text []fyne.CanvasObject
+	if title != "" {
+		text = append(text, Para(Strong, title))
+	}
+	if sentence != "" {
+		text = append(text, Para(Body, sentence))
+	}
+	body := Stack(look.GapTight, text...)
+	if sign == nil {
+		return body
+	}
+	return RowTop(look.GapInline, 1, mutedSign(sign, look.IconControl), body)
 }
 
 // Notice stands under a button that leads out of the window when the
@@ -171,9 +249,7 @@ func Notice(title, note, address string) fyne.CanvasObject {
 // no status's hue: FAIL is a fact about somebody's system and an error is
 // ours (docs/18 section 3a), and the two must never look alike.
 func Problem(title, what, todo, printed string, actions ...fyne.CanvasObject) fyne.CanvasObject {
-	sign := canvas.NewImageFromResource(theme.NewColoredResource(theme.ErrorIcon(), fyne.ThemeColorName(look.InkMuted)))
-	sign.FillMode = canvas.ImageFillContain
-	sign.SetMinSize(fyne.NewSquareSize(look.MarkLarge))
+	sign := mutedSign(theme.ErrorIcon(), look.MarkLarge)
 	text := []fyne.CanvasObject{Text(Heading, title)}
 	if what != "" {
 		text = append(text, Para(Body, what))

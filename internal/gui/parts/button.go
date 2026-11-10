@@ -57,6 +57,15 @@ func NewButton(k Kind, label string, icon fyne.Resource, tapped func()) *Button 
 	return b
 }
 
+// Fit makes the button as wide as the widest of labels from the start, for a
+// button whose words change - Save that becomes Replace - so nothing beside
+// it moves when they do (GUI rule 3).
+func (b *Button) Fit(labels ...string) *Button {
+	b.fits = labels
+	b.Refresh()
+	return b
+}
+
 // Pin shows the button in one state for good. For the catalogue only.
 func (b *Button) Pin(s State) *Button {
 	b.pin(s)

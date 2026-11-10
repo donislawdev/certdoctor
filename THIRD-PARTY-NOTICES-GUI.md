@@ -5,7 +5,7 @@ under the GNU General Public License, version 3. The full text is in
 [LICENSE](LICENSE).
 
 The window also contains work that other people made: the Go runtime and
-standard library, the Fyne graphics toolkit and the twenty five modules it
+standard library, the Fyne graphics toolkit and the twenty five other modules it
 brings with it, the GLFW library in C that opens the window and reads its input,
 and the Inter typeface its text is set in. Their licences ask that their notices
 travel with every copy, a binary one included, so this file is part of every
@@ -18,7 +18,7 @@ the window has a file of its own - `certdoctor --license` prints the notices of
 the code the command line carries, and no more.
 
 The window is built for Windows on amd64, Linux on amd64 and macOS on arm64.
-Twenty five of the modules below are in all three builds, and
+Twenty six of the modules below are in all three builds, and
 `github.com/rymdport/portal` is in the Linux build alone. GLFW compiles
 different C files on each platform, and a notice below that belongs to one
 platform says so.
@@ -1864,6 +1864,43 @@ THE SOFTWARE.
 ```
 
 Source: <https://github.com/BurntSushi/toml>
+
+---
+
+## github.com/FyshOS/fancyfs
+
+Version `v0.0.1`. BSD-3-Clause. Folder pictures in the toolkit's
+folder dialog, which Save report opens to choose where a report goes.
+
+```
+Copyright (C) 2025 FyshOS developers (see AUTHORS)
+All rights reserved.
+
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of Fyne.io nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+Source: <https://github.com/FyshOS/fancyfs>
 
 ---
 

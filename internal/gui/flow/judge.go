@@ -15,6 +15,10 @@ import (
 // or the trouble that stood in the way.
 type Outcome struct {
 	Report model.Report
+	// Document is the report as the command line wrote it, kept so Save report
+	// hands back the very bytes the window drew rather than a copy made again
+	// from what the window read of them (ADR121 (c)).
+	Document []byte
 	// Open is the layer the report opens on, as an index into Report.Layers.
 	Open    int
 	Trouble *Trouble
@@ -78,7 +82,7 @@ func judge(p Process, version string, limit float64) Outcome {
 	case len(r.Layers) == 0:
 		return trouble(Trouble{Kind: NoLayers})
 	}
-	return Outcome{Report: r, Open: opening(r)}
+	return Outcome{Report: r, Document: p.Out, Open: opening(r)}
 }
 
 // withoutReport is the kind of a run that ended without writing a report: the

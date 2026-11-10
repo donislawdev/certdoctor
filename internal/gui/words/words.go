@@ -120,6 +120,34 @@ const (
 	LinkFailed          Key = "link.failed"
 	LinkFailedNote      Key = "link.failed.note"
 
+	// Save report: the dialog that names the file, and what it says while the
+	// command line writes it (ADR121 (c)). Where a sentence takes %s it is the
+	// name of a format, the name of a file, or a number of seconds.
+	SaveTitle       Key = "save.title"
+	SaveFolder      Key = "save.folder"
+	SaveName        Key = "save.name"
+	SaveEnding      Key = "save.ending"
+	SaveChoose      Key = "save.choose"
+	SaveChooseTitle Key = "save.choose.title"
+	SaveUseFolder   Key = "save.choose.use"
+	SaveButton      Key = "save.button"
+	SaveReplace     Key = "save.replace"
+	SaveClose       Key = "save.close"
+	SaveNoFolder    Key = "save.nofolder"
+	SaveNotWhole    Key = "save.notwhole"
+	SaveNoName      Key = "save.noname"
+	SaveForbidden   Key = "save.forbidden"
+	SaveDevice      Key = "save.device"
+	SaveTaken       Key = "save.taken"
+	SaveTakenWhat   Key = "save.taken.what"
+	SaveWriting     Key = "save.writing"
+	SaveFailed      Key = "save.failed"
+	SaveStopped     Key = "save.stopped"
+	SaveEndedCode   Key = "save.ended.code"
+	SaveEnded       Key = "save.ended"
+	SaveDone        Key = "save.done"
+	SaveDoneWhat    Key = "save.done.what"
+
 	CommandHead   Key = "command.head"
 	CommandNote   Key = "command.note"
 	NeedsAdmin    Key = "command.admin"
@@ -210,7 +238,7 @@ var english = map[Key]string{
 	RunningLayers:  "Context, name lookup, proxy, TCP, TLS and every trust store on this machine",
 	OptionsClosed:  "System proxy settings, default time limits, names shown",
 	SaveJSON:       "JSON",
-	SaveJSONNote:   "The full report, for another tool or to open again here",
+	SaveJSONNote:   "The whole report as data, for another tool or for certdoctor --from",
 	SaveHTML:       "HTML",
 	SaveHTMLNote:   "One page to read in a browser or attach to a ticket",
 	SaveMD:         "Markdown",
@@ -252,6 +280,31 @@ var english = map[Key]string{
 	LinkDonate:          "Donate",
 	LinkFailed:          "The page did not open",
 	LinkFailedNote:      "This desktop did not hand it to a browser. Copy the address and open it yourself.",
+
+	SaveTitle:       "Save the report as %s",
+	SaveFolder:      "Folder",
+	SaveName:        "Name",
+	SaveEnding:      "%s is added when the name does not end with it.",
+	SaveChoose:      "Choose",
+	SaveChooseTitle: "The folder to save the report in",
+	SaveUseFolder:   "Use this folder",
+	SaveButton:      "Save",
+	SaveReplace:     "Replace",
+	SaveClose:       "Close",
+	SaveNoFolder:    "Choose a folder to save the report in.",
+	SaveNotWhole:    "The folder has to be a whole path, the way Choose gives it.",
+	SaveNoName:      "Give the file a name.",
+	SaveForbidden:   "A name cannot hold < > : \" / \\ | ? * or an invisible character. Windows keeps them for itself, and a saved report is often opened on another machine.",
+	SaveDevice:      "%s is a name Windows keeps for a device, so no file can be called that.",
+	SaveTaken:       "%s is already in this folder",
+	SaveTakenWhat:   "Replace it with this report, or give the file another name.",
+	SaveWriting:     "Saving the report",
+	SaveFailed:      "The report was not saved",
+	SaveStopped:     "certdoctor was still writing it %s s later, so the window stopped it.",
+	SaveEndedCode:   "certdoctor ended with exit code %d (%s) without writing it.",
+	SaveEnded:       "certdoctor ended without writing it.",
+	SaveDone:        "Saved",
+	SaveDoneWhat:    "The report is in this file, and Save report opens in its folder next time.",
 
 	CommandHead:   "Command to add the authority",
 	CommandNote:   "Read it before you run it. certdoctor never runs it for you.",
@@ -323,6 +376,13 @@ const (
 	CatCopied     Key = "cat.copied"
 	CatNothing    Key = "cat.nothing"
 	CatSelFocus   Key = "cat.selected.focus"
+	CatSave       Key = "cat.save"
+	CatAsking     Key = "cat.save.asking"
+	CatUnusable   Key = "cat.save.unusable"
+	CatTaken      Key = "cat.save.taken"
+	CatWriting    Key = "cat.save.writing"
+	CatFailed     Key = "cat.save.failed"
+	CatSaved      Key = "cat.save.saved"
 )
 
 var catalogue = map[Key]string{
@@ -370,6 +430,13 @@ var catalogue = map[Key]string{
 	CatCopied:     "just copied",
 	CatNothing:    "nothing to open",
 	CatSelFocus:   "selected, keyboard focus",
+	CatSave:       "Save report dialog",
+	CatAsking:     "asking, with the name chosen",
+	CatUnusable:   "a name that cannot be used",
+	CatTaken:      "a file of that name in the folder",
+	CatWriting:    "saving",
+	CatFailed:     "not saved, in the command line's words",
+	CatSaved:      "saved",
 }
 
 // Kind is the name the window gives a kind of finding. The kinds are the

@@ -50,6 +50,11 @@
 # darwin/arm64: twenty five modules besides ours on Windows and macOS, twenty six
 # on Linux, where rymdport/portal is the extra one. The command line still
 # links the same five.
+#
+# SEVENTY SEVEN ON 2026-11-10. Save report's Choose opens the toolkit's folder
+# dialog, whose package links github.com/FyshOS/fancyfs into the window, and
+# the go.mod of that module brings github.com/fredbi/uri into the graph alone.
+# The command line still links the same five.
 
 github.com/donislawdev/certdoctor
 
@@ -260,6 +265,25 @@ fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4
 # authors", read at https://raw.githubusercontent.com/BurntSushi/toml/v1.6.0/COPYING
 github.com/BurntSushi/toml v1.6.0
 
+# Folder pictures in the toolkit's folder dialog. BSD-3-Clause - "Copyright (C)
+# 2025 FyshOS developers", read at
+# https://raw.githubusercontent.com/FyshOS/fancyfs/v0.0.1/LICENSE and found the
+# same file there, byte for byte, with deps.dev naming the same licence, on
+# 2026-11-10 (internal_tools/licencje-u-autora.ps1).
+#
+# LINKED SINCE 2026-11-10, BY THE OWNER'S DECISION, and not on 2026-11-03 with
+# the rest of the driver: the toolkit's dialog package imports it, and the
+# window imported that package first for Choose in Save report, which opens
+# the toolkit's folder dialog (ADR121 (c)).
+#
+# THIRD QUESTION OF THE SIEVE: for each folder the dialog shows, it looks for a
+# .background.png, .jpg, .jpeg or .svg in it and draws that behind the list -
+# a file in somebody's folder, decoded by the image readers the toolkit already
+# links for its own pictures. It writes nothing and fetches nothing. Its own
+# go.mod names github.com/fredbi/uri, which it does not import - so that one
+# stands in the last group, not here.
+github.com/FyshOS/fancyfs v0.0.1
+
 # Image filters the driver scales pictures with. MIT - "Copyright (c) 2016-2024
 # Anthony Simon", read at
 # https://raw.githubusercontent.com/anthonynsimon/bild/v0.17.1/LICENSE
@@ -340,8 +364,11 @@ github.com/rymdport/portal v0.4.2
 # its helpers are compiled into this module's tests, through the toolkit's
 # test package, and never into anything that is shipped. golang.org/x/sys left
 # this group for the one above at v0.49.0.
+#
+# github.com/FyshOS/fancyfs left this group for the one above on 2026-11-10,
+# and its go.mod brought github.com/fredbi/uri here the same day: named there,
+# imported by nothing that is built.
 
-github.com/FyshOS/fancyfs v0.0.1
 github.com/HugoSmits86/nativewebp v1.3.0
 github.com/Masterminds/semver/v3 v3.5.0
 github.com/akavel/rsrc v0.10.2
@@ -351,6 +378,7 @@ github.com/creack/pty v1.1.9
 github.com/davecgh/go-spew v1.1.1
 github.com/dop251/goja_nodejs v0.0.0-20211022123610-8dd9abb0616d
 github.com/fogleman/gg v1.3.0
+github.com/fredbi/uri v1.1.1
 github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8
 github.com/fyne-io/glfw-js v0.4.0
 github.com/go-ole/go-ole v1.3.0

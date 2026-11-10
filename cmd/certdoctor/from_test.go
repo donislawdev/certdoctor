@@ -78,6 +78,24 @@ func TestASavedReportIsWrittenWhereOutSays(t *testing.T) {
 	}
 }
 
+// TestTheWindowsSaveIsACommandLineThisProgramTakes is the command line Save
+// report in the window hands this program, in the shape it hands it - every
+// value after "=", the report on standard input (request.SaveArgs in
+// internal/gui/request, whose test holds that side to this shape). The window
+// reads the written file nowhere: exit code OK is its whole answer.
+func TestTheWindowsSaveIsACommandLineThisProgramTakes(t *testing.T) {
+	saved := invoke("https://example.com", "--json").stdout.Bytes()
+	h := invokeAdjusted(nil, report.PrivilegeUnknown, func(e *environment) {
+		e.stdin = func() (io.Reader, error) { return bytes.NewReader(saved), nil }
+	}, "--from=-", "--format=md", "--out=-report.md")
+	if h.code != exitcode.OK || h.stdout.Len() != 0 {
+		t.Fatalf("ended with %s, writing %q to standard output: %s", h.code.Name(), h.stdout.String(), h.stderr.String())
+	}
+	if page := h.written["-report.md"]; !bytes.Equal(page, invoke("https://example.com", "--format", "md").stdout.Bytes()) {
+		t.Errorf("the copy at -report.md is not the run's Markdown: %d bytes", len(page))
+	}
+}
+
 // TestFromIsRefusedWithTheReasonAndWritesNothing is every way a command line
 // with --from can fail, each ending in the code the table gives it, with a
 // sentence that says what to do, and with nothing on standard output.

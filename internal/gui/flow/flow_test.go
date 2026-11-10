@@ -235,6 +235,10 @@ func TestARunGoesFromStartToAnswerAndBack(t *testing.T) {
 	if !f.Finish(second.ID, Process{Out: report(t), Code: 4}) || f.Phase() != Reported || f.Outcome().Open != 5 {
 		t.Fatalf("the answer was not drawn: phase %d, %+v", f.Phase(), f.Outcome().Trouble)
 	}
+	if !slices.Equal(f.Outcome().Document, report(t)) || !f.Began().Equal(now) {
+		t.Fatalf("the report drawn keeps %d bytes of the %d it was drawn from, and its run began %v - Save report hands back these",
+			len(f.Outcome().Document), len(report(t)), f.Began())
+	}
 	if f.Finish(second.ID, Process{Code: 1}) || f.Phase() != Reported {
 		t.Fatal("a second answer of the same run was taken")
 	}

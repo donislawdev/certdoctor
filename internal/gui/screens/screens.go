@@ -187,16 +187,6 @@ func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.Ca
 	return container.NewBorder(head(icon, r.Version), nil, nil, nil, container.NewVScroll(body)), v
 }
 
-// SaveChoices is what Save report offers: the three formats the command
-// line writes, each saved by the command line from the report this run made.
-func SaveChoices() []parts.MenuItem {
-	return []parts.MenuItem{
-		{Name: words.T(words.SaveHTML), Note: words.T(words.SaveHTMLNote)},
-		{Name: words.T(words.SaveMD), Note: words.T(words.SaveMDNote)},
-		{Name: words.T(words.SaveJSON), Note: words.T(words.SaveJSONNote)},
-	}
-}
-
 func layerDetail(l model.Layer, open int) fyne.CanvasObject {
 	title := parts.Row(look.GapInline,
 		parts.Middle(parts.Text(parts.Heading, l.Name)),

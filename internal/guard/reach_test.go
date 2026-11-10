@@ -187,6 +187,15 @@ var fileReadAllowlist = map[string]bool{
 	// file only through GuardedAppAlias, which judges it as live.go's paths are
 	// judged.
 	"internal/adapter/file/live_windows.go": true,
+
+	// The window's Save report, added 2026-11-10 by the owner's decision
+	// (ADR121 (c)): one os.Stat asking whether a file stands at the path the
+	// person typed or chose in the dialog, so the window can ask before the
+	// command line replaces it. The path is the person's own, as --out is on
+	// the command line - the reason internal/adapter/output/atomic.go above may
+	// ask the same question. A file of its own, so the entry covers that one
+	// question and nothing the window may come to do later.
+	"cmd/certdoctor-gui/saving.go": true,
 }
 
 // fileReachingCalls are the standard library calls that make a path touch a

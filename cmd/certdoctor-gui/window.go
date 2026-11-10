@@ -25,8 +25,13 @@ type window struct {
 	port    flow.Port
 	// wait runs a request beside the toolkit's loop and hands its answer back
 	// on the loop - waitFor in the program, a call in place in a test.
-	wait func(ctx context.Context, port flow.Port, args []string, done func(flow.Process))
+	wait func(ctx context.Context, port flow.Port, args []string, input []byte, done func(flow.Process))
 	now  func() time.Time
+	// present says whether a file stands at a path - the question Save report
+	// asks before it replaces one (saving.go in the program).
+	present func(path string) bool
+	// prefs is where the window keeps the folder a report was last saved to.
+	prefs fyne.Preferences
 
 	// The start screen is built once and shown again, so what was typed in it
 	// stays through a run, a report and a trouble (GUI rule 3).
@@ -38,12 +43,16 @@ type window struct {
 	stop    context.CancelFunc
 	clock   *fyne.Animation
 	running *screens.RunningView
+
+	// The Save report dialog while it stands over the report.
+	saving *saveDialog
 }
 
 // newWindow wires the window of version into w. software says it is drawn by
 // the software renderer shipped beside it (ADR125 point 2).
 func newWindow(w fyne.Window, icon fyne.Resource, version string, software bool, port flow.Port) *window {
-	win := &window{w: w, icon: icon, version: version, flow: flow.New(version), port: port, wait: waitFor, now: time.Now}
+	win := &window{w: w, icon: icon, version: version, flow: flow.New(version), port: port, wait: waitFor, now: time.Now,
+		present: present, prefs: fyne.CurrentApp().Preferences()}
 	// The options put away: most runs need only the address, and the fold
 	// says in one line what is in it.
 	win.start, win.form = screens.Start(icon, version, false, software)
@@ -51,8 +60,17 @@ func newWindow(w fyne.Window, icon fyne.Resource, version string, software bool,
 	win.form.Address.OnSubmitted = func(string) { win.diagnose() }
 	win.form.Address.OnChanged = func(string) { win.ready() }
 	win.ready()
-	w.SetOnClosed(win.quiet)
+	w.SetOnClosed(win.closed)
 	return win
+}
+
+// closed is the window closing: the run and a copy being saved are ended, so
+// neither is left writing into a window that is gone.
+func (win *window) closed() {
+	win.quiet()
+	if win.saving != nil {
+		win.saving.end()
+	}
 }
 
 // ready lets Diagnose be pressed only when there is an address to diagnose.
@@ -108,7 +126,7 @@ func (win *window) begin(run flow.Run) {
 	win.clock = &fyne.Animation{Duration: time.Second, RepeatCount: fyne.AnimationRepeatForever, Tick: func(float32) { win.tick() }}
 	win.clock.Start()
 	win.show(page)
-	win.wait(ctx, win.port, run.Args, func(p flow.Process) { win.finish(run.ID, p) })
+	win.wait(ctx, win.port, run.Args, nil, func(p flow.Process) { win.finish(run.ID, p) })
 }
 
 // tick sets the time the running run has taken.
@@ -135,10 +153,9 @@ func (win *window) finish(id int, p flow.Process) {
 	page, act := screens.Report(win.icon, o.Report, o.Open, -1)
 	act.New.OnTapped = win.back
 	act.Again.OnTapped = win.again
-	// Saving goes through the command line (ADR121 (c)), which does not read
-	// a saved report yet - so the button says it is not there yet rather than
-	// doing nothing when pressed.
-	act.Save.Disable()
+	// A copy is written by the command line, from the report it wrote, read
+	// back with --from (ADR121 (c)) - the window renders no page itself.
+	act.Save.OnTapped = func() { win.saveMenu(act.Save) }
 	win.show(page)
 }
 
@@ -158,8 +175,6 @@ func (win *window) back() {
 
 // quiet stops the clock and ends the run's context - which stops the command
 // line when it is still running, and releases the deadline when it is not.
-// Also what closing the window does, so a run is not left writing into a
-// window that is gone.
 func (win *window) quiet() {
 	if win.clock != nil {
 		win.clock.Stop()

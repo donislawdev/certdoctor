@@ -233,3 +233,67 @@ func TestCopyPutsTheLineOnTheClipboardAndSaysSo(t *testing.T) {
 		t.Errorf("a Copy shown just after a press says %q", shown.Label)
 	}
 }
+
+// TestAMenuChoiceIsPressedLikeAnyPart opens the menu Save report opens and
+// chooses from it the ways a person can: a click, Space and Enter on the
+// choice holding the keyboard, the arrows to move it round, and Escape to
+// leave without choosing.
+func TestAMenuChoiceIsPressedLikeAnyPart(t *testing.T) {
+	newApp(t)
+	var chosen []int
+	left := 0
+	menu, rows := Menu([]MenuItem{{"HTML", "a page"}, {"Markdown", "text"}, {"JSON", "the report"}},
+		func(i int) { chosen = append(chosen, i) }, func() { left++ })
+	w := test.NewTempWindow(t, menu)
+	w.Resize(fyne.NewSize(look.MenuWidth*2, 400))
+
+	rows[1].Tapped(&fyne.PointEvent{})
+	rows[2].TypedKey(&fyne.KeyEvent{Name: fyne.KeySpace})
+	rows[0].TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	if want := []int{1, 2, 0}; len(chosen) != 3 || chosen[0] != want[0] || chosen[1] != want[1] || chosen[2] != want[2] {
+		t.Fatalf("a click on the second, Space on the third and Return on the first chose %v, want %v", chosen, want)
+	}
+
+	w.Canvas().Focus(rows[0])
+	for _, step := range []struct {
+		key  fyne.KeyName
+		want int
+	}{{fyne.KeyDown, 1}, {fyne.KeyDown, 2}, {fyne.KeyDown, 0}, {fyne.KeyUp, 2}, {fyne.KeyUp, 1}} {
+		w.Canvas().Focused().TypedKey(&fyne.KeyEvent{Name: step.key})
+		if got := w.Canvas().Focused(); got != rows[step.want] {
+			t.Fatalf("%s moved the keyboard to %v, want the choice at %d", step.key, got, step.want)
+		}
+	}
+	rows[1].TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	rows[1].TypedKey(&fyne.KeyEvent{Name: fyne.KeyTab})
+	if left != 1 || len(chosen) != 3 {
+		t.Errorf("Escape and Tab left the menu %d time(s) and chose %v - Escape leaves once and chooses nothing", left, chosen)
+	}
+	if rows[1].Disabled() || rows[1].state() != Focused {
+		t.Errorf("the choice holding the keyboard is drawn %v", rows[1].state())
+	}
+}
+
+// TestAButtonFittedToItsWordsKeepsItsWidth - Save becomes Replace in the save
+// dialog, and the Cancel beside it must not move when it does.
+func TestAButtonFittedToItsWordsKeepsItsWidth(t *testing.T) {
+	newApp(t)
+	save := NewButton(Primary, "Save", nil, nil).Fit("Save", "Replace")
+	wide := NewButton(Primary, "Replace", nil, nil)
+	test.NewTempWindow(t, Stack(0, save, wide))
+	before := save.MinSize()
+	if before.Width != wide.MinSize().Width {
+		t.Fatalf("Save fitted to Replace is %v wide, Replace is %v", before.Width, wide.MinSize().Width)
+	}
+	save.Label = "Replace"
+	save.Refresh()
+	if save.MinSize() != before {
+		t.Errorf("saying Replace the button is %v, was %v", save.MinSize(), before)
+	}
+}
+
+// menuOf is a menu that chooses nothing, for a part drawn on its own.
+func menuOf(items []MenuItem) fyne.CanvasObject {
+	m, _ := Menu(items, nil, nil)
+	return m
+}

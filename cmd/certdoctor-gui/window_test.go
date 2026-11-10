@@ -23,18 +23,20 @@ type held struct {
 }
 
 type heldRun struct {
-	ctx  context.Context
-	args []string
-	done func(flow.Process)
+	ctx   context.Context
+	args  []string
+	input []byte
+	done  func(flow.Process)
 }
 
-func (h *held) wait(ctx context.Context, _ flow.Port, args []string, done func(flow.Process)) {
-	h.runs = append(h.runs, heldRun{ctx, args, done})
+func (h *held) wait(ctx context.Context, _ flow.Port, args []string, input []byte, done func(flow.Process)) {
+	h.runs = append(h.runs, heldRun{ctx, args, input, done})
 }
 
-func (h *held) Run(context.Context, []string) flow.Process { return flow.Process{} }
+func (h *held) Run(context.Context, []string, []byte) flow.Process { return flow.Process{} }
 
-// testWindow is the window wired over a held port, with a clock the test moves.
+// testWindow is the window wired over a held port, with a clock the test moves
+// and no disk: a file is present only when the test says so.
 func testWindow(t *testing.T) (*window, *held, *time.Time) {
 	t.Helper()
 	a := test.NewTempApp(t)
@@ -45,6 +47,7 @@ func testWindow(t *testing.T) (*window, *held, *time.Time) {
 	win := newWindow(w, nil, "0.1.0", false, h)
 	win.wait = h.wait
 	win.now = func() time.Time { return now }
+	win.present = func(string) bool { return false }
 	win.showStart()
 	return win, h, &now
 }

@@ -28,6 +28,9 @@ type Pressable struct {
 	// headHeight is how tall the head was laid out: a press below it lands
 	// on what the part opened, which is not a press on the part.
 	headHeight float32
+	// keyed is asked about a key before the part is: true says it was taken.
+	// A row of a menu takes the arrows and Escape this way.
+	keyed func(*fyne.KeyEvent) bool
 }
 
 // NewPressable makes a part drawn by draw, opening body under its head when
@@ -75,6 +78,9 @@ func (p *Pressable) Tapped(e *fyne.PointEvent) {
 }
 
 func (p *Pressable) TypedKey(k *fyne.KeyEvent) {
+	if p.keyed != nil && p.keyed(k) {
+		return
+	}
 	if presses(k) {
 		p.Tapped(nil)
 	}

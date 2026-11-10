@@ -154,6 +154,11 @@ const (
 	// characters of code beside Copy, where the longest address the window
 	// shows has 41. A longer line wraps.
 	NoticeWidth = 560
+	// DialogWidth is how wide a dialog standing over the screen is, with its
+	// edge: the width of the start screen's column, so a form in one reads
+	// the same as the form in the other - its column of names, a folder with
+	// Choose beside it, and room for the whole of a suggested file name.
+	DialogWidth = ColumnWidth
 	// ColInstanceMin is the narrowest the column naming where a store lives
 	// may get before the least needed column gives up its room.
 	ColInstanceMin = 160

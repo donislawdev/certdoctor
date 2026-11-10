@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,14 +41,30 @@ const (
 	answerReport = "report"
 	answerFlood  = "flood"
 	answerWait   = "wait"
+	// answerEcho writes back what it reads on standard input - which the
+	// window hands it only for this answer, the way Save report hands back
+	// the report it drew.
+	answerEcho = "echo"
+	// answerInput writes back what it reads on standard input when it is
+	// handed nothing - which has to be nothing, and at once.
+	answerInput = "input"
 )
+
+// echoed is what the window hands the command line on standard input for
+// answerEcho.
+const echoed = `{"schema_version":"2.4"}`
 
 // actAsCommandLine is the test binary standing in for certdoctor beside the
 // window: it writes what it was asked on standard output, a sentence on
 // standard error and ends with DIAGNOSIS - or writes more than the window
-// keeps, or waits until it is stopped.
+// keeps, waits until it is stopped, or writes back what it was handed.
 func actAsCommandLine(args []string) int {
 	switch args[len(args)-1] {
+	case answerEcho, answerInput:
+		if _, err := io.Copy(os.Stdout, os.Stdin); err != nil {
+			return 1
+		}
+		return 0
 	case answerFlood:
 		chunk := strings.Repeat("x", 1<<20)
 		for written := 0; written <= flow.MaxDocument; written += len(chunk) {
@@ -87,7 +104,11 @@ func actAsWindow(args []string) int {
 		time.AfterFunc(200*time.Millisecond, cancel)
 	}
 	began := time.Now()
-	p := (commandLinePort{}).Run(ctx, args)
+	var input []byte
+	if args[len(args)-1] == answerEcho {
+		input = []byte(echoed)
+	}
+	p := (commandLinePort{}).Run(ctx, args, input)
 	a := portAnswer{Program: p.Program, Missing: p.Missing, Printed: string(p.Printed), OutLength: len(p.Out),
 		OutTooLong: p.OutTooLong, Code: p.Code, TookMS: time.Since(began).Milliseconds()}
 	if len(p.Out) < 200 {
@@ -150,6 +171,12 @@ func TestTheCommandLineBesideTheWindowIsRun(t *testing.T) {
 	a := ask("--json", "--", answerWait)
 	if a.Stopped != context.Canceled.Error() || time.Duration(a.TookMS)*time.Millisecond > stopWait+10*time.Second {
 		t.Errorf("a cancelled run left %+v", a)
+	}
+	if a := ask("--from=-", "--", answerEcho); a.Out != echoed || a.Code != 0 {
+		t.Errorf("a run handed the report on standard input wrote back %q with code %d, want %q and 0", a.Out, a.Code, echoed)
+	}
+	if a := ask("--json", "--", answerInput); a.Out != "" || a.Code != 0 || time.Duration(a.TookMS)*time.Millisecond > 10*time.Second {
+		t.Errorf("a run handed nothing read %q with code %d after %d ms, want nothing at once", a.Out, a.Code, a.TookMS)
 	}
 }
 
