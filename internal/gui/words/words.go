@@ -179,6 +179,11 @@ const (
 	SoftwareNotReadable Key = "software.notreadable"
 	SoftwareStartFailed Key = "software.startfailed"
 	SoftwareDidNotHelp  Key = "software.didnothelp"
+
+	// What goes to standard error when the toolkit's own words could not be
+	// given to it in English (OBS206), with the toolkit's reason. The window
+	// opens all the same.
+	ToolkitNotEnglish Key = "toolkit.notenglish"
 )
 
 var english = map[Key]string{
@@ -327,6 +332,7 @@ var english = map[Key]string{
 	SoftwareNotReadable: "The software renderer was not tried: a file of it beside the program could not be read (%s). Check who may read the opengl folder next to certdoctor-gui.exe.",
 	SoftwareStartFailed: "The software renderer was not tried: starting the window again did not work (%s).",
 	SoftwareDidNotHelp:  "The software renderer from the opengl folder beside the program was loaded, and the graphics toolkit still could not open a window with it.",
+	ToolkitNotEnglish:   "The menus and dialogs the graphics toolkit draws itself may follow this system's language rather than English: %s",
 }
 
 // The words of the catalogue screen - the hidden screen that shows every
@@ -482,6 +488,63 @@ var reasons = map[string]string{
 	"undetermined":         "Undetermined",
 	"limit_exceeded":       "A limit of this program stopped it",
 	"credentials_required": "The proxy asks who you are",
+}
+
+// Toolkit is the English of the words the graphics toolkit writes itself -
+// the menu of a box to type in, the dialog that chooses a folder, the names
+// of the days - keyed by the toolkit's own message identifiers, the ones in
+// lang/translations/base.en.json of fyne v2.8.2. The window gives them to
+// the toolkit under every language it carries words in, so a window on a
+// Polish system says Copy rather than Kopiuj, as the rest of it does (D21,
+// OBS206). A copy, so no caller can change what the next one is given.
+func Toolkit() map[string]string {
+	words := make(map[string]string, len(toolkit))
+	for id, text := range toolkit {
+		words[id] = text
+	}
+	return words
+}
+
+var toolkit = map[string]string{
+	"Advanced":          "Advanced",
+	"Cancel":            "Cancel",
+	"Confirm":           "Confirm",
+	"Copy":              "Copy",
+	"Create Folder":     "Create Folder",
+	"Cut":               "Cut",
+	"Enter filename":    "Enter filename",
+	"Error":             "Error",
+	"Favourites":        "Favourites",
+	"File":              "File",
+	"Folder":            "Folder",
+	"New Folder":        "New Folder",
+	"No":                "No",
+	"OK":                "OK",
+	"Open":              "Open",
+	"Paste":             "Paste",
+	"Quit":              "Quit",
+	"Redo":              "Redo",
+	"Save":              "Save",
+	"Select all":        "Select all",
+	"Show Hidden Files": "Show Hidden Files",
+	"Undo":              "Undo",
+	"Yes":               "Yes",
+	"file.name":         "Name",
+	"file.parent":       "Parent",
+	"friday":            "Friday",
+	"friday.short":      "Fri",
+	"monday":            "Monday",
+	"monday.short":      "Mon",
+	"saturday":          "Saturday",
+	"saturday.short":    "Sat",
+	"sunday":            "Sunday",
+	"sunday.short":      "Sun",
+	"thursday":          "Thursday",
+	"thursday.short":    "Thu",
+	"tuesday":           "Tuesday",
+	"tuesday.short":     "Tue",
+	"wednesday":         "Wednesday",
+	"wednesday.short":   "Wed",
 }
 
 // T is the text of a key. A key with no text comes back as itself in angle

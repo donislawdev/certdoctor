@@ -32,6 +32,12 @@ const appID = "dev.donislaw.certdoctor"
 // --software-gl, and every other argument is passed on to that second process
 // as it came - see readLaunch.
 func run(args []string, errOut io.Writer) int {
+	// The toolkit's own words in English before anything of it is drawn
+	// (OBS206). A failure costs those words their language and not the
+	// window, so it is said and the window opens.
+	if err := speakEnglish(); err != nil {
+		fmt.Fprintf(errOut, words.T(words.ToolkitNotEnglish)+"\n", err)
+	}
 	l := readLaunch(args)
 	// The software renderer, when asked for, before anything below asks the
 	// driver for anything: the toolkit's first request for OpenGL by name has to
