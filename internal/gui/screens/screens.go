@@ -18,24 +18,56 @@ import (
 )
 
 // head is the bar across the top of every screen, with the buttons that
-// lead out of the window at its far end. On every screen rather than some:
-// a button that is there on one screen and gone on the next is one people
-// conclude they imagined. Quiet, so neither competes with the screen's one
-// primary action.
-func head(icon fyne.Resource, version string) fyne.CanvasObject {
-	return parts.Header(icon, words.T(words.AppName), version, Links()...)
+// lead out of the window at its far end, and those buttons for whoever runs
+// the window to say what pressing them does. On every screen rather than
+// some: a button that is there on one screen and gone on the next is one
+// people conclude they imagined. Quiet, so neither competes with the
+// screen's one primary action.
+func head(icon fyne.Resource, version string) (fyne.CanvasObject, []Link) {
+	l := newLinks()
+	return parts.Header(icon, words.T(words.AppName), version, buttonsOf(l)...), l
 }
 
-// Links is the buttons that leave the window for a page in the browser:
-// the project on GitHub - the code, the releases and the place to report a
-// problem - and Donate, with the heart. One list, so a third is one line
-// here (GUI rule 5). GitHub has no picture: the toolkit ships no mark for
-// the site, and the site's own mark is somebody else's trademark.
-func Links() []fyne.CanvasObject {
-	return []fyne.CanvasObject{
-		parts.NewButton(parts.Quiet, words.T(words.LinkGitHub), nil, nil),
-		parts.NewButton(parts.Quiet, words.T(words.LinkDonate), parts.Heart(), nil),
+// Link is a button that leaves the window for a page in the browser, and the
+// address of that page. What a press does is the window's to say.
+type Link struct {
+	*parts.Button
+	Address string
+}
+
+// links are the pages the window leads to: the project on GitHub - the code,
+// the releases and the place to report a problem - and Donate, with the
+// heart. One list, so a third is one line here (GUI rules 5 and 8). GitHub
+// has no picture: the toolkit ships no mark for the site, and the site's own
+// mark is somebody else's trademark.
+var links = []struct {
+	name    words.Key
+	picture fyne.Resource
+	address string
+}{
+	{words.LinkGitHub, nil, words.RepositoryURL},
+	{words.LinkDonate, parts.Heart(), words.SupportURL},
+}
+
+// newLinks makes a button of each page, pressing nothing yet.
+func newLinks() []Link {
+	made := make([]Link, len(links))
+	for i, l := range links {
+		made[i] = Link{Button: parts.NewButton(parts.Quiet, words.T(l.name), l.picture, nil), Address: l.address}
 	}
+	return made
+}
+
+// Links is the buttons of the bar as the catalogue shows them.
+func Links() []fyne.CanvasObject { return buttonsOf(newLinks()) }
+
+// buttonsOf is the buttons of links, for a row to hold.
+func buttonsOf(l []Link) []fyne.CanvasObject {
+	buttons := make([]fyne.CanvasObject, len(l))
+	for i := range l {
+		buttons[i] = l[i].Button
+	}
+	return buttons
 }
 
 // StartForm is what the start screen hands to whoever runs the window: the
@@ -45,6 +77,7 @@ type StartForm struct {
 	Address  *widget.Entry
 	Diagnose *parts.Button
 	Options  *parts.Pressable
+	Links    []Link
 	typed    map[string]*widget.Entry
 	ticked   map[string]*widget.Check
 }
@@ -103,7 +136,9 @@ func Start(icon fyne.Resource, version string, optionsOpen, software bool) (fyne
 	}
 	body := parts.Column(look.ColumnWidth, parts.Inset(0, look.InsetPage, 0, look.InsetPage,
 		parts.Stack(look.GapCard, sections...)))
-	page := container.NewBorder(head(icon, version), nil, nil, nil,
+	bar, links := head(icon, version)
+	form.Links = links
+	page := container.NewBorder(bar, nil, nil, nil,
 		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body)))
 	return page, form
 }
@@ -136,6 +171,7 @@ func (f *StartForm) control(o request.Option) fyne.CanvasObject {
 // to the form, save what this run made, run it again - and the layer shown.
 type ReportView struct {
 	New, Save, Again *parts.Button
+	Links            []Link
 
 	rail   *parts.Rail
 	shown  *fyne.Container
@@ -184,7 +220,9 @@ func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.Ca
 	)
 	lower := parts.RowTop(look.GapCard, 1, parts.Width(look.RailWidth, v.rail), v.shown)
 	body := parts.Column(look.PageWidth, parts.Pad(look.InsetPage, parts.Stack(look.GapCard, title, parts.Verdict(r), lower)))
-	return container.NewBorder(head(icon, r.Version), nil, nil, nil, container.NewVScroll(body)), v
+	bar, links := head(icon, r.Version)
+	v.Links = links
+	return container.NewBorder(bar, nil, nil, nil, container.NewVScroll(body)), v
 }
 
 func layerDetail(l model.Layer, open int) fyne.CanvasObject {
@@ -246,6 +284,7 @@ func groups(findings []model.Finding) []group {
 // stands.
 type RunningView struct {
 	Cancel *parts.Button
+	Links  []Link
 	time   *parts.Changing
 	track  *parts.Track
 }
@@ -285,16 +324,26 @@ func Running(icon fyne.Resource, version, target string) (fyne.CanvasObject, *Ru
 		parts.Para(parts.CaptionMuted, words.T(words.RunningNote)),
 	)
 	body := parts.Column(look.ColumnWidth, parts.Inset(0, look.InsetPage, 0, look.InsetPage, card))
-	return container.NewBorder(head(icon, version), nil, nil, nil,
+	bar, links := head(icon, version)
+	v.Links = links
+	return container.NewBorder(bar, nil, nil, nil,
 		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body))), v
 }
 
-// Trouble is the screen when certdoctor itself could not run, and Back, which
-// leads to the form as it was.
-func Trouble(icon fyne.Resource, version, title, what, todo, printed string) (fyne.CanvasObject, *parts.Button) {
-	back := parts.NewButton(parts.Primary, words.T(words.Back), theme.NavigateBackIcon(), nil)
-	card := parts.Problem(title, what, todo, printed, back)
+// TroubleView is what the trouble screen hands to whoever runs the window:
+// Back, which leads to the form as it was, and the links on its bar.
+type TroubleView struct {
+	Back  *parts.Button
+	Links []Link
+}
+
+// Trouble is the screen when certdoctor itself could not run.
+func Trouble(icon fyne.Resource, version, title, what, todo, printed string) (fyne.CanvasObject, *TroubleView) {
+	v := &TroubleView{Back: parts.NewButton(parts.Primary, words.T(words.Back), theme.NavigateBackIcon(), nil)}
+	card := parts.Problem(title, what, todo, printed, v.Back)
 	body := parts.Column(look.ColumnWidth, parts.Inset(0, look.InsetPage, 0, look.InsetPage, card))
-	return container.NewBorder(head(icon, version), nil, nil, nil,
-		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body))), back
+	bar, links := head(icon, version)
+	v.Links = links
+	return container.NewBorder(bar, nil, nil, nil,
+		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body))), v
 }

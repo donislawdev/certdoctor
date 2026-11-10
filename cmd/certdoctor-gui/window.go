@@ -4,9 +4,11 @@ package main
 
 import (
 	"context"
+	"net/url"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/donislawdev/certdoctor/internal/gui/flow"
 	"github.com/donislawdev/certdoctor/internal/gui/look"
@@ -32,6 +34,15 @@ type window struct {
 	present func(path string) bool
 	// prefs is where the window keeps the folder a report was last saved to.
 	prefs fyne.Preferences
+	// browse hands a page to the browser beside the toolkit's loop and what
+	// came of it back on the loop - openBeside in the program.
+	browse func(u *url.URL, done func(error))
+	// links are the links on the bar of the screen the window shows, the
+	// ones a page that did not open is said under - and notice is what was
+	// said last, so a second page that did not open replaces it rather than
+	// standing on it.
+	links  []screens.Link
+	notice *widget.PopUp
 
 	// The start screen is built once and shown again, so what was typed in it
 	// stays through a run, a report and a trouble (GUI rule 3).
@@ -52,7 +63,7 @@ type window struct {
 // the software renderer shipped beside it (ADR125 point 2).
 func newWindow(w fyne.Window, icon fyne.Resource, version string, software bool, port flow.Port) *window {
 	win := &window{w: w, icon: icon, version: version, flow: flow.New(version), port: port, wait: waitFor, now: time.Now,
-		present: present, prefs: fyne.CurrentApp().Preferences()}
+		present: present, prefs: fyne.CurrentApp().Preferences(), browse: openBeside}
 	// The options put away: most runs need only the address, and the fold
 	// says in one line what is in it.
 	win.start, win.form = screens.Start(icon, version, false, software)
@@ -83,14 +94,25 @@ func (win *window) ready() {
 }
 
 // show puts a screen in the window, held no smaller than the window may be
-// made (GUI rule 21).
-func (win *window) show(o fyne.CanvasObject) {
+// made (GUI rule 21), with the links on its bar leading out. Every screen
+// comes through here, so no screen's GitHub or Donate is left pressing
+// nothing.
+func (win *window) show(o fyne.CanvasObject, links []screens.Link) {
+	win.lead(links)
 	win.w.SetContent(parts.AtLeast(look.WindowMinWidth, look.WindowMinHeight, o))
+}
+
+// under is where a pop-up holding content stands below anchor: right edges
+// in line and a tight gap between - the place of the Save report menu and of
+// what is said under a link at the end of the bar.
+func under(anchor, content fyne.CanvasObject) fyne.Position {
+	at := fyne.CurrentApp().Driver().AbsolutePositionForObject(anchor)
+	return fyne.NewPos(at.X+anchor.Size().Width-content.MinSize().Width, at.Y+anchor.Size().Height+look.GapTight)
 }
 
 // showStart shows the form as it was left, with the address ready to type in.
 func (win *window) showStart() {
-	win.show(win.start)
+	win.show(win.start, win.form.Links)
 	win.w.Canvas().Focus(win.form.Address)
 }
 
@@ -125,7 +147,7 @@ func (win *window) begin(run flow.Run) {
 	// TickAnimations) - and what it sets changes once a second.
 	win.clock = &fyne.Animation{Duration: time.Second, RepeatCount: fyne.AnimationRepeatForever, Tick: func(float32) { win.tick() }}
 	win.clock.Start()
-	win.show(page)
+	win.show(page, view.Links)
 	win.wait(ctx, win.port, run.Args, nil, func(p flow.Process) { win.finish(run.ID, p) })
 }
 
@@ -145,9 +167,9 @@ func (win *window) finish(id int, p flow.Process) {
 	o := win.flow.Outcome()
 	if o.Trouble != nil {
 		s := o.Trouble.Sentences()
-		page, back := screens.Trouble(win.icon, win.version, s.Title, s.What, s.Todo, s.Printed)
-		back.OnTapped = win.back
-		win.show(page)
+		page, trouble := screens.Trouble(win.icon, win.version, s.Title, s.What, s.Todo, s.Printed)
+		trouble.Back.OnTapped = win.back
+		win.show(page, trouble.Links)
 		return
 	}
 	page, act := screens.Report(win.icon, o.Report, o.Open, -1)
@@ -156,7 +178,7 @@ func (win *window) finish(id int, p flow.Process) {
 	// A copy is written by the command line, from the report it wrote, read
 	// back with --from (ADR121 (c)) - the window renders no page itself.
 	act.Save.OnTapped = func() { win.saveMenu(act.Save) }
-	win.show(page)
+	win.show(page, act.Links)
 }
 
 // cancel ends the running run and goes back to the form as it was.

@@ -14,7 +14,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/donislawdev/certdoctor/internal/gui/flow"
-	"github.com/donislawdev/certdoctor/internal/gui/look"
 	"github.com/donislawdev/certdoctor/internal/gui/parts"
 	"github.com/donislawdev/certdoctor/internal/gui/request"
 	"github.com/donislawdev/certdoctor/internal/gui/screens"
@@ -40,8 +39,7 @@ func (win *window) saveMenu(button *parts.Button) {
 			win.w.Canvas().Focus(button)
 		})
 	pop = widget.NewPopUp(menu, win.w.Canvas())
-	at := fyne.CurrentApp().Driver().AbsolutePositionForObject(button)
-	pop.ShowAtPosition(fyne.NewPos(at.X+button.Size().Width-menu.MinSize().Width, at.Y+button.Size().Height+look.GapTight))
+	pop.ShowAtPosition(under(button, menu))
 	win.w.Canvas().Focus(rows[0])
 }
 

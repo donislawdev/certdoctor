@@ -26,12 +26,44 @@ var schemaSides = [2]struct{ file, name string }{
 
 // TestTheWindowReadsTheSchemaTheCommandLineWrites compares the two.
 func TestTheWindowReadsTheSchemaTheCommandLineWrites(t *testing.T) {
+	values := bothSides(t, schemaSides, "the schema the window reads")
+	if values[0] != values[1] {
+		t.Errorf("the command line writes schema %q (%s) and the window reads %q (%s) - the window would refuse every "+
+			"report of its own release", values[0], schemaSides[0].file, values[1], schemaSides[1].file)
+	}
+}
+
+// THE WINDOW LEADS TO THE REPOSITORY THE SBOM NAMES (ADR122). GitHub on the
+// window's bar and the namespace of the software bill of materials both say
+// where this project lives, and neither can import the other: the SBOM's is
+// the constant of a command, and the window imports nothing of a command.
+// So the two are read out of the source and compared, as the schema is - a
+// project that moves would otherwise move in one of them.
+var repositorySides = [2]struct{ file, name string }{
+	{"cmd/sbom/spdx.go", "repository"},
+	{"internal/gui/words/words.go", "RepositoryURL"},
+}
+
+// TestTheWindowLeadsToTheRepositoryTheSBOMNames compares the two.
+func TestTheWindowLeadsToTheRepositoryTheSBOMNames(t *testing.T) {
+	values := bothSides(t, repositorySides, "the repository GitHub leads to")
+	if values[0] != values[1] {
+		t.Errorf("the SBOM names the repository %q (%s) and the window's GitHub leads to %q (%s)",
+			values[0], repositorySides[0].file, values[1], repositorySides[1].file)
+	}
+}
+
+// bothSides reads the two string constants a guard compares, failing when a
+// file or a constant is not there - a guard with nothing to read would be
+// green about nothing. what names the guard in that failure.
+func bothSides(t *testing.T, sides [2]struct{ file, name string }, what string) [2]string {
+	t.Helper()
 	tr := mustLoadModule(t)
 	var values [2]string
-	for i, side := range schemaSides {
+	for i, side := range sides {
 		sf, ok := fileOf(tr, side.file)
 		if !ok {
-			t.Fatalf("%s is not in the tree - the guard on the schema the window reads has nothing to read", side.file)
+			t.Fatalf("%s is not in the tree - the guard on %s has nothing to read", side.file, what)
 		}
 		value, found := stringConstant(sf.file, side.name)
 		if !found {
@@ -39,10 +71,7 @@ func TestTheWindowReadsTheSchemaTheCommandLineWrites(t *testing.T) {
 		}
 		values[i] = value
 	}
-	if values[0] != values[1] {
-		t.Errorf("the command line writes schema %q (%s) and the window reads %q (%s) - the window would refuse every "+
-			"report of its own release", values[0], schemaSides[0].file, values[1], schemaSides[1].file)
-	}
+	return values
 }
 
 // TestTheSchemaConstantIsReadAndNothingElse is the canary of the reading

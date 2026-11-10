@@ -8,9 +8,10 @@ package words
 type Key string
 
 // RepositoryURL and SupportURL are where GitHub and Donate lead. Addresses
-// rather than words - the same in every language - so outside the map. In
-// the window the repository's address is to come from the one place the
-// program already names it (cmd/sbom), so the two cannot point apart.
+// rather than words - the same in every language - so outside the map. The
+// repository's address is also the namespace of the software bill of
+// materials (cmd/sbom), which the window cannot import, so a guard reads the
+// two out of the source and holds them equal (internal/guard/window_test.go).
 const (
 	RepositoryURL = "https://github.com/donislawdev/certdoctor"
 	SupportURL    = "https://donislawdev.com/support/"

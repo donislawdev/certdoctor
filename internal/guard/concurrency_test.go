@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
@@ -128,19 +129,38 @@ var fanOutAllowlist = map[string]bool{
 // never be reused - a late Interrupt would otherwise land on the NEXT PAC
 // evaluation. The sandbox builds a fresh Runtime per evaluation and says so, and
 // that is what makes the missing WaitGroup safe rather than merely cheap.
-var sandboxAllowlist = map[string]bool{
+//
+// AN ENTRY IS A COUNT OF go STATEMENTS, NOT A YES, since 2026-11-10. A file
+// on this list is excused the goroutines it was put here for and no more: a
+// file with one more go statement than its count is reported, and so is one
+// with fewer, because a count left above what the file does excuses the next
+// goroutine nobody decided on. Each goroutine is a decision of its own - the
+// second one in the window's file was asked about separately.
+var sandboxAllowlist = map[string]int{
 	// The PAC sandbox's stopwatch - the only thing in this program that has to
 	// interrupt code we did not write. ADR8 permits executing a PAC file under
 	// five conditions; this file is how the third of them is enforced.
-	"internal/adapter/pac/stopwatch.go": true,
-	// The window's wait for the command line it runs - the owner's decision of
-	// 2026-11-09, recorded with ADR121. The same shape as the stopwatch: one go
-	// statement and nothing shared, because the answer goes back through the
-	// toolkit's own fyne.Do the way the stopwatch's goes back through goja's
-	// interrupt. Without it the window stops drawing for the length of a run
-	// and Cancel cannot be pressed. The clock on the running screen needs no
-	// goroutine: the toolkit ticks an animation from its own loop.
-	"cmd/certdoctor-gui/waiting.go": true,
+	"internal/adapter/pac/stopwatch.go": 1,
+	// The window's two goroutines, each a decision of the owner. The wait for
+	// the command line it runs (2026-11-09, ADR121) and the hand-off of a page
+	// to the browser, which the toolkit makes by waiting for a program to end
+	// on Windows and macOS (2026-11-10, ADR122). The same shape as the
+	// stopwatch: a go statement and nothing shared, because each answer goes
+	// back through the toolkit's own fyne.Do the way the stopwatch's goes back
+	// through goja's interrupt. Without them the window stops drawing while it
+	// waits, and Cancel cannot be pressed during a run. The clock on the
+	// running screen needs no goroutine: the toolkit ticks an animation from
+	// its own loop.
+	"cmd/certdoctor-gui/waiting.go": 2,
+}
+
+// listed is the files of a list that counts something per file.
+func listed(counts map[string]int) map[string]bool {
+	files := map[string]bool{}
+	for file := range counts {
+		files[file] = true
+	}
+	return files
 }
 
 // signalAllowlist is the FIFTH list, and the second-widest of the four narrow
@@ -277,7 +297,7 @@ func TestAFanOutFileMayStartGoroutinesAndNothingElse(t *testing.T) {
 // what this list would excuse.
 func TestASandboxFileMayStartAGoroutineAndNothingElse(t *testing.T) {
 	const planted = "internal/adapter/probe/planted.go"
-	sandboxAllowlist[planted] = true
+	sandboxAllowlist[planted] = 1
 	defer delete(sandboxAllowlist, planted)
 
 	tr := tree{
@@ -348,6 +368,36 @@ func TestASignalFileMayWatchAndNothingElse(t *testing.T) {
 	}
 }
 
+// TestASandboxFileStartsAsManyGoroutinesAsItsEntrySays is the canary of the
+// count: the planted file holds one go statement, so an entry of two is
+// reported - the shape of an entry left standing after a goroutine was taken
+// away, or of a file that would take a new one in unasked - and an entry of
+// one is not.
+func TestASandboxFileStartsAsManyGoroutinesAsItsEntrySays(t *testing.T) {
+	const planted = "internal/adapter/probe/planted.go"
+	defer delete(sandboxAllowlist, planted)
+	tr := tree{
+		modulePath: "github.com/donislawdev/certdoctor",
+		files:      []sourceFile{loadFixture(t, "concurrency_violation.go", planted)},
+	}
+	counted := func() string {
+		var said string
+		for _, v := range checkConcurrencyContainment(tr) {
+			said += v.Detail + "\n"
+		}
+		return said
+	}
+
+	sandboxAllowlist[planted] = 2
+	if said := counted(); !strings.Contains(said, "1 go statement(s) where sandboxAllowlist allows 2") {
+		t.Errorf("a file with one go statement and an entry of two was not reported for the count.\nreported:\n%s", said)
+	}
+	sandboxAllowlist[planted] = 1
+	if said := counted(); strings.Contains(said, "where sandboxAllowlist allows") || strings.Contains(said, "go statement - ") {
+		t.Errorf("a file with as many go statements as its entry was reported for them.\nreported:\n%s", said)
+	}
+}
+
 // TestEveryConcurrencyExemptionNamesAFileThatExists keeps the five lists from
 // rotting.
 //
@@ -375,7 +425,7 @@ func TestEveryConcurrencyExemptionNamesAFileThatExists(t *testing.T) {
 		{"concurrencyAllowlist", concurrencyAllowlist},
 		{"lockOnlyAllowlist", lockOnlyAllowlist},
 		{"fanOutAllowlist", fanOutAllowlist},
-		{"sandboxAllowlist", sandboxAllowlist},
+		{"sandboxAllowlist", listed(sandboxAllowlist)},
 		{"signalAllowlist", signalAllowlist},
 	} {
 		for entry := range list.entries {
@@ -511,6 +561,7 @@ func checkConcurrencyContainment(tr tree) []Violation {
 			})
 		}
 
+		goStatements := 0
 		ast.Inspect(sf.file, func(n ast.Node) bool {
 			if exempt[n] {
 				return true
@@ -521,7 +572,11 @@ func checkConcurrencyContainment(tr tree) []Violation {
 				// keeps descending, so a channel INSIDE the goroutine is still
 				// reported - which is the difference between a narrow exemption
 				// and switching the guard off for a file.
-				if fanOutAllowlist[sf.rel] || sandboxAllowlist[sf.rel] || signalAllowlist[sf.rel] {
+				if fanOutAllowlist[sf.rel] || signalAllowlist[sf.rel] {
+					return true
+				}
+				if sandboxAllowlist[sf.rel] > 0 {
+					goStatements++
 					return true
 				}
 				report(node.Pos(), "go statement")
@@ -550,6 +605,15 @@ func checkConcurrencyContainment(tr tree) []Violation {
 			}
 			return true
 		})
+		if allowed := sandboxAllowlist[sf.rel]; allowed > 0 && goStatements != allowed {
+			violations = append(violations, Violation{
+				File: sf.rel,
+				Line: 1,
+				Detail: fmt.Sprintf("%d go statement(s) where sandboxAllowlist allows %d - each goroutine on that list "+
+					"is a decision of its own, so a new one changes its count there and is asked about first, and "+
+					"one taken away takes the count down with it", goStatements, allowed),
+			})
+		}
 	}
 	return sortViolations(violations)
 }
