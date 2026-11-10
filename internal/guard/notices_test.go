@@ -37,6 +37,11 @@ type noticedProgram struct {
 	// this guard green after the road to it is lost, so a road that matters
 	// names a file it has to reach.
 	landmarks [][2]string
+
+	// beside are the sections for files that ship next to the binary and are
+	// not linked into it. No build names them, so no walk arrives at them, and
+	// what holds such a section to what ships is a guard of its own.
+	beside []string
 }
 
 // noticedPrograms are the binaries and their notices. The command line answers
@@ -53,7 +58,8 @@ var noticedPrograms = []noticedProgram{
 			{"github.com/go-gl/glfw/v3.4/glfw", "glfw/src/win32_init.c"}, // only an #include reaches it
 			{"github.com/go-gl/glfw/v3.4/glfw", "glfw/LICENSE.md"},       // only from beside the files an #include reaches
 			{"fyne.io/fyne/v2", "theme/font/LICENSE_Inter.txt"},          // only from beside the fonts go:embed takes in
-		}},
+		},
+		beside: []string{rendererHeading}},
 }
 
 // stdHeading is the one section every notices file has that is not named after
@@ -525,6 +531,9 @@ func gatherLinked(t *testing.T, root, goroot string, program noticedProgram, rea
 	t.Helper()
 	code := linkedCode{modules: map[string]string{}, dirs: map[string]string{},
 		headings: map[string]bool{stdHeading: true}, sources: map[string]string{}}
+	for _, heading := range program.beside {
+		code.headings[heading] = true
+	}
 	walks, imported := code.gatherSources(t, root, goroot, program)
 	found := code.gatherLicences(t, root, goroot, program, walks, imported, reached)
 	if !found[filepath.Join(goroot, "LICENSE")] {

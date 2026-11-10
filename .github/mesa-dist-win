@@ -1,0 +1,20 @@
+# The software renderer that travels beside the window on Windows: which
+# release of pal1000/mesa-dist-win it is taken from, the SHA-256 of that
+# release's archive, and the two files taken out of it, each with its own
+# SHA-256 and its size in bytes.
+#
+# .github/scripts/fetch_software_renderer.sh reads this file and nothing else,
+# and checks the archive against its sum before it unpacks anything. The same
+# version, sums and sizes stand in THIRD-PARTY-NOTICES-GUI.md under "Mesa 3D",
+# where the licences of what is compiled into the two files are reproduced, and
+# a guard holds the two equal. So a new version here is refused until the
+# notices have been read again for it.
+#
+# 26.2.5 and not the newest: the MSVC build of 26.2.6 carries neither file. A
+# newer release is taken when its archive lists both under x64/, which is
+# asked of the archive's listing and not of its number.
+version=26.2.5
+archive=mesa3d-26.2.5-release-msvc.7z
+sha256=997123ef4ce8896204ab912d5b54f19372c487ff9835bcefafa2fca23b8953c2
+file=x64/libgallium_wgl.dll 700e1fb7b9487d9d1c53752b03aeb040d22f3731b46aa254d88830b6279474de 61880320
+file=x64/opengl32.dll c8511461ba71a0288750467e3be2f5c1c2bbbceaaf0ab5d8c496b0ba7302daa8 139264
