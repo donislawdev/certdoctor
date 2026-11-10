@@ -31,6 +31,11 @@ var unsafeAllowlist = map[string]string{
 		"strings it allocated and this program frees",
 	"internal/adapter/probe/systemstore/probe_windows.go": "crypt32 returns certificates and chain contexts as " +
 		"structures it owns, copied out before they are freed",
+	// The fifth, and the first that reads nothing: it hands Windows the
+	// address of one four-byte value of its own. The owner's decision of
+	// 2026-11-10, recorded with ADR122.
+	"cmd/certdoctor-gui/titlebar_windows.go": "DwmSetWindowAttribute takes the BOOL it sets on the window's title bar " +
+		"by address",
 }
 
 // unsafePackages are the imports able to read memory by address.

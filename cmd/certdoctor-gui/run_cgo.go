@@ -82,7 +82,15 @@ func run(args []string, errOut io.Writer) int {
 	// it is what failed - and it says what became of the renderer, when there
 	// is something to say. One dialog in all: a second process that refuses
 	// shows its own and this one only passes its code on.
-	return openOrRefuse(w, a.Run, secondAttemptFor(l, errOut).try, func(why error, panicked any) {
+	// The title bar dark, as the window under it is (ADR122): once the
+	// window is shown and so has a title bar, and after every change of
+	// settings, which the toolkit answers by setting it from the system.
+	keepDark(a.Settings(), w, darkTitleBar)
+	darkThenRun := func() {
+		darkTitleBar(w)
+		a.Run()
+	}
+	return openOrRefuse(w, darkThenRun, secondAttemptFor(l, errOut).try, func(why error, panicked any) {
 		sentence := refusal(causeFrom(said.String(), panicked))
 		fmt.Fprintln(errOut, sentence)
 		body := sentence

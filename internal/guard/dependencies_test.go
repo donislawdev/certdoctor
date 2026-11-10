@@ -40,6 +40,11 @@ var externalImportAllowlist = map[string]bool{
 	// toolkit already links the module into the window. The owner's decision
 	// (ADR127).
 	"cmd/certdoctor-gui/dialog_windows.go": true,
+	// The dark title bar of the window on Windows, through the same module's
+	// typed DwmSetWindowAttribute, which loads dwmapi.dll from the system
+	// directory - a file of its own because it is on unsafeAllowlist too. The
+	// owner's decision (2026-11-10, ADR122).
+	"cmd/certdoctor-gui/titlebar_windows.go": true,
 }
 
 // externalImportPlaces names the one module allowed under a directory rather
