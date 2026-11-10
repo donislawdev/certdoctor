@@ -97,6 +97,9 @@ func TestASaveGoesFromTheFormToTheFile(t *testing.T) {
 	present := func(p string) bool { return there[p] }
 
 	s := NewSave(html)
+	if s.Format() != html || s.Step() != SaveAsking {
+		t.Fatalf("a new copy is in %q at %d, want %q and asking", s.Format().Value, s.Step(), html.Value)
+	}
 	if s.Press("", "report", present) != nil || s.Step() != SaveUnusable || s.Said() != words.T(words.SaveNoFolder) {
 		t.Fatalf("no folder left the copy at %d saying %q", s.Step(), s.Said())
 	}
