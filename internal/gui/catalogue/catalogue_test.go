@@ -13,10 +13,11 @@ import (
 )
 
 // measuredPairs is how many pairs of colours the window was measured to draw
-// one over the other on 2026-11-03 (ADR122). The count may grow with a new
-// part and never shrink without a reason: a pair that drops off the list is a
-// measurement nobody makes any more, and the check below would stay green.
-const measuredPairs = 51
+// one over the other on 2026-11-10 (ADR122 - 51 on 2026-11-03, and the parts
+// added since brought theirs). The count may grow with a new part and never
+// shrink without a reason: a pair that drops off the list is a measurement
+// nobody makes any more, and the check below would stay green.
+const measuredPairs = 56
 
 // TestEveryPairTheWindowDrawsMeetsItsThreshold is the contrast of the window
 // measured rather than judged (docs/26 section 7.1): every pair of colours
@@ -25,7 +26,7 @@ const measuredPairs = 51
 func TestEveryPairTheWindowDrawsMeetsItsThreshold(t *testing.T) {
 	pairs := Pairs()
 	if len(pairs) < measuredPairs {
-		t.Fatalf("%d pairs measured, and %d were on 2026-11-03 - a pair has dropped off the list", len(pairs), measuredPairs)
+		t.Fatalf("%d pairs measured, and %d were on 2026-11-10 - a pair has dropped off the list", len(pairs), measuredPairs)
 	}
 	for _, p := range below(pairs) {
 		t.Errorf("%s on %s: %.2f, needs %.1f", p.Front, p.Back, p.Ratio, p.Need)

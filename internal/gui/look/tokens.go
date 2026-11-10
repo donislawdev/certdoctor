@@ -57,6 +57,9 @@ const (
 	InsetRow = step3
 	// InsetCell is the room left and right of the words in a table cell.
 	InsetCell = step3
+	// InsetOverlay is the room the toolkit's folder dialog keeps to the edge
+	// of the smallest window - see ChooserWidth.
+	InsetOverlay = step7
 	// ThemePadding is what the toolkit is told when a stock container asks
 	// how far apart to put its children: the smallest step, so a stock
 	// container lands on the scale rather than beside it.
@@ -159,6 +162,13 @@ const (
 	// the same as the form in the other - its column of names, a folder with
 	// Choose beside it, and room for the whole of a suggested file name.
 	DialogWidth = ColumnWidth
+	// ChooserWidth and ChooserHeight are the size the toolkit's folder dialog
+	// is opened at: the smallest window less InsetOverlay on every side, so
+	// it fits a window of any size and is the same size in all of them. Left
+	// to itself the toolkit opens it at its least, which shows five places
+	// and a row and a half of folders.
+	ChooserWidth  = WindowMinWidth - 2*InsetOverlay
+	ChooserHeight = WindowMinHeight - 2*InsetOverlay
 	// ColInstanceMin is the narrowest the column naming where a store lives
 	// may get before the least needed column gives up its room.
 	ColInstanceMin = 160

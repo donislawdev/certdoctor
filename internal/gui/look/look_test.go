@@ -123,6 +123,41 @@ func TestTheThemeAnswersFromThisPackage(t *testing.T) {
 	}
 }
 
+// TestWhatTheToolkitWritesOnItsOwnFacesCanBeRead holds the pairs the toolkit
+// itself puts one over the other to the ratio for words, asked of the theme
+// the way the toolkit asks. Its dialogs are drawn by none of the window's
+// parts, so the pairs the catalogue measures do not reach them: the folder
+// dialog's main button stood in white on light blue, at 2.1, until it was
+// looked at on a screen.
+func TestWhatTheToolkitWritesOnItsOwnFacesCanBeRead(t *testing.T) {
+	test.NewTempApp(t)
+	th := Theme()
+	for _, p := range [][2]fyne.ThemeColorName{
+		// The main, the destructive, the confirming and the warning button
+		// (fyne v2.8.2, widget/button.go).
+		{theme.ColorNameForegroundOnPrimary, theme.ColorNamePrimary},
+		{theme.ColorNameForegroundOnError, theme.ColorNameError},
+		{theme.ColorNameForegroundOnSuccess, theme.ColorNameSuccess},
+		{theme.ColorNameForegroundOnWarning, theme.ColorNameWarning},
+		// Words on the window, on a plain button, on a dialog, on a menu, in
+		// a box to type in, on the head of a list, and on a chosen entry.
+		{theme.ColorNameForeground, theme.ColorNameBackground},
+		{theme.ColorNameForeground, theme.ColorNameButton},
+		{theme.ColorNameForeground, theme.ColorNameOverlayBackground},
+		{theme.ColorNameForeground, theme.ColorNameMenuBackground},
+		{theme.ColorNameForeground, theme.ColorNameInputBackground},
+		{theme.ColorNameForeground, theme.ColorNameHeaderBackground},
+		{theme.ColorNameForeground, theme.ColorNameSelection},
+		{theme.ColorNamePlaceHolder, theme.ColorNameInputBackground},
+	} {
+		front := color.NRGBAModel.Convert(th.Color(p[0], theme.VariantDark)).(color.NRGBA)
+		back := color.NRGBAModel.Convert(th.Color(p[1], theme.VariantDark)).(color.NRGBA)
+		if got := Contrast(front, back); got < 4.5 {
+			t.Errorf("%s on %s is %.2f, and words need 4.5", p[0], p[1], got)
+		}
+	}
+}
+
 func same(a, b color.Color) bool {
 	ar, ag, ab, aa := a.RGBA()
 	br, bg, bb, ba := b.RGBA()

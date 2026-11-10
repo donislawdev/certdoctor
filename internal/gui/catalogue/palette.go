@@ -74,6 +74,9 @@ func Pairs() []Pair {
 	for _, back := range []look.Role{look.Page, look.Surface, look.Raised, look.Sunken} {
 		pair(look.Focus, back, shape)
 	}
+	// The words on the main button of the toolkit's own dialogs - the folder
+	// dialog's "Use this folder" - which the toolkit fills with Focus.
+	pair(look.OnFocus, look.Focus, text)
 	// The bar beside the chosen entry of a list, on that entry's face.
 	pair(look.Chosen, look.Raised, shape)
 	return out
@@ -110,7 +113,7 @@ func Palette() fyne.CanvasObject {
 		swatches(words.CatSurfaces, look.Page, look.Sunken, look.Surface, look.Raised, look.Hovered, look.EdgeCard, look.Divider, look.EdgeControl),
 		swatches(words.CatInks, look.Ink, look.InkMuted, look.InkFaint, look.InkDisabled, look.InkOnStatus),
 		swatches(words.CatStatuses, look.StatusPass, look.StatusWarn, look.StatusFail, look.StatusUnknown),
-		swatches(words.CatAction, look.Accent, look.AccentHovered, look.AccentPressed, look.OnAccent, look.Focus, look.Chosen, look.Selection),
+		swatches(words.CatAction, look.Accent, look.AccentHovered, look.AccentPressed, look.OnAccent, look.Focus, look.OnFocus, look.Chosen, look.Selection),
 	)
 	var rows []fyne.CanvasObject
 	for _, p := range Pairs() {

@@ -168,15 +168,20 @@ func rowFace(state State, over look.Role) fyne.CanvasObject {
 	return face
 }
 
-// storeLine is the line of a store's columns.
+// storeLine is the line of a store's columns. Where the store lives and what
+// chose it are shown whole, on as many lines as the column needs: a row with
+// no command opens nothing, so a path cut short was a path nobody could read -
+// two stores under one long folder were the same line (seen on a screen on
+// 2026-11-10). The name of the runtime is one of ours and short, so it stays
+// one line.
 func storeLine(s model.Store, open bool, over look.Role) fyne.CanvasObject {
 	tone, word := TrustTone(s.Trust)
 	return Inset(0, look.InsetRow, 0, look.InsetRow, matrixLine([]fyne.CanvasObject{
 		Own(Pill(tone, words.T(word), over)),
 		Middle(Clip(Strong, s.Runtime)),
-		Middle(Clip(MonoMuted, s.Instance)),
+		Middle(Code(MonoMuted, s.Instance)),
 		Middle(Number(Body, strconv.Itoa(s.Anchors))),
-		Middle(Clip(BodyMuted, strings.Join(s.ChosenBy, ", "))),
+		Middle(Para(BodyMuted, strings.Join(s.ChosenBy, ", "))),
 		toggle(s.Command != "", open),
 	}))
 }

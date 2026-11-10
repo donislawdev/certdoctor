@@ -195,6 +195,32 @@ func TestAStoreOpensOnlyWhenItHasACommand(t *testing.T) {
 	}
 }
 
+// TestAStoreIsNamedInFullHoweverLongItsPath - where a store lives and what
+// chose it are shown whole. A row with no command opens nothing, so a path
+// cut to the width of its column was a path nobody could read, and two stores
+// under one long folder were the same line (seen on a screen on 2026-11-10).
+// The row grows by the lines that do not fit on one.
+func TestAStoreIsNamedInFullHoweverLongItsPath(t *testing.T) {
+	newApp(t)
+	short := model.Store{Runtime: "python", Trust: model.TrustYes, Instance: `C:\Python`, ChosenBy: []string{"PATH"}}
+	path, chosen := short, short
+	path.Instance = `C:\Users\jdoe\AppData\Local\Programs\A deliberately long folder name\that keeps going\python.exe`
+	chosen.ChosenBy = []string{"PATH", "NODE_EXTRA_CA_CERTS", "registry", "pip.ini"}
+	rows := []*Pressable{StoreRow(short, false), StoreRow(path, false), StoreRow(chosen, false)}
+	w := test.NewTempWindow(t, Stack(0, rows[0], rows[1], rows[2]))
+	// Twice, because a line learns how many lines it is from the width the
+	// first layout gave it, and the test canvas lays out once for each resize
+	// (TestOpeningAPartMakesRoomForIt says why).
+	w.Resize(fyne.NewSize(look.WindowMinWidth, 600))
+	w.Resize(fyne.NewSize(look.WindowMinWidth, 601))
+	one := rows[0].MinSize().Height
+	for i, what := range []string{"a long path", "a long list of what chose the store"} {
+		if got := rows[i+1].MinSize().Height; got <= one {
+			t.Errorf("a row with %s is %v tall, as tall as a row of one line (%v) - it was cut, not shown", what, got, one)
+		}
+	}
+}
+
 // TestCopyPutsTheLineOnTheClipboardAndSaysSo presses Copy and looks at it
 // before and after the time it says Copied, and checks it is as wide saying
 // either, so the line beside it does not move.

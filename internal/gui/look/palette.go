@@ -47,7 +47,12 @@ const (
 	AccentPressed Role = "accent.pressed"
 	OnAccent      Role = "accent.on"
 	Focus         Role = "focus"
-	Selection     Role = "selection"
+	// OnFocus is the word on a face filled with Focus. None of the window's
+	// own parts fills anything with it, and the toolkit does: the main
+	// button of its own dialogs stands on the colour it draws a box's edge in
+	// (look/theme.go), which is Focus.
+	OnFocus   Role = "focus.on"
+	Selection Role = "selection"
 	// Chosen is the bar beside the selected entry of a list.
 	Chosen Role = "chosen"
 )
@@ -95,6 +100,7 @@ var common = map[Role]color.NRGBA{
 	AccentPressed: hex(0x2a, 0x5b, 0xb2),
 	OnAccent:      hex(0xff, 0xff, 0xff),
 	Focus:         hex(0x8a, 0xb4, 0xf8),
+	OnFocus:       hex(0x16, 0x18, 0x1c),
 	Selection:     hex(0x24, 0x3f, 0x6b),
 	Chosen:        hex(0x5b, 0x93, 0xf0),
 }

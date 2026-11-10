@@ -15,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/donislawdev/certdoctor/internal/gui/flow"
+	"github.com/donislawdev/certdoctor/internal/gui/look"
 	"github.com/donislawdev/certdoctor/internal/gui/parts"
 	"github.com/donislawdev/certdoctor/internal/gui/request"
 	"github.com/donislawdev/certdoctor/internal/gui/words"
@@ -225,6 +226,27 @@ func TestChooseOpensTheFolderDialogOverTheDialog(t *testing.T) {
 		if !shows(top, said) {
 			t.Errorf("the folder dialog does not say %q", said)
 		}
+	}
+	// At the size look names and not at the least the toolkit can draw it
+	// in, which is where it opens when nobody asks: five places and a row and
+	// a half of folders, seen on a screen on 2026-11-10. What stands over the
+	// screen is the toolkit's own container, and the dialog is the pop-up
+	// inside it.
+	want := fyne.NewSize(look.ChooserWidth, look.ChooserHeight)
+	var dialog *widget.PopUp
+	for _, o := range test.WidgetRenderer(top.(fyne.Widget)).Objects() {
+		if pop, ok := o.(*widget.PopUp); ok {
+			dialog = pop
+		}
+	}
+	if dialog == nil {
+		t.Fatal("nothing over the screen is the folder dialog's pop-up")
+	}
+	if got := dialog.Size(); got != want {
+		t.Errorf("the folder dialog is %v, want %v", got, want)
+	}
+	if least := dialog.MinSize(); least.Width >= want.Width || least.Height >= want.Height {
+		t.Errorf("the folder dialog cannot be drawn in less than %v, and look asks for %v - the size asked for no longer decides", least, want)
 	}
 }
 

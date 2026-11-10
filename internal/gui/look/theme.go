@@ -40,7 +40,11 @@ var toolkitRoles = map[fyne.ThemeColorName]Role{
 	theme.ColorNameInputBackground: Sunken,
 	theme.ColorNameInputBorder:     EdgeControl,
 	// The toolkit draws a box's edge in this colour while it holds the
-	// keyboard, and its caret.
+	// keyboard, and its caret - and the face of the main button of its own
+	// dialogs, with ForegroundOnPrimary for the words on it (fyne v2.8.2,
+	// widget/button.go). So the two are a pair, and the words are OnFocus:
+	// OnAccent stood here, white on this light blue at 2.1, until the folder
+	// dialog was looked at on a screen.
 	theme.ColorNamePrimary:             Focus,
 	theme.ColorNameSelection:           Selection,
 	theme.ColorNameSeparator:           Divider,
@@ -53,7 +57,7 @@ var toolkitRoles = map[fyne.ThemeColorName]Role{
 	theme.ColorNameSuccess:             StatusPass,
 	theme.ColorNameWarning:             StatusWarn,
 	theme.ColorNameHyperlink:           Ink,
-	theme.ColorNameForegroundOnPrimary: OnAccent,
+	theme.ColorNameForegroundOnPrimary: OnFocus,
 	theme.ColorNameForegroundOnError:   InkOnStatus,
 	theme.ColorNameForegroundOnSuccess: InkOnStatus,
 	theme.ColorNameForegroundOnWarning: InkOnStatus,

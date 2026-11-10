@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/donislawdev/certdoctor/internal/gui/flow"
+	"github.com/donislawdev/certdoctor/internal/gui/look"
 	"github.com/donislawdev/certdoctor/internal/gui/parts"
 	"github.com/donislawdev/certdoctor/internal/gui/request"
 	"github.com/donislawdev/certdoctor/internal/gui/screens"
@@ -163,6 +164,9 @@ func (d *saveDialog) choose() {
 	fd.SetTitleText(words.T(words.SaveChooseTitle))
 	fd.SetConfirmText(words.T(words.SaveUseFolder))
 	fd.SetDismissText(words.T(words.Cancel))
+	// At the size look names. The toolkit opens its dialog at the least it
+	// can be drawn in, and takes a size asked for before it is shown.
+	fd.Resize(fyne.NewSize(look.ChooserWidth, look.ChooserHeight))
 	fd.Show()
 }
 
