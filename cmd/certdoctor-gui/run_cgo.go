@@ -69,9 +69,12 @@ func run(args []string, errOut io.Writer) int {
 	a.Settings().SetTheme(look.Theme())
 	w := a.NewWindow(words.T(words.AppName))
 	// Drawn by the software renderer when it was asked for and it loaded -
-	// which the start screen says (ADR125 point 2).
-	win := newWindow(w, picture, certdoctor.Version, l.softwareGL && loaded == nil, commandLinePort{})
-	win.showStart()
+	// which the start screen says (ADR125 point 2). Under --catalogue the
+	// catalogue of the window's parts instead (GUI rule 4).
+	if err := fill(w, picture, l, certdoctor.Version, l.softwareGL && loaded == nil, commandLinePort{}); err != nil {
+		fmt.Fprintln(errOut, err)
+		return 1
+	}
 	w.Resize(fyne.NewSize(look.WindowWidth, look.WindowHeight))
 	w.CenterOnScreen()
 

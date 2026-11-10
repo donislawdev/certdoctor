@@ -390,6 +390,11 @@ const (
 	CatWriting    Key = "cat.save.writing"
 	CatFailed     Key = "cat.save.failed"
 	CatSaved      Key = "cat.save.saved"
+	// The title of the window when it shows the catalogue (--catalogue), and
+	// what goes to standard error when the report its parts are drawn from
+	// could not be read - with the reason.
+	CatWindow    Key = "cat.window"
+	CatNoExample Key = "cat.noexample"
 )
 
 var catalogue = map[Key]string{
@@ -444,6 +449,8 @@ var catalogue = map[Key]string{
 	CatWriting:    "saving",
 	CatFailed:     "not saved, in the command line's words",
 	CatSaved:      "saved",
+	CatWindow:     "certdoctor - every part of the window",
+	CatNoExample:  "The catalogue could not be shown: the example report its parts are drawn from did not read (%s).",
 }
 
 // Kind is the name the window gives a kind of finding. The kinds are the

@@ -89,11 +89,7 @@ func appIcon(t *testing.T) fyne.Resource {
 
 func sampleReport(t *testing.T) model.Report {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "model", "testdata", "example-com.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	r, err := model.Decode(b)
+	r, err := model.Example()
 	if err != nil {
 		t.Fatal(err)
 	}
