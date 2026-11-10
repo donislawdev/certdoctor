@@ -31,6 +31,28 @@ floors="$root/tools/coverage-floor.txt"
 
 cd "$root"
 
+# WHICH PACKAGES ARE MEASURED. With no argument the whole module, which is what
+# CI runs and the only run that may be called "the gate passed". With arguments,
+# those packages and no others - the check a commit is given before it is
+# pushed. It exists because the full run belongs to CI: on one day five pushed
+# commits went red on this gate, each on a package the commit itself had
+# touched, and nothing smaller than the whole module could have been asked
+# first.
+#
+# THE RULE IS NOT COPIED FOR THE SMALLER RUN. The floors, the comparison and the
+# two checks on the floor file are the same lines below in both, so the two
+# cannot come to disagree about what a floor means.
+#
+# A PARTIAL RUN SAYS SO IN ITS VERDICT, in words the full verdict does not
+# contain. Its green is a statement about the packages it names and cannot be
+# quoted as the gate's.
+scope=("$@")
+partial=1
+if [ "${#scope[@]}" -eq 0 ]; then
+  scope=(./...)
+  partial=0
+fi
+
 declare -A floor_of
 while read -r package want; do
   [ -z "${package:-}" ] && continue
@@ -80,7 +102,7 @@ done < <(sed 's/#.*//' "$floors")
 #
 # The tail is kept as well, because a filter only finds what it knows to look
 # for and a build failure can arrive in a shape none of these patterns matches.
-report="$(go test -cover -count=1 ./... 2>&1)" || {
+report="$(go test -cover -count=1 "${scope[@]}" 2>&1)" || {
   echo "COULD NOT MEASURE: go test did not finish."
   echo "--- the packages that failed, and the assertions that failed in them:"
   printf '%s\n' "$report" | grep -E '^(FAIL|ok +[^ ]+ +\[|--- FAIL|# )|_test\.go:|panic:|\[build failed\]' || echo "  (nothing matched the filter - read on)"
@@ -148,9 +170,13 @@ packages="$(go list ./...)" || {
 
 problems=0
 
-# Every package the module contains has to be named in the floor file.
+# Every package the module contains has to be named in the floor file - in a
+# partial run too, because a new package with no floor is found by listing the
+# module and not by measuring it.
+declare -A in_module
 while read -r package; do
   [ -z "$package" ] && continue
+  in_module["$package"]=1
   if [ -z "${floor_of[$package]+set}" ]; then
     echo "MISSING FLOOR: $package is not in tools/coverage-floor.txt."
     echo "  A package with no floor is not a package without a rule - it is a hole in this gate."
@@ -163,6 +189,12 @@ for package in "${!floor_of[@]}"; do
   got="${measured[$package]-absent}"
 
   if [ "$got" = "absent" ]; then
+    # A partial run did not ask about this package. That is not a stale floor
+    # while the module still holds the package - and it is one in any run when
+    # the module does not.
+    if [ "$partial" -eq 1 ] && [ -n "${in_module[$package]+set}" ]; then
+      continue
+    fi
     echo "STALE FLOOR: $package has a floor and is not in this module any more."
     echo "  A floor guarding nothing reads as protection. Remove the line."
     problems=$((problems + 1))
@@ -196,6 +228,8 @@ if [ "$problems" -gt 0 ]; then
   echo
   echo "coverage gate: $problems problem(s)"
   verdict=1
+elif [ "$partial" -eq 1 ]; then
+  echo "coverage gate, PARTIAL: ${#measured[@]} of ${#in_module[@]} package(s) measured, each at or above its floor - the whole module is measured by a run with no arguments"
 else
   echo "coverage gate: every package is at or above its floor"
 fi
@@ -225,6 +259,11 @@ echo "coverage per package, measured with ${toolchain#go version }:"
 printf '  %8s  %6s  %7s  %s\n' measured floor margin package
 while read -r package; do
   [ -z "$package" ] && continue
+  # A partial run prints the packages it measured. A row saying "absent" for
+  # every other package would read as that many problems.
+  if [ "$partial" -eq 1 ] && [ -z "${measured[$package]+set}" ]; then
+    continue
+  fi
   printf '%s %s %s\n' "$package" "${measured[$package]-absent}" "${floor_of[$package]-missing}"
 done <<< "$packages" | awk '
   { margin = "-" }
