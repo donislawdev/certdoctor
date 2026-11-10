@@ -394,15 +394,22 @@ func readTarget(o *options) (wire *url.URL, typed *url.URL, f *fault) {
 			"%q is not a URL certdoctor can read: %v. Give one like https://example.com", raw, err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		// The suggestion is quoted rather than pasted in. It contains what the
-		// user typed, and %s reproduced that byte for byte onto a terminal:
-		// a bidirectional override or a zero width character in a URL from a
-		// ticket came straight back out, unescaped, into somebody's console and
-		// their log. The parser refuses ASCII control characters, which is why
-		// this looked safe - it does not refuse the ones above them.
+		// The input and the suggestion are quoted rather than pasted in. Both
+		// contain what the user typed, and %s reproduced that byte for byte
+		// onto a terminal: a bidirectional override or a zero width character
+		// in a URL from a ticket came straight back out, unescaped, into
+		// somebody's console and their log. The parser refuses ASCII control
+		// characters, which is why this looked safe - it does not refuse the
+		// ones above them. The scheme alone goes in bare: the parser lets
+		// nothing into it but ASCII letters, digits, plus, minus and dot.
+		if parsed.Scheme != "" && !readAsHostAndPort(raw) {
+			return nil, nil, usageFault(
+				"%q uses the %s scheme, and certdoctor diagnoses only http:// and https:// addresses. Give one like https://example.com",
+				raw, parsed.Scheme)
+		}
 		return nil, nil, usageFault(
 			"%q has no http:// or https:// scheme. Without one a host name cannot be told from a port number, so write it out, for example %q",
-			raw, "https://"+raw)
+			raw, withScheme(raw))
 	}
 	if parsed.Host == "" {
 		return nil, nil, usageFault("%q names no host. Give one like https://example.com", raw)
@@ -490,6 +497,32 @@ func readTarget(o *options) (wire *url.URL, typed *url.URL, f *fault) {
 		return nil, nil, usageFault("%q cannot be asked about: %v", raw, err)
 	}
 	return wire, parsed, nil
+}
+
+// readAsHostAndPort says the URL parser took a host and its port for a
+// scheme: "localhost:8080" parses as the scheme "localhost" followed by "8080",
+// and "example.com:443" as the scheme "example.com". What follows the colon of
+// a scheme is never a digit - "//" and an address, or a part of its own such
+// as mailto's - so a digit, or nothing at all, means the person typed a host
+// and left the scheme out. The first colon is the one the parser split at,
+// because a scheme cannot contain one.
+func readAsHostAndPort(raw string) bool {
+	_, after, _ := strings.Cut(raw, ":")
+	return after == "" || (after[0] >= '0' && after[0] <= '9')
+}
+
+// withScheme is the suggestion for an input that has no scheme: what the
+// person typed with https:// in front, less any slashes it started with, so
+// "//example.com" and "/example.com" are not answered with three or four. A
+// suggestion is only ever an address this program diagnoses - one that would
+// still name no host, such as the one for "/", gives way to the example every
+// other refusal here uses.
+func withScheme(raw string) string {
+	suggestion := "https://" + strings.TrimLeft(raw, "/")
+	if u, err := url.Parse(suggestion); err != nil || u.Hostname() == "" {
+		return "https://example.com"
+	}
+	return suggestion
 }
 
 // wireForm is the target with its host in the spelling that goes on the wire.
