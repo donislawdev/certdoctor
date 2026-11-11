@@ -1,0 +1,53 @@
+# What the C compiler links into the window of its own, for each build the
+# release makes. The window is built with cgo, because GLFW is C, so the
+# compiler's linker puts its own start up code and runtime into it - code that
+# comes with the compiler on the runner, not from this tree, and that no build
+# record names (OBS208, ADR125).
+#
+# .github/scripts/window_toolchain.sh reads the linker's map of every release
+# build of the window against this list and refuses a build that links a file
+# of the compiler's this list does not name, or does not link one it names. It
+# also asks the compiler which version of each library below it builds against.
+# THIRD-PARTY-NOTICES-GUI.md was written for this list, and the notices guard in
+# internal/guard holds the two together.
+#
+#   link <target> <file> <library>      a file the link takes code from, by name
+#   version <target> <library> <ver>    the version whose texts the notices quote
+#   nothing <target>                    the link takes no file of the compiler's
+#
+# The libraries:
+#   mingw-w64  the MinGW-w64 runtime, with its import libraries for Windows
+#              itself - section "MinGW-w64 runtime" of the notices
+#   glibc      the start files of the GNU C Library - section "GNU C Library"
+#   gcc        GCC's start files and runtime library. The GCC Runtime Library
+#              Exception, version 3.1, lets a program built with GCC carry them
+#              under terms of its own, so the notices give the reason and quote
+#              nothing
+#
+# What each build links was read off the linker's map: on Windows of a build
+# with a newer GCC on 2026-11-11, on Linux of a build in ubuntu:24.04, the image
+# of the runner, and on macOS of a build with Xcode, which put nothing of its own
+# in - the system libraries macOS loads at start are not in the binary.
+
+version windows/amd64 mingw-w64 13.0.0
+link windows/amd64 crt2.o mingw-w64
+link windows/amd64 default-manifest.o mingw-w64
+link windows/amd64 libgdi32.a mingw-w64
+link windows/amd64 libkernel32.a mingw-w64
+link windows/amd64 libmingw32.a mingw-w64
+link windows/amd64 libmingwex.a mingw-w64
+link windows/amd64 libmsvcrt.a mingw-w64
+link windows/amd64 libshell32.a mingw-w64
+link windows/amd64 libuser32.a mingw-w64
+link windows/amd64 crtbegin.o gcc
+link windows/amd64 crtend.o gcc
+link windows/amd64 libgcc.a gcc
+
+version linux/amd64 glibc 2.39
+link linux/amd64 crt1.o glibc
+link linux/amd64 crti.o glibc
+link linux/amd64 crtn.o glibc
+link linux/amd64 crtbegin.o gcc
+link linux/amd64 crtend.o gcc
+
+nothing darwin/arm64

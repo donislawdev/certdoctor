@@ -133,6 +133,8 @@ func parseNotices(text string) (notices, error) {
 // compiled in has no files of its own to list.
 func (w work) check(c component) error {
 	switch {
+	case w.beside != "" && w.in != "":
+		return fmt.Errorf("programs.go says the work %q is both compiled into %s and beside %s", c.path, w.in, w.beside)
 	case w.beside != "" && len(c.files) == 0:
 		return fmt.Errorf("the section %q is of files beside a binary, and lists none as \"- `<path>`, <n> bytes, SHA-256 `<sum>`\"", c.path)
 	case w.beside == "" && len(c.files) > 0:

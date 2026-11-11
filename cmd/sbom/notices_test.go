@@ -34,7 +34,8 @@ func TestTheNoticesInThisTreeDescribeABuild(t *testing.T) {
 	}
 	for program, want := range map[string][]string{
 		programPath: {"LicenseRef-Sun-fdlibm-2004", "LicenseRef-Cephes"},
-		windowPath:  {"LicenseRef-Sun-fdlibm-2004", "LicenseRef-Cephes", "LicenseRef-Arev", "LicenseRef-Public-Domain", "LicenseRef-SGI-FreeB"},
+		windowPath: {"LicenseRef-Sun-fdlibm-2004", "LicenseRef-Cephes", "LicenseRef-Arev", "LicenseRef-Public-Domain", "LicenseRef-SGI-FreeB",
+			"LicenseRef-MinGW-w64-Cephes"},
 	} {
 		var ids []string
 		for _, e := range notes[program].extracted {
@@ -44,7 +45,8 @@ func TestTheNoticesInThisTreeDescribeABuild(t *testing.T) {
 			t.Errorf("the texts without an SPDX identifier in the notices of %s are %v, want %v", program, ids, want)
 		}
 	}
-	if len(w.works["Mesa 3D"].files) != 2 || len(w.works["Inter"].files) != 0 || len(w.works) != 2 {
+	if len(w.works["Mesa 3D"].files) != 2 || len(w.works["Inter"].files) != 0 || len(w.works) != 4 ||
+		w.works["MinGW-w64 runtime"].version == "" || w.works["GNU C Library"].version == "" {
 		t.Errorf("the window's works are read as %+v", w.works)
 	}
 }
@@ -78,6 +80,20 @@ func TestTheWindowsFixtureNoticesAreRead(t *testing.T) {
 	}
 	if inter := w.works["Inter"]; inter.version != "4.1" || inter.files != nil {
 		t.Errorf("Inter is read as %+v", inter)
+	}
+}
+
+// A work is in one place: compiled into a build or beside it, never both, and
+// every entry of the table says one of the two at most.
+func TestAWorkIsEitherCompiledInOrBesideABuild(t *testing.T) {
+	if err := (work{beside: "windows/amd64", in: "linux/amd64"}).check(component{path: "Both"}); err == nil ||
+		!strings.Contains(err.Error(), `"Both" is both compiled into linux/amd64 and beside windows/amd64`) {
+		t.Errorf("a work both compiled in and beside was let through: %v", err)
+	}
+	for heading, w := range works {
+		if w.beside != "" && w.in != "" {
+			t.Errorf("programs.go says %q is both compiled into %s and beside %s", heading, w.in, w.beside)
+		}
 	}
 }
 

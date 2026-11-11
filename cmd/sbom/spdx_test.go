@@ -80,6 +80,8 @@ func TestTheWindowsPartsAreDescribedForWhatTheyAre(t *testing.T) {
 		"stdlib":              "BSD-3-Clause AND LicenseRef-Sun-fdlibm-2004 AND LicenseRef-Cephes AND MIT",
 		"example.com/toolkit": "(Unlicense OR BSD-3-Clause) AND MIT AND LicenseRef-Arev",
 		"Mesa 3D":             "MIT AND Apache-2.0 WITH LLVM-exception",
+		"MinGW-w64 runtime":   "ZPL-2.1 AND LicenseRef-MinGW-w64-Cephes",
+		"GNU C Library":       "LGPL-2.1-or-later WITH GCC-exception-2.0-note AND LGPL-2.1-or-later",
 	} {
 		if got := pkgs[name].LicenseDeclared; got != want {
 			t.Errorf("%s is under %q, want %q", name, got, want)
@@ -97,6 +99,8 @@ func TestTheWindowsPartsAreDescribedForWhatTheyAre(t *testing.T) {
 		"SPDXRef-Package-certdoctor CONTAINS SPDXRef-Package-example.com-beta-v2",
 		"SPDXRef-Package-certdoctor-gui CONTAINS SPDXRef-Package-example.com-beta-v2",
 		"SPDXRef-Package-certdoctor-gui CONTAINS SPDXRef-Package-Inter",
+		"SPDXRef-Package-certdoctor-gui CONTAINS SPDXRef-Package-MinGW-w64-runtime",
+		"SPDXRef-Package-certdoctor-gui CONTAINS SPDXRef-Package-GNU-C-Library",
 		"SPDXRef-Package-Mesa-3D OPTIONAL_DEPENDENCY_OF SPDXRef-Package-certdoctor-gui",
 	} {
 		if !relations[want] {
@@ -105,6 +109,8 @@ func TestTheWindowsPartsAreDescribedForWhatTheyAre(t *testing.T) {
 	}
 	for _, unwanted := range []string{
 		"SPDXRef-Package-certdoctor CONTAINS SPDXRef-Package-Inter",
+		"SPDXRef-Package-certdoctor CONTAINS SPDXRef-Package-MinGW-w64-runtime",
+		"SPDXRef-Package-certdoctor CONTAINS SPDXRef-Package-GNU-C-Library",
 		"SPDXRef-Package-certdoctor-gui CONTAINS SPDXRef-Package-Mesa-3D",
 		"SPDXRef-Package-certdoctor-gui CONTAINS SPDXRef-Package-example.com-alpha",
 	} {
@@ -114,22 +120,29 @@ func TestTheWindowsPartsAreDescribedForWhatTheyAre(t *testing.T) {
 	}
 }
 
-// The software renderer travels beside the build for Windows alone, so a
-// document of builds without that one does not name it.
+// The software renderer travels beside the build for Windows alone, and the
+// MinGW-w64 runtime is linked into that build alone, so a document of builds
+// without that one names neither - and names the GNU C Library, which is in the
+// build for Linux.
 func TestFilesBesideOneBuildAreNamedOnlyWithThatBuild(t *testing.T) {
 	listing := fixtureListing() + windowListingFor("dist/certdoctor-gui", "linux/amd64", windowDeps(fixturePortal))
 	var doc spdxDocument
 	if err := json.Unmarshal(renderFixture(t, listing), &doc); err != nil {
 		t.Fatal(err)
 	}
+	named := map[string]bool{}
 	for _, p := range doc.Packages {
-		if p.Name == "Mesa 3D" {
-			t.Error("a document with no build for windows/amd64 names the files beside it")
-		}
+		named[p.Name] = true
+	}
+	if named["Mesa 3D"] || named["MinGW-w64 runtime"] {
+		t.Error("a document with no build for windows/amd64 names what only that build carries")
+	}
+	if !named["GNU C Library"] {
+		t.Error("a document with the build for linux/amd64 does not name the start files linked into it")
 	}
 	notes := fixtureNotes(t)
-	if got := summary("0.1.0", readBuilds(t, listing), notes); !strings.HasSuffix(got, ", 8 components beside the programs") {
-		t.Errorf("the summary counts the files beside a build that is not there: %s", got)
+	if got := summary("0.1.0", readBuilds(t, listing), notes); !strings.HasSuffix(got, ", 9 components beside the programs") {
+		t.Errorf("the summary counts what a build that is not there carries: %s", got)
 	}
 }
 

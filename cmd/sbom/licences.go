@@ -26,6 +26,15 @@ const ourLicence = "GPL-3.0-only"
 // notices were written with (ADR127), and what was read for them on 2026-11-11
 // is that each is on the list under that name.
 //
+// The C compiler's runtime in the window was matched on 2026-11-11 against
+// every template of 3.29.0 (internal_tools/noty-okna/spdx). One text of the
+// MinGW-w64 runtime is named by judgement rather than by a match: its first
+// notice is the Zope Public License 2.1 without the title and without the one
+// sentence of the optional preamble that says a copyright notice accompanies
+// the licence. The template keeps the two sentences of that preamble together,
+// so the text matches ZPL-2.1 only with the remaining sentence left out too -
+// and Fedora's package of the same runtime, mingw-crt, names it ZPL-2.1.
+//
 // An identifier the notices name and this list does not is refused rather than
 // passed through. A misspelt one makes the whole document invalid, and a valid
 // one nobody read is a licence nobody checked.
@@ -49,15 +58,21 @@ var listedLicences = map[string]bool{
 	"OPUBL-1.0":         true,
 	"Unlicense":         true,
 	"Zlib":              true,
+	"ZPL-2.1":           true,
 }
 
 // listedExceptions are the identifiers from the list of exceptions the same
 // release publishes beside the licences (json/exceptions.json at v3.29.0), the
 // only words that may follow WITH. Read on 2026-11-11 and not deprecated there.
 // LLVM's own exception to Apache-2.0 is in the software renderer that travels
-// beside the window on Windows.
+// beside the window on Windows. The two GCC exceptions are the permission to
+// link the start files of the GNU C Library into any program, with and without
+// the paragraph that says modified versions need not keep it - matched against
+// the templates that day, with the template's "Lesser" in place of "Library".
 var listedExceptions = map[string]bool{
-	"LLVM-exception": true,
+	"GCC-exception-2.0":      true,
+	"GCC-exception-2.0-note": true,
+	"LLVM-exception":         true,
 }
 
 // refPrefix is how SPDX names a text that is not on its list.
@@ -114,6 +129,15 @@ var unlisted = []unlistedLicence{
 		id:    "LicenseRef-SGI-FreeB",
 		name:  "SGI Free Software License B, with no version named",
 		opens: "Copyright (c) 2010 Khronos Group.",
+	},
+	// No licence at all: MinGW-w64's own note, in the list of notices of its
+	// runtime, that the Cephes files it carries came without one. It matched no
+	// template of 3.29.0 on 2026-11-11, and it is not the Cephes notice the Go
+	// standard library carries, which is LicenseRef-Cephes above.
+	{
+		id:    "LicenseRef-MinGW-w64-Cephes",
+		name:  "MinGW-w64 note on the Cephes math library",
+		opens: "FIXME: Cephes math lib",
 	},
 }
 

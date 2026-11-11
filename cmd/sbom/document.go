@@ -145,13 +145,17 @@ func partsOf(present []program, notes map[string]notices, builds []build) ([]par
 }
 
 // holds is how a program holds a work, and whether the builds given carry it
-// at all: a work compiled in is in every build of its program, and one beside a
-// binary only in the archive of the build it travels beside.
+// at all: a work compiled in is in every build of its program, one the C
+// compiler links in of its own only in the build for its target, and one beside
+// a binary only in the archive of the build it travels beside.
 func holds(w work, p program, builds []build) (string, bool) {
-	if w.beside == "" {
-		return contained, true
+	switch {
+	case w.in != "":
+		return contained, builtFor(builds, p, w.in)
+	case w.beside != "":
+		return besideIt, builtFor(builds, p, w.beside)
 	}
-	return besideIt, builtFor(builds, p, w.beside)
+	return contained, true
 }
 
 // merged is one component as the notices of every program name it.

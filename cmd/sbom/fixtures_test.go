@@ -133,8 +133,9 @@ func fixtureListing() string {
 // command line's, a module both programs link, a choice of licences in
 // brackets, a licence named twice for two texts, a module linked on one
 // system alone, the replaced OpenGL binding, every unlisted text the command
-// line does not quote, and both works - a typeface compiled in and files
-// beside the binary, the second with an exception after WITH.
+// line does not quote, and every kind of work - a typeface compiled in, two
+// runtimes the C compiler links into one build each, and files beside the
+// binary, the last two with an exception after WITH.
 var fixtureWindowNotices = strings.ReplaceAll(`# Third party notices of the window
 
 A preamble, with a list that belongs to no section:
@@ -222,6 +223,27 @@ Copyright (c) 2014 Eric Woroshow
 ~~~
 Copyright (c) 2010 Khronos Group.
 Copyright (c) 1991-2006 Silicon Graphics, Inc.
+~~~
+
+## MinGW-w64 runtime
+
+Version ~13.0.0~. ZPL-2.1 AND LicenseRef-MinGW-w64-Cephes. Linked into the build for Windows alone.
+
+~~~
+Copyright (c) 2009, 2010, 2011, 2012, 2013 by the mingw-w64 project
+~~~
+
+~~~
+FIXME: Cephes math lib
+Copyright (C) 1984-1998 Stephen L. Moshier
+~~~
+
+## GNU C Library
+
+Version ~2.39~. LGPL-2.1-or-later WITH GCC-exception-2.0-note AND LGPL-2.1-or-later. Linked into the build for Linux alone.
+
+~~~
+Copyright (C) 2001-2024 Free Software Foundation, Inc.
 ~~~
 
 ## Mesa 3D

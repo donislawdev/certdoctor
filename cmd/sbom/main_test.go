@@ -47,7 +47,7 @@ func TestOneDocumentDescribesBothPrograms(t *testing.T) {
 		t.Fatalf("exit %d: %s", o.code, o.stderr)
 	}
 	want := "sbom: certdoctor 0.1.0 at 89c6fcaaf91f, 5 build(s) (certdoctor-gui darwin/arm64, certdoctor-gui linux/amd64, " +
-		"certdoctor-gui windows/amd64, linux/amd64, windows/arm64), 9 components beside the programs\n"
+		"certdoctor-gui windows/amd64, linux/amd64, windows/arm64), 11 components beside the programs\n"
 	if o.stderr != want {
 		t.Errorf("standard error is %q, want %q", o.stderr, want)
 	}

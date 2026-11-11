@@ -28,6 +28,18 @@ carries two files of the Mesa 3D graphics library in a folder beside the
 window, and the last section, "Mesa 3D", says what they are, where they come
 from and whose work is in them.
 
+The window is built with a C compiler too, because GLFW is C, and a C compiler
+links some code of its own into every program it builds. On Windows that is the
+MinGW-w64 runtime and on Linux the start files of the GNU C Library, and each
+has a section of its own below, before "Mesa 3D". On both, GCC adds start files
+of its own as well, and on Windows code from its runtime library. They are
+under the GCC Runtime Library Exception, version 3.1, which lets a program
+built with GCC carry that code under terms of its own choosing, so nothing of
+GCC is reproduced here. On macOS the compiler links nothing of its own into the
+window. A release build reads the linker's own record of what it linked, and
+refuses a window that takes any other file of the compiler's than the ones
+this file was written for.
+
 What this file lists is checked rather than asserted. A guard in the source
 asks the build, for each of the three, which packages it links, and follows
 every `#include` of their C code to the files it reaches. It fails when a module
@@ -3272,6 +3284,462 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 Source: <https://go.googlesource.com/text>
+
+---
+
+## MinGW-w64 runtime
+
+Version `13.0.0`. ZPL-2.1 AND ISC AND BSD-2-Clause AND SMLNJ AND SunPro AND LicenseRef-MinGW-w64-Cephes AND LGPL-2.1-or-later.
+The support code the MinGW-w64 compiler links into every Windows program it
+builds: the code that starts the program and its threads, conversions between
+numbers and text, and the stubs through which the window calls Windows itself.
+It is in the build for Windows on amd64 and in no other.
+
+MinGW-w64 wrote the texts below for exactly this case - a program statically
+linked against its runtime - and asks that they travel with it. They are its
+file `COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt` at version
+13.0.0, quoted in full whether or not the window uses the part each one covers,
+each under the heading the file gives it. The first is the Zope Public License,
+version 2.1, as MinGW-w64 quotes it: without the licence's title and without
+the sentence that says a copyright notice accompanies it. The full text of the
+GNU Lesser General Public License, version 2.1, that the last one names is
+quoted above, under GLFW.
+
+### Overall copyright notice
+
+```
+Copyright (c) 2009, 2010, 2011, 2012, 2013 by the mingw-w64 project
+
+This license has been certified as open source. It has also been designated
+as GPL compatible by the Free Software Foundation (FSF).
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions in source code must retain the accompanying copyright
+      notice, this list of conditions, and the following disclaimer.
+   2. Redistributions in binary form must reproduce the accompanying
+      copyright notice, this list of conditions, and the following disclaimer
+      in the documentation and/or other materials provided with the
+      distribution.
+   3. Names of the copyright holders must not be used to endorse or promote
+      products derived from this software without prior written permission
+      from the copyright holders.
+   4. The right to distribute this software or to use it for any purpose does
+      not give you the right to use Servicemarks (sm) or Trademarks (tm) of
+      the copyright holders.  Use of them is covered by separate agreement
+      with the copyright holders.
+   5. If any files are modified, you must cause the modified files to carry
+      prominent notices stating that you changed the files and the date of
+      any change.
+
+Disclaimer
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY EXPRESSED
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+### getopt, getopt_long, and getop_long_only
+
+```
+Copyright (c) 2002 Todd C. Miller <Todd.Miller@courtesan.com>
+
+Permission to use, copy, modify, and distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+Sponsored in part by the Defense Advanced Research Projects
+Agency (DARPA) and Air Force Research Laboratory, Air Force
+Materiel Command, USAF, under agreement number F39502-99-1-0512.
+```
+
+```
+Copyright (c) 2000 The NetBSD Foundation, Inc.
+All rights reserved.
+
+This code is derived from software contributed to The NetBSD Foundation
+by Dieter Baron and Thomas Klausner.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+```
+
+### gdtoa: Converting between IEEE floating point numbers and ASCII
+
+```
+The author of this software is David M. Gay.
+
+Copyright (C) 1997, 1998, 1999, 2000, 2001 by Lucent Technologies
+All Rights Reserved
+
+Permission to use, copy, modify, and distribute this software and
+its documentation for any purpose and without fee is hereby
+granted, provided that the above copyright notice appear in all
+copies and that both that the copyright notice and this
+permission notice and warranty disclaimer appear in supporting
+documentation, and that the name of Lucent or any of its entities
+not be used in advertising or publicity pertaining to
+distribution of the software without specific, written prior
+permission.
+
+LUCENT DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.
+IN NO EVENT SHALL LUCENT OR ANY OF ITS ENTITIES BE LIABLE FOR ANY
+SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER
+IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+```
+
+```
+The author of this software is David M. Gay.
+
+Copyright (C) 2005 by David M. Gay
+All Rights Reserved
+
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
+provided that the above copyright notice appear in all copies and that
+both that the copyright notice and this permission notice and warranty
+disclaimer appear in supporting documentation, and that the name of
+the author or any of his current or former employers not be used in
+advertising or publicity pertaining to distribution of the software
+without specific, written prior permission.
+
+THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.  IN
+NO EVENT SHALL THE AUTHOR OR ANY OF HIS CURRENT OR FORMER EMPLOYERS BE
+LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY
+DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+SOFTWARE.
+```
+
+```
+The author of this software is David M. Gay.
+
+Copyright (C) 2004 by David M. Gay.
+All Rights Reserved
+Based on material in the rest of /netlib/fp/gdota.tar.gz,
+which is copyright (C) 1998, 2000 by Lucent Technologies.
+
+Permission to use, copy, modify, and distribute this software and
+its documentation for any purpose and without fee is hereby
+granted, provided that the above copyright notice appear in all
+copies and that both that the copyright notice and this
+permission notice and warranty disclaimer appear in supporting
+documentation, and that the name of Lucent or any of its entities
+not be used in advertising or publicity pertaining to
+distribution of the software without specific, written prior
+permission.
+
+LUCENT DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.
+IN NO EVENT SHALL LUCENT OR ANY OF ITS ENTITIES BE LIABLE FOR ANY
+SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER
+IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+```
+
+### Parts of the math library
+
+```
+Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+Developed at SunSoft, a Sun Microsystems, Inc. business.
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
+```
+
+```
+Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+Developed at SunPro, a Sun Microsystems, Inc. business.
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
+```
+
+```
+FIXME: Cephes math lib
+Copyright (C) 1984-1998 Stephen L. Moshier
+
+It sounds vague, but as to be found at
+<http://lists.debian.org/debian-legal/2004/12/msg00295.html>, it gives an
+impression that the author could be willing to give an explicit
+permission to distribute those files e.g. under a BSD style license. So
+probably there is no problem here, although it could be good to get a
+permission from the author and then add a license into the Cephes files
+in MinGW runtime. At least on follow-up it is marked that debian sees the
+version a-like BSD one. As MinGW.org (where those cephes parts are coming
+from) distributes them now over 6 years, it should be fine.
+```
+
+### Headers and IDLs imported from Wine
+
+```
+Some header and IDL files were imported from the Wine project. These files
+are prominent maked in source. Their copyright belongs to contributors and
+they are distributed under LGPL license.
+
+Disclaimer
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+```
+
+Source: <https://www.mingw-w64.org/>
+
+---
+
+## GNU C Library
+
+Version `2.39`. LGPL-2.1-or-later WITH GCC-exception-2.0-note AND LGPL-2.1-or-later WITH GCC-exception-2.0 AND LGPL-2.1-or-later.
+The start files of the C library: the code that runs before the window's own,
+sets the program up and calls it. They are linked into the build for Linux on
+amd64 and into no other. The rest of the library is not in the window - the
+window loads it from the system it runs on.
+
+The start files are `crt1.o`, built from `sysdeps/x86_64/start.S`,
+`csu/abi-note.c`, `csu/init.c` and `csu/static-reloc.c`, and `crti.o` and
+`crtn.o`, built from `sysdeps/x86_64/crti.S` and `sysdeps/x86_64/crtn.S`. Four
+of the six give unlimited permission to link them into any program. The other
+two, `csu/init.c`, which defines one constant, and `csu/static-reloc.c`, which
+defines one empty function, are under the GNU Lesser General Public License,
+version 2.1 or later, without that permission. The full text of that licence is
+quoted above, under GLFW. The source of the library is at
+<https://sourceware.org/glibc/>, and the source of the window, which is all
+that is needed to link it again against changed copies of these files, is in
+this repository. Below are the headers of the six files as glibc 2.39 has
+them, in the order above.
+
+```
+Startup code compliant to the ELF x86-64 ABI.
+   Copyright (C) 2001-2024 Free Software Foundation, Inc.
+   This file is part of the GNU C Library.
+
+   The GNU C Library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   In addition to the permissions in the GNU Lesser General Public
+   License, the Free Software Foundation gives you unlimited
+   permission to link the compiled version of this file with other
+   programs, and to distribute those programs without any restriction
+   coming from the use of this file. (The GNU Lesser General Public
+   License restrictions do apply in other respects; for example, they
+   cover modification of the file, and distribution when not linked
+   into another program.)
+
+   Note that people who make modified versions of this file are not
+   obligated to grant this special exception for their modified
+   versions; it is their choice whether to do so. The GNU Lesser
+   General Public License gives permission to release a modified
+   version without this exception; this exception also makes it
+   possible to release a modified version which carries forward this
+   exception.
+
+   The GNU C Library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with the GNU C Library; if not, see
+   <https://www.gnu.org/licenses/>.
+```
+
+```
+Special .init and .fini section support.
+   Copyright (C) 1997-2024 Free Software Foundation, Inc.
+   This file is part of the GNU C Library.
+
+   The GNU C Library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   In addition to the permissions in the GNU Lesser General Public
+   License, the Free Software Foundation gives you unlimited
+   permission to link the compiled version of this file with other
+   programs, and to distribute those programs without any restriction
+   coming from the use of this file.  (The Lesser General Public
+   License restrictions do apply in other respects; for example, they
+   cover modification of the file, and distribution when not linked
+   into another program.)
+
+   The GNU C Library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with the GNU C Library; if not, see
+   <https://www.gnu.org/licenses/>.
+```
+
+```
+Special startup support.
+   Copyright (C) 1997-2024 Free Software Foundation, Inc.
+   This file is part of the GNU C Library.
+
+   The GNU C Library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   The GNU C Library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with the GNU C Library; if not, see
+   <https://www.gnu.org/licenses/>.
+```
+
+```
+Special startup support for non-PIE static executables.
+   Copyright (C) 2017-2024 Free Software Foundation, Inc.
+   This file is part of the GNU C Library.
+
+   The GNU C Library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   The GNU C Library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with the GNU C Library; if not, see
+   <https://www.gnu.org/licenses/>.
+```
+
+```
+Special .init and .fini section support for x86-64.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
+   This file is part of the GNU C Library.
+
+   The GNU C Library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   In addition to the permissions in the GNU Lesser General Public
+   License, the Free Software Foundation gives you unlimited
+   permission to link the compiled version of this file with other
+   programs, and to distribute those programs without any restriction
+   coming from the use of this file. (The GNU Lesser General Public
+   License restrictions do apply in other respects; for example, they
+   cover modification of the file, and distribution when not linked
+   into another program.)
+
+   Note that people who make modified versions of this file are not
+   obligated to grant this special exception for their modified
+   versions; it is their choice whether to do so. The GNU Lesser
+   General Public License gives permission to release a modified
+   version without this exception; this exception also makes it
+   possible to release a modified version which carries forward this
+   exception.
+
+   The GNU C Library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with the GNU C Library; if not, see
+   <https://www.gnu.org/licenses/>.
+```
+
+```
+Special .init and .fini section support for x86-64.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
+   This file is part of the GNU C Library.
+
+   The GNU C Library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   In addition to the permissions in the GNU Lesser General Public
+   License, the Free Software Foundation gives you unlimited
+   permission to link the compiled version of this file with other
+   programs, and to distribute those programs without any restriction
+   coming from the use of this file. (The GNU Lesser General Public
+   License restrictions do apply in other respects; for example, they
+   cover modification of the file, and distribution when not linked
+   into another program.)
+
+   Note that people who make modified versions of this file are not
+   obligated to grant this special exception for their modified
+   versions; it is their choice whether to do so. The GNU Lesser
+   General Public License gives permission to release a modified
+   version without this exception; this exception also makes it
+   possible to release a modified version which carries forward this
+   exception.
+
+   The GNU C Library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with the GNU C Library; if not, see
+   <https://www.gnu.org/licenses/>.
+```
+
+Source: <https://sourceware.org/glibc/>
 
 ---
 

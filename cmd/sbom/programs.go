@@ -37,14 +37,16 @@ func programNamed(path string) program {
 }
 
 // A work is a section of the notices named after no module: somebody else's
-// work that this repository keeps in its own tree and compiles in, or that
-// travels beside a binary in its archive. No build records either, so neither
-// can be checked against a build - what holds them to what ships is the
-// notices guard in internal/guard, and what this table adds is where each one
-// goes.
+// work that this repository keeps in its own tree and compiles in, that the C
+// compiler links into one build of its own, or that travels beside a binary in
+// its archive. No build records any of them, so none can be checked against a
+// build - what holds them to what ships is the notices guard in internal/guard
+// and, for the compiler's code, the linker's map that the window's build reads,
+// and what this table adds is where each one goes.
 type work struct {
 	program string // the main package of the program that carries it
-	beside  string // the one target it travels beside, or "" when compiled into every build
+	beside  string // the one target it travels beside, or ""
+	in      string // the one target it is compiled into, or "" when it is in every build or beside one
 	about   string // what the document says of it
 }
 
@@ -54,6 +56,14 @@ type work struct {
 var works = map[string]work{
 	"Inter": {program: windowPath,
 		about: "A typeface, compiled into certdoctor-gui from internal/gui/fonts of this repository."},
+	"MinGW-w64 runtime": {program: windowPath, in: "windows/amd64",
+		about: "The runtime the MinGW-w64 C compiler links into every Windows program it builds, statically linked into " +
+			"certdoctor-gui for windows/amd64 and into no other build. The files of it each build links are held by the " +
+			"release to .github/window-toolchain, read from the linker's map."},
+	"GNU C Library": {program: windowPath, in: "linux/amd64",
+		about: "The start files of the GNU C Library (crt1.o, crti.o, crtn.o), statically linked into certdoctor-gui for " +
+			"linux/amd64 and into no other build. The rest of the library is loaded from the system at run time and is " +
+			"not in the binary."},
 	"Mesa 3D": {program: windowPath, beside: "windows/amd64",
 		about: "Not part of any binary: files that travel beside certdoctor-gui in its archive for windows/amd64, " +
 			"in a folder called opengl, which it loads to draw when the graphics driver offers no OpenGL."},

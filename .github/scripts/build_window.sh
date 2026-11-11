@@ -21,6 +21,10 @@
 # the system the C compiler is for. The command line has no C in it and is
 # built for all five of its targets on one runner.
 #
+# Every build is read back before it is handed on: what the binary records of
+# how it was built, and - from the linker's map - what the C compiler linked
+# into it of its own, which window_toolchain.sh holds to .github/window-toolchain.
+#
 # NOTHING IS WRITTEN INSIDE THE CHECKOUT, for the reason build_release.sh gives:
 # the binary records whether the tree had changes, an untracked file counts,
 # and the bill of materials refuses a build of no commit.
@@ -64,19 +68,41 @@ if [ -n "$(ls -A "$out")" ]; then
 fi
 
 binary="certdoctor-gui"
-flags=(-trimpath)
+ldflags=""
 if [ "${target%/*}" = "windows" ]; then
   binary="certdoctor-gui.exe"
   # A program for the Windows subsystem rather than the console one. Without
   # it Windows opens a console window behind the window, and keeps it for as
   # long as the window is open.
-  flags+=(-ldflags=-H=windowsgui)
+  ldflags="-H=windowsgui "
 fi
+
+# The linker's map of the build, which window_toolchain.sh reads below for
+# what the C compiler linked in of its own. Written beside the build, never
+# inside the checkout, and in a directory of its own so that nothing is packed
+# with the release. The go command splits -ldflags at spaces, so a path with
+# one would reach the linker in pieces.
+maps="$(mktemp -d)"
+case "$maps/" in "$root/"*) die "the temporary directory $maps is inside the checkout" ;; esac
+map="$maps/certdoctor-gui.map"
+if [ "${target%/*}" = "windows" ]; then
+  # The linker is a Windows program and reads a Windows path.
+  map="$(cygpath -m "$map")"
+fi
+case "$map" in *" "*) die "the map would be written at $map, and the go command splits a path with a space" ;; esac
+case "${target%/*}" in
+  darwin) ldflags+="-extldflags=-Wl,-map,$map" ;;
+  *) ldflags+="-extldflags=-Wl,-Map=$map" ;;
+esac
 
 # CGO_ENABLED=1 named rather than left to the default, because the default is
 # 0 wherever no C compiler is found, and a window built without cgo starts,
 # says it cannot open and ends (cmd/certdoctor-gui/run_nocgo.go).
-CGO_ENABLED=1 go build "${flags[@]}" -o "$out/$binary" ./cmd/certdoctor-gui
+CGO_ENABLED=1 go build -trimpath "-ldflags=$ldflags" -o "$out/$binary" ./cmd/certdoctor-gui
+
+# What the C compiler linked in of its own, held to the list the window's
+# notices were written for (OBS208).
+bash .github/scripts/window_toolchain.sh "$target" "$map" "$(go env CC)"
 
 # What the toolchain was told and what it recorded, read back out of the
 # binary rather than trusted from the line above.

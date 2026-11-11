@@ -38,6 +38,11 @@
       "licenseId": "LicenseRef-SGI-FreeB",
       "extractedText": "Copyright (c) 2010 Khronos Group.\nCopyright (c) 1991-2006 Silicon Graphics, Inc.",
       "name": "SGI Free Software License B, with no version named"
+    },
+    {
+      "licenseId": "LicenseRef-MinGW-w64-Cephes",
+      "extractedText": "FIXME: Cephes math lib\nCopyright (C) 1984-1998 Stephen L. Moshier",
+      "name": "MinGW-w64 note on the Cephes math library"
     }
   ],
   "packages": [
@@ -209,6 +214,17 @@
       "comment": "Linked from a copy kept in third_party/go-gl-gl of this repository rather than from the module's own source, changed as third_party/go-gl-gl/PATCH.md describes."
     },
     {
+      "SPDXID": "SPDXRef-Package-GNU-C-Library",
+      "name": "GNU C Library",
+      "versionInfo": "2.39",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "LGPL-2.1-or-later WITH GCC-exception-2.0-note AND LGPL-2.1-or-later",
+      "licenseDeclared": "LGPL-2.1-or-later WITH GCC-exception-2.0-note AND LGPL-2.1-or-later",
+      "copyrightText": "Copyright (C) 2001-2024 Free Software Foundation, Inc.",
+      "comment": "The start files of the GNU C Library (crt1.o, crti.o, crtn.o), statically linked into certdoctor-gui for linux/amd64 and into no other build. The rest of the library is loaded from the system at run time and is not in the binary."
+    },
+    {
       "SPDXID": "SPDXRef-Package-Inter",
       "name": "Inter",
       "versionInfo": "4.1",
@@ -229,6 +245,17 @@
       "licenseDeclared": "MIT AND Apache-2.0 WITH LLVM-exception",
       "copyrightText": "Copyright (C) 1999-2007  Brian Paul   All Rights Reserved.",
       "comment": "Not part of any binary: files that travel beside certdoctor-gui in its archive for windows/amd64, in a folder called opengl, which it loads to draw when the graphics driver offers no OpenGL. As the notices list them: opengl/libgallium_wgl.dll, 61880320 bytes, SHA-256 700e1fb7b9487d9d1c53752b03aeb040d22f3731b46aa254d88830b6279474de; opengl/opengl32.dll, 139264 bytes, SHA-256 c8511461ba71a0288750467e3be2f5c1c2bbbceaaf0ab5d8c496b0ba7302daa8. These are the files as the release they come from holds them. A release signs them, and a signed copy is longer and has another sum."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-MinGW-w64-runtime",
+      "name": "MinGW-w64 runtime",
+      "versionInfo": "13.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "ZPL-2.1 AND LicenseRef-MinGW-w64-Cephes",
+      "licenseDeclared": "ZPL-2.1 AND LicenseRef-MinGW-w64-Cephes",
+      "copyrightText": "Copyright (c) 2009, 2010, 2011, 2012, 2013 by the mingw-w64 project\nCopyright (C) 1984-1998 Stephen L. Moshier",
+      "comment": "The runtime the MinGW-w64 C compiler links into every Windows program it builds, statically linked into certdoctor-gui for windows/amd64 and into no other build. The files of it each build links are held by the release to .github/window-toolchain, read from the linker's map."
     }
   ],
   "relationships": [
@@ -290,7 +317,17 @@
     {
       "spdxElementId": "SPDXRef-Package-certdoctor-gui",
       "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-GNU-C-Library"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-certdoctor-gui",
+      "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-Inter"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-certdoctor-gui",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-MinGW-w64-runtime"
     },
     {
       "spdxElementId": "SPDXRef-Package-Mesa-3D",

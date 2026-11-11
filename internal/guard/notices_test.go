@@ -43,6 +43,12 @@ type noticedProgram struct {
 	// not linked into it. No build names them, so no walk arrives at them, and
 	// what holds such a section to what ships is a guard of its own.
 	beside []string
+
+	// byCompiler are the sections for code the C compiler's linker puts in of
+	// its own. It comes with the compiler, not from this tree, so no walk
+	// arrives at it either, and toolchain_test.go holds these sections to the
+	// linker's map through the pin.
+	byCompiler []string
 }
 
 // noticedPrograms are the binaries and their notices. The command line answers
@@ -60,7 +66,7 @@ var noticedPrograms = []noticedProgram{
 			{"github.com/go-gl/glfw/v3.4/glfw", "glfw/LICENSE.md"},       // only from beside the files an #include reaches
 			{"fyne.io/fyne/v2", "theme/font/LICENSE_Inter.txt"},          // only from beside the fonts go:embed takes in
 		},
-		beside: []string{rendererHeading}},
+		beside: []string{rendererHeading}, byCompiler: toolchainHeadings()},
 }
 
 // stdHeading is the one section every notices file has that is not named after
@@ -534,6 +540,9 @@ func gatherLinked(t *testing.T, root, goroot string, program noticedProgram, rea
 	code := linkedCode{modules: map[string]string{}, dirs: map[string]string{},
 		headings: map[string]bool{stdHeading: true}, sources: map[string]string{}}
 	for _, heading := range program.beside {
+		code.headings[heading] = true
+	}
+	for _, heading := range program.byCompiler {
 		code.headings[heading] = true
 	}
 	walks, imported := code.gatherSources(t, root, goroot, program)
