@@ -57,7 +57,15 @@ module github.com/donislawdev/certdoctor
 // not carry the list. So a chain through one of the eight reads as refused on
 // every row while the program judged may well accept it. ADR113 decides what
 // such a row says instead.
-go 1.27.3
+//
+// MOVED 1.27.3 -> 1.27.4 ON 2026-11-11, by the maintainer's decision. go1.27.4,
+// released 2026-11-10, carries security fixes to cgo, the go command, the
+// compiler, the linker and net/http, read at https://go.dev/doc/devel/release
+// on 2026-11-11. govulncheck v1.9.0 on this tree with go1.27.3 that day found
+// one of them reachable: GO-2026-6859 in net/http, through the PAC download and
+// the proxy challenge. The window is built with cgo and the linker, which the
+// other fixes are to.
+go 1.27.4
 
 require (
 	fyne.io/fyne/v2 v2.8.2

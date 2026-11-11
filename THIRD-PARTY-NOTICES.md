@@ -34,7 +34,7 @@ linked, and so none of them is here.
 
 ## Go standard library and runtime
 
-Version `go1.27.3`. BSD-3-Clause AND SunPro AND LicenseRef-Sun-fdlibm-2004 AND
+Version `go1.27.4`. BSD-3-Clause AND SunPro AND LicenseRef-Sun-fdlibm-2004 AND
 LicenseRef-Cephes AND BSD-1-Clause AND BSD-2-Clause AND MIT. Every Go program
 links the runtime and the parts of the standard library it uses, so this applies
 to every build. The first identifier is the Go project's own licence, and the

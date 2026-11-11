@@ -205,7 +205,7 @@ Gatekeeper.
 
 ### Other ways to get it
 
-**With Go installed** (1.27.3 or newer):
+**With Go installed** (1.27.4 or newer):
 
 ```
 go install github.com/donislawdev/certdoctor/cmd/certdoctor@latest
