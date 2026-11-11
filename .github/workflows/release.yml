@@ -129,6 +129,16 @@ jobs:
           fi
           echo "the tag and the code agree on ${code}"
 
+      # The suite below compiles the window with cgo, and GLFW in it needs these
+      # four packages on Linux - the same step the ci test job carries, for the
+      # reason it gives (ADR124 (f)). Missing here, the first run of this
+      # workflow after the window arrived stopped at wayland-client-core.h.
+      - name: the graphics headers the window needs
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+
       # Last, because it is the slow one and every check above can refuse in
       # seconds. A release built from a red tree is the one kind of release that
       # cannot be taken back, because the binaries are already on somebody's
