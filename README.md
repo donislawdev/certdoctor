@@ -58,10 +58,14 @@ staring at `PKIX path building failed` finds out it exists.
   certificate chain from each one, with fingerprints and validity dates.
 - **Write a report for the ticket** - terminal, Markdown, one self-contained HTML page, or JSON with a
   schema for CI. `--redact` masks host names, paths and user names. Credentials are masked always.
-- **Change nothing and call nobody** - the only file it writes is the report, at the path you name.
-  It connects only where you pointed it: no telemetry, no update check.
-- **Ship as one static binary** - nothing to install next to it, and it runs as it is inside Alpine
-  and Ubuntu images.
+- **Change nothing and call nobody** - the only file it writes is the report, at the path you name,
+  and the window keeps one setting of its own. It connects only where you pointed it: no telemetry,
+  no update check.
+- **Ship the command line as one static binary** - nothing to install next to it, and it runs as it
+  is inside Alpine and Ubuntu images.
+- **Show the same report in a window** - `certdoctor-gui`, for Windows, Linux and macOS: type the
+  address, press Diagnose, read the report and save it as HTML, Markdown or JSON. The window runs the
+  command line next to it, so it knows nothing the command line does not.
 
 ![certdoctor run against untrusted-root.badssl.com, paged through less: the verdict at the top names
 the BadSSL root that the Java stores lack, then the trust matrix shows the system store trusting the
@@ -153,15 +157,31 @@ nothing to install.
 | Linux on Arm | `certdoctor_<version>_linux_arm64.tar.gz` | `./certdoctor`, one static file |
 | macOS on Apple silicon | `certdoctor_<version>_macos_arm64.tar.gz` | `./certdoctor`, a link into `certdoctor.app`, signed and notarised |
 
-Every archive also carries `LICENSE`, `THIRD-PARTY-NOTICES.md` and this README. There is no build
-for Intel Macs.
+**The window, `certdoctor-gui`,** has archives of its own, for three systems. Each carries the
+command line as well, because the window runs it:
 
-**On macOS, keep `certdoctor.app` and the `certdoctor` link together.** The signature and Apple's
-notarisation ticket belong to the bundle, so the program copied out of it on its own is not the
+| Your system | The archive | What you run |
+|---|---|---|
+| Windows on x64 | `certdoctor-gui_<version>_windows_amd64.zip` | `certdoctor-gui.exe`, signed |
+| Linux on x64 | `certdoctor-gui_<version>_linux_amd64.tar.gz` | `./certdoctor-gui` |
+| macOS on Apple silicon | `certdoctor-gui_<version>_macos_arm64.tar.gz` | `certdoctor-gui.app`, signed and notarised |
+
+Every archive also carries `LICENSE`, `THIRD-PARTY-NOTICES.md` and this README, and the window's
+archives `THIRD-PARTY-NOTICES-GUI.md` too. There is no build for Intel Macs.
+
+**Keep the files of the window's archive together.** The window starts the `certdoctor` that sits
+next to it. On Windows, the `opengl` folder holds a software renderer: on a machine whose graphics
+driver offers no OpenGL 2.1 - a virtual machine without 3D acceleration, or a Remote Desktop
+session - the window starts again with it, by itself.
+
+**On macOS, keep each bundle and the links next to it together.** The signature and Apple's
+notarisation ticket belong to the bundle, so a program copied out of it on its own is not the
 program Apple checked.
 
-**On Linux, the binary needs no C library**, so the same file runs in Alpine, in Ubuntu and in an
-image with nothing else in it. `certdoctor --license` prints the notices that travel with it.
+**On Linux, the command line needs no C library**, so the same file runs in Alpine, in Ubuntu and in
+an image with nothing else in it. `certdoctor --license` prints the notices that travel with it. The
+window is different: it needs a desktop session with OpenGL, and loads `libGL.so.1` and
+`libwayland-client.so.0`, which a desktop installation has.
 
 ### Check what you downloaded
 
@@ -177,7 +197,7 @@ On Windows, in PowerShell, `True` beside the archive means it is the file the re
 
 ```
 $listed = (Get-Content verify-SHA256SUMS.txt) -replace ' .*'
-Get-FileHash certdoctor_*.zip | ForEach-Object { "$($_.Hash -in $listed)  $(Split-Path -Leaf $_.Path)" }
+Get-FileHash certdoctor*.zip | ForEach-Object { "$($_.Hash -in $listed)  $(Split-Path -Leaf $_.Path)" }
 ```
 
 A digest file from the same page only proves that the two agree. What proves where they came from is
@@ -200,8 +220,8 @@ gh attestation verify <the archive> -R donislawdev/certdoctor
 
 The Windows and macOS archives were signed after the build, so their bytes are no longer the
 build's, and that second command finds nothing for them by design. The signature answers for them
-instead: Windows checks it when the program starts, and on macOS `spctl -a -vv certdoctor.app` asks
-Gatekeeper.
+instead: Windows checks it when the program starts, and on macOS `spctl -a -vv certdoctor.app` - or
+`certdoctor-gui.app` - asks Gatekeeper.
 
 ### Other ways to get it
 
@@ -430,6 +450,8 @@ A tool that quietly fails to look at something is worse than one that says what 
   somebody "you are being intercepted" when they are not is harm, not a cosmetic mistake.
 - **No revocation checks.** OCSP and CRL would mean connecting somewhere you did not point it at.
 - **Linux has been measured in containers**, not on a desktop distribution.
+- **The window exists for three systems** - Windows and Linux on x64, macOS on Apple silicon. On
+  Windows or Linux on Arm, use the command line.
 - **This is a 0.x release.** The JSON schema will keep moving until 1.0.0, and the report says so in
   its notes.
 
@@ -469,6 +491,13 @@ leak.
 
 No. It reads, connects where you pointed it, and writes one report if you ask for one with `--out`.
 The commands it prints are for you to run, after reading them.
+
+The window keeps one thing for itself: the folder you last saved a report to, in a file called
+`preferences.json` in your user folder - `AppData\Roaming\fyne\dev.donislaw.certdoctor` on Windows,
+`~/.config/fyne/dev.donislaw.certdoctor` on Linux (under `$XDG_CONFIG_HOME` when that is set) and
+`~/Library/Preferences/fyne/dev.donislaw.certdoctor` on macOS. Fyne, the toolkit the window is built
+with, creates that folder when the window starts, and an empty one of the same name in your user cache
+folder. Delete both when you remove the window.
 
 ### Why not just `openssl s_client` or `curl -v`?
 
@@ -510,7 +539,9 @@ Copyright (C) 2026 DonislawDev. The project is built with an AI-assisted workflo
 Released under the GNU General Public License, version 3. The full text is in [LICENSE](LICENSE). The
 binary also contains code by others - the Go runtime and five modules behind the PAC evaluator - and
 their notices are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). `certdoctor --license` prints
-both from the binary.
+both from the binary. The window contains more - Fyne and the libraries it draws with, the Inter
+typeface, and on Windows the Mesa software renderer next to it - and its notices are in
+[THIRD-PARTY-NOTICES-GUI.md](THIRD-PARTY-NOTICES-GUI.md).
 
 Reports and any other output you generate with certdoctor belong to you and are not derivative works
 of this program.

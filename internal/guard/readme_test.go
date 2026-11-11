@@ -3,7 +3,6 @@ package guard
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -41,11 +40,25 @@ func archiveName(target [2]string) string {
 	return "_" + label + "_" + target[1] + extension
 }
 
+// releaseArchives is every archive a release ships, by the name build_release.sh
+// gives it with version standing in for the version: the command line for each
+// release target and the window for each window target (ADR125 (a)).
+func releaseArchives(version string) []string {
+	var names []string
+	for _, target := range releaseTargets {
+		names = append(names, "certdoctor_"+version+archiveName(target))
+	}
+	for _, target := range windowTargets {
+		names = append(names, "certdoctor-gui_"+version+archiveName(target))
+	}
+	return names
+}
+
 // TestTheReadmeSaysWhatAReleaseShipsAndHowToCheckIt holds the README to the
-// release: every archive the five builds make, the checksum file the signing
+// release: every archive the eight builds make, the checksum file the signing
 // script writes and no other, the commands the release note gives, and the Go
-// version go.mod asks for. The release note is held to the same archive names,
-// and the signing script's own list of archives to them.
+// version go.mod asks for. The release note and the verifier are held to the
+// same archive names, and the signing script's table of archives to them.
 func TestTheReadmeSaysWhatAReleaseShipsAndHowToCheckIt(t *testing.T) {
 	root := moduleRoot(t)
 	goMod := readRel(t, root, "go.mod")
@@ -63,10 +76,30 @@ func TestTheReadmeSaysWhatAReleaseShipsAndHowToCheckIt(t *testing.T) {
 		"what the README says about a release")
 	requireNoViolations(t, checkAttestationCommands(releaseNotes, notes, repository), "the release note's commands")
 	requireNoViolations(t, checkArchiveNames(map[string]string{
-		buildScript:   readRel(t, root, buildScript),
-		releaseNotes:  notes,
-		signingScript: readRel(t, root, signingScript),
+		buildScript:    readRel(t, root, buildScript),
+		releaseNotes:   notes,
+		signingScript:  readRel(t, root, signingScript),
+		verifyWorkflow: readRel(t, root, verifyWorkflow),
 	}), "the archive names")
+}
+
+// windowSource is the file that names the window's application ID, which Fyne
+// keeps its preferences under.
+const windowSource = "cmd/certdoctor-gui/run_cgo.go"
+
+// TestTheReadmeSaysWhereTheWindowKeepsItsSetting holds the README's answer to
+// "does it change anything on my machine" to the window's application ID. Fyne
+// keeps the window's one setting in a folder named after it, the ID is a value
+// that may still change before the first release (ADR127), and a README naming
+// the folder of an ID the window no longer has sends a person to delete the
+// wrong thing.
+func TestTheReadmeSaysWhereTheWindowKeepsItsSetting(t *testing.T) {
+	root := moduleRoot(t)
+	m := appIDLine.FindStringSubmatch(readRel(t, root, windowSource))
+	if m == nil {
+		t.Fatalf("%s has no line const appID = \"...\", so the folder the README names was never compared with it", windowSource)
+	}
+	requireNoViolations(t, checkSettingsFolders(readRel(t, root, readmeFile), m[1]), "where the window keeps its setting")
 }
 
 func TestTheReadmeGuardCanFail(t *testing.T) {
@@ -75,7 +108,8 @@ func TestTheReadmeGuardCanFail(t *testing.T) {
 	violations := checkReadme(stale, "a/b", "1.27.3")
 	requireViolation(t, violations, "asks for Go 1.27.2, and go.mod asks for 1.27.3")
 	requireViolation(t, violations, "names SHA256SUMS as the checksum file")
-	requireViolation(t, violations, "never names the _macos_arm64.tar.gz archive")
+	requireViolation(t, violations, "never names certdoctor_<version>_macos_arm64.tar.gz")
+	requireViolation(t, violations, "never names certdoctor-gui_<version>_windows_amd64.zip")
 	requireViolation(t, violations, "never mentions gh attestation verify")
 	requireViolation(t, checkReadme("nothing about Go here\n", "a/b", "1.27.3"), "never says which Go builds it")
 	two := "gh attestation verify x -R a/b --predicate-type p\ngh attestation verify x -R a/bc\n"
@@ -89,16 +123,59 @@ func TestTheReadmeGuardCanFail(t *testing.T) {
 	}
 
 	violations = checkArchiveNames(map[string]string{
-		buildScript:  "darwin) echo \"osx\" ;;\n",
-		releaseNotes: "certdoctor_<version>_windows_amd64.zip\n",
-		signingScript: "SIGNED_ARCHIVES = (\"_windows_amd64.zip\", \"_win_arm64.zip\")\n" +
-			"MACOS_ARCHIVE = \"_macos_arm64.tar.gz\"\nARCHIVES = 6\n",
+		buildScript:    "darwin) echo \"osx\" ;;\n",
+		releaseNotes:   "certdoctor_<version>_windows_amd64.zip\n",
+		verifyWorkflow: "\"certdoctor_${version}_windows_amd64.zip\"\ncertdoctor-gui_${version}_linux_amd64.tar.gz\n",
+		signingScript: "RELEASE = (\n" +
+			"    (\"certdoctor\", \"_windows_amd64.zip\", \"card\"),\n" +
+			"    (\"certdoctor\", \"_win_arm64.zip\", \"card\"),\n" +
+			"    (\"certdoctor\", \"_linux_amd64.tar.gz\", \"card\"),\n" +
+			"    (\"certdoctor\", \"_windows_amd64.zip\", \"card\"),\n" +
+			"    (\"certdoctor-gui\", \"_macos_arm64.tar.gz\", None),\n" +
+			")\n" +
+			"    (\"certdoctor\", \"_linux_arm64.tar.gz\", None),\n",
 	})
 	requireViolation(t, violations, `has no line darwin) echo "macos" ;;`)
-	requireViolation(t, violations, "never names the _linux_arm64.tar.gz archive")
-	requireViolation(t, violations, "expects _win_arm64.zip, and no target is called that")
-	requireViolation(t, violations, "expects 6 archives, and the release builds 5")
+	requireViolation(t, violations, "never names certdoctor_<version>_linux_arm64.tar.gz")
+	requireViolation(t, violations, "never names certdoctor-gui_<version>_macos_arm64.tar.gz")
+	requireViolation(t, violations, "never asks for certdoctor-gui_${version}_linux_amd64.tar.gz")
+	requireViolation(t, violations, "expects certdoctor _win_arm64.zip, and no target is called that")
+	requireViolation(t, violations, `signs certdoctor _linux_amd64.tar.gz at "card", and an archive for linux is signed at None`)
+	requireViolation(t, violations, `signs certdoctor-gui _macos_arm64.tar.gz at None, and an archive for darwin is signed at "mac"`)
+	requireViolation(t, violations, "lists certdoctor _windows_amd64.zip twice")
+	// A row after the table closes is not in the table.
+	requireViolation(t, violations, "never lists certdoctor _linux_arm64.tar.gz")
 	requireViolation(t, checkArchiveNames(map[string]string{signingScript: "nothing\n"}), "lists no archive")
+
+	settings := checkSettingsFolders("`AppData\\Roaming\\fyne\\a.b`, `~/.config/fyne/a.b` and `~/Library/Preferences/fyne/a.c`\n", "a.b")
+	if len(settings) != 1 {
+		t.Fatalf("want one folder named wrongly, got %v", settings)
+	}
+	requireViolation(t, settings, "never names ~/Library/Preferences/fyne/a.b")
+}
+
+// appIDLine is the line of the window's source that names its application ID.
+var appIDLine = regexp.MustCompile(`(?m)^const appID = "([^"]+)"\s*$`)
+
+// windowSettings are the folders Fyne keeps the window's preferences in, read
+// in the code of the Fyne the window is built with (internal/app/config_*.go of
+// v2.8.2, 2026-11-11): AppData\Roaming in the user folder on Windows, the XDG
+// configuration folder on Linux and Library/Preferences on macOS, each with
+// fyne and the window's application ID under it.
+func windowSettings(appID string) []string {
+	return []string{`AppData\Roaming\fyne\` + appID, "~/.config/fyne/" + appID, "~/Library/Preferences/fyne/" + appID}
+}
+
+// checkSettingsFolders reports a README that does not name each folder the
+// window keeps its setting in, under the ID the window has.
+func checkSettingsFolders(readme, appID string) []Violation {
+	var violations []Violation
+	for _, folder := range windowSettings(appID) {
+		if !strings.Contains(readme, folder) {
+			violations = append(violations, Violation{readmeFile, 0, "never names " + folder + ", where the window keeps its setting"})
+		}
+	}
+	return violations
 }
 
 // checksumFile is anything the README could call a checksum list.
@@ -117,9 +194,9 @@ func checkReadme(body, repository, goVersion string) []Violation {
 		at(v.Detail)
 	}
 	violations = append(violations, checkAttestationCommands(readmeFile, body, repository)...)
-	for _, target := range releaseTargets {
-		if name := archiveName(target); !strings.Contains(body, name) {
-			at("never names the " + name + " archive")
+	for _, name := range releaseArchives("<version>") {
+		if !strings.Contains(body, name) {
+			at("never names " + name + ", an archive every release carries")
 		}
 	}
 	for _, named := range checksumFile.FindAllString(body, -1) {
@@ -150,15 +227,45 @@ func checkAttestationCommands(rel, body, repository string) []Violation {
 	return violations
 }
 
-// signedArchive is one archive name the signing script expects, quoted on the
-// line that declares it.
-var signedArchive = regexp.MustCompile(`"(_[a-z0-9]+_[a-z0-9]+\.(?:zip|tar\.gz))"`)
+// signingRow is one row of the signing script's RELEASE table: a program, the
+// end of its archive's name after the version, and where that archive is
+// signed, written as Python writes it.
+var signingRow = regexp.MustCompile(`^\s+\("([a-z-]+)", "(_[a-z0-9]+_[a-z0-9]+\.(?:zip|tar\.gz))", (None|"[a-z]+")\),\s*$`)
 
-// archiveCount is the number of archives the signing script waits for.
-var archiveCount = regexp.MustCompile(`(?m)^ARCHIVES = (\d+)$`)
+// signingTable is the rows of the RELEASE table, and nothing after it closes.
+func signingTable(script string) [][3]string {
+	_, rest, found := strings.Cut("\n"+script, "\nRELEASE = (\n")
+	if !found {
+		return nil
+	}
+	block, _, _ := strings.Cut(rest, "\n)")
+	var rows [][3]string
+	for _, line := range strings.Split(block, "\n") {
+		if m := signingRow.FindStringSubmatch(line); m != nil {
+			rows = append(rows, [3]string{m[1], m[2], m[3]})
+		}
+	}
+	return rows
+}
+
+// signedAt is where the archive for a system is signed, as the signing script
+// writes it: Windows at the card, macOS on the Mac, and Linux nowhere - its
+// archive is the build's own bytes, which the build's statement describes.
+func signedAt(goos string) string {
+	switch goos {
+	case "windows":
+		return `"card"`
+	case "darwin":
+		return `"mac"`
+	}
+	return "None"
+}
 
 // checkArchiveNames reports a build script that names archives another way, a
-// release note missing one, and a signing script expecting one no target makes.
+// release note or a verifier missing one, and a signing table that lists an
+// archive no target makes, misses one, lists one twice, or signs one where its
+// system is not signed. A table missing an archive would have the release
+// refuse it at the card, or carry it unsigned.
 func checkArchiveNames(files map[string]string) []Violation {
 	var violations []Violation
 	at := func(rel, detail string) { violations = append(violations, Violation{rel, 0, detail}) }
@@ -169,33 +276,55 @@ func checkArchiveNames(files map[string]string) []Violation {
 			}
 		}
 	}
-	names := map[string]bool{}
-	for _, target := range releaseTargets {
-		names[archiveName(target)] = true
-		if note, ok := files[releaseNotes]; ok && !strings.Contains(note, archiveName(target)) {
-			at(releaseNotes, "never names the "+archiveName(target)+" archive")
-		}
-	}
-	script := files[signingScript]
-	expected := 0
-	for _, line := range strings.Split(script, "\n") {
-		if !strings.HasPrefix(line, "SIGNED_ARCHIVES = ") && !strings.HasPrefix(line, "MACOS_ARCHIVE = ") {
-			continue
-		}
-		for _, m := range signedArchive.FindAllStringSubmatch(line, -1) {
-			expected++
-			if !names[m[1]] {
-				at(signingScript, "expects "+m[1]+", and no target is called that")
+	if note, ok := files[releaseNotes]; ok {
+		for _, name := range releaseArchives("<version>") {
+			if !strings.Contains(note, name) {
+				at(releaseNotes, "never names "+name)
 			}
 		}
 	}
-	if expected == 0 {
+	if verifier, ok := files[verifyWorkflow]; ok {
+		for _, name := range releaseArchives("${version}") {
+			if !strings.Contains(verifier, `"`+name+`"`) {
+				at(verifyWorkflow, "never asks for "+name+", so a release page without it would answer for itself")
+			}
+		}
+	}
+
+	want := map[string]string{}
+	var order []string
+	for _, group := range []struct {
+		program string
+		targets [][2]string
+	}{{"certdoctor", releaseTargets}, {"certdoctor-gui", windowTargets}} {
+		for _, target := range group.targets {
+			key := group.program + " " + archiveName(target)
+			want[key] = target[0]
+			order = append(order, key)
+		}
+	}
+	rows := signingTable(files[signingScript])
+	if len(rows) == 0 {
 		at(signingScript, "lists no archive to sign, so the names above were never compared with it")
 	}
-	if m := archiveCount.FindStringSubmatch(script); m == nil {
-		at(signingScript, "never says how many archives a release has")
-	} else if n, _ := strconv.Atoi(m[1]); n != len(releaseTargets) {
-		at(signingScript, fmt.Sprintf("expects %d archives, and the release builds %d", n, len(releaseTargets)))
+	seen := map[string]bool{}
+	for _, row := range rows {
+		key := row[0] + " " + row[1]
+		goos, known := want[key]
+		switch {
+		case seen[key]:
+			at(signingScript, "lists "+key+" twice")
+		case !known:
+			at(signingScript, "expects "+key+", and no target is called that")
+		case row[2] != signedAt(goos):
+			at(signingScript, "signs "+key+" at "+row[2]+", and an archive for "+goos+" is signed at "+signedAt(goos))
+		}
+		seen[key] = true
+	}
+	for _, key := range order {
+		if !seen[key] {
+			at(signingScript, "never lists "+key+", so the release would refuse it at the card or carry it unsigned")
+		}
 	}
 	return violations
 }

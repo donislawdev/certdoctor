@@ -11,8 +11,10 @@
 # decision 1, after the release pipeline of the maintainer's other Go project.
 #
 # Running this by hand from the Actions tab builds everything and attaches it to
-# the run, so the build can be tried without a tag being spent. The publish job
-# is the only one that writes anything, and it is fenced behind the tag.
+# the run, so the build can be tried without a tag being spent - and the signing
+# rehearsed on it, with sign_release.py --rehearsal <run>, which uploads
+# nothing. The publish job is the only one that writes anything, and it is
+# fenced behind the tag.
 name: release
 
 on:
@@ -379,8 +381,9 @@ jobs:
           echo
           echo "    python .github/scripts/sign_release.py ${GITHUB_REF_NAME} --macos-host user@mac"
           echo
-          echo "It checks this build's provenance before touching it, signs the two Windows"
-          echo "programs with the card, hands the macOS archive to the Mac to be signed,"
-          echo "notarised and stapled, writes verify-SHA256SUMS.txt over what it made, uploads"
-          echo "everything to the draft and asks attest-release.yml for the statement about"
-          echo "the signed bytes. Then read the draft and publish it."
+          echo "It checks this build's provenance before touching it, signs every program and"
+          echo "library in the three Windows archives with the card, hands the two macOS"
+          echo "archives to the Mac to be signed, notarised and stapled, writes"
+          echo "verify-SHA256SUMS.txt over what it made, uploads everything to the draft and"
+          echo "asks attest-release.yml for the statement about the signed bytes. Then read"
+          echo "the draft and publish it."

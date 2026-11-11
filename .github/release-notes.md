@@ -2,23 +2,33 @@ Why this machine, or this container, cannot reach that URL - DNS, proxy and PAC,
 
 ## What to download
 
-One program, five builds. Take the archive for your system and architecture:
+Two programs. **certdoctor** is the command line, in five builds:
 
 - `certdoctor_<version>_windows_amd64.zip` and `certdoctor_<version>_windows_arm64.zip`
 - `certdoctor_<version>_linux_amd64.tar.gz` and `certdoctor_<version>_linux_arm64.tar.gz`
 - `certdoctor_<version>_macos_arm64.tar.gz`, for Apple silicon
 
-Every archive carries the program, `LICENSE`, `README.md` and `THIRD-PARTY-NOTICES.md`. The Linux builds are static and run in a container with no C library at all, so the binary can be copied into an image on its own - `certdoctor --license` prints the notices that travel with it.
+**certdoctor-gui** is a window for the same diagnosis: type the address, press Diagnose, read the report, and save it as HTML, Markdown or JSON. It runs the command line that sits next to it, so its archive carries both programs:
+
+- `certdoctor-gui_<version>_windows_amd64.zip`
+- `certdoctor-gui_<version>_linux_amd64.tar.gz`
+- `certdoctor-gui_<version>_macos_arm64.tar.gz`, for Apple silicon
+
+Take the archive for your system and architecture. Every archive carries `LICENSE`, `README.md` and `THIRD-PARTY-NOTICES.md`, and the window's archives also `THIRD-PARTY-NOTICES-GUI.md`.
+
+The command line's Linux builds are static and run in a container with no C library at all, so the binary can be copied into an image on its own - `certdoctor --license` prints the notices that travel with it.
+
+Keep the files of the window's archive together: the window starts `certdoctor` from its own folder. On Windows the `opengl` folder holds a software renderer, which the window uses when the graphics driver offers no OpenGL 2.1 - in a virtual machine without 3D acceleration, or over Remote Desktop. On Linux the window needs a desktop session with OpenGL: it loads `libGL.so.1` and `libwayland-client.so.0`, which a desktop installation has.
 
 Check what you downloaded against `verify-SHA256SUMS.txt`, at the bottom of this list.
 
 ## Signing
 
-**The Windows programs are signed.** The signature is on `certdoctor.exe` inside the zip, carries a timestamp, and is issued by Certum. Windows checks it when you run the program.
+**The Windows programs are signed** - `certdoctor.exe`, `certdoctor-gui.exe`, and the two libraries of the software renderer in the window's `opengl` folder. Each signature carries a timestamp and is issued by Certum. Windows checks it when you run the program. The `certdoctor.exe` in the window's archive is the same file as the one in the command line's archive.
 
-**The macOS program is signed and notarised by Apple.** It lives inside `certdoctor.app`, with a link called `certdoctor` next to it, so you still type `./certdoctor`. macOS runs it without asking the network, because the notarisation ticket travels inside the bundle.
+**The macOS programs are signed and notarised by Apple.** The command line lives inside `certdoctor.app`, and the window inside `certdoctor-gui.app` together with the `certdoctor` it runs. Next to each bundle is a link for each program in it, so you still type `./certdoctor`. macOS runs them without asking the network, because the notarisation ticket travels inside the bundle.
 
-> Keep `certdoctor.app` and the link together. A copy of the program taken out of the bundle on its own is refused, because the signature covers the bundle.
+> Keep the bundle and its links together. A copy of a program taken out of the bundle on its own is refused, because the signature covers the bundle.
 
 **The Linux programs are not signed.** They come out of the archive ready to run.
 
@@ -46,7 +56,9 @@ spctl -a -vv certdoctor.app            # what Gatekeeper thinks of it
 xcrun stapler validate certdoctor.app  # that the ticket is really in the file
 ```
 
-The four files whose names start with `verify-` are the ones you check a download against. The `.spdx.json` file lists every module compiled into the program, the Go toolchain included, with its licence and version. The `.sigstore.json` files are the statements themselves, so both commands also work offline with `--bundle <file>`.
+The same two commands answer for `certdoctor-gui.app` from the window's archive.
+
+The four files whose names start with `verify-` are the ones you check a download against. The `.spdx.json` file lists every module compiled into either program, the Go toolchain included, with its licence and version, and the software renderer for the window on Windows. The `.sigstore.json` files are the statements themselves, so both commands also work offline with `--bundle <file>`.
 
 ## Everything that changed
 

@@ -10,7 +10,8 @@
 #
 # What it does not check: the wording of the published page, which the
 # maintainer may edit by hand before publishing. internal/guard holds the note
-# the draft opens with to what it has to say.
+# the draft opens with to what it has to say. Nor does it start the window - a
+# runner has no screen to show it on - only the command line in each archive.
 #
 # Read only, and that is not a detail: a verifier that can publish is not a
 # verifier any more.
@@ -34,7 +35,7 @@ jobs:
   # On a Mac, because nothing but a Mac reads a notarisation ticket, and a
   # checksum says the bytes did not move and nothing about who signed them.
   verify-macos:
-    name: check the macOS download the way a Mac does
+    name: check the macOS downloads the way a Mac does
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -56,7 +57,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "checking $tag"
 
-      - name: download the macOS archive
+      - name: download the macOS archives
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -68,7 +69,10 @@ jobs:
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*macos*.tar.gz'
           ls -l
 
-      - name: the bundle is signed by our certificate, stapled, and starts
+      # Both archives, and in each one every program, not only the bundle: the
+      # window's bundle carries the command line it starts, and a program
+      # inside a bundle is signed on its own before the bundle is.
+      - name: every bundle and every program in it is signed by our certificate, stapled, and starts
         shell: bash
         env:
           TAG: ${{ steps.which.outputs.tag }}
@@ -84,61 +88,94 @@ jobs:
           echo "pinned: $pinned"
 
           cd "$RUNNER_TEMP/published"
-          archives=(*macos*.tar.gz)
-          if [ "${#archives[@]}" -ne 1 ] || [ ! -f "${archives[0]}" ]; then
-            echo "expected one macOS archive, found ${#archives[@]}"
+          version="${TAG#v}"
+          shopt -s nullglob
+          found=(*macos*.tar.gz)
+          shopt -u nullglob
+          if [ "${#found[@]}" -ne 2 ]; then
+            echo "expected two macOS archives, found ${#found[@]}"
             exit 1
           fi
-          archive="${archives[0]}"
-          work="unpacked"
-          rm -rf "$work"
-          mkdir -p "$work"
-          tar -xzf "$archive" -C "$work"
+          checked=0
+          # The programs each bundle holds in Contents/MacOS, sorted.
+          for archive in "certdoctor_${version}_macos_arm64.tar.gz:certdoctor" \
+              "certdoctor-gui_${version}_macos_arm64.tar.gz:certdoctor certdoctor-gui"; do
+            programs="${archive#*:}"
+            archive="${archive%%:*}"
+            if [ ! -f "$archive" ]; then
+              echo "missing: $archive"
+              exit 1
+            fi
+            work="unpacked_${archive%.tar.gz}"
+            rm -rf "$work"
+            mkdir -p "$work"
+            tar -xzf "$archive" -C "$work"
 
-          app="$work/certdoctor.app"
-          if [ ! -d "$app" ]; then
-            echo "$archive holds no certdoctor.app, so nothing in it can carry a ticket"
-            exit 1
-          fi
-          # What is beside the bundle has to be a link. A copy of the binary out
-          # there is refused by Gatekeeper, and ln makes a copy silently where
-          # links do not work.
-          if [ ! -L "$work/certdoctor" ]; then
-            echo "$archive does not carry a link called certdoctor beside the bundle"
-            exit 1
-          fi
+            shopt -s nullglob
+            apps=("$work"/*.app)
+            shopt -u nullglob
+            if [ "${#apps[@]}" -ne 1 ]; then
+              echo "$archive holds ${#apps[@]} bundles, and an archive holds one"
+              exit 1
+            fi
+            app="${apps[0]}"
+            held="$(find "$app/Contents/MacOS" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+            if [ "$held" != "$programs" ]; then
+              echo "$archive: $(basename "$app") holds \"$held\", and should hold \"$programs\""
+              exit 1
+            fi
 
-          codesign --verify --strict --deep "$app"
-          # The ticket, read out of the file itself. It does not depend on
-          # Gatekeeper being switched on, which is why it comes first.
-          xcrun stapler validate "$app"
+            codesign --verify --strict --deep "$app"
+            # The ticket, read out of the file itself. It does not depend on
+            # Gatekeeper being switched on, which is why it comes first.
+            xcrun stapler validate "$app"
 
-          certs="$(mktemp -d)"
-          codesign -d --extract-certificates="$certs/cert" "$app" > /dev/null 2>&1
-          actual="$(shasum -a 256 "$certs/cert0" | awk '{ print $1 }')"
-          rm -rf "$certs"
-          if [ "$actual" != "$pinned" ]; then
-            echo "$archive was signed by a DIFFERENT certificate: $actual"
-            exit 1
-          fi
-          echo "$archive: signed by the pinned certificate, stapled"
+            for code in "$app" "$app"/Contents/MacOS/*; do
+              certs="$(mktemp -d)"
+              codesign -d --extract-certificates="$certs/cert" "$code" > /dev/null 2>&1
+              if [ ! -f "$certs/cert0" ]; then
+                echo "$archive: ${code#"$work"/} carries no certificate"
+                exit 1
+              fi
+              actual="$(shasum -a 256 "$certs/cert0" | awk '{ print $1 }')"
+              rm -rf "$certs"
+              if [ "$actual" != "$pinned" ]; then
+                echo "$archive: ${code#"$work"/} was signed by a DIFFERENT certificate: $actual"
+                exit 1
+              fi
+              checked=$((checked + 1))
+            done
 
-          said="$("$work/certdoctor" --version | head -n 1)"
-          if [ "$said" != "certdoctor: ${TAG#v}" ]; then
-            echo "the program says \"$said\", and this release is ${TAG#v}"
-            exit 1
-          fi
-          echo "the link starts the program, which says $said"
+            # What is beside the bundle has to be a link, one for each program.
+            # A copy of a binary out there is refused by Gatekeeper, and ln
+            # makes a copy silently where links do not work.
+            for program in $programs; do
+              if [ ! -L "$work/$program" ]; then
+                echo "$archive does not carry a link called $program beside the bundle"
+                exit 1
+              fi
+            done
+
+            said="$("$work/certdoctor" --version | head -n 1)"
+            if [ "$said" != "certdoctor: ${version}" ]; then
+              echo "certdoctor in $archive says \"$said\", and this release is ${version}"
+              exit 1
+            fi
+            echo "$archive: $(basename "$app") and $programs signed by the pinned certificate, stapled, and certdoctor says $said"
+          done
+          echo "$checked signatures read, each by the pinned certificate"
 
           # Gatekeeper last, and only when it is on. A runner with it disabled
           # answers "accepted" to everything, and a check that cannot fail reads
           # like proof.
           if spctl --status 2>/dev/null | grep -q "assessments enabled"; then
-            spctl -a -vv -t exec "$app"
-            echo "Gatekeeper accepts the bundle"
+            for app in unpacked_*/*.app; do
+              spctl -a -vv -t exec "$app"
+            done
+            echo "Gatekeeper accepts both bundles"
           else
             echo "NOTE: Gatekeeper assessments are off on this runner, so spctl was not asked."
-            echo "The ticket and the certificate were checked above, and neither needs it."
+            echo "The tickets and the certificates were checked above, and neither needs it."
           fi
 
   verify:
@@ -179,8 +216,9 @@ jobs:
           ls -l
 
       # A release missing one file looks almost exactly like a finished one,
-      # which is why this counts rather than glances. Five archives, the
-      # checksums, the bill of materials and the two statements.
+      # which is why this counts rather than glances. Eight archives - the five
+      # of the command line and the three of the window - the checksums, the
+      # bill of materials and the two statements.
       - name: everything a release is made of is there
         id: assets
         continue-on-error: true
@@ -192,8 +230,17 @@ jobs:
           set -euo pipefail
           version="${TAG#v}"
           missing=0
-          for os_arch in windows_amd64.zip windows_arm64.zip linux_amd64.tar.gz linux_arm64.tar.gz macos_arm64.tar.gz; do
-            name="certdoctor_${version}_${os_arch}"
+          expected=(
+            "certdoctor_${version}_windows_amd64.zip"
+            "certdoctor_${version}_windows_arm64.zip"
+            "certdoctor_${version}_linux_amd64.tar.gz"
+            "certdoctor_${version}_linux_arm64.tar.gz"
+            "certdoctor_${version}_macos_arm64.tar.gz"
+            "certdoctor-gui_${version}_windows_amd64.zip"
+            "certdoctor-gui_${version}_linux_amd64.tar.gz"
+            "certdoctor-gui_${version}_macos_arm64.tar.gz"
+          )
+          for name in "${expected[@]}"; do
             if [ ! -f "$name" ]; then
               echo "missing: $name"
               missing=1
@@ -203,8 +250,8 @@ jobs:
           archives=(*.zip *.tar.gz)
           shopt -u nullglob
           echo "archives: ${#archives[@]}"
-          if [ "${#archives[@]}" != "5" ]; then
-            echo "expected five archives"
+          if [ "${#archives[@]}" != "${#expected[@]}" ]; then
+            echo "expected ${#expected[@]} archives"
             missing=1
           fi
           # Named with the verify- prefix rather than by suffix alone, because
@@ -228,10 +275,11 @@ jobs:
         working-directory: published
         run: sha256sum -c verify-SHA256SUMS.txt
 
-      # Run against a real download, as written on the release page. The
-      # provenance one answers for the Linux archives, which nothing signed. The
-      # predicate type is given because gh asks for provenance unless told
-      # otherwise, and a wrong URI answers "no attestation found".
+      # Run against real downloads, as written on the release page, for each
+      # program. The provenance one answers for the Linux archives, which
+      # nothing signed. The predicate type is given because gh asks for
+      # provenance unless told otherwise, and a wrong URI answers "no
+      # attestation found".
       - name: the two commands the notes tell people to run
         id: commands_api
         continue-on-error: true
@@ -242,13 +290,15 @@ jobs:
           TAG: ${{ steps.which.outputs.tag }}
         run: |
           set -euo pipefail
-          linux="certdoctor_${TAG#v}_linux_amd64.tar.gz"
-          windows="certdoctor_${TAG#v}_windows_amd64.zip"
-          echo "where it came from, on a file nothing signed: $linux"
-          gh attestation verify "$linux" -R "$GITHUB_REPOSITORY"
-          echo "what is inside, on a signed file: $windows"
-          gh attestation verify "$windows" -R "$GITHUB_REPOSITORY" \
-            --predicate-type https://spdx.dev/Document/v2.3
+          for program in certdoctor certdoctor-gui; do
+            linux="${program}_${TAG#v}_linux_amd64.tar.gz"
+            windows="${program}_${TAG#v}_windows_amd64.zip"
+            echo "where it came from, on a file nothing signed: $linux"
+            gh attestation verify "$linux" -R "$GITHUB_REPOSITORY"
+            echo "what is inside, on a signed file: $windows"
+            gh attestation verify "$windows" -R "$GITHUB_REPOSITORY" \
+              --predicate-type https://spdx.dev/Document/v2.3
+          done
 
       # The notes promise these work offline with --bundle, and a person behind
       # a proxy that blocks the API is exactly who this program is for.
@@ -261,18 +311,24 @@ jobs:
           TAG: ${{ steps.which.outputs.tag }}
         run: |
           set -euo pipefail
-          linux="certdoctor_${TAG#v}_linux_amd64.tar.gz"
-          windows="certdoctor_${TAG#v}_windows_amd64.zip"
-          gh attestation verify "$linux" -R "$GITHUB_REPOSITORY" \
-            --bundle "verify-certdoctor_${TAG#v}.provenance.sigstore.json"
-          gh attestation verify "$windows" -R "$GITHUB_REPOSITORY" \
-            --bundle "verify-certdoctor_${TAG#v}.sbom.sigstore.json" \
-            --predicate-type https://spdx.dev/Document/v2.3
+          for program in certdoctor certdoctor-gui; do
+            linux="${program}_${TAG#v}_linux_amd64.tar.gz"
+            windows="${program}_${TAG#v}_windows_amd64.zip"
+            gh attestation verify "$linux" -R "$GITHUB_REPOSITORY" \
+              --bundle "verify-certdoctor_${TAG#v}.provenance.sigstore.json"
+            gh attestation verify "$windows" -R "$GITHUB_REPOSITORY" \
+              --bundle "verify-certdoctor_${TAG#v}.sbom.sigstore.json" \
+              --predicate-type https://spdx.dev/Document/v2.3
+          done
 
-      # The step this job runs on Windows for. Both archives, not the first one
-      # found: signing one of two and publishing the other unsigned is a mistake
-      # that looks like nothing at all on the page.
-      - name: both Windows programs are signed, stamped, by our certificate, and start
+      # The step this job runs on Windows for. Every archive and every program
+      # and library in each, not the first one found: signing two of three and
+      # publishing the third unsigned is a mistake that looks like nothing at
+      # all on the page. The window's archive carries the software renderer
+      # beside it, and a library beside a signed program is the one file a
+      # tamperer would swap - its two files are named by the pin they were
+      # fetched by, so an archive that lost one is refused here as well.
+      - name: every Windows program and library is signed, stamped, by our certificate, and the command line starts
         id: signatures
         continue-on-error: true
         shell: pwsh
@@ -285,35 +341,64 @@ jobs:
           $pinned = $line.Matches[0].Groups[1].Value
           "pinned: $pinned"
 
+          $renderer = @(Select-String -Path ../.github/mesa-dist-win -Pattern '^file=\S*/([^/\s]+)\s' |
+            ForEach-Object { 'opengl/' + $_.Matches[0].Groups[1].Value })
+          if ($renderer.Count -lt 1) { throw "could not read the software renderer's files out of .github/mesa-dist-win" }
+          "renderer: $($renderer -join ', ')"
+
+          $version = $env:TAG.TrimStart('v')
+          $archives = [ordered]@{
+            "certdoctor_${version}_windows_amd64.zip"     = @('certdoctor.exe')
+            "certdoctor_${version}_windows_arm64.zip"     = @('certdoctor.exe')
+            "certdoctor-gui_${version}_windows_amd64.zip" = @('certdoctor-gui.exe', 'certdoctor.exe') + $renderer
+          }
           $zips = @(Get-ChildItem -Filter *windows*.zip)
-          if ($zips.Count -ne 2) { throw "expected two Windows archives, found $($zips.Count)" }
+          if ($zips.Count -ne $archives.Count) { throw "expected $($archives.Count) Windows archives, found $($zips.Count)" }
 
-          foreach ($zip in $zips) {
-            $into = Join-Path $PWD ("unpacked_" + $zip.BaseName)
-            Expand-Archive -LiteralPath $zip.FullName -DestinationPath $into -Force
-            $programs = @(Get-ChildItem -Path $into -Recurse -Include *.exe)
-            if ($programs.Count -ne 1) { throw "$($zip.Name) holds $($programs.Count) programs, expected one" }
-            $program = $programs[0]
+          $checked = 0
+          $commandLine = @{}
+          foreach ($name in $archives.Keys) {
+            if (-not (Test-Path -LiteralPath $name)) { throw "missing: $name" }
+            $into = Join-Path $PWD ("unpacked_" + [IO.Path]::GetFileNameWithoutExtension($name))
+            Expand-Archive -LiteralPath $name -DestinationPath $into -Force
+            $found = @(Get-ChildItem -LiteralPath $into -Recurse -File |
+              Where-Object { $_.Extension -in '.exe', '.dll' } |
+              ForEach-Object { $_.FullName.Substring($into.Length + 1).Replace('\', '/') } | Sort-Object)
+            $wanted = @($archives[$name] | Sort-Object)
+            if (($found -join ', ') -ne ($wanted -join ', ')) {
+              throw "$name holds $($found -join ', '), and should hold $($wanted -join ', ')"
+            }
 
-            $sig = Get-AuthenticodeSignature -LiteralPath $program.FullName
-            "$($zip.Name) -> $($program.Name): $($sig.Status)"
-            if ($sig.Status -ne 'Valid') { throw "$($program.Name) in $($zip.Name): the signature status is $($sig.Status)" }
-            # Without a timestamp the signature dies when the certificate
-            # expires, so its absence is a defect rather than a detail.
-            if (-not $sig.TimeStamperCertificate) { throw "$($program.Name) in $($zip.Name): the signature carries no timestamp" }
-            $bytes = [System.Security.Cryptography.SHA256]::Create().ComputeHash($sig.SignerCertificate.RawData)
-            $actual = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
-            if ($actual -ne $pinned) { throw "$($program.Name) in $($zip.Name) was signed by a DIFFERENT certificate: $actual" }
+            foreach ($rel in $found) {
+              $file = Join-Path $into $rel
+              $sig = Get-AuthenticodeSignature -LiteralPath $file
+              "$name -> ${rel}: $($sig.Status)"
+              if ($sig.Status -ne 'Valid') { throw "$rel in ${name}: the signature status is $($sig.Status)" }
+              # Without a timestamp the signature dies when the certificate
+              # expires, so its absence is a defect rather than a detail.
+              if (-not $sig.TimeStamperCertificate) { throw "$rel in ${name}: the signature carries no timestamp" }
+              $bytes = [System.Security.Cryptography.SHA256]::Create().ComputeHash($sig.SignerCertificate.RawData)
+              $actual = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
+              if ($actual -ne $pinned) { throw "$rel in $name was signed by a DIFFERENT certificate: $actual" }
+              $checked++
+            }
 
+            $commandLine[$name] = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $into 'certdoctor.exe')).Hash
             # The runner is amd64, and Windows on amd64 does not run an arm64
-            # program, so only the build for this machine is started.
-            if ($zip.Name -like '*_windows_amd64.zip') {
-              $said = (& $program.FullName --version | Select-Object -First 1)
-              if ($said -ne "certdoctor: $($env:TAG.TrimStart('v'))") { throw "the program says '$said', and this release is $($env:TAG)" }
-              "$($program.Name) starts and says $said"
+            # program, so only the builds for this machine are started.
+            if ($name -like '*_windows_amd64.zip') {
+              $said = (& (Join-Path $into 'certdoctor.exe') --version | Select-Object -First 1)
+              if ($said -ne "certdoctor: $version") { throw "certdoctor.exe in $name says '$said', and this release is $version" }
+              "$name -> certdoctor.exe starts and says $said"
             }
           }
-          "both Windows programs are signed by the pinned certificate, each with a timestamp"
+          # The signing script signs each distinct file once and copies it, so
+          # the command line in the window's archive is the very file the
+          # command line's archive carries - two signatures would be two files.
+          if ($commandLine["certdoctor_${version}_windows_amd64.zip"] -ne $commandLine["certdoctor-gui_${version}_windows_amd64.zip"]) {
+            throw "certdoctor.exe in the window's archive is not the file the command line's archive carries"
+          }
+          "$checked file(s) signed by the pinned certificate, each with a timestamp"
 
       # The readme and the site point at /releases/latest, so "published" and
       # "what people get" are the same thing only while this holds. Asked of the
@@ -359,7 +444,7 @@ jobs:
           set -euo pipefail
           failed=0
           report() {
-            printf '  %-52s %s\n' "$2" "$1"
+            printf '  %-56s %s\n' "$2" "$1"
             if [ "$1" != "success" ]; then
               failed=1
             fi
@@ -369,7 +454,7 @@ jobs:
           report "$CHECKSUMS" "the checksums a user is told to compare"
           report "$COMMANDS_API" "the commands the notes tell people to run"
           report "$COMMANDS_OFFLINE" "the same commands with no network"
-          report "$SIGNATURES" "both Windows programs by our certificate"
+          report "$SIGNATURES" "every Windows program and library by our certificate"
           report "$LATEST" "a full release is the one people are offered"
           echo
           if [ "$failed" != "0" ]; then

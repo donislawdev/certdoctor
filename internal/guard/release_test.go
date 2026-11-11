@@ -260,6 +260,23 @@ func TestThePinnedCertificatesAreDigestsWithADate(t *testing.T) {
 	}
 }
 
+// TestTheRenderersFilesAreReadFromTheirPin keeps one list of the software
+// renderer's files. The signing script signs them and the verifier holds the
+// window's archive to them, and each reads their names out of the pin they
+// were fetched by - so a renderer with other files cannot be signed by one
+// list and checked against another, or signed by neither.
+func TestTheRenderersFilesAreReadFromTheirPin(t *testing.T) {
+	root := moduleRoot(t)
+	for rel, reader := range map[string]string{
+		signingScript:  `RENDERER_PIN = os.path.join(".github", "mesa-dist-win")`,
+		verifyWorkflow: `Select-String -Path ../.github/mesa-dist-win`,
+	} {
+		if !strings.Contains(readRel(t, root, rel), reader) {
+			t.Errorf("%s does not read %s with %s, so it carries its own idea of which files sit beside the window", rel, rendererPin, reader)
+		}
+	}
+}
+
 func TestTheCertificatePinGuardCanFail(t *testing.T) {
 	digest := strings.Repeat("ab", 32)
 	_, violations := parsePins("# a comment\n\n" +
