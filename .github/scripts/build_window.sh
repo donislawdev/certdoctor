@@ -87,7 +87,17 @@ for want in "CGO_ENABLED=1" "vcs.modified=false" "GOOS=${target%/*}" "GOARCH=${t
   printf '%s\n' "$info" | grep -qE -- "[[:space:]]${want}$" || die "$binary does not record $want"
 done
 if [ "${target%/*}" = "windows" ]; then
-  printf '%s\n' "$info" | grep -qF -- "-ldflags=-H=windowsgui" || die "$binary does not record -H=windowsgui"
+  # -trimpath leaves -ldflags out of what the binary records, so the flag is
+  # read where it acts: the Subsystem field of the PE header, 2 for the Windows
+  # subsystem and 3 for the console one. The PE header starts at the offset
+  # stored at 0x3C, and Subsystem lies 92 bytes into it: past the 4-byte
+  # signature, the 20-byte file header and 68 bytes of the optional header.
+  pe="$(od -An -tu4 --endian=little -j60 -N4 "$out/$binary" | tr -d ' ')"
+  [ "$(od -An -tx1 -j"$pe" -N4 "$out/$binary" | tr -d ' ')" = "50450000" ] ||
+    die "$binary has no PE header where its DOS header points"
+  subsystem="$(od -An -tu2 --endian=little -j"$((pe + 92))" -N2 "$out/$binary" | tr -d ' ')"
+  [ "$subsystem" = "2" ] ||
+    die "$binary is for subsystem $subsystem, not 2: Windows would open a console window behind it"
 fi
 echo "built $binary for $target"
 
