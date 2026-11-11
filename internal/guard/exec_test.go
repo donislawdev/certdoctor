@@ -8,8 +8,8 @@ import (
 // execAllowlist names the files allowed to start another program.
 //
 // WHY THIS LIST EXISTS AT ALL, AND IT IS NOT WHAT IT LOOKS LIKE. The layer guard
-// already forbids os/exec, but it forbids it in internal/core/ ONLY, because
-// coreForbiddenStdlib is attached to that one layer in layerMap. An adapter has
+// already forbids os/exec, but it forbids it in internal/core/ and internal/app/
+// ONLY, because closedStdlib names those two layers and no other. An adapter has
 // always been free to run anything - it is the layer that talks to the world,
 // which is why internal/adapter/privilege may import syscall. So this list does
 // not relax a rule. It closes a hole the tree already knew about and named: the

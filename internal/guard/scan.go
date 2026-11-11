@@ -132,8 +132,13 @@ func descendOrSkip(root, path string, d os.DirEntry) error {
 
 // parseSource parses one file and records where it sits relative to the module
 // root, so a violation reads the same on Windows and in a Linux CI log.
+//
+// Comments are kept, because two guards read them: one wants every package to
+// say what it owns, the other wants no build constraint in the core or the
+// orchestrator. No guard that walks the tree for code is changed by them - a
+// comment is never a call, a literal or a statement.
 func parseSource(fset *token.FileSet, root, path string) (sourceFile, error) {
-	parsed, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+	parsed, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution|parser.ParseComments)
 	if err != nil {
 		return sourceFile{}, fmt.Errorf("parsing %s: %w", path, err)
 	}

@@ -16,18 +16,24 @@ import (
 // guard covering less than it claims is worse than no guard.
 var layerMap = []layerRule{
 	{
-		// The innermost layer. Nothing of ours sits below it.
-		location:        "internal/core/",
-		mayImportBelow:  nil,
-		forbiddenStdlib: coreForbiddenStdlib,
+		// The innermost layer. Nothing of ours sits below it, and the standard
+		// library it may use is a closed list - closedStdlib.
+		location:       "internal/core/",
+		mayImportBelow: nil,
 	},
 	{
+		// The orchestrator, with a closed list of its own in closedStdlib.
 		location:       "internal/app/",
 		mayImportBelow: []string{"internal/core/"},
 	},
 	{
+		// The adapters see the core and nothing above it. They could also see the
+		// orchestrator until 2026-11-11, and none of them ever did: an adapter
+		// is what the orchestrator is handed as a port, so an adapter reaching
+		// back for the orchestrator would turn the ports inside out. The door was
+		// found by the check that every door in this map is used.
 		location:       "internal/adapter/",
-		mayImportBelow: []string{"internal/core/", "internal/app/"},
+		mayImportBelow: []string{"internal/core/"},
 	},
 	{
 		// The guards check the repository, so they depend on nothing in it.
@@ -77,19 +83,31 @@ var layerMap = []layerRule{
 		mayImportBelow: []string{"internal/gui/screens/", "internal/gui/parts/", "internal/gui/look/",
 			"internal/gui/words/", "internal/gui/model/"},
 	},
+	// EVERY ENTRY POINT HAS A RULE OF ITS OWN, and there is no rule for cmd/ as a
+	// whole. Until 2026-11-11 there was one, and it gave every command - the
+	// bill of materials too, which reads nothing but the module root - the whole
+	// core and every adapter. A new command now sits outside the map until
+	// somebody writes down what it may see, which is the one moment that
+	// decision is cheap.
 	{
-		// Wiring. It is allowed to see every layer because that is its job, and
-		// it is the only thing allowed to reach the module root package.
-		location:       "cmd/",
+		// The command line's wiring. It is allowed to see every layer because
+		// that is its job.
+		location:       "cmd/certdoctor/",
 		mayImportBelow: []string{"internal/core/", "internal/app/", "internal/adapter/"},
 		mayImportRoot:  true,
+	},
+	{
+		// The generator of the bill of materials (ADR116). It reads the version
+		// and the licence from the module root and nothing of the program.
+		location:      "cmd/sbom/",
+		mayImportRoot: true,
 	},
 	{
 		// The window's entry point (D21). It knows the command line only
 		// through the document it writes (ADR121), so it sees the window's own
 		// packages, the icon and the module root for the version - never the
-		// core, the run or an adapter. A rule of its own, more specific than
-		// cmd/, so the command line's entry point is not given the window.
+		// core, the run or an adapter. And the command line's entry point is
+		// not given the window, because its own rule does not name it.
 		location:       "cmd/certdoctor-gui/",
 		mayImportBelow: []string{"internal/gui/", "assets/icon/"},
 		mayImportRoot:  true,
@@ -328,38 +346,9 @@ var intraLayerEdges = map[string][]string{
 	"internal/adapter/handshake": {"internal/adapter/tcp"},
 }
 
-// coreForbiddenStdlib keeps the core a pure function of evidence: no network, no
-// subprocess, no filesystem, no environment. Assessment has to be testable on
-// recorded evidence, without a broken machine to reproduce.
-//
-// Deliberately NOT on this list: net/url and crypto/x509 parse without touching
-// anything, and time carries durations that belong in evidence.
-//
-// net/netip JOINED THAT SENTENCE ON 2026-08-05 AND IT WAS A DECISION, NOT AN
-// OVERSIGHT. The check below compares import paths exactly, so "net" has never
-// covered "net/netip" and the core could always have imported it - which is
-// precisely why it is written down here now rather than used quietly. The package
-// is address VALUES: parsing and formatting, no sockets, no name lookups, nothing
-// that can block. The alternative was writing IPv6 text formatting by hand, with
-// its zero-compression rules, inside the one package that reads hostile bytes off
-// the network.
-//
-// This list is deliberately strict now. Relaxing it later is a visible act with
-// a written reason, while a loose list never tightens on its own.
-var coreForbiddenStdlib = []string{
-	"net",
-	"net/http",
-	"os",
-	"os/exec",
-	"os/signal",
-	"os/user",
-	"syscall",
-}
-
 type layerRule struct {
-	location        string
-	mayImportBelow  []string
-	forbiddenStdlib []string
+	location       string
+	mayImportBelow []string
 	// mayImportRoot allows the module root package. It is a separate flag
 	// rather than an entry in mayImportBelow because that list is matched by
 	// prefix, and the root package's path is the module path itself - an empty
@@ -544,14 +533,8 @@ func checkImportsOf(tr tree, sf sourceFile, rule layerRule) []Violation {
 			violations = append(violations, checkOurImport(sf, rule, inside, imp)...)
 			continue
 		}
-		for _, forbidden := range rule.forbiddenStdlib {
-			if imp.path == forbidden {
-				violations = append(violations, Violation{
-					File:   sf.rel,
-					Line:   imp.line,
-					Detail: fmt.Sprintf("%s may not import %q - the core is a pure function of evidence", rule.location, imp.path),
-				})
-			}
+		if refused, ok := refusedStdlib(sf, rule, imp); ok {
+			violations = append(violations, refused)
 		}
 	}
 	return violations

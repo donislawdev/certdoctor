@@ -152,7 +152,7 @@ func mustLoadModule(t *testing.T) tree {
 func loadFixture(t *testing.T, name, pretendRel string) sourceFile {
 	t.Helper()
 	fset := token.NewFileSet()
-	parsed, err := parser.ParseFile(fset, filepath.Join("testdata", name), nil, parser.SkipObjectResolution)
+	parsed, err := parser.ParseFile(fset, filepath.Join("testdata", name), nil, parser.SkipObjectResolution|parser.ParseComments)
 	if err != nil {
 		t.Fatalf("parsing fixture %s: %v", name, err)
 	}

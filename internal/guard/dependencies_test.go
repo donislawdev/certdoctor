@@ -59,11 +59,23 @@ var externalImportAllowlist = map[string]bool{
 // the same module anywhere else, or any other module here, is still reported.
 // It is not a layer rule - "the window may import anything" is exactly the
 // rule the comment above the list turns down.
+//
+// THE PLACES ARE THE PACKAGES THAT DRAW, NOT THE WINDOW AS A WHOLE, since
+// 2026-11-11. The pair named internal/gui/ until then, so flow, model, request,
+// words and fonts could have imported the toolkit and nothing would have
+// failed - and they are the half of the window that decides without it (GUI
+// rule 15, ADR121): the run from the request to the answer, the document as the
+// window reads it, the sentences. Kept apart from the toolkit, they are tested
+// without a window. Each place has to import the toolkit, so the list cannot
+// keep a place nobody draws in.
 var externalImportPlaces = []struct {
 	module string
 	under  []string
 }{
-	{module: "fyne.io/fyne/v2", under: []string{"internal/gui/", "cmd/certdoctor-gui/"}},
+	{module: "fyne.io/fyne/v2", under: []string{
+		"internal/gui/look/", "internal/gui/parts/", "internal/gui/screens/", "internal/gui/catalogue/",
+		"cmd/certdoctor-gui/",
+	}},
 }
 
 // placeAllows says whether this file may import this path by the rule above.
@@ -126,24 +138,28 @@ func TestAnAllowlistedFileMayImportSomebodyElsesModule(t *testing.T) {
 }
 
 // TestTheToolkitIsAllowedOnlyWhereItsPairSays holds the pair to both of its
-// halves: the toolkit is reported outside the window's directories, accepted
+// halves: the toolkit is reported outside the packages that draw, accepted
 // inside them, and another module inside them is still reported.
 func TestTheToolkitIsAllowedOnlyWhereItsPairSays(t *testing.T) {
-	const module = "github.com/donislawdev/certdoctor"
-	inCore := tree{modulePath: module, files: []sourceFile{loadFixture(t, "imports_toolkit.go", "internal/core/planted.go")}}
-	requireViolation(t, checkExternalImports(inCore), "fyne.io/fyne/v2/widget")
+	requireViolation(t, checkExternalImports(plantedTree(t, "imports_toolkit.go", "internal/core/planted.go")),
+		"fyne.io/fyne/v2/widget")
 
-	for _, rel := range []string{"internal/gui/planted.go", "cmd/certdoctor-gui/planted.go"} {
-		inWindow := tree{modulePath: module, files: []sourceFile{loadFixture(t, "imports_toolkit.go", rel)}}
-		requireNoViolations(t, checkExternalImports(inWindow), "the toolkit under "+rel)
+	for _, rel := range []string{"internal/gui/parts/planted.go", "cmd/certdoctor-gui/planted.go"} {
+		requireNoViolations(t, checkExternalImports(plantedTree(t, "imports_toolkit.go", rel)), "the toolkit under "+rel)
 	}
 
-	// A directory whose name only begins like the window's is not the window.
-	beside := tree{modulePath: module, files: []sourceFile{loadFixture(t, "imports_toolkit.go", "internal/guiplanted/planted.go")}}
-	requireViolation(t, checkExternalImports(beside), "fyne.io/fyne/v2")
+	// The half of the window that decides without the toolkit, and the window
+	// directory itself, which is no place of the pair.
+	for _, rel := range []string{"internal/gui/flow/planted.go", "internal/gui/model/planted.go", "internal/gui/planted.go"} {
+		requireViolation(t, checkExternalImports(plantedTree(t, "imports_toolkit.go", rel)), "fyne.io/fyne/v2")
+	}
 
-	other := tree{modulePath: module, files: []sourceFile{loadFixture(t, "imports_outside.go", "internal/gui/planted.go")}}
-	requireViolation(t, checkExternalImports(other), "github.com/dop251/goja")
+	// A directory whose name only begins like a place is not that place.
+	requireViolation(t, checkExternalImports(plantedTree(t, "imports_toolkit.go", "internal/gui/partsplanted/planted.go")),
+		"fyne.io/fyne/v2")
+
+	requireViolation(t, checkExternalImports(plantedTree(t, "imports_outside.go", "internal/gui/parts/planted.go")),
+		"github.com/dop251/goja")
 }
 
 // TestTheExternalImportAllowlistNamesFilesThatExist keeps the list from rotting,
@@ -163,14 +179,22 @@ func TestTheExternalImportAllowlistNamesFilesThatExist(t *testing.T) {
 	}
 }
 
-// checkExternalImports reports every import of a module outside this repository
-// from a file that is not on the allowlist.
+// isOutsideModule says whether an import path names somebody else's module
+// rather than the standard library. Our own paths carry a dot too, so a caller
+// sorts them out first.
 //
 // HOW AN OUTSIDE MODULE IS RECOGNISED: the first segment of its import path
 // carries a dot. That is the rule the go command itself uses - a standard
 // library path never has one, because a dot there would make it a domain. It is
 // worth stating rather than reading off, because "contains a dot anywhere" would
 // also match our own paths and every stdlib path with a version suffix.
+func isOutsideModule(importPath string) bool {
+	first, _, _ := strings.Cut(importPath, "/")
+	return strings.Contains(first, ".")
+}
+
+// checkExternalImports reports every import of a module outside this repository
+// from a file that is not on the allowlist.
 //
 // Test files are skipped. A test may reach for a dependency to check what this
 // program does with it, which is what the tests beside the sandbox do.
@@ -186,8 +210,7 @@ func checkExternalImports(tr tree) []Violation {
 			if imp.path == tr.modulePath || strings.HasPrefix(imp.path, internalPrefix) {
 				continue
 			}
-			first, _, _ := strings.Cut(imp.path, "/")
-			if !strings.Contains(first, ".") || placeAllows(sf.rel, imp.path) {
+			if !isOutsideModule(imp.path) || placeAllows(sf.rel, imp.path) {
 				continue
 			}
 			violations = append(violations, Violation{
