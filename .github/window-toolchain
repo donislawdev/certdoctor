@@ -24,14 +24,15 @@
 #              under terms of its own, so the notices give the reason and quote
 #              nothing
 #
-# What each build links was read off the linker's map: on Windows of a build
-# with a newer GCC on 2026-11-11, on Linux of a build in ubuntu:24.04, the image
-# of the runner, and on macOS of a build with Xcode, which put nothing of its own
-# in - the system libraries macOS loads at start are not in the binary.
+# What each build links was read off the linker's map on 2026-11-11: on Windows
+# of the release runner's own build (MinGW-Builds GCC 15.2.0, which unlike
+# other MinGW-w64 builds of GCC links no default manifest), on Linux of a build
+# in ubuntu:24.04, the image of the runner, and on macOS of a build with Xcode,
+# which put nothing of its own in - the system libraries macOS loads at start
+# are not in the binary.
 
 version windows/amd64 mingw-w64 13.0.0
 link windows/amd64 crt2.o mingw-w64
-link windows/amd64 default-manifest.o mingw-w64
 link windows/amd64 libgdi32.a mingw-w64
 link windows/amd64 libkernel32.a mingw-w64
 link windows/amd64 libmingw32.a mingw-w64
