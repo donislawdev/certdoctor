@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -264,6 +265,20 @@ func TestEveryWayOutExceptionStillNamesLiveCode(t *testing.T) {
 			}
 		}
 	}
+	for rel, names := range namesAllowed {
+		sf, ok := fileOf(tr, rel)
+		if !ok {
+			t.Errorf("namesAllowed names %s, which is not in the tree", rel)
+			continue
+		}
+		counts := referencesTo(sf)
+		for name, allowance := range names {
+			if counts[name] != allowance.times {
+				t.Errorf("namesAllowed lets %s use %s %d time(s), and it uses it %d - an allowance larger than the "+
+					"use forgives the next one", rel, name, allowance.times, counts[name])
+			}
+		}
+	}
 	for rel, methods := range methodsAllowed {
 		sf, ok := fileOf(tr, rel)
 		if !ok {
@@ -329,22 +344,129 @@ func refusedPackage(p string) bool {
 	return false
 }
 
+// namesAllowed are the files allowed a refused name, how many times, and why.
+var namesAllowed = map[string]map[string]struct {
+	times int
+	why   string
+}{
+	"cmd/certdoctor-gui/offline.go": {"fyne.io/fyne/v2/storage/repository.Register": {2,
+		"offline put behind http and https in place of the toolkit's own reader of web addresses - " +
+			"TestTheWindowRefusesEveryWebAddressFromItsStart holds what the two calls say and where they run"}},
+}
+
 // refusedReferences are the uses of a name in refusedNames, called or not -
 // http.DefaultClient and tls.Dialer are reached for without a call of their own.
+// The first uses of a name its file is allowed are forgiven, and no more.
 func refusedReferences(sf sourceFile, paths map[string]string) []Violation {
 	var violations []Violation
+	left := map[string]int{}
+	for name, allowance := range namesAllowed[sf.rel] {
+		left[name] = allowance.times
+	}
 	ast.Inspect(sf.file, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
 		name := spelled(sel, paths)
-		if reason, refused := refusedNames[name]; refused {
+		reason, refused := refusedNames[name]
+		switch {
+		case !refused:
+		case left[name] > 0:
+			left[name]--
+		default:
 			violations = append(violations, violationAt(sf, sel, "%s reaches for %s, which %s", sf.rel, name, reason))
 		}
 		return true
 	})
 	return violations
+}
+
+// referencesTo counts the uses of each refused name in a file.
+func referencesTo(sf sourceFile) map[string]int {
+	paths, _ := importPaths(sf.file)
+	counts := map[string]int{}
+	ast.Inspect(sf.file, func(n ast.Node) bool {
+		if sel, ok := n.(*ast.SelectorExpr); ok && refusedNames[spelled(sel, paths)] != "" {
+			counts[spelled(sel, paths)]++
+		}
+		return true
+	})
+	return counts
+}
+
+// TestTheWindowRefusesEveryWebAddressFromItsStart holds the two calls
+// namesAllowed forgives to what they are for: offline behind http and behind
+// https, each once, and run calling refuseAddresses after app.NewWithID - the
+// toolkit registers its own reader there, so a call before it would be undone.
+func TestTheWindowRefusesEveryWebAddressFromItsStart(t *testing.T) {
+	tr := mustLoadModule(t)
+	offline, ok := fileOf(tr, "cmd/certdoctor-gui/offline.go")
+	if !ok {
+		t.Fatal("cmd/certdoctor-gui/offline.go is not in the tree")
+	}
+	if got := registeredSchemes(offline); got != "http=offline https=offline" {
+		t.Errorf("offline.go puts %q behind the toolkit's schemes, and has to put offline behind http and https, once each", got)
+	}
+	run, ok := fileOf(tr, "cmd/certdoctor-gui/run_cgo.go")
+	if !ok {
+		t.Fatal("cmd/certdoctor-gui/run_cgo.go is not in the tree")
+	}
+	if !callsAfter(run, "fyne.io/fyne/v2/app.NewWithID", "refuseAddresses") {
+		t.Error("run_cgo.go does not call refuseAddresses after app.NewWithID in the same function, " +
+			"so the toolkit's own reader of web addresses stays behind http and https")
+	}
+}
+
+// registeredSchemes are the schemes a file registers a handler behind and the
+// type of each, sorted, as scheme=type.
+func registeredSchemes(sf sourceFile) string {
+	paths, _ := importPaths(sf.file)
+	var found []string
+	ast.Inspect(sf.file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || spelled(call.Fun, paths) != "fyne.io/fyne/v2/storage/repository.Register" || len(call.Args) != 2 {
+			return true
+		}
+		scheme, handler := "?", "?"
+		if lit, isLit := call.Args[0].(*ast.BasicLit); isLit {
+			scheme = literalValue(lit)
+		}
+		if lit, isLit := call.Args[1].(*ast.CompositeLit); isLit {
+			handler = spelled(lit.Type, paths)
+		}
+		found = append(found, scheme+"="+handler)
+		return true
+	})
+	sort.Strings(found)
+	return strings.Join(found, " ")
+}
+
+// callsAfter reports whether a function of sf calls first and, later in it,
+// then.
+func callsAfter(sf sourceFile, first, then string) bool {
+	paths, _ := importPaths(sf.file)
+	for _, decl := range sf.file.Decls {
+		at := token.NoPos
+		after := false
+		ast.Inspect(decl, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch spelled(call.Fun, paths) {
+			case first:
+				at = call.Pos()
+			case then:
+				after = after || (at.IsValid() && call.Pos() > at)
+			}
+			return true
+		})
+		if after {
+			return true
+		}
+	}
+	return false
 }
 
 // chainFlagViolations are the chains built with flags that are not a constant

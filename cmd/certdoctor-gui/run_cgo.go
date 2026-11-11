@@ -61,6 +61,9 @@ func run(args []string, errOut io.Writer) int {
 	log.SetOutput(io.MultiWriter(&said, log.Writer()))
 
 	a := app.NewWithID(appID)
+	// The toolkit has just put its own reader of web addresses behind http
+	// and https - see offline.
+	refuseAddresses()
 	picture := fyne.NewStaticResource("certdoctor.png", icon.PNG)
 	// The picture the desktop shows for this program, which the toolkit also
 	// gives every window it opens - without it the toolkit's own logo stands

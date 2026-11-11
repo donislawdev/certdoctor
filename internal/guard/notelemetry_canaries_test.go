@@ -83,7 +83,13 @@ var waysOutItMustRefuse = []wayOutCase{
 	{"a page handed to the browser elsewhere", windowFile, importsToolkit + "func f() { _ = fyne.CurrentApp().OpenURL(nil) }\n", "toolkit's OpenURL"},
 	{"a page handed to the browser twice in its place", linksFile, importsToolkit + "var a, b = fyne.CurrentApp().OpenURL, fyne.CurrentApp().OpenURL\n", "toolkit's OpenURL"},
 	{"a handler behind a scheme", windowFile, "package main\n\nimport \"fyne.io/fyne/v2/storage/repository\"\n\nfunc f() { repository.Register(\"https\", nil) }\n", "repository.Register, which"},
+	{"a third handler in the file allowed two", offlineFile, importsRepository + "func f() {\n\trepository.Register(\"http\", offline{})\n\trepository.Register(\"https\", offline{})\n\trepository.Register(\"ftp\", other{})\n}\n", "repository.Register, which"},
 }
+
+const (
+	offlineFile       = "cmd/certdoctor-gui/offline.go"
+	importsRepository = "package main\n\nimport \"fyne.io/fyne/v2/storage/repository\"\n\n"
+)
 
 var waysOutItMustLeave = []wayOutCase{
 	{"a dial after the permission", plantedFile, importsNet + "func f(may func(string) error, a string) {\n\tif may(a) != nil {\n\t\treturn\n\t}\n\tvar d net.Dialer\n\t_, _ = d.Dial(\"tcp\", a)\n}\n", ""},
@@ -103,6 +109,7 @@ var waysOutItMustLeave = []wayOutCase{
 		"\t_ = t.Allow(net.JoinHostPort(host, \"53\"), allowed.ReasonResolver)\n" +
 		"\tauthorise := func(endpoints []string) {\n\t\tfor _, e := range endpoints {\n\t\t\t_ = t.Allow(e, allowed.ReasonProxy)\n\t\t}\n\t}\n\t_ = authorise\n}\n", ""},
 	{"the one page handed to the browser in its place", linksFile, importsToolkit + "var open = fyne.CurrentApp().OpenURL\n", ""},
+	{"the two handlers the window puts behind the web", offlineFile, importsRepository + "func f() {\n\trepository.Register(\"http\", offline{})\n\trepository.Register(\"https\", offline{})\n}\n", ""},
 	{"a folder of the person's own as an address", windowFile, "package main\n\nimport \"fyne.io/fyne/v2/storage\"\n\nfunc f(p string) { _ = storage.NewFileURI(p) }\n", ""},
 }
 
