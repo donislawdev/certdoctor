@@ -3,6 +3,7 @@ package guard
 import (
 	"fmt"
 	"go/ast"
+	"strings"
 	"testing"
 )
 
@@ -122,17 +123,46 @@ var dialAllowlist = map[string]bool{
 	"internal/adapter/proxyauth/challenge.go": true,
 }
 
-// networkPackages are the standard library imports that can open a connection.
+// networkPackage reports whether an import can open a connection.
 //
-// net/url is deliberately absent: it parses and reaches nothing. So is crypto/
-// tls, which cannot connect on its own - it needs a connection handed to it,
-// and that connection comes from one of these.
-var networkPackages = map[string]bool{
-	"net":                    true,
-	"net/http":               true,
-	"net/smtp":               true,
-	"net/rpc":                true,
-	"golang.org/x/net/proxy": true,
+// A RULE BY PREFIX, NOT A LIST OF NAMES, since 2026-11-11. Until then this was
+// five names - net, net/http, net/smtp, net/rpc and golang.org/x/net/proxy - and
+// the comment beside them said crypto/tls could not connect on its own. It
+// can: tls.Dial and tls.Dialer open the TCP connection themselves. So could
+// net/textproto, net/rpc/jsonrpc, log/syslog and every other package under
+// golang.org/x/net, and a file importing any of them walked past this guard.
+// Everything under net/ and golang.org/x/net/ counts now, and the packages that
+// only parse are named in parseOnlyPackages with the reason.
+func networkPackage(p string) bool {
+	if _, parses := parseOnlyPackages[p]; parses {
+		return false
+	}
+	if _, dials := dialingPackages[p]; dials {
+		return true
+	}
+	return p == "net" || strings.HasPrefix(p, "net/") ||
+		p == "golang.org/x/net" || strings.HasPrefix(p, "golang.org/x/net/")
+}
+
+// dialingPackages are the imports outside net/ and golang.org/x/net/ that open
+// a connection of their own.
+var dialingPackages = map[string]string{
+	"crypto/tls": "tls.Dial, tls.DialWithDialer and tls.Dialer open the TCP connection themselves",
+	"log/syslog": "syslog.Dial connects to a syslog server, on this machine or on another",
+}
+
+// parseOnlyPackages are the packages under those two prefixes that parse text
+// and open nothing. Read by two guards: this one, about our imports, and
+// linkednetwork_test.go, about what the binaries link - which also holds every
+// entry here to importing no network package itself.
+var parseOnlyPackages = map[string]string{
+	"net/url":   "parses and prints a URL, and reaches nothing",
+	"net/netip": "an address as a value - parsing, comparing, printing",
+	"golang.org/x/net/html": "an HTML tokenizer and parser, linked by the window's SVG reader - " +
+		"its imports are its own tables and the standard library's text packages",
+	"golang.org/x/net/html/atom": "the table of HTML element names the parser above uses",
+	"golang.org/x/net/html/charset": "picks a text encoding for an HTML document, " +
+		"linked by the window's SVG reader to decode the pictures it draws",
 }
 
 // fileReadAllowlist names the files allowed to open something on disk for
@@ -483,7 +513,7 @@ func checkDialing(tr tree) []Violation {
 			continue
 		}
 		for _, imp := range importsOf(sf) {
-			if !networkPackages[imp.path] {
+			if !networkPackage(imp.path) {
 				continue
 			}
 			violations = append(violations, Violation{sf.rel, imp.line, fmt.Sprintf(

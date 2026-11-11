@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -173,6 +174,7 @@ type listedPackage struct {
 	ImportPath  string
 	Dir         string
 	Standard    bool
+	Imports     []string
 	GoFiles     []string
 	CgoFiles    []string
 	CFiles      []string
@@ -646,7 +648,30 @@ func (code *linkedCode) ourLicence(t *testing.T, root, notices, path string, rea
 	code.licences = append(code.licences, ownedText{path: path, owner: heading, text: readText(t, path)})
 }
 
+// goListAnswers keeps what go list answered, by program and build, for the run of this
+// package's tests. Three guards ask the same eight questions - the notices,
+// what the binaries link of somebody else's networking, and which of our files
+// ship - and each answer costs a second or so.
+var goListAnswers = struct {
+	sync.Mutex
+	answers map[string][]listedPackage
+}{answers: map[string][]listedPackage{}}
+
 func listPackages(t *testing.T, root string, program noticedProgram, target [2]string) []listedPackage {
+	t.Helper()
+	key := strings.Join([]string{root, program.pkg, target[0], target[1], fmt.Sprint(program.cgo)}, "|")
+	goListAnswers.Lock()
+	defer goListAnswers.Unlock()
+	if answer, ok := goListAnswers.answers[key]; ok {
+		return answer
+	}
+	answer := askGoList(t, root, program, target)
+	goListAnswers.answers[key] = answer
+	return answer
+}
+
+// askGoList is go list asked once, for one program and one build.
+func askGoList(t *testing.T, root string, program noticedProgram, target [2]string) []listedPackage {
 	t.Helper()
 	cgo := "0"
 	if program.cgo {

@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -370,7 +371,7 @@ func importPaths(f *ast.File) (map[string]string, []string) {
 		if err != nil {
 			continue
 		}
-		name := path.Base(p)
+		name := packageNameOf(p)
 		if spec.Name != nil {
 			name = spec.Name.Name
 		}
@@ -385,6 +386,24 @@ func importPaths(f *ast.File) (map[string]string, []string) {
 		}
 	}
 	return paths, dots
+}
+
+// majorVersion is the last element of a module path that names its major
+// version rather than its package.
+var majorVersion = regexp.MustCompile(`^v[0-9]+$`)
+
+// packageNameOf is the name an import without one of its own is used under:
+// the last element of its path, or the one before it when the last is a major
+// version - fyne.io/fyne/v2 is used as fyne. Until 2026-11-11 it was the last
+// element alone, and every call into the window's toolkit was read as a call on
+// a package called v2, which nothing here names - found by a canary of
+// notelemetry_test.go that wanted fyne.LoadResourceFromURLString refused.
+func packageNameOf(p string) string {
+	name := path.Base(p)
+	if dir := path.Dir(p); majorVersion.MatchString(name) && dir != "." {
+		return path.Base(dir)
+	}
+	return name
 }
 
 // spelled is the function or type an expression names, with the path of its
