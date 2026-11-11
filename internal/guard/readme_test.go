@@ -22,6 +22,7 @@ const readmeFile = "README.md"
 var archiveNaming = []string{
 	`darwin) echo "macos" ;;`,
 	`base="certdoctor_${version}_$(label_of "$os")_${arch}"`,
+	`base="certdoctor-gui_${version}_$(label_of "$os")_${arch}"`,
 	`zip -q -r -X "$dist/${base}.zip" .`,
 	`tar -czf "$dist/${base}.tar.gz" -C "$pack" .`,
 }

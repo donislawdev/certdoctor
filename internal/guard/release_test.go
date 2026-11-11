@@ -28,7 +28,7 @@ const (
 	macSigning      = ".github/scripts/sign_macos.sh"
 	releaseNotes    = ".github/release-notes.md"
 	signingPins     = ".github/signing-certificates.txt"
-	sbomRenderer    = "cmd/sbom/spdx.go"
+	sbomRenderer    = "cmd/sbom/document.go"
 	spdxValidator   = ".github/requirements-spdx.txt"
 )
 
@@ -81,6 +81,72 @@ func TestTheTargetGuardCanFail(t *testing.T) {
 	}
 	if _, err := ciTargets("jobs:\n  test:\n"); err == nil {
 		t.Error("a workflow with no release-build job was read as one")
+	}
+}
+
+// TestTheWindowIsBuiltForTheTargetsItsNoticesAreCheckedFor is the same tie for
+// the window: windowTargets is what the notices guard asks go list about, the
+// release script packs its own list, and the window job's matrix builds a
+// third. A window built for a system its notices were never checked for would
+// ship them unchecked, and one packed for a system no job builds stops the
+// release at the end of a run.
+func TestTheWindowIsBuiltForTheTargetsItsNoticesAreCheckedFor(t *testing.T) {
+	root := moduleRoot(t)
+	script, err := scriptList(readRel(t, root, buildScript), "window_targets")
+	if err != nil {
+		t.Fatalf("%s: %v", buildScript, err)
+	}
+	matrix, err := jobTargets(readRel(t, root, releaseWorkflow), windowJob)
+	if err != nil {
+		t.Fatalf("%s: %v", releaseWorkflow, err)
+	}
+	requireNoViolations(t, append(checkTargetsAgainst(buildScript, script, windowTargets, "window target"),
+		checkTargetsAgainst(releaseWorkflow, matrix, windowTargets, "window target")...), "the window's targets")
+}
+
+// TestTheBuildJobPacksTheWindows holds the release workflow to handing what the
+// window job built to the script that packs the archives.
+func TestTheBuildJobPacksTheWindows(t *testing.T) {
+	requireNoViolations(t, checkWindowHandover(readRel(t, moduleRoot(t), releaseWorkflow)), "the windows reaching the archives")
+}
+
+func TestTheWindowGuardsCanFail(t *testing.T) {
+	got, err := scriptList("window_targets=(\n  windows/amd64\n  linux/arm64\n)\n", "window_targets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	violations := checkTargetsAgainst("fixture", got, windowTargets, "window target")
+	requireViolation(t, violations, "builds linux/arm64, which is not a window target")
+	requireViolation(t, violations, "does not build darwin/arm64, a window target")
+	if _, err := jobTargets("jobs:\n  build:\n", windowJob); err == nil || !strings.Contains(err.Error(), "no window job") {
+		t.Errorf("a workflow with no window job was read as one: %v", err)
+	}
+
+	good := "on: push\njobs:\n" +
+		"  window:\n" +
+		"    steps:\n" +
+		"      - run: bash .github/scripts/build_window.sh \"${{ matrix.goos }}/${{ matrix.goarch }}\" \"$RUNNER_TEMP/window\"\n" +
+		"      - with:\n" +
+		"          name: certdoctor-gui_${{ matrix.goos }}_${{ matrix.goarch }}\n" +
+		"  build:\n" +
+		"    needs: [check, window]\n" +
+		"    steps:\n" +
+		"      - with:\n" +
+		"          pattern: certdoctor-gui_*\n" +
+		"      - run: bash .github/scripts/build_release.sh \"1\" \"$RUNNER_TEMP/release\" \"$RUNNER_TEMP/windows\"\n"
+	if violations := checkWindowHandover(good); len(violations) != 0 {
+		t.Fatalf("the fixture every canary below breaks once is itself refused: %v", violations)
+	}
+	for broken, want := range map[string]string{
+		strings.Replace(good, ` "$RUNNER_TEMP/windows"`, "", 1):                                 "hands build_release.sh 2 argument(s)",
+		strings.Replace(good, "needs: [check, window]", "needs: check", 1):                      "does not wait for the window job",
+		strings.Replace(good, "pattern: certdoctor-gui_*", "", 1):                               "never fetches the windows",
+		strings.Replace(good, "build_window.sh", "build_other.sh", 1):                           "never runs .github/scripts/build_window.sh",
+		strings.Replace(good, "certdoctor-gui_${{ matrix.goos }}", "gui_${{ matrix.goos }}", 1): "keeps the window under another name",
+		strings.Replace(good, "  window:\n", "  other:\n", 1):                                   "has no window job",
+		good + "      - run: bash .github/scripts/build_release.sh \"1\" \"2\" \"3\"\n":         "calls build_release.sh 2 time(s)",
+	} {
+		requireViolation(t, checkWindowHandover(broken), want)
 	}
 }
 
@@ -378,15 +444,22 @@ func TestTheValidatorGuardCanFail(t *testing.T) {
 
 // scriptTargets reads the targets=( ... ) list out of the build script.
 func scriptTargets(body string) ([][2]string, error) {
+	return scriptList(body, "targets")
+}
+
+// scriptList reads the list called name out of the build script, one
+// goos/goarch on a line.
+func scriptList(body, name string) ([][2]string, error) {
 	body = "\n" + body
-	start := strings.Index(body, "\ntargets=(\n")
+	opening := "\n" + name + "=(\n"
+	start := strings.Index(body, opening)
 	if start < 0 {
-		return nil, fmt.Errorf("no targets=( list")
+		return nil, fmt.Errorf("no %s=( list", name)
 	}
-	rest := body[start+len("\ntargets=(\n"):]
+	rest := body[start+len(opening):]
 	end := strings.Index(rest, "\n)")
 	if end < 0 {
-		return nil, fmt.Errorf("the targets=( list is never closed")
+		return nil, fmt.Errorf("the %s=( list is never closed", name)
 	}
 	var targets [][2]string
 	for _, line := range strings.Split(rest[:end], "\n") {
@@ -400,6 +473,11 @@ func scriptTargets(body string) ([][2]string, error) {
 
 // ciTargets reads the goos and goarch pairs of the release-build matrix.
 func ciTargets(body string) ([][2]string, error) {
+	return jobTargets(body, "release-build")
+}
+
+// jobTargets reads the goos and goarch pairs of one job's matrix.
+func jobTargets(body, job string) ([][2]string, error) {
 	lines := strings.Split(body, "\n")
 	jobStart := regexp.MustCompile(`^  [A-Za-z0-9_-]+:\s*$`)
 	pair := regexp.MustCompile(`^\s+(?:- )?(goos|goarch):\s*(\S+)\s*$`)
@@ -407,7 +485,7 @@ func ciTargets(body string) ([][2]string, error) {
 	inside, found := false, false
 	for _, line := range lines {
 		if jobStart.MatchString(line) {
-			inside = strings.TrimSpace(line) == "release-build:"
+			inside = strings.TrimSpace(line) == job+":"
 			found = found || inside
 			continue
 		}
@@ -423,15 +501,21 @@ func ciTargets(body string) ([][2]string, error) {
 		}
 	}
 	if !found {
-		return nil, fmt.Errorf("no release-build job")
+		return nil, fmt.Errorf("no %s job", job)
 	}
 	return targets, nil
 }
 
 // checkTargets compares one list of builds with releaseTargets.
 func checkTargets(rel string, got [][2]string) []Violation {
+	return checkTargetsAgainst(rel, got, releaseTargets, "release target")
+}
+
+// checkTargetsAgainst compares one list of builds with the targets a decision
+// ships, which what names in a message.
+func checkTargetsAgainst(rel string, got, targets [][2]string, what string) []Violation {
 	want := map[[2]string]bool{}
-	for _, target := range releaseTargets {
+	for _, target := range targets {
 		want[target] = true
 	}
 	seen := map[[2]string]bool{}
@@ -442,14 +526,69 @@ func checkTargets(rel string, got [][2]string) []Violation {
 		case seen[target]:
 			violations = append(violations, Violation{rel, 0, "builds " + name + " twice"})
 		case !want[target]:
-			violations = append(violations, Violation{rel, 0, "builds " + name + ", which is not a release target the notices are checked for"})
+			violations = append(violations, Violation{rel, 0, "builds " + name + ", which is not a " + what + " the notices are checked for"})
 		}
 		seen[target] = true
 	}
-	for _, target := range releaseTargets {
+	for _, target := range targets {
 		if !seen[target] {
-			violations = append(violations, Violation{rel, 0, "does not build " + target[0] + "/" + target[1] + ", a release target"})
+			violations = append(violations, Violation{rel, 0, "does not build " + target[0] + "/" + target[1] + ", a " + what})
 		}
+	}
+	return sortViolations(violations)
+}
+
+// windowJob is the job of the release workflow that builds the window on its
+// three systems, and buildJob the one that packs every archive.
+const (
+	windowJob = "window"
+	buildJob  = "build"
+)
+
+// releaseScriptCall is build_release.sh called with its arguments, each in
+// double quotes, as the build job writes it.
+var releaseScriptCall = regexp.MustCompile(`build_release\.sh((?:\s+"[^"]*")*)\s*$`)
+
+// checkWindowHandover reports a release workflow in which the windows the
+// window job builds do not reach the archives: the window job not running
+// build_window.sh or keeping what it left under another name than the one
+// fetched, the build job not waiting for it, not fetching it, or calling
+// build_release.sh without the third argument - which still succeeds, packs
+// the command line alone, and says so where nobody is reading.
+func checkWindowHandover(release string) []Violation {
+	var violations []Violation
+	at := func(detail string) { violations = append(violations, Violation{releaseWorkflow, 0, detail}) }
+	jobs := jobBlocks(release)
+	window, build := jobs[windowJob], jobs[buildJob]
+	if window == "" {
+		at("has no " + windowJob + " job, so no release carries the window")
+	} else {
+		if !strings.Contains(window, "bash .github/scripts/build_window.sh") {
+			at("the " + windowJob + " job never runs .github/scripts/build_window.sh")
+		}
+		if !strings.Contains(window, "name: certdoctor-gui_${{ matrix.goos }}_${{ matrix.goarch }}") {
+			at("the " + windowJob + " job keeps the window under another name than certdoctor-gui_<goos>_<goarch>, which build_release.sh looks for")
+		}
+	}
+	if !regexp.MustCompile(`(?m)^\s+needs:\s*\[[^\]]*\b` + windowJob + `\b[^\]]*\]\s*$`).MatchString(build) {
+		at("the " + buildJob + " job does not wait for the " + windowJob + " job")
+	}
+	if !strings.Contains(build, "pattern: certdoctor-gui_*") {
+		at("the " + buildJob + " job never fetches the windows")
+	}
+	calls := 0
+	for _, line := range strings.Split(build, "\n") {
+		m := releaseScriptCall.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		calls++
+		if n := strings.Count(m[1], `"`) / 2; n != 3 {
+			at(fmt.Sprintf("the %s job hands build_release.sh %d argument(s), and without the third - the windows - it packs the command line alone", buildJob, n))
+		}
+	}
+	if calls != 1 {
+		at(fmt.Sprintf("the %s job calls build_release.sh %d time(s), and a release is packed by one call", buildJob, calls))
 	}
 	return sortViolations(violations)
 }

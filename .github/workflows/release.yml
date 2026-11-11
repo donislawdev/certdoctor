@@ -1,7 +1,8 @@
 # certdoctor release - the first of three phases, and nothing here publishes.
 #
 # A tag starts a release and a person finishes it. This builds the five
-# archives, attests where they came from, and opens an EMPTY draft. The signing
+# archives of the command line and the three of the window, attests where they
+# came from, and opens an EMPTY draft. The signing
 # happens on the maintainer's machine, where the Windows key is on a card that
 # cannot be exported and the Apple key is in a keychain on a Mac -
 # .github/scripts/sign_release.py, which then asks attest-release.yml for the
@@ -138,9 +139,69 @@ jobs:
           CGO_ENABLED: "1"
         run: go test -race -count=1 ./...
 
-  build:
-    name: build and pack the five targets
+  # The window, certdoctor-gui, on the three systems D21 ships it for. It reaches
+  # OpenGL and the windowing system through C, so it is built with cgo on the
+  # system it is for rather than cross compiled with the command line - the
+  # reason build_window.sh gives. Nothing is packed here: build_release.sh packs
+  # every archive in one place, the window's with the command line's own build.
+  window:
+    name: build the window on ${{ matrix.runner }}
     needs: check
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      # Every leg runs to its end, so one run says everything that is wrong.
+      # A release needs all three, and the build job waits for all of them.
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: set up go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # The same four packages the ci test job installs, for the same reason
+      # it gives: GLFW compiles for X11 and Wayland both (ADR124 (f)).
+      - name: the graphics headers the window needs
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+
+      # Into RUNNER_TEMP and never into the checkout, for the reason the build
+      # job gives. On Windows the script also fetches the software renderer and
+      # checks it against its pin before anything is unpacked (ADR125 point 5).
+      - name: build the window
+        shell: bash
+        run: bash .github/scripts/build_window.sh "${{ matrix.goos }}/${{ matrix.goarch }}" "$RUNNER_TEMP/window"
+
+      # Named after the target, which is the directory build_release.sh looks
+      # for it in. An artefact keeps no file modes, and that script sets them.
+      - name: keep the window
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: certdoctor-gui_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: ${{ runner.temp }}/window
+          if-no-files-found: error
+
+  build:
+    name: build the command line and pack every archive
+    needs: [check, window]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -153,16 +214,32 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # One runner cross compiles all five, because the program has no C in it.
-      # That is the same property the static build checks in ci.yml exist to
-      # keep, and building every target from one place keeps it visible.
+      # Each into a directory of its own name, certdoctor-gui_<os>_<arch>,
+      # which is what build_release.sh reads. download-artifact does that when
+      # the pattern matches more than one artefact, and unpacks a lone match
+      # into the path itself (src/download-artifact.ts at the pinned commit,
+      # read 2026-11-11). A run that got here has all three, since this job
+      # needs every leg of the window job, and a directory missing all the
+      # same is refused by the script rather than packed around.
+      - name: fetch the windows
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: certdoctor-gui_*
+          path: ${{ runner.temp }}/windows
+
+      # One runner cross compiles the five builds of the command line, because
+      # it has no C in it. That is the same property the static build checks
+      # in ci.yml exist to keep, and building every target from one place keeps
+      # it visible. The window's builds come from the job above, and the third
+      # argument is what makes this a release: without it the script packs the
+      # command line alone and says so.
       #
       # Into RUNNER_TEMP and never into the checkout: every binary records
       # whether its tree had uncommitted changes, an untracked archive counts,
       # and the bill of materials refuses such a build.
       - name: build, write the bill of materials, pack
         shell: bash
-        run: bash .github/scripts/build_release.sh "${{ needs.check.outputs.version }}" "$RUNNER_TEMP/release"
+        run: bash .github/scripts/build_release.sh "${{ needs.check.outputs.version }}" "$RUNNER_TEMP/release" "$RUNNER_TEMP/windows"
 
       # The bill of materials read by somebody else's understanding of SPDX as
       # well as ours. The tests of cmd/sbom hold the document to what we read

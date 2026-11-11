@@ -66,6 +66,42 @@ func TestSeveralBuildsOfOneCommitAreReadInTheirOrder(t *testing.T) {
 	}
 }
 
+// The window is the second program a release builds, with the OpenGL binding
+// it links from a directory of this repository, and a build of it for a target
+// is not the command line's build for the same target.
+func TestABuildOfTheWindowIsReadWithItsReplacement(t *testing.T) {
+	listing := listingFor("dist/a", "linux/amd64", "go1.27.3", fixtureDeps) +
+		windowListingFor("dist/w", "linux/amd64", windowDeps(nil))
+	builds, err := parseBuilds(listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(builds) != 2 {
+		t.Fatalf("%d builds read from two listings", len(builds))
+	}
+	w := builds[1]
+	if w.program != windowPath || w.label() != "certdoctor-gui linux/amd64" || builds[0].label() != "linux/amd64" {
+		t.Errorf("read %s as %q and %s as %q", w.program, w.label(), builds[0].program, builds[0].label())
+	}
+	if w.replaced["github.com/go-gl/gl"] != "./third_party/go-gl-gl" || len(w.replaced) != 1 {
+		t.Errorf("replacements read: %v", w.replaced)
+	}
+	if w.deps["github.com/go-gl/gl"] != "v0.0.0-20260331235117-4566fea9a276" {
+		t.Errorf("the binding is at %q, where the notices name the version it replaces", w.deps["github.com/go-gl/gl"])
+	}
+}
+
+// Every build has a program, so a package nobody builds is a mistake in this
+// command rather than in a build.
+func TestOnlyThePackagesAReleaseBuildsHaveAProgram(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("a package that is not a program was given one")
+		}
+	}()
+	programNamed(modulePath + "/cmd/sbom")
+}
+
 // A commit time in another zone is still the same instant, and SPDX takes it
 // in UTC with a Z.
 func TestTheCommitTimeIsWrittenInUTC(t *testing.T) {
@@ -82,6 +118,7 @@ func TestTheCommitTimeIsWrittenInUTC(t *testing.T) {
 func TestAListingThatIsNotOfReleaseBuildsIsRefused(t *testing.T) {
 	one := listingFor("dist/a", "linux/amd64", "go1.27.3", fixtureDeps)
 	other := listingFor("dist/b", "linux/arm64", "go1.27.3", fixtureDeps)
+	window := windowListingFor("dist/w", "linux/amd64", windowDeps(nil))
 	for _, c := range []struct{ name, text, want string }{
 		{"nothing", "\n\n", "names no binary"},
 		{"indented first", "\tpath\tx\n" + one, "line 1 is indented"},
@@ -96,7 +133,14 @@ func TestAListingThatIsNotOfReleaseBuildsIsRefused(t *testing.T) {
 		{"time that is not one", strings.Replace(one, "2026-10-28T08:01:06Z", "yesterday", 1), "not a time"},
 		{"replaced module", strings.Replace(one, "h1:AAAA=\n", "h1:AAAA=\n\t=>\texample.com/fork\tv9.9.9\th1:BBBB=\n", 1),
 			"links example.com/fork in place of"},
+		{"the binding replaced by a version", strings.Replace(window, "./third_party/go-gl-gl\t(devel)", "example.com/gl\tv1.0.0", 1),
+			"links example.com/gl in place of github.com/go-gl/gl"},
+		{"the binding from another directory", strings.Replace(window, "./third_party/go-gl-gl", "./elsewhere", 1),
+			"links ./elsewhere in place of github.com/go-gl/gl"},
+		{"the binding from its directory, at a version", strings.Replace(window, "./third_party/go-gl-gl\t(devel)", "./third_party/go-gl-gl\tv1.0.0", 1),
+			"links ./third_party/go-gl-gl in place of github.com/go-gl/gl"},
 		{"target twice", one + one, "are both builds for linux/amd64"},
+		{"window target twice", window + window, "are both builds for certdoctor-gui linux/amd64"},
 		{"two commits", one + strings.Replace(other, fixtureRevision, "0000000000000000000000000000000000000000", 1),
 			"one document describes one commit"},
 	} {

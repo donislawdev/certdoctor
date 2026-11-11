@@ -7,8 +7,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-
-	certdoctor "github.com/donislawdev/certdoctor"
 )
 
 type outcome struct {
@@ -43,21 +41,54 @@ func TestTheDocumentGoesToStandardOutputAndTheSummaryToStandardError(t *testing.
 	}
 }
 
-// The notices this tree ships and a listing of builds that link what they
-// name - the pair a release run feeds this command, short of building.
+func TestOneDocumentDescribesBothPrograms(t *testing.T) {
+	o := invoke(nil, strings.NewReader(fixtureListing()+fixtureWindowListing()), nil, fixtureTree)
+	if o.code != 0 {
+		t.Fatalf("exit %d: %s", o.code, o.stderr)
+	}
+	want := "sbom: certdoctor 0.1.0 at 89c6fcaaf91f, 5 build(s) (certdoctor-gui darwin/arm64, certdoctor-gui linux/amd64, " +
+		"certdoctor-gui windows/amd64, linux/amd64, windows/arm64), 9 components beside the programs\n"
+	if o.stderr != want {
+		t.Errorf("standard error is %q, want %q", o.stderr, want)
+	}
+}
+
+// The notices this tree ships and a listing of builds of both programs that
+// link what they name - the pair a release run feeds this command, short of
+// building.
 func TestTheShippedNoticesDescribeABuildThatLinksWhatTheyName(t *testing.T) {
-	n, err := parseNotices(certdoctor.Notices)
+	notes, err := parseTree(shippedTree)
 	if err != nil {
 		t.Fatal(err)
 	}
-	deps := map[string]string{}
-	for path, c := range n.modules {
-		deps[path] = c.version
+	depsOf := func(n notices) map[string]string {
+		deps := map[string]string{}
+		for path, c := range n.modules {
+			deps[path] = c.version
+		}
+		return deps
 	}
-	listing := listingFor("dist/certdoctor", "linux/amd64", n.std.version, deps)
-	o := invoke(nil, strings.NewReader(listing), nil, tree{notices: certdoctor.Notices, version: certdoctor.Version})
+	n, w := notes[programPath], notes[windowPath]
+	listing := listingFor("dist/certdoctor", "linux/amd64", n.std.version, depsOf(n))
+	for _, target := range []string{"windows/amd64", "linux/amd64", "darwin/arm64"} {
+		listing += listingOf(windowPath, "dist/certdoctor-gui-"+target, target, w.std.version, depsOf(w))
+	}
+	o := invoke(nil, strings.NewReader(listing), nil, shippedTree)
 	if o.code != 0 {
 		t.Fatalf("exit %d: %s", o.code, o.stderr)
+	}
+	var doc spdxDocument
+	if err := json.Unmarshal([]byte(o.stdout), &doc); err != nil {
+		t.Fatal(err)
+	}
+	named := map[string]bool{}
+	for _, p := range doc.Packages {
+		named[p.Name] = true
+	}
+	for _, want := range []string{"certdoctor", "certdoctor-gui", "stdlib", "Inter", "Mesa 3D", "github.com/go-gl/gl", "github.com/dop251/goja"} {
+		if !named[want] {
+			t.Errorf("the document has no package %q", want)
+		}
 	}
 }
 
@@ -71,7 +102,8 @@ func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("the disk
 
 func TestEveryWayTheCommandRefusesHasItsExitCode(t *testing.T) {
 	mismatched := listingFor("dist/a", "linux/amd64", "go1.27.3", map[string]string{"example.com/alpha": "v1.2.3"})
-	prerelease := tree{notices: strings.ReplaceAll(fixtureNotices, "go1.27.3", "go1.28rc1"), version: "0.1.0"}
+	prerelease := fixtureTree
+	prerelease.notices = strings.ReplaceAll(fixtureNotices, "go1.27.3", "go1.28rc1")
 	for _, c := range []struct {
 		name   string
 		args   []string

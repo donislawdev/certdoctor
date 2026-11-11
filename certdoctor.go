@@ -52,3 +52,17 @@ var License string
 //
 //go:embed THIRD-PARTY-NOTICES.md
 var Notices string
+
+// WindowNotices is the text of THIRD-PARTY-NOTICES-GUI.md: the licences of the
+// code somebody else wrote that the window, certdoctor-gui, links, and of the
+// files that travel beside it (ADR127 decision 4).
+//
+// Here for the bill of materials alone, which describes the window's builds
+// against it and, like every tool of this project, opens no file to do so. No
+// binary a person downloads names it, and the linker leaves out a variable
+// nothing names - measured on 2026-11-11: the command line built for windows,
+// linux and macOS with this variable and without it, the build identifier
+// blanked, is the same bytes.
+//
+//go:embed THIRD-PARTY-NOTICES-GUI.md
+var WindowNotices string

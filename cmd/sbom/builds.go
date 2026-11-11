@@ -12,19 +12,44 @@ const (
 	// modulePath is this project as the compiler records it.
 	modulePath = "github.com/donislawdev/certdoctor"
 
-	// programPath is the package a release binary is built from. A listing of
+	// programPath and windowPath are the packages a release binary is built
+	// from: the command line, and the window that runs it. A listing of
 	// anything else - this command included - is not a release of certdoctor.
 	programPath = modulePath + "/cmd/certdoctor"
+	windowPath  = modulePath + "/cmd/certdoctor-gui"
 )
+
+// replacements are the modules a release build may link from somewhere other
+// than where go.sum vouches for it, each with the directory of this repository
+// it comes from instead. Exactly one: the OpenGL binding the window draws
+// through, kept in third_party with the one change its PATCH.md describes, so
+// that the window does not link opengl32.dll on Windows (ADR125 point 3). Any
+// other replacement is refused - the notices name a module at a version, and a
+// replacement nobody named here is code that neither of them describes.
+var replacements = map[string]string{
+	"github.com/go-gl/gl": "./third_party/go-gl-gl",
+}
 
 // A build is one binary, as the compiler recorded it.
 type build struct {
 	file      string            // as go version -m named it, for messages
+	program   string            // the main package, programPath or windowPath
 	target    string            // GOOS/GOARCH
 	goVersion string            // the toolchain, which is also the standard library
 	revision  string            // the commit
 	time      string            // the commit time, in UTC
 	deps      map[string]string // module path to version
+	replaced  map[string]string // module path to the directory it came from, for the one allowed
+}
+
+// label is how a message names the build: by its target for the command line,
+// as every message did before there was a window, and by the window's name
+// and its target for the window.
+func (b build) label() string {
+	if b.program == programPath {
+		return b.target
+	}
+	return programNamed(b.program).name + " " + b.target
 }
 
 // A listing is the text go version -m prints for one binary: a line naming the
@@ -43,7 +68,7 @@ type listing struct {
 //
 // Every binary has to be a release build of the same commit. Two commits in
 // one document would describe two different programs under one version, and a
-// target given twice would describe one of them twice.
+// program given twice for one target would describe one of them twice.
 func parseBuilds(text string) ([]build, error) {
 	listings, err := splitListings(text)
 	if err != nil {
@@ -56,10 +81,10 @@ func parseBuilds(text string) ([]build, error) {
 		if err != nil {
 			return nil, err
 		}
-		if earlier, ok := seen[b.target]; ok {
-			return nil, fmt.Errorf("%s and %s are both builds for %s", earlier, b.file, b.target)
+		if earlier, ok := seen[b.label()]; ok {
+			return nil, fmt.Errorf("%s and %s are both builds for %s", earlier, b.file, b.label())
 		}
-		seen[b.target] = b.file
+		seen[b.label()] = b.file
 		if len(builds) > 0 && b.revision != builds[0].revision {
 			return nil, fmt.Errorf("%s was built from commit %s and %s from %s, and one document describes one commit",
 				builds[0].file, builds[0].revision, b.file, b.revision)
@@ -105,8 +130,8 @@ func readBuild(l listing) (build, error) {
 	if err != nil {
 		return build{}, fmt.Errorf("%s: %w", l.file, err)
 	}
-	if info.Path != programPath {
-		return build{}, fmt.Errorf("%s is a build of %q, and a release is a build of %s", l.file, info.Path, programPath)
+	if info.Path != programPath && info.Path != windowPath {
+		return build{}, fmt.Errorf("%s is a build of %q, and a release is a build of %s or %s", l.file, info.Path, programPath, windowPath)
 	}
 	settings := map[string]string{}
 	for _, s := range info.Settings {
@@ -129,18 +154,25 @@ func readBuild(l listing) (build, error) {
 	}
 	b := build{
 		file:      l.file,
+		program:   info.Path,
 		target:    settings["GOOS"] + "/" + settings["GOARCH"],
 		goVersion: l.goVersion,
 		revision:  settings["vcs.revision"],
 		// SPDX asks for UTC with a Z and no fraction, which is one of the
 		// spellings RFC 3339 allows and not the only one.
-		time: stamp.UTC().Format("2006-01-02T15:04:05Z"),
-		deps: map[string]string{},
+		time:     stamp.UTC().Format("2006-01-02T15:04:05Z"),
+		deps:     map[string]string{},
+		replaced: map[string]string{},
 	}
 	for _, dep := range info.Deps {
 		if dep.Replace != nil {
-			return build{}, fmt.Errorf("%s links %s in place of %s, and the notices name modules rather than what replaced them",
-				l.file, dep.Replace.Path, dep.Path)
+			// A directory is recorded as (devel) - the code came from no
+			// version of any module.
+			if replacements[dep.Path] != dep.Replace.Path || dep.Replace.Version != "(devel)" {
+				return build{}, fmt.Errorf("%s links %s in place of %s, and the notices name modules rather than what replaced them",
+					l.file, dep.Replace.Path, dep.Path)
+			}
+			b.replaced[dep.Path] = dep.Replace.Path
 		}
 		b.deps[dep.Path] = dep.Version
 	}

@@ -2,7 +2,13 @@
 # Wrap the macOS binary in a .app bundle, because that is the only shape that
 # can carry a notarisation ticket.
 #
-#   bash .github/scripts/make_app_bundle.sh <workdir> <binary> <bundle-id> <version>
+#   bash .github/scripts/make_app_bundle.sh <workdir> <binary> <bundle-id> <version> [<another binary>...]
+#
+# The binary the bundle opens is <binary>. Each other binary named after the
+# version goes into the bundle beside it, in Contents/MacOS: the window starts
+# certdoctor from its own folder and from nowhere else (ADR121 point 1), so on
+# macOS the command line it runs is inside its bundle. Every binary gets a link
+# beside the bundle, so a person types ./certdoctor-gui or ./certdoctor.
 #
 # Measured in the maintainer's other Go project on 2026-08-28, on a real
 # Developer ID certificate and two real notarisations:
@@ -25,8 +31,8 @@
 # bundle, not the file.
 set -euo pipefail
 
-if [ "$#" -ne 4 ]; then
-  echo "usage: make_app_bundle.sh <workdir> <binary> <bundle-id> <version>" >&2
+if [ "$#" -lt 4 ]; then
+  echo "usage: make_app_bundle.sh <workdir> <binary> <bundle-id> <version> [<another binary>...]" >&2
   exit 2
 fi
 
@@ -34,11 +40,15 @@ work="$1"
 binary="$2"
 bundle_id="$3"
 version="$4"
+shift 4
+inside=("$binary" "$@")
 
-if [ ! -f "${work}/${binary}" ]; then
-  echo "make_app_bundle: ${work}/${binary} is not there, nothing to wrap" >&2
-  exit 1
-fi
+for name in "${inside[@]}"; do
+  if [ ! -f "${work}/${name}" ]; then
+    echo "make_app_bundle: ${work}/${name} is not there, nothing to wrap" >&2
+    exit 1
+  fi
+done
 
 # The icon, refused rather than skipped when it is missing. A bundle without one
 # shows a blank sheet of paper in the Finder, which is what a program macOS
@@ -54,14 +64,23 @@ fi
 
 app="${work}/${binary}.app"
 mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Resources"
-mv "${work}/${binary}" "${app}/Contents/MacOS/${binary}"
-chmod +x "${app}/Contents/MacOS/${binary}"
+for name in "${inside[@]}"; do
+  mv "${work}/${name}" "${app}/Contents/MacOS/${name}"
+  chmod +x "${app}/Contents/MacOS/${name}"
+done
 cp "${icon}" "${app}/Contents/Resources/icon.icns"
 
 # LSMinimumSystemVersion is 13.0 because that is the oldest macOS the Go
 # toolchain this is built with supports: "For Go 1.27 and later: macOS 13
 # Ventura or newer" - https://go.dev/wiki/MinimumRequirements, read 2026-11-02.
 # It moves when go.mod moves past a release that raises it.
+#
+# NSHighResolutionCapable is "a Boolean value indicating whether the Cocoa app
+# supports high-resolution displays" - Apple's Information Property List
+# reference, read 2026-11-11 - and the window is one. The maintainer's other Go
+# project sets it for its window for that reason, and what macOS does with a
+# window from a bundle without it was not measured here. The command line
+# draws nothing, and the key costs it nothing.
 cat > "${app}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -83,23 +102,27 @@ cat > "${app}/Contents/Info.plist" <<PLIST
 	<string>${version}</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
 </dict>
 </plist>
 PLIST
 
 # Relative, so it still points at the binary after the archive is unpacked
 # anywhere.
-ln -s "${binary}.app/Contents/MacOS/${binary}" "${work}/${binary}"
-
+#
 # On a filesystem that cannot make links, ln quietly makes a COPY instead, and a
 # copy is far worse than nothing here: a binary outside the bundle is refused by
 # Gatekeeper, so the archive would carry something that looks like the program
 # and will not run. Measured in that same project, by accident: a build on
 # Windows made exactly that.
-if [ ! -L "${work}/${binary}" ]; then
-  echo "make_app_bundle: ${binary} beside the bundle is a copy, not a link." >&2
-  echo "A copy of the binary outside the bundle is refused by Gatekeeper." >&2
-  exit 1
-fi
+for name in "${inside[@]}"; do
+  ln -s "${binary}.app/Contents/MacOS/${name}" "${work}/${name}"
+  if [ ! -L "${work}/${name}" ]; then
+    echo "make_app_bundle: ${name} beside the bundle is a copy, not a link." >&2
+    echo "A copy of the binary outside the bundle is refused by Gatekeeper." >&2
+    exit 1
+  fi
+done
 
-echo "wrapped ${binary} in ${binary}.app (${bundle_id}, ${version})"
+echo "wrapped ${inside[*]} in ${binary}.app (${bundle_id}, ${version})"
