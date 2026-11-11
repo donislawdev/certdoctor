@@ -13,8 +13,8 @@ import (
 	"testing"
 )
 
-// THE SIZE RATCHET. docs/22 section 6 point 2: on the day M1 closes, the
-// measured values become a ceiling and from then on they may only fall.
+// THE SHAPE RATCHET. docs/22 section 6 point 2: on the day M1 closed, the
+// measured values became a ceiling, and from then on they may only fall.
 //
 // WHY A GUARD HERE RATHER THAN A STEP IN THE WORKFLOW. The measuring tool lives
 // outside version control, and a gate CI cannot see is a gate that is red on one
@@ -22,30 +22,61 @@ import (
 // warns about. A guard runs inside "go test ./...", which is already wired on all
 // three platforms, so this needs no new step to be trusted on any of them.
 //
-// THE COST OF THAT CHOICE IS WRITTEN DOWN RATHER THAN HIDDEN: the measure now
+// THE COST OF THAT CHOICE IS WRITTEN DOWN RATHER THAN HIDDEN: the length measure
 // exists twice, here and in the reporting tool. Two spellings of one rule drift,
 // and this tree has measured what that costs. What holds them together is not
-// discipline but the PROBE below - the same named claim the reporting tool
-// makes about itself, asked again here: ninety lines of comment do not move the
-// measure and ninety lines of code move it by ninety. A drift that mattered
-// would have to survive both.
+// discipline but a PROBE - the same named claim the reporting tool makes about
+// itself, asked again here: ninety lines of comment do not move the measure and
+// ninety lines of code move it by ninety. A drift that mattered would have to
+// survive both.
 //
-// TWO DIALS, NOT ONE - docs/22 section 6, taken from the reference rule set. A
-// ceiling on the single worst case catches one function growing to a record and
-// MISSES twenty functions growing by two lines each, which moves no maximum at
-// all. So the count of things already close to the ceiling is frozen too.
+// FOUR AXES SINCE 2026-11-11 (ADR132), where there had been one. Length and
+// branching do not move together: a hundred lines of straight setup read from
+// top to bottom, and forty lines with branches inside branches have to be held
+// in the head all at once, which is where a case gets missed. A nine argument
+// signature can be a four line function and passes every length ceiling. The
+// measures themselves are in shape_test.go, each with a probe asking it in both
+// directions.
+//
+// TWO NUMBERS PER AXIS, NOT ONE - docs/22 section 6. A ceiling on the single
+// worst case catches one function growing to a record and MISSES twenty growing
+// by two lines each, which moves no maximum at all. So the count of things
+// already standing in the band below the ceiling is frozen too.
+//
+// AND EVERY NUMBER IS THE MEASUREMENT, NOT A LIMIT ABOVE IT - also since
+// 2026-11-11. "Down is routine, up is a decision" only holds if down actually
+// happens, and the file said 84 the day the longest function was 82.
+//
+// What this cannot see: whether a design is right, whether a function does one
+// thing, whether a name says what it holds. A short function can be wrong. This
+// only stops the tree from drifting into something nobody can follow.
 
-// nearCeilingShare is the percentage of a ceiling at which something counts as
-// close to it.
+// The bands: where each axis counts as close to its ceiling.
 //
-// SIXTY IS A CHOICE AND THE ONLY DEFENCE OF IT IS PROPORTION. Lower, and the
-// count includes so much of the tree that ordinary new code moves it, which
-// makes this the guard that shouts at correct work - and docs/22 records what
-// happens to those: they are switched off within a week. Higher, and the dial
-// only reacts once something is nearly a record, which is what the other dial
-// already covers. At sixty, a function is on the list when it is six times the
-// median of this tree, which is a length worth a second look on its own.
-const nearCeilingShare = 60
+// ABSOLUTE NUMBERS, NOT A SHARE OF THE CEILING - the owner's decision of
+// 2026-11-11 (ADR132). Until then the band was sixty percent of the ceiling, and
+// with every ceiling held to its measurement that is a ratchet nobody can turn:
+// lowering the function ceiling from 84 to the 82 it measured would have moved
+// the band from 51 to 50 and the count in it from 9 to 12, so lowering one
+// number would have forced raising another. A band that reshapes itself under
+// what it watches says nothing.
+//
+// The four length bands started where the old rule put them - sixty percent of
+// that day's ceiling, rounded up - and are frozen there, so the counts did not
+// move on the day the rule changed. Depth and arguments are small whole numbers,
+// where a share means little: depth's band is one level under its ceiling, and
+// the arguments band is seven because at six it already held thirty one
+// signatures, ordinary probe constructors among them, which is a band ordinary
+// new code would move.
+const (
+	functionBand     = 51
+	testFunctionBand = 86
+	fileBand         = 598
+	testFileBand     = 785
+	depthBand        = 4
+	branchesBand     = 18
+	argumentsBand    = 7
+)
 
 // ceilingFile is where the numbers live, beside the coverage floors.
 //
@@ -54,120 +85,264 @@ const nearCeilingShare = 60
 // them is edited - the sentence coverage-floor.txt opens with.
 const ceilingFile = "tools/size-ceiling.txt"
 
-// ceilings are the frozen numbers, one per dial.
-type ceilings struct {
-	function          int
-	testFunction      int
-	file              int
-	nearFunctions     int
-	nearTestFunctions int
-	nearFiles         int
-	declared          map[string]bool
-}
+// dials are the numbers in ceilingFile, by name.
+type dials map[string]int
 
-// sizedFunction is one function body, measured.
+// sizedFunction is one function body, measured on every axis.
 type sizedFunction struct {
-	name   string
-	file   string
-	line   int
-	code   int
-	isTest bool
+	name      string
+	file      string
+	line      int
+	code      int
+	depth     int
+	branches  int
+	arguments int
+	isTest    bool
 }
 
 // sizedFile is one file, measured.
 type sizedFile struct {
-	rel  string
-	code int
+	rel    string
+	code   int
+	isTest bool
+}
+
+// axis is one ceiling, the band under it, and what it reads.
+//
+// AN AXIS READS ONE SIDE OF THE TREE. Tests and production get their own
+// numbers because they are different measurements, not because tests are
+// allowed more: a table of twenty cases is the clearest thing a guard can be and
+// the longest thing in it, and one ceiling over both would either tear the
+// production code apart or watch nothing in the tests. Branching and arguments
+// are watched on production only, for the same reason - a guard spelling out
+// every case is doing its job.
+type axis struct {
+	ceiling string // the dial holding the worst case
+	crowd   string // the dial holding how many stand in the band, "" for none
+	band    int
+	what    string // what one sample is, as a violation says it
+	verb    string // how a violation says a sample holds its number
+	unit    string // what the number counts
+	tests   bool
+	files   bool
+	of      func(sizedFunction) int // the number a function carries, nil for a file axis
+}
+
+// axes are every axis the ratchet holds. The dial names in ceilingFile are read
+// from here, so a dial the guard does not check cannot be set, and a dial it
+// checks cannot be left out.
+var axes = []axis{
+	{ceiling: "function", crowd: "functions-near-ceiling", band: functionBand,
+		what: "a function", verb: "is", unit: "lines of code",
+		of: func(f sizedFunction) int { return f.code }},
+	{ceiling: "test-function", crowd: "test-functions-near-ceiling", band: testFunctionBand,
+		what: "a test function", verb: "is", unit: "lines of code", tests: true,
+		of: func(f sizedFunction) int { return f.code }},
+	{ceiling: "file", crowd: "files-near-ceiling", band: fileBand,
+		what: "a file", verb: "is", unit: "lines of code", files: true},
+	{ceiling: "test-file", crowd: "test-files-near-ceiling", band: testFileBand,
+		what: "a test file", verb: "is", unit: "lines of code", tests: true, files: true},
+	{ceiling: "depth", crowd: "depth-near-ceiling", band: depthBand,
+		what: "a function", verb: "nests", unit: "levels deep",
+		of: func(f sizedFunction) int { return f.depth }},
+	{ceiling: "test-depth",
+		what: "a test function", verb: "nests", unit: "levels deep", tests: true,
+		of: func(f sizedFunction) int { return f.depth }},
+	{ceiling: "branches", crowd: "branches-near-ceiling", band: branchesBand,
+		what: "a function", verb: "has", unit: "decision points",
+		of: func(f sizedFunction) int { return f.branches }},
+	{ceiling: "arguments", crowd: "arguments-near-ceiling", band: argumentsBand,
+		what: "a function", verb: "takes", unit: "arguments",
+		of: func(f sizedFunction) int { return f.arguments }},
+}
+
+// sample is one thing an axis measured: a function or a file, where it stands,
+// and its number.
+type sample struct {
+	file  string
+	line  int
+	name  string
+	value int
+}
+
+// fileSample is the name a whole file goes by in a violation.
+const fileSample = "this file"
+
+// at says where a sample stands, the way a person would go and look for it.
+func (s sample) at() string {
+	if s.name == fileSample {
+		return s.file
+	}
+	return fmt.Sprintf("%s:%d %s", s.file, s.line, s.name)
+}
+
+// samples returns what the axis reads from the measured tree.
+func (a axis) samples(functions []sizedFunction, files []sizedFile) []sample {
+	var out []sample
+	if a.files {
+		for _, file := range files {
+			if file.isTest == a.tests {
+				out = append(out, sample{file: file.rel, line: 1, name: fileSample, value: file.code})
+			}
+		}
+		return out
+	}
+	for _, f := range functions {
+		if f.isTest == a.tests {
+			out = append(out, sample{file: f.file, line: f.line, name: f.name, value: a.of(f)})
+		}
+	}
+	return out
+}
+
+// reading is what one axis found: its worst sample and how many reach the band.
+type reading struct {
+	worst   sample
+	crowded int
+}
+
+// read sums the samples up. On a tie the first sample in tree order is the
+// worst, so the name a violation gives does not change between runs.
+func (a axis) read(samples []sample) reading {
+	var r reading
+	for _, s := range samples {
+		if s.value > r.worst.value {
+			r.worst = s
+		}
+		if a.crowd != "" && s.value >= a.band {
+			r.crowded++
+		}
+	}
+	return r
 }
 
 // TestNothingGrewPastTheSizeRatchet is the gate.
 func TestNothingGrewPastTheSizeRatchet(t *testing.T) {
+	limits, functions, files := measuredTree(t)
+	requireNoViolations(t, checkShape(limits, functions, files), "something past the shape ratchet")
+
+	for _, a := range axes {
+		r := a.read(a.samples(functions, files))
+		t.Logf("%-28s worst %4d %s", a.ceiling, r.worst.value, r.worst.at())
+		if a.crowd != "" {
+			t.Logf("%-28s %4d at %d or more", a.crowd, r.crowded, a.band)
+		}
+	}
+}
+
+// TestTheShapeCeilingsAreTodaysMeasurement is the other half of every number in
+// the file: it has to BE the measurement, not merely stand above it.
+//
+// A ceiling parked above the truth grants headroom nobody decided to grant, and
+// the next arrival slips in under it in silence - which is the failure the
+// ceiling exists to prevent, wearing its own badge. Nothing watched that gap
+// until 2026-11-11, and that day it held 2 lines on the function ceiling and 32
+// on the file ceiling. So shortening something comes with a chore, and it is
+// meant to be routine: bring its number down in the same change.
+//
+// The counts are held to the same rule for the same reason. Frozen one above the
+// truth, a count would let the next arrival into the band without a word.
+func TestTheShapeCeilingsAreTodaysMeasurement(t *testing.T) {
+	limits, functions, files := measuredTree(t)
+	requireNoViolations(t, checkExact(limits, functions, files), "a number standing apart from what it measures")
+}
+
+// measuredTree reads the numbers and measures the module, once for each gate.
+func measuredTree(t *testing.T) (dials, []sizedFunction, []sizedFile) {
+	t.Helper()
 	tr, err := loadModule()
 	if err != nil {
 		t.Fatalf("the module could not be read: %v", err)
 	}
-
 	limits, err := readCeilings(filepath.Join(tr.root, filepath.FromSlash(ceilingFile)))
 	if err != nil {
 		t.Fatalf("the ceilings could not be read: %v", err)
 	}
-
 	functions, files, err := measureTree(tr)
 	if err != nil {
 		t.Fatalf("the tree could not be measured: %v", err)
 	}
-	if len(files) == 0 || len(functions) == 0 {
-		t.Fatal("nothing was measured, so a green result here would mean nothing")
+	// EVERY AXIS HAS TO HAVE READ SOMETHING. An axis reading the wrong side, or
+	// nothing, would pass against any ceiling ever set.
+	for _, a := range axes {
+		if len(a.samples(functions, files)) == 0 {
+			t.Fatalf("the axis %q measured nothing, so a green result here would mean nothing", a.ceiling)
+		}
 	}
-
-	requireNoViolations(t, checkSizes(limits, functions, files), "something past the size ratchet")
+	return limits, functions, files
 }
 
-// checkSizes turns a measurement into violations.
+// checkShape turns a measurement into violations of the ceilings and the counts.
 //
 // EVERY BREACH IS REPORTED, not just the first. A run that stopped at the worst
 // one would send somebody back for a second run to discover the next, and the
 // list is short enough that seeing all of it is the point.
-func checkSizes(limits ceilings, functions []sizedFunction, files []sizedFile) []Violation {
+func checkShape(limits dials, functions []sizedFunction, files []sizedFile) []Violation {
 	var found []Violation
-
-	nearFunctions, nearTestFunctions, nearFiles := 0, 0, 0
-	for _, f := range functions {
-		ceiling, near := limits.function, &nearFunctions
-		what := "a function"
-		if f.isTest {
-			ceiling, near = limits.testFunction, &nearTestFunctions
-			what = "a test function"
+	for _, a := range axes {
+		samples := a.samples(functions, files)
+		ceiling := limits[a.ceiling]
+		for _, s := range samples {
+			if s.value > ceiling {
+				found = append(found, Violation{
+					File: s.file, Line: s.line,
+					Detail: fmt.Sprintf("%s %s %d %s and the ceiling for %s is %d (dial %q): %s",
+						s.name, a.verb, s.value, a.unit, a.what, ceiling, a.ceiling, ceilingAdvice),
+				})
+			}
 		}
-		if f.code > ceiling {
-			found = append(found, Violation{
-				File: f.file, Line: f.line,
-				Detail: fmt.Sprintf("%s is %d lines of code and the ceiling for %s is %d: %s",
-					f.name, f.code, what, ceiling, ceilingAdvice),
-			})
+		if a.crowd == "" {
+			continue
 		}
-		if atLeastShare(f.code, ceiling) {
-			*near++
-		}
-	}
-	for _, f := range files {
-		if f.code > limits.file {
-			found = append(found, Violation{
-				File: f.rel, Line: 1,
-				Detail: fmt.Sprintf("this file is %d lines of code and the ceiling for a file is %d: %s",
-					f.code, limits.file, ceilingAdvice),
-			})
-		}
-		if atLeastShare(f.code, limits.file) {
-			nearFiles++
-		}
-	}
-
-	// THE SECOND DIAL. Its violation names the count rather than a place,
-	// because there is no single place: what it caught is the tree as a whole
-	// drifting upward, and pointing at whichever function happens to have
-	// crossed the line last would be pointing at the wrong one.
-	for _, dial := range []struct {
-		what    string
-		counted int
-		frozen  int
-	}{
-		{"functions", nearFunctions, limits.nearFunctions},
-		{"test functions", nearTestFunctions, limits.nearTestFunctions},
-		{"files", nearFiles, limits.nearFiles},
-	} {
-		if dial.counted > dial.frozen {
+		// THE SECOND NUMBER. Its violation names the count rather than a place,
+		// because there is no single place: what it caught is the tree as a whole
+		// drifting upward, and pointing at whichever function happens to have
+		// crossed the band last would be pointing at the wrong one.
+		if crowded := a.read(samples).crowded; crowded > limits[a.crowd] {
 			found = append(found, Violation{
 				File: ceilingFile, Line: 1,
-				Detail: fmt.Sprintf(
-					"%d %s are now within %d%% of their ceiling and %d were frozen - "+
-						"nothing broke a ceiling, the tree crept toward one. %s",
-					dial.counted, dial.what, nearCeilingShare, dial.frozen, ceilingAdvice),
+				Detail: fmt.Sprintf("%d of %s's samples now reach %d %s and %d were frozen (dial %q) - "+
+					"nothing broke a ceiling, the tree crept toward one. %s",
+					crowded, a.ceiling, a.band, a.unit, limits[a.crowd], a.crowd, ceilingAdvice),
 			})
 		}
 	}
-
 	return sortViolations(found)
+}
+
+// checkExact holds every number to exactly what it measures, in both directions.
+func checkExact(limits dials, functions []sizedFunction, files []sizedFile) []Violation {
+	var found []Violation
+	for _, a := range axes {
+		r := a.read(a.samples(functions, files))
+		if r.worst.value != limits[a.ceiling] {
+			found = append(found, Violation{
+				File: ceilingFile, Line: 1,
+				Detail: fmt.Sprintf("%q is %d and the biggest thing it measures is %d (%s), "+
+					"so the number stands %s the truth - move it to %d. %s",
+					a.ceiling, limits[a.ceiling], r.worst.value, r.worst.at(),
+					side(r.worst.value, limits[a.ceiling]), r.worst.value, slackAdvice),
+			})
+		}
+		if a.crowd != "" && r.crowded != limits[a.crowd] {
+			found = append(found, Violation{
+				File: ceilingFile, Line: 1,
+				Detail: fmt.Sprintf("%q is %d and %d of %s's samples reach %d %s, "+
+					"so the number stands %s the truth - move it to %d. %s",
+					a.crowd, limits[a.crowd], r.crowded, a.ceiling, a.band, a.unit,
+					side(r.crowded, limits[a.crowd]), r.crowded, slackAdvice),
+			})
+		}
+	}
+	return sortViolations(found)
+}
+
+// side says which way a number misses its measurement.
+func side(measured, frozen int) string {
+	if measured > frozen {
+		return "below"
+	}
+	return "above"
 }
 
 // ceilingAdvice is the sentence every breach ends with.
@@ -179,9 +354,8 @@ func checkSizes(limits ceilings, functions []sizedFunction, files []sizedFile) [
 const ceilingAdvice = "shorten it, or ask the owner to raise the ceiling - raising it to " +
 	"get unblocked is the same act as editing an expected value to make a test pass"
 
-// atLeastShare says whether value has reached nearCeilingShare percent of
-// ceiling, without floating point.
-func atLeastShare(value, ceiling int) bool { return value*100 >= ceiling*nearCeilingShare }
+// slackAdvice is the sentence a number standing above its measurement ends with.
+const slackAdvice = "Headroom nobody decided to grant is how the next arrival gets in without being noticed."
 
 // measureTree measures every function and file the guards police.
 //
@@ -189,7 +363,9 @@ func atLeastShare(value, ceiling int) bool { return value*100 >= ceiling*nearCei
 // question "what counts as ours" is answered in exactly one place. That is the
 // half of this measure that is NOT duplicated: the reporting tool has its own
 // walk, and if the two disagreed about scope they would disagree about the
-// biggest file rather than about a rule.
+// biggest file rather than about a rule. loadModule parses every file whatever
+// its build tags, so the window's cgo files and the Windows-only files are
+// measured on every platform, and the numbers are the same on all three.
 func measureTree(tr tree) ([]sizedFunction, []sizedFile, error) {
 	var functions []sizedFunction
 	var files []sizedFile
@@ -242,11 +418,14 @@ func measureSource(rel string, source []byte, isTest bool) ([]sizedFunction, siz
 		from := fset.Position(fd.Type.Pos()).Line
 		to := fset.Position(fd.Body.Rbrace).Line
 		functions = append(functions, sizedFunction{
-			name:   functionName(fd),
-			file:   rel,
-			line:   from,
-			code:   countCode(carriesCode, from, to),
-			isTest: isTest,
+			name:      functionName(fd),
+			file:      rel,
+			line:      from,
+			code:      countCode(carriesCode, from, to),
+			depth:     depthOf(fd.Body),
+			branches:  branchesOf(fd.Body),
+			arguments: argumentsOf(fd.Type),
+			isTest:    isTest,
 		})
 	}
 
@@ -256,7 +435,7 @@ func measureSource(rel string, source []byte, isTest bool) ([]sizedFunction, siz
 			whole++
 		}
 	}
-	return functions, sizedFile{rel: rel, code: whole}, nil
+	return functions, sizedFile{rel: rel, code: whole, isTest: isTest}, nil
 }
 
 // countCode counts the lines carrying code between two line numbers, inclusive.
@@ -343,20 +522,37 @@ func printType(b *strings.Builder, expr ast.Expr) error {
 	return nil
 }
 
+// dialNames are every name the file has to set, in the order of the axes.
+func dialNames() []string {
+	var names []string
+	for _, a := range axes {
+		names = append(names, a.ceiling)
+		if a.crowd != "" {
+			names = append(names, a.crowd)
+		}
+	}
+	return names
+}
+
 // readCeilings reads the frozen numbers.
 //
 // A MISSING DIAL IS AN ERROR AND NOT A ZERO. A ceiling read as zero would fail
-// every run, which is loud; a COUNT read as zero would fail every run too, and a
+// every run, which is loud. A COUNT read as zero would fail every run too, and a
 // future dial defaulting the other way would pass every run silently. Requiring
-// all six by name means the file cannot half-answer.
-func readCeilings(path string) (ceilings, error) {
+// every dial by name means the file cannot half-answer.
+func readCeilings(path string) (dials, error) {
 	handle, err := os.Open(path)
 	if err != nil {
-		return ceilings{}, err
+		return nil, err
 	}
 	defer handle.Close()
 
-	limits := ceilings{declared: map[string]bool{}}
+	known := map[string]bool{}
+	for _, name := range dialNames() {
+		known[name] = true
+	}
+
+	limits := dials{}
 	scanner := bufio.NewScanner(handle)
 	for line := 1; scanner.Scan(); line++ {
 		text := strings.TrimSpace(scanner.Text())
@@ -365,173 +561,33 @@ func readCeilings(path string) (ceilings, error) {
 		}
 		fields := strings.Fields(text)
 		if len(fields) != 2 {
-			return ceilings{}, fmt.Errorf("%s:%d: expected '<name> <number>', got %q", ceilingFile, line, text)
+			return nil, fmt.Errorf("%s:%d: expected '<name> <number>', got %q", ceilingFile, line, text)
 		}
 		value, convErr := strconv.Atoi(fields[1])
 		if convErr != nil || value < 0 {
-			return ceilings{}, fmt.Errorf("%s:%d: %q is not a count", ceilingFile, line, fields[1])
+			return nil, fmt.Errorf("%s:%d: %q is not a count", ceilingFile, line, fields[1])
 		}
-		target, known := map[string]*int{
-			"function":                    &limits.function,
-			"test-function":               &limits.testFunction,
-			"file":                        &limits.file,
-			"functions-near-ceiling":      &limits.nearFunctions,
-			"test-functions-near-ceiling": &limits.nearTestFunctions,
-			"files-near-ceiling":          &limits.nearFiles,
-		}[fields[0]]
-		if !known {
-			return ceilings{}, fmt.Errorf("%s:%d: %q is not a dial this guard knows", ceilingFile, line, fields[0])
+		if !known[fields[0]] {
+			return nil, fmt.Errorf("%s:%d: %q is not a dial this guard knows", ceilingFile, line, fields[0])
 		}
-		if limits.declared[fields[0]] {
-			return ceilings{}, fmt.Errorf("%s:%d: %q is set twice", ceilingFile, line, fields[0])
+		if _, set := limits[fields[0]]; set {
+			return nil, fmt.Errorf("%s:%d: %q is set twice", ceilingFile, line, fields[0])
 		}
-		limits.declared[fields[0]] = true
-		*target = value
+		limits[fields[0]] = value
 	}
 	if err := scanner.Err(); err != nil {
-		return ceilings{}, err
+		return nil, err
 	}
 
-	for _, dial := range []string{
-		"function", "test-function", "file",
-		"functions-near-ceiling", "test-functions-near-ceiling", "files-near-ceiling",
-	} {
-		if !limits.declared[dial] {
-			return ceilings{}, fmt.Errorf("%s does not set %q, so that dial would be a silent zero", ceilingFile, dial)
+	for _, name := range dialNames() {
+		if _, set := limits[name]; !set {
+			return nil, fmt.Errorf("%s does not set %q, so that dial would be a silent zero", ceilingFile, name)
 		}
 	}
-	if limits.function == 0 || limits.testFunction == 0 || limits.file == 0 {
-		return ceilings{}, fmt.Errorf("%s sets a ceiling of zero, which no tree can be under", ceilingFile)
+	for _, a := range axes {
+		if limits[a.ceiling] == 0 {
+			return nil, fmt.Errorf("%s sets %q to a ceiling of zero, which no tree can be under", ceilingFile, a.ceiling)
+		}
 	}
 	return limits, nil
-}
-
-// TestTheSizeMeasureCountsCodeAndNotComment is the probe, and it is what keeps
-// this measure and the reporting tool's from drifting apart.
-//
-// IT IS THE SAME NAMED CLAIM THE OTHER ONE MAKES ABOUT ITSELF, deliberately
-// word for word: ninety lines of comment do not move the measure, and ninety
-// lines of code move it by ninety. Two implementations pinned to one stated
-// promise can still differ, but not about the thing the promise is about - and
-// the promise is the part docs/22 argues for.
-//
-// IT GOES THROUGH measureSource RATHER THAN COUNTING ITS OWN WAY. A probe with
-// its own arithmetic would prove only that the same thing was written twice.
-func TestTheSizeMeasureCountsCodeAndNotComment(t *testing.T) {
-	const added = 90
-	base := "package p\n\nfunc f() {\n\ta := 1\n\tb := 2\n\t_ = a + b\n}\n"
-
-	measureOne := func(source string) sizedFunction {
-		t.Helper()
-		functions, _, err := measureSource("probe.go", []byte(source), false)
-		if err != nil {
-			t.Fatalf("the probe source did not measure: %v", err)
-		}
-		if len(functions) != 1 {
-			t.Fatalf("the probe source holds %d functions, want 1", len(functions))
-		}
-		return functions[0]
-	}
-
-	plain := measureOne(base)
-
-	comments := strings.Repeat("\t// explanation\n", added)
-	withComment := measureOne(strings.Replace(base, "\ta := 1\n", comments+"\ta := 1\n", 1))
-	if withComment.code != plain.code {
-		t.Errorf("%d lines of comment moved the measure from %d to %d - it is a ceiling on explanation",
-			added, plain.code, withComment.code)
-	}
-
-	statements := strings.Repeat("\t_ = 1\n", added)
-	withCode := measureOne(strings.Replace(base, "\ta := 1\n", statements+"\ta := 1\n", 1))
-	if withCode.code != plain.code+added {
-		t.Errorf("%d lines of code moved the measure from %d to %d, want %d",
-			added, plain.code, withCode.code, plain.code+added)
-	}
-
-	// A BLOCK COMMENT IS THE CASE A PREFIX TEST GETS WRONG, and it is here
-	// because the classifier is the only part of this measure with state.
-	block := "\t/* one\n\ttwo\n\tthree */\n"
-	withBlock := measureOne(strings.Replace(base, "\ta := 1\n", block+"\ta := 1\n", 1))
-	if withBlock.code != plain.code {
-		t.Errorf("a three line block comment moved the measure from %d to %d", plain.code, withBlock.code)
-	}
-}
-
-// TestTheSizeRatchetCanFail is the canary. A gate that finds nothing looks
-// exactly like a gate that measures nothing.
-func TestTheSizeRatchetCanFail(t *testing.T) {
-	tiny := ceilings{function: 1, testFunction: 1, file: 1}
-	functions := []sizedFunction{{name: "f", file: "a.go", line: 3, code: 40}}
-	files := []sizedFile{{rel: "a.go", code: 400}}
-
-	requireViolation(t, checkSizes(tiny, functions, files), "the ceiling for a function is 1")
-	requireViolation(t, checkSizes(tiny, functions, files), "the ceiling for a file is 1")
-}
-
-// TestTheSecondDialCatchesWhatTheFirstCannot is the argument for having two, run
-// rather than written down.
-//
-// THE SHAPE IT DESCRIBES IS THE ONE docs/22 NAMES: twenty functions growing by
-// two lines each move no maximum at all. Here nothing is over any ceiling and
-// the gate still fires, which is the only way to show that the second dial is
-// not decoration on the first.
-func TestTheSecondDialCatchesWhatTheFirstCannot(t *testing.T) {
-	limits := ceilings{function: 100, testFunction: 100, file: 1000, nearFunctions: 1}
-
-	var crept []sizedFunction
-	for i := 0; i < 5; i++ {
-		crept = append(crept, sizedFunction{name: fmt.Sprintf("f%d", i), file: "a.go", line: i + 1, code: 70})
-	}
-	violations := checkSizes(limits, crept, []sizedFile{{rel: "a.go", code: 10}})
-
-	for _, v := range violations {
-		if strings.Contains(v.Detail, "the ceiling for a function") {
-			t.Fatalf("something was over a ceiling, so this test is not showing what it claims: %s", v)
-		}
-	}
-	requireViolation(t, violations, "the tree crept toward one")
-}
-
-// TestTheCeilingFileRefusesToHalfAnswer covers the reading rather than the
-// measuring, because a file that parsed into zeros would turn this whole guard
-// into a formality that passes.
-func TestTheCeilingFileRefusesToHalfAnswer(t *testing.T) {
-	write := func(body string) string {
-		t.Helper()
-		path := filepath.Join(t.TempDir(), "ceiling.txt")
-		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-			t.Fatalf("writing the fixture: %v", err)
-		}
-		return path
-	}
-
-	complete := "function 10\ntest-function 20\nfile 30\n" +
-		"functions-near-ceiling 1\ntest-functions-near-ceiling 2\nfiles-near-ceiling 3\n"
-
-	if _, err := readCeilings(write(complete)); err != nil {
-		t.Fatalf("a complete file was refused: %v", err)
-	}
-
-	for _, c := range []struct {
-		name string
-		body string
-		want string
-	}{
-		{"a dial left out", strings.Replace(complete, "file 30\n", "", 1), "silent zero"},
-		{"a ceiling of zero", strings.Replace(complete, "file 30", "file 0", 1), "ceiling of zero"},
-		{"a dial nobody declared", complete + "colour 3\n", "not a dial"},
-		{"a dial set twice", complete + "file 40\n", "set twice"},
-		{"something that is not a count", strings.Replace(complete, "file 30", "file plenty", 1), "not a count"},
-		{"a line with three fields", complete + "file 40 please\n", "expected"},
-	} {
-		_, err := readCeilings(write(c.body))
-		if err == nil {
-			t.Errorf("%s was accepted", c.name)
-			continue
-		}
-		if !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%s was refused with %q, which does not mention %q", c.name, err, c.want)
-		}
-	}
 }
