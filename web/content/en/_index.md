@@ -29,7 +29,7 @@ hero:
 run:
   eyebrow: A real run
   title: The cause first, then a command for every store
-  text: "A site whose root no store trusts, checked on a Windows machine with Git and six Java runtimes. The first sentence names the cause. Below it every store has its own row, and every row that refuses carries the command that would add the root there, with this machine's paths in it. certdoctor prints the commands. It never runs them."
+  text: "A site whose root no store trusts, checked on a Windows machine with Git and eight Java runtimes. The first sentence names the cause. Below it every store has its own row, and every row that refuses carries the command that would add the root there, with this machine's paths in it. certdoctor prints the commands. It never runs them."
   caption: Windows, an excerpt
   command: certdoctor https://untrusted-root.badssl.com/
   # An excerpt of a real run on 2026-11-12, cut line for line from what it printed.

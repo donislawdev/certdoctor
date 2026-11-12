@@ -26,7 +26,7 @@ One row per store, not per runtime:
 | `python` | every Python on PATH, by the list its `ssl` module trusts |
 | `pip` | the `pip` of each Python, by its own rule |
 
-The report lists the families it asked, so a missing row always means nobody looked, never that a store agreed. On the machine certdoctor was built on, one run reads sixteen stores.
+The report lists the families it asked, so a missing row always means nobody looked, never that a store agreed. On the machine certdoctor was built on, one run in November 2026 read seventeen stores, eight of them Java runtimes.
 
 ## The command each store gets
 

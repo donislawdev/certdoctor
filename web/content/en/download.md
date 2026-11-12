@@ -26,15 +26,9 @@ Every archive also carries `LICENSE`, `THIRD-PARTY-NOTICES.md` and the README, a
 
 Each release lists the SHA-256 of every file in `verify-SHA256SUMS.txt`, and GitHub signs a statement of what went into each one. [Check what you downloaded](/docs/verify-a-download/) shows the commands.
 
-## With Go installed
+## From source
 
 With Go {{< go-version >}} or newer:
-
-```
-go install github.com/donislawdev/certdoctor/cmd/certdoctor@latest
-```
-
-## From source
 
 ```
 git clone https://github.com/donislawdev/certdoctor
@@ -42,7 +36,7 @@ cd certdoctor
 CGO_ENABLED=0 go build ./cmd/certdoctor
 ```
 
-`CGO_ENABLED=0` gives the same static binary the releases carry, the one that runs in an Alpine image as it is.
+In PowerShell, set the variable on its own line first: `$env:CGO_ENABLED = "0"`, then `go build ./cmd/certdoctor`. `CGO_ENABLED=0` gives the same static binary the releases carry, the one that runs in an Alpine image as it is.
 
 ## Next
 

@@ -27,7 +27,7 @@ Jeden wiersz na magazyn, a nie na środowisko:
 | `python` | każdy Python w PATH, według listy, której ufa jego moduł `ssl` |
 | `pip` | `pip` każdego Pythona, według jego własnej reguły |
 
-Raport wymienia rodziny, o które pytał, więc brakujący wiersz zawsze znaczy, że nikt nie patrzył, a nigdy, że magazyn się zgodził. Na maszynie, na której powstał certdoctor, jeden przebieg czyta szesnaście magazynów.
+Raport wymienia rodziny, o które pytał, więc brakujący wiersz zawsze znaczy, że nikt nie patrzył, a nigdy, że magazyn się zgodził. Na maszynie, na której powstał certdoctor, jeden przebieg w listopadzie 2026 przeczytał siedemnaście magazynów, w tym osiem środowisk Javy.
 
 ## Polecenie dla każdego magazynu
 

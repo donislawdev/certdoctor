@@ -22,16 +22,17 @@
 ![Platform: macOS](https://img.shields.io/badge/platform-macOS-000000)
 [![Website](https://img.shields.io/badge/website-certdoctor.donislawdev.com-e4573f)](https://certdoctor.donislawdev.com/)
 
-**certdoctor** is a command-line tool for QA engineers, helpdesk and DevOps - for anyone who has
-read `PKIX path building failed` or `unable to get local issuer certificate` on a corporate laptop,
-behind a proxy, or inside a container that cannot do what the host does without trouble. Point it at
+**certdoctor** is a command-line tool, with a window of its own, for QA engineers, helpdesk and
+DevOps - for anyone who has read `PKIX path building failed` or
+`unable to get local issuer certificate` on a corporate laptop, behind a proxy, or inside a
+container that cannot do what the host does without trouble. Point it at
 the URL that fails. It walks the whole path in one run - DNS, proxy and PAC script, TCP, TLS - and
 then does the part no other tool does: it asks **each trust store on the machine**, one by one,
 whether it trusts what the server presented, and prints the command that would fix each store that
 does not, with the real paths from your machine in it. `curl -v` and `openssl s_client` answer for
-one program. certdoctor answers for the Windows store, every Java installation, every `git`, every
-`curl`, every `node`, every Python and the `pip` of each it finds - and tells you whether the fault is
-on this machine at all.
+one program. certdoctor answers for the Windows store or the Linux CA bundle, every Java installation,
+every `git`, every `curl`, every `node`, every Python and the `pip` of each it finds - and tells you
+whether the fault is on this machine at all.
 
 ⭐ **If it ended a "works on my machine" argument, leave a star.** That is how the next person
 staring at `PKIX path building failed` finds out it exists.
@@ -42,7 +43,8 @@ staring at `PKIX path building failed` finds out it exists.
   intermediate certificate is named as the server's fault, with the evidence to paste into a ticket.
 - **One row per trust store, not per runtime** - the Windows store as your account sees it and as
   services see it, the Linux CA bundle, every JDK and JRE separately, every `git`, `curl`, `node`,
-  Python and `pip` it finds. On the machine it was built on, one run reads sixteen stores.
+  Python and `pip` it finds. On the machine it was built on, one run in November 2026 read seventeen
+  stores, eight of them Java runtimes.
 - **Print the command that fixes each store** - `certutil`, `keytool` with the real `cacerts` path of
   that JDK, an append to git's own bundle - and say when it needs administrator rights. It prints
   them. It never runs them.
@@ -76,7 +78,7 @@ first, then a search for `L5`, the trust matrix. The few seconds the run takes a
 public test root was added to the container's system store - the way a company root usually arrives -
 and the two Java runtimes in it were never told.*
 
-<!-- The star GIF goes here, recorded on this repository once it is public. -->
+<!-- The star GIF goes here, recorded on this repository now that it is public. -->
 
 ---
 
@@ -104,11 +106,12 @@ certdoctor https://untrusted-root.badssl.com/
 certdoctor https://expired.badssl.com/
 ```
 
-> 16 of 16 store(s) do not trust the presented chain - a certificate in the path is past its
-> validity.
+> 16 of 17 store(s) do not trust the presented chain, and 1 could not be assessed - a certificate in
+> the path is past its validity.
 
-The second one is where the trust matrix earns its place. Every store refuses, and every store that
-can be given the root carries the command that would add it there, with this machine's paths in it.
+The second one is where the trust matrix earns its place. Every store it could read refuses, and
+every store that can be given the root carries the command that would add it there, with this
+machine's paths in it.
 curl built on Schannel judges by this account's Windows store, so its rows point at that store's
 command rather than carrying one of their own. An excerpt from a Windows machine, as printed:
 
@@ -223,15 +226,9 @@ build's, and that second command finds nothing for them by design. The signature
 instead: Windows checks it when the program starts, and on macOS `spctl -a -vv certdoctor.app` - or
 `certdoctor-gui.app` - asks Gatekeeper.
 
-### Other ways to get it
+### Build it from source
 
-**With Go installed** (1.27.4 or newer):
-
-```
-go install github.com/donislawdev/certdoctor/cmd/certdoctor@latest
-```
-
-**From source:**
+**With Go installed** (1.27.4 or newer), from a clone:
 
 ```
 git clone https://github.com/donislawdev/certdoctor
@@ -239,8 +236,13 @@ cd certdoctor
 CGO_ENABLED=0 go build ./cmd/certdoctor
 ```
 
-`CGO_ENABLED=0` gives the same static binary the releases carry, the one that runs in an Alpine
-image as it is.
+In PowerShell, set the variable on its own line first: `$env:CGO_ENABLED = "0"`, then
+`go build ./cmd/certdoctor`. `CGO_ENABLED=0` gives the same static binary the releases carry, the
+one that runs in an Alpine image as it is.
+
+`go install` with `@latest` does not work here: this module's `go.mod` points one library of the
+window at a copy kept in the repository, and `go install` refuses a module that replaces another. A
+clone builds as above.
 
 ### Inside a container
 
@@ -277,7 +279,8 @@ certdoctor https://api.example.com/ --pac-url http://wpad.example.com/proxy.pac
 
 The report opens with **one sentence naming the cause** in the words of the layer that decided it.
 The numbers come after that sentence, then every layer with its evidence, then the notes saying what
-was not looked at. Every flag is in `certdoctor --help`.
+was not looked at. Every flag is in `certdoctor --help`, and
+[the documentation](https://certdoctor.donislawdev.com/docs/) walks through a report line by line.
 
 <details>
 <summary><strong>Table of contents</strong></summary>
@@ -326,6 +329,9 @@ it is several trust stores disagreeing.
 | `certificate verify failed: unable to get local issuer certificate` | Python, `pip` | every Python on PATH, by the list its `ssl` module trusts, and the `pip` of each by its own rule - this machine's store through truststore from pip 24.2, one CA file before it |
 | `certificate verify failed: Missing Authority Key Identifier`, `Basic Constraints of CA cert not marked critical` | Python 3.13 and newer | which certificate in the chain breaks which of OpenSSL's strict rules, which Python 3.13 turned on |
 | `SELF_SIGNED_CERT_IN_CHAIN` | Node.js, `npm` | every `node` on PATH, by the list that binary trusts - `npm`'s own `cafile` is not read yet |
+
+Each of these messages has [its own page on the website](https://certdoctor.donislawdev.com/errors/):
+what it means, what causes it, and how certdoctor tells you which cause is yours.
 
 ---
 
@@ -434,9 +440,9 @@ A tool that quietly fails to look at something is worse than one that says what 
   PowerShell, Docker, Maven and Gradle, and apt. A Python started through an app alias in
   `WindowsApps` was measured with the Python install manager, not with Python from the Microsoft
   Store. OpenSSL's strict rules are applied as OpenSSL 3 has them, and two of them were measured
-  against Python - the rest are read from OpenSSL's source. A family it does not know is not asked, and the
-  report lists the families it asked - so a missing row means nobody looked, never that nothing is
-  there.
+  against Python - the rest are read from OpenSSL's source. A family it does not know is not asked,
+  and the report lists the families it asked - so a missing row means nobody looked, never that
+  nothing is there.
 - **On macOS the system keychain is not read yet**, so the platform store has no row there.
 - **Container diagnosis is not built.** `--in`, `--image` and `--compare` are accepted and refused
   with a reason. Until they work, copy the binary into the container and run it there.
@@ -467,7 +473,8 @@ feature - a diagnostic tool that quietly modifies trust stores is a tool nobody 
 administrator rights to.
 
 It also connects only to what you pointed it at - the target URL, the addresses it resolves to, your
-configured resolvers and proxies, and the PAC file your machine names. There is no telemetry, no
+configured resolvers and proxies, and the PAC file your machine names or you name with `--pac-url`.
+There is no telemetry, no
 update check and no reporting of any kind.
 
 ---

@@ -27,15 +27,9 @@ Każde archiwum zawiera też `LICENSE`, `THIRD-PARTY-NOTICES.md` i README, a arc
 
 Każde wydanie podaje SHA-256 każdego pliku w `verify-SHA256SUMS.txt`, a GitHub podpisuje oświadczenie o tym, co weszło do każdego z nich. Polecenia pokazuje strona [sprawdź pobrany plik](/docs/verify-a-download/).
 
-## Z zainstalowanym Go
+## Ze źródeł
 
 Z Go {{< go-version >}} albo nowszym:
-
-```
-go install github.com/donislawdev/certdoctor/cmd/certdoctor@latest
-```
-
-## Ze źródeł
 
 ```
 git clone https://github.com/donislawdev/certdoctor
@@ -43,7 +37,7 @@ cd certdoctor
 CGO_ENABLED=0 go build ./cmd/certdoctor
 ```
 
-`CGO_ENABLED=0` daje tę samą statyczną binarkę, którą niosą wydania, tę, która działa bez zmian w obrazie Alpine.
+W PowerShellu najpierw ustaw zmienną w osobnej linii: `$env:CGO_ENABLED = "0"`, a potem `go build ./cmd/certdoctor`. `CGO_ENABLED=0` daje tę samą statyczną binarkę, którą niosą wydania, tę, która działa bez zmian w obrazie Alpine.
 
 ## Dalej
 

@@ -29,7 +29,7 @@ hero:
 run:
   eyebrow: Prawdziwy przebieg
   title: Najpierw przyczyna, potem polecenie dla każdego magazynu
-  text: "Strona, której certyfikatowi głównemu nie ufa żaden magazyn, sprawdzona na Windowsie z Gitem i sześcioma środowiskami Javy. Pierwsze zdanie nazywa przyczynę. Pod nim każdy magazyn ma własny wiersz, a każdy wiersz z odmową niesie polecenie, które dodałoby tam certyfikat główny, ze ścieżkami z tej maszyny. certdoctor wypisuje polecenia. Nigdy ich nie uruchamia."
+  text: "Strona, której certyfikatowi głównemu nie ufa żaden magazyn, sprawdzona na Windowsie z Gitem i ośmioma środowiskami Javy. Pierwsze zdanie nazywa przyczynę. Pod nim każdy magazyn ma własny wiersz, a każdy wiersz z odmową niesie polecenie, które dodałoby tam certyfikat główny, ze ścieżkami z tej maszyny. certdoctor wypisuje polecenia. Nigdy ich nie uruchamia."
   caption: Windows, fragment
   command: certdoctor https://untrusted-root.badssl.com/
   # Fragment prawdziwego przebiegu z 2026-11-12, wycięty linia po linii z tego, co wypisał.
