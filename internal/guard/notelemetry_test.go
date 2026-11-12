@@ -180,6 +180,21 @@ var chainBuilders = map[string]bool{
 
 const chainOffline = 0x00000004 | 0x00000100 | 0x00002000
 
+// rawSystemCalls make a system call by its number, which reaches a socket and
+// a connection past every name refusedNames reads. Added 2026-11-12 with the
+// first call of the kind in the tree.
+var rawSystemCalls = map[string]bool{
+	"syscall.Syscall": true, "syscall.Syscall6": true, "syscall.RawSyscall": true, "syscall.RawSyscall6": true,
+	"golang.org/x/sys/unix.Syscall": true, "golang.org/x/sys/unix.Syscall6": true,
+	"golang.org/x/sys/unix.RawSyscall": true, "golang.org/x/sys/unix.RawSyscall6": true,
+}
+
+// rawCallAllowed is the one number a raw system call may be made with, spelled
+// by its name: ioctl, which reads and sets a terminal's settings in
+// cmd/certdoctor/paste_unix.go (ADR143). Its number written as a number is
+// refused like any other - nobody reading it can tell which call it is.
+const rawCallAllowed = "syscall.SYS_IOCTL"
+
 // procedureLookups are the methods that find a procedure in a loaded library
 // by the name they are handed, and procedureAddresses the functions that do,
 // with where the name is among their arguments.
@@ -303,6 +318,7 @@ func checkWaysOut(files []sourceFile, names map[string]map[string]ast.Expr) []Vi
 		violations = append(violations, dotImportedWaysOut(sf)...)
 		violations = append(violations, refusedReferences(sf, paths)...)
 		violations = append(violations, chainFlagViolations(sf, paths)...)
+		violations = append(violations, rawCallViolations(sf, paths)...)
 		violations = append(violations, procedureViolations(sf)...)
 		violations = append(violations, requiredFieldViolations(sf, paths)...)
 		violations = append(violations, fixedWidenings(sf, paths, names[path.Dir(sf.rel)])...)
@@ -488,6 +504,30 @@ func chainFlagViolations(sf sourceFile, paths map[string]string) []Violation {
 			violations = append(violations, violationAt(sf, call, "%s builds a chain with flags that are not a "+
 				"constant carrying CACHE_ONLY_URL_RETRIEVAL, DISABLE_AUTH_ROOT_AUTO_UPDATE and DISABLE_AIA, "+
 				"so the chain may be fetched from the addresses its certificates name (ADR101)", sf.rel))
+		}
+		return true
+	})
+	return violations
+}
+
+// rawCallViolations are the uses of a raw system call other than a call whose
+// number is rawCallAllowed - a call by another number, and the function taken
+// as a value, whose calls nobody here can read.
+func rawCallViolations(sf sourceFile, paths map[string]string) []Violation {
+	allowed := map[ast.Node]bool{}
+	ast.Inspect(sf.file, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && len(call.Args) > 0 && spelled(call.Args[0], paths) == rawCallAllowed {
+			allowed[call.Fun] = true
+		}
+		return true
+	})
+	var violations []Violation
+	ast.Inspect(sf.file, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if ok && rawSystemCalls[spelled(sel, paths)] && !allowed[sel] {
+			violations = append(violations, violationAt(sf, sel, "%s makes a system call by its number with %s, "+
+				"which reaches a socket where no name is read - only ioctl, spelled %s, is let through (ADR143)",
+				sf.rel, spelled(sel, paths), rawCallAllowed))
 		}
 		return true
 	})

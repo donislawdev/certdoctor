@@ -36,6 +36,10 @@ var unsafeAllowlist = map[string]string{
 	// 2026-11-10, recorded with ADR122.
 	"cmd/certdoctor-gui/titlebar_windows.go": "DwmSetWindowAttribute takes the BOOL it sets on the window's title bar " +
 		"by address",
+	// The sixth, and the second that reads nothing of anybody else's: the
+	// owner's decision of 2026-11-12, recorded with ADR143.
+	"cmd/certdoctor/paste_unix.go": "ioctl reads a terminal's settings into a termios of this program's own and " +
+		"sets them from one, by address",
 }
 
 // unsafePackages are the imports able to read memory by address.

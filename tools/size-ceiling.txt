@@ -50,7 +50,7 @@
 # worst sample of every axis and how many stand in each band.
 
 # Lines of code.
-function                       82
+function                       77
 functions-near-ceiling          9
 test-function                 143
 test-functions-near-ceiling     4

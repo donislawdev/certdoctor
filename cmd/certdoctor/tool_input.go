@@ -98,10 +98,19 @@ func readInputStdin(env environment, tool spec.Tool, in spec.Input) ([]byte, *fa
 // ONLY A LINE IS READ THIS WAY. Pasting is the way that keeps a token out of
 // the shell's history - "echo token |" puts it there - and a line ends with
 // Enter, which nobody has to be told. Every input of the tools today is a line.
+//
+// A TERMINAL THAT CAN HAND OVER KEYS DOES (paste.go, ADR143): on Linux and
+// macOS the line mode cuts a long token or stops taking keys. Anywhere else,
+// and when the switch fails, the line is read in the line mode.
 func readPasted(env environment, tool spec.Tool, in spec.Input, terminal io.Reader) ([]byte, *fault) {
 	if in.Shape != spec.Line || terminal == nil {
 		return nil, configFault("%s tool %s reads its %s from standard input, and nothing is piped in. "+
 			"Pipe it in or name a file with --file", toolName, tool.ID, in.Name)
+	}
+	if env.keys != nil {
+		if keys, switched := env.keys(terminal); switched {
+			return readKeys(env, tool, in, keys)
+		}
 	}
 	fmt.Fprintf(env.stderr, "Paste the %s and press Enter:\n", in.Name)
 	line, err := bufio.NewReader(io.LimitReader(terminal, int64(in.MaxBytes)+2)).ReadBytes('\n')

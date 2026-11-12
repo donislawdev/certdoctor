@@ -3,6 +3,10 @@ package guard
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
+	"path"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -123,6 +127,39 @@ func TestATestThatTakesATemporaryDirectoryMayWrite(t *testing.T) {
 	requireNoViolations(t, checkWrites(allowed), "a test writing under its own temporary directory")
 }
 
+// TestATestMayOpenADeviceItNamesOutright is the narrowing of 2026-11-12, both
+// ways: a device written out under /dev/ is let through in a test, and every
+// other shape of path still is not - nor is a device in production code.
+func TestATestMayOpenADeviceItNamesOutright(t *testing.T) {
+	const opens = "package p\n\nimport \"os\"\n\nfunc f(dir, n string) {\n\t_, _ = os.OpenFile(%s, os.O_RDWR, 0)\n}\n"
+	for _, c := range []struct {
+		path   string
+		isTest bool
+		want   bool // a violation
+	}{
+		{`"/dev/ptmx"`, true, false},
+		{`"/dev/pts/" + n`, true, false},
+		{`"/dev/pts/" + n + "/x"`, true, false},
+		{`"/dev/../tmp/x"`, true, true},
+		{`"/devices/x"`, true, true},
+		{`"dev/x"`, true, true},
+		{`dir + "/dev/x"`, true, true},
+		{`n`, true, true},
+		{`"/dev/null"`, false, true},
+	} {
+		rel := "internal/adapter/store/planted.go"
+		if c.isTest {
+			rel = "internal/adapter/store/planted_test.go"
+		}
+		sf := sourceFrom(t, rel, fmt.Sprintf(opens, c.path))
+		sf.isTest = c.isTest
+		got := checkWrites(tree{modulePath: "github.com/donislawdev/certdoctor", files: []sourceFile{sf}})
+		if (len(got) > 0) != c.want {
+			t.Errorf("os.OpenFile(%s) in a test %v: %d violation(s), want a violation %v", c.path, c.isTest, len(got), c.want)
+		}
+	}
+}
+
 // checkWrites reports filesystem writes: any in production code outside the
 // allowlist, and any in a test that did not take a temporary directory.
 //
@@ -164,7 +201,7 @@ func checkWrites(tr tree) []Violation {
 					"os."+name)})
 				return true
 			}
-			if !takesTempDir {
+			if !takesTempDir && !devicePath(call) {
 				violations = append(violations, Violation{sf.rel, line, fmt.Sprintf(
 					"%q writes without taking a temporary directory - a test suite is the likeliest source of litter in the working tree",
 					"os."+name)})
@@ -173,6 +210,32 @@ func checkWrites(tr tree) []Violation {
 		})
 	}
 	return sortViolations(violations)
+}
+
+// devicePath reports whether a call's path is written out under /dev/, alone
+// or as the start of a concatenation: a device a test opens, which leaves
+// nothing in the working tree. The owner's decision of 2026-11-12, for the
+// pseudo-terminal ADR143 is tested on - before it, opening /dev/ptmx read as
+// litter. A path computed from anything else is still reported, and so is one
+// that leaves /dev/ through "..".
+func devicePath(call *ast.CallExpr) bool {
+	if len(call.Args) == 0 {
+		return false
+	}
+	start := call.Args[0]
+	for {
+		sum, ok := start.(*ast.BinaryExpr)
+		if !ok || sum.Op != token.ADD {
+			break
+		}
+		start = sum.X
+	}
+	lit, ok := start.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return false
+	}
+	p, err := strconv.Unquote(lit.Value)
+	return err == nil && strings.HasPrefix(path.Clean(p)+"/", "/dev/")
 }
 
 // osCallName returns the function name of a call of the form os.Something.

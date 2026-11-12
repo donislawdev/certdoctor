@@ -451,6 +451,9 @@ certdoctor tool jwt --json < token.txt
 
 A token is never taken as an argument: an argument stays in your shell's history and in the list
 of running programs. `Bearer` in front and quotes around it are taken off, and the output says so.
+On Linux and macOS nothing appears while you paste: the terminal's own line handling cuts a long
+line or stops taking keys, so the token is read key by key, and after Enter the command says how
+many characters it read.
 The command ends with `0` whenever it read the token, whatever the token says, and with `3` when
 what it was given is not a token it can read.
 

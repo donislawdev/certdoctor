@@ -136,17 +136,8 @@ func liveEnvironment() environment {
 			return file.Guarded(source, resolvePath, limit, nil)
 		},
 		stdin: liveStandardInput,
-		// WHERE THIS ACCOUNT'S OWN FILES ARE, asked once and only ever compared
-		// against a store path. An error is not fatal and is not reported as one:
-		// an empty answer makes L5 assume a store is shared, which is the safe
-		// direction for a command somebody is about to run.
-		home: func() string {
-			dir, err := os.UserHomeDir()
-			if err != nil {
-				return ""
-			}
-			return dir
-		}(),
+		keys:  liveKeys,
+		home:  homeDirectory(),
 		platform: report.Platform{
 			OS:   runtime.GOOS,
 			Arch: runtime.GOARCH,
@@ -550,15 +541,18 @@ func liveTrustProbes(addressed bool) map[string]trust.Probe {
 	return probes
 }
 
-// accountHome is the home directory the user database gives the account this
-// program runs as - the last place curl's tool looks for its configuration file
-// outside Windows, getpwuid(geteuid()) in src/tool_findfile.c of curl 8.21.0.
-//
-// IT IS ASKED HERE AND HANDED IN, like PATH and git's environment, so the
-// probe reads nothing of its own. Not established is an empty answer, and that
-// place is then not asked: a release build has no cgo, so os/user reads
-// /etc/passwd alone, and an account known only to a directory service is not in
-// it. The curl descriptor names that gap.
+// homeDirectory is where this account's own files are, asked once and only
+// ever compared against a store path. An error is not fatal and is not
+// reported as one: an empty answer makes L5 assume a store is shared, which is
+// the safe direction for a command somebody is about to run.
+func homeDirectory() string {
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
 // liveStandardInput hands over standard input for --from - and for a tool.
 //
 // A CHARACTER DEVICE IS ANSWERED WITH errNothingPiped, which is how a console
@@ -580,6 +574,15 @@ func liveStandardInput() (io.Reader, error) {
 	return os.Stdin, nil
 }
 
+// accountHome is the home directory the user database gives the account this
+// program runs as - the last place curl's tool looks for its configuration file
+// outside Windows, getpwuid(geteuid()) in src/tool_findfile.c of curl 8.21.0.
+//
+// IT IS ASKED HERE AND HANDED IN, like PATH and git's environment, so the
+// probe reads nothing of its own. Not established is an empty answer, and that
+// place is then not asked: a release build has no cgo, so os/user reads
+// /etc/passwd alone, and an account known only to a directory service is not in
+// it. The curl descriptor names that gap.
 func accountHome() string {
 	if runtime.GOOS == "windows" {
 		return ""

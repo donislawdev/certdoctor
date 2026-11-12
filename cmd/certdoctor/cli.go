@@ -82,6 +82,12 @@ type environment struct {
 	// terminal beside it, which a tool reads one pasted line from (ADR141
 	// point 2). A nil reader beside the error is a build with no terminal.
 	stdin func() (io.Reader, error)
+	// keys switches the terminal stdin handed over to hand over every key as
+	// it is pressed, without showing it, for a pasted line longer than the
+	// terminal's line mode takes (ADR143). It answers false for anything that is
+	// not such a terminal - and on Windows, whose console takes a long line, for
+	// everything. Nil is a build that never switches.
+	keys func(io.Reader) (keyTerminal, bool)
 
 	// nameservers enumerates the resolvers this machine is configured to use.
 	//
