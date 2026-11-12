@@ -254,5 +254,14 @@
       "name": "Trust matrix",
       "summary": "which runtimes on this machine trust that chain, one row per installed instance"
     }
+  ],
+  "stores": [
+    "system-store",
+    "git",
+    "java",
+    "curl",
+    "node",
+    "python",
+    "pip"
   ]
 }

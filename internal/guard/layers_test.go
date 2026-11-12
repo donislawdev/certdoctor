@@ -104,13 +104,15 @@ var layerMap = []layerRule{
 	},
 	{
 		// The writer of the website's facts. It prints what the program says
-		// about itself - switches, exit codes, layers, statuses and the
-		// variables L0 reads - and runs none of it, so it sees those five
-		// registries and the module root for the version, and nothing that
-		// connects, reads the machine or renders.
+		// about itself - switches, exit codes, layers, statuses, the
+		// variables L0 reads and the trust stores L5 asks - and runs none of
+		// it, so it sees those six registries and the module root for the
+		// version, and nothing that connects, reads the machine or renders.
+		// The trust layer is a registry here only: it asks a store through
+		// a probe the caller hands it, and this hands it none.
 		location: "cmd/sitefacts/",
 		mayImportBelow: []string{"internal/core/switches/", "internal/core/exitcode/", "internal/core/layer/",
-			"internal/core/status/", "internal/core/machine/"},
+			"internal/core/status/", "internal/core/machine/", "internal/core/trust/"},
 		mayImportRoot: true,
 	},
 	{

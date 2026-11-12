@@ -11,7 +11,7 @@ program or from the files the release reads, and never writes by hand:
 
 | What | From | Kept true by |
 |---|---|---|
-| every switch, its group and its summary as `--help` prints it, every exit code with its name and meaning, the six layers, the four statuses, every variable L0 reads, and the version | `data/facts/certdoctor.json` | `go test ./cmd/sitefacts`, in CI |
+| every switch, its group and its summary as `--help` prints it, every exit code with its name and meaning, the six layers, the four statuses, every variable L0 reads, every family of trust store L5 asks, and the version | `data/facts/certdoctor.json` | `go test ./cmd/sitefacts`, in CI |
 | the archives of a release | the download tables of `../README.md`, mounted | `internal/guard` holds the README to the release scripts |
 | the commands that check a download | the section of `../README.md` that shows them | the release note and the guards read the same section |
 | the oldest Go a build from source takes | `../go.mod`, mounted | the module itself |
@@ -28,6 +28,22 @@ run it from another shell there.
 
 The excerpt of a real run on the home page, `assets/runs/untrusted-root-windows.txt`, is cut line for
 line from what the program printed, with `...` where lines were left out.
+
+## The picture a shared link shows
+
+One picture, 1280 by 640, for the site's `og:image` and for the repository's social preview on
+GitHub. `../assets/social-preview/social_preview.py` draws it, and the site reads it through a mount
+in `hugo.toml`. It names every trust store the program asks, from the facts, and refuses to draw
+when a store has no name in its `LABELS`. The picture carries the stores it names and the digest of
+the script that drew it, and `go test ./cmd/sitefacts` fails when either is no longer true. After the
+facts change, or after any edit to the script:
+
+```
+python assets/social-preview/social_preview.py
+```
+
+Then look at the picture, commit it, and upload it to GitHub by hand under Settings, General, Social
+preview. GitHub keeps its own copy, and nothing here writes to it or compares with it.
 
 ## Building it
 

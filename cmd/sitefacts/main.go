@@ -2,9 +2,10 @@
 // as one JSON document on standard output.
 //
 // It is a build tool and never ships. The website under web/ shows every
-// switch, exit code, layer, status and variable of the program, and it reads
-// them from web/data/facts/certdoctor.json instead of saying them again by
-// hand, so a page cannot name a switch the program no longer has. This writes
+// switch, exit code, layer, status and variable of the program, and the
+// picture a shared link shows names every trust store it asks. Both read them
+// from web/data/facts/certdoctor.json instead of saying them again by hand, so
+// a page cannot name a switch the program no longer has. This writes
 // that file, and its test fails when the file says something the program no
 // longer says.
 //
@@ -29,6 +30,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/machine"
 	"github.com/donislawdev/certdoctor/internal/core/status"
 	"github.com/donislawdev/certdoctor/internal/core/switches"
+	"github.com/donislawdev/certdoctor/internal/core/trust"
 )
 
 func main() {
@@ -47,6 +49,9 @@ type facts struct {
 	Groups    []group     `json:"groups"`
 	ExitCodes []exitCode  `json:"exitCodes"`
 	Layers    []layerFact `json:"layers"`
+	// Stores are the families of trust store the trust matrix asks, by the
+	// name a report gives them, in the order it asks them.
+	Stores []string `json:"stores"`
 }
 
 type group struct {
@@ -104,6 +109,9 @@ func collect() facts {
 	}
 	for _, id := range layer.All {
 		f.Layers = append(f.Layers, layerFact{id.String(), id.Name(), id.Summary()})
+	}
+	for _, d := range trust.All() {
+		f.Stores = append(f.Stores, d.Runtime)
 	}
 	return f
 }

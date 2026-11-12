@@ -93,7 +93,7 @@ other = "Poradniki"
 other = "Zaufanie"
 
 [picture_alt]
-other = "certdoctor: dlaczego ta maszyna nie łączy się z tym adresem i jakie polecenie naprawia każdy magazyn zaufania"
+other = "certdoctor - przeglądarka się łączy, twój program nie: prawdziwy przebieg, w którym magazyn systemowy, git i curl ufają stronie, dwie Javy i Python jej odmawiają, a obok polecenie keytool, które naprawia Javę"
 
 [not_found_title]
 other = "Nie ma tu strony"

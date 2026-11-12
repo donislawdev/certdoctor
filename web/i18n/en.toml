@@ -97,7 +97,7 @@ other = "Fix guides"
 other = "Trust"
 
 [picture_alt]
-other = "certdoctor: why this machine cannot connect to that URL, and the command that fixes each trust store"
+other = "certdoctor - the browser connects, your program does not: a real run where the system store, git and curl trust the site, two Java runtimes and Python refuse it, and the keytool command that fixes Java"
 
 [not_found_title]
 other = "There is no page here"
