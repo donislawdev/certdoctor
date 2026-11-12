@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	core "github.com/donislawdev/certdoctor/internal/core/handshake"
 )
 
@@ -424,9 +425,11 @@ func TestARefusalByOurOwnRuleNeverReachesTheNetwork(t *testing.T) {
 	}
 }
 
-// TestAConnectionThatCannotOpenIsNotDiagnosedTwice covers the sentinel that
-// exists so one fault is not counted as two.
-func TestAConnectionThatCannotOpenIsNotDiagnosedTwice(t *testing.T) {
+// TestAConnectionThatCannotOpenIsNamedTheWayL3NamesIt covers core.NotOpened.
+// L4 dials only addresses L3 reached, so a connection that does not open here
+// is a second one failing - and the words for it are L3's own mapping of the
+// same error, never a sentence sending the reader to an L3 that connected.
+func TestAConnectionThatCannotOpenIsNamedTheWayL3NamesIt(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Skipf("NOT CHECKED: this machine would not lend a loopback port (%v).", err)
@@ -440,8 +443,20 @@ func TestAConnectionThatCannotOpenIsNotDiagnosedTwice(t *testing.T) {
 
 	_, shakeErr := Shake(func(string) error { return nil })(
 		context.Background(), host, number, "partner.test")
-	if !errors.Is(shakeErr, core.ErrNotReached) {
-		t.Errorf("a port nothing listens on came back as %v, and L3 has already reported why", shakeErr)
+	var unopened core.NotOpened
+	if !errors.As(shakeErr, &unopened) {
+		t.Fatalf("a port nothing listens on came back as %v, not as a connection that did not open", shakeErr)
+	}
+
+	// THE SAME ERROR, NAMED BY THE CONNECTING ADAPTER: one dial of our own to
+	// the same closed port, put through L3's mapping.
+	var dialer net.Dialer
+	_, dialErr := dialer.DialContext(context.Background(), "tcp", net.JoinHostPort(host, port))
+	if dialErr == nil {
+		t.Skip("NOT CHECKED: something started listening on the closed port in between.")
+	}
+	if want := tcp.Classify(dialErr).Error(); unopened.Words != want {
+		t.Errorf("the handshake named a closed port %q, and the connecting layer names it %q", unopened.Words, want)
 	}
 }
 

@@ -412,18 +412,20 @@ func TestTheRowShownAndTheChainJudgedComeFromOneAddress(t *testing.T) {
 // TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields is the half of the
 // contract easiest to break while making the other half work.
 func TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields(t *testing.T) {
-	// THE STATUS IS PER CASE AND ADR58 IS WHY. Four of these are a server, or the
-	// network in front of it, answering or failing to. The fifth is OUR OWN
-	// allowed set refusing, so no handshake was ever attempted - and FAIL there
-	// says every server refused, about servers nothing spoke to. The sixth is our
-	// own TLS library ending the handshake - ADR129, the same argument.
+	// THE STATUS IS PER CASE AND ADR58 IS WHY. Three of these are a server, or
+	// the network in front of it, answering a handshake or failing to. One is
+	// OUR OWN allowed set refusing, so no handshake was ever attempted - and FAIL
+	// there says every server refused, about servers nothing spoke to. One is our
+	// own TLS library ending the handshake - ADR129, the same argument. And one
+	// is the connection made for the handshake not opening on an address L3 had
+	// reached - NotOpened, the same argument met from the wire.
 	for _, tc := range []struct {
 		err        error
 		wantStatus status.Status
 	}{
 		{ErrRejected, status.Fail},
 		{ErrTimeout, status.Fail},
-		{ErrNotReached, status.Fail},
+		{NotOpened{Words: "the connection was refused"}, status.Unknown},
 		{ErrRefusedByRule, status.Unknown},
 		{errors.New("nobody wrote a case for this"), status.Fail},
 		{EndedHere{Words: "x509: negative serial number"}, status.Unknown},
@@ -453,6 +455,56 @@ func TestNoHandshakeAtAllIsAFailureAndCarriesNoNegotiatedFields(t *testing.T) {
 		if broken := got.Findings[0].Breach(); broken != "" {
 			t.Errorf("%v produced a row its own contract refuses: %s", err, broken)
 		}
+	}
+}
+
+// TestASecondConnectionThatDoesNotOpenIsNotBlamedOnTheServerOrOnL3 is the case
+// measured on untrusted-root.badssl.com on 2026-11-12: L3 connected, the
+// connection made for the handshake did not open, and the row said L3 had
+// already reported why while the layer failed the server.
+func TestASecondConnectionThatDoesNotOpenIsNotBlamedOnTheServerOrOnL3(t *testing.T) {
+	const words = "nothing answered before the deadline"
+	unopened := func(context.Context, string, int, string) (Presented, error) {
+		return Presented{}, NotOpened{Words: words}
+	}
+
+	got := Ask(context.Background(), workingInput(unopened))
+	if got.Status != status.Unknown || got.Reason != status.ReasonTransportError {
+		t.Errorf("no handshake was started, and the layer said %s/%s rather than unknown/transport_error",
+			got.Status, got.Reason)
+	}
+	for _, want := range []string{"layer L3 connected", words, "running the diagnosis again"} {
+		if !strings.Contains(got.Detail, want) {
+			t.Errorf("the layer's line %q does not say %q", got.Detail, want)
+		}
+	}
+	rows := rowsOf(got)
+	if len(rows) != 1 {
+		t.Fatalf("one address produced %d rows", len(rows))
+	}
+	if !strings.Contains(rows[0].NotCompleted, "layer L3 connected") || !strings.Contains(rows[0].NotCompleted, words) {
+		t.Errorf("the row says %q, which neither credits L3's connection nor says what happened to this one",
+			rows[0].NotCompleted)
+	}
+	if strings.Contains(rows[0].NotCompleted, "already reported") {
+		t.Errorf("the row still sends the reader to L3, which reported a connection: %q", rows[0].NotCompleted)
+	}
+
+	// A HANDSHAKE ON ANOTHER ADDRESS IS STILL AN ANSWER, and the address whose
+	// second connection failed must not take it away: the layer grades what
+	// completed, and the row says what happened on the other.
+	whole := shakeReturning(completeChain("aa"))
+	mixed := workingInput(func(ctx context.Context, address string, port int, name string) (Presented, error) {
+		if address == "192.0.2.1" {
+			return whole(ctx, address, port, name)
+		}
+		return unopened(ctx, address, port, name)
+	})
+	mixed.Addresses = func() []string { return []string{"192.0.2.1", "192.0.2.2"} }
+	got = Ask(context.Background(), mixed)
+	if got.Status != status.Pass {
+		t.Errorf("one address completed a whole chain and the other's second connection failed, and the layer said %s: %s",
+			got.Status, got.Detail)
 	}
 }
 

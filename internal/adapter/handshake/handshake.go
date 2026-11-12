@@ -58,10 +58,11 @@ func Shake(mayReach func(address string) error) core.Shake {
 		var dialer net.Dialer
 		conn, err := dialer.DialContext(ctx, "tcp", target)
 		if err != nil {
-			// NOT DIAGNOSED HERE. L3 has already tried this address and reported
-			// why it would not open, and naming the reason again would count one
-			// fault twice in a report a person reads top to bottom.
-			return core.Presented{}, core.ErrNotReached
+			// L3 CONNECTED TO THIS ADDRESS, so this is a second connection failing
+			// - core.NotOpened. It is named by the connecting adapter's own mapping,
+			// so the two layers say one thing about one kind of event, and by
+			// error value rather than by the system's localised text.
+			return core.Presented{}, core.NotOpened{Words: tcp.Classify(err).Error()}
 		}
 		// The connection is closed whatever happens next. Nothing is ever sent
 		// over it beyond the handshake itself.

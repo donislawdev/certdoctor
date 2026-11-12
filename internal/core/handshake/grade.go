@@ -46,7 +46,7 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	others := 0
 
 	// THE OUTCOMES NO SERVER CAN BE BLAMED FOR, counted in the same walk as
-	// everything else here - ADR58 and ADR129.
+	// everything else here - ADR58, ADR129 and NotOpened.
 	var missed unheard
 
 	// EVERY LEAF IS ASKED ABOUT THE NAME, NOT ONLY THE CARRIER'S - ADR106. Each
@@ -126,7 +126,8 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 }
 
 // unheard counts, by reason, the addresses that gave this layer no answer it
-// can hold against a server - and every one of the reasons is on our side.
+// can hold against a server: three of the reasons are on our side, and the
+// fourth is a handshake the wire never let start.
 type unheard struct {
 	// skipped and refused NEVER LEFT THIS MACHINE - ADR58: this layer running
 	// out of its own budget before an address came up, and our own allowed set
@@ -137,16 +138,20 @@ type unheard struct {
 	// the layer's line quotes.
 	ended int
 	first EndedHere
+	// unopened ACCEPTED L3's CONNECTION AND NOT THIS LAYER'S - NotOpened. No
+	// handshake was started with them, so nothing they said can be held against
+	// their TLS. firstUnopened is the first such address's account.
+	unopened      int
+	firstUnopened NotOpened
 }
 
 // count records one address that did not complete a handshake.
 //
-// ErrNotReached is deliberately NOT counted. L4 is handed only the addresses L3
-// connected to, so it cannot ordinarily see one - and if it ever does, L3 tried
-// and failed, which is a fact about the network rather than about our budget.
-// ErrRejected and ErrTimeout are the servers' and the network's answers.
+// ErrRejected and ErrTimeout are NOT counted: they are what the server, or the
+// network in front of it, answered to a handshake this layer started.
 func (u *unheard) count(err error) {
 	var ended EndedHere
+	var unopened NotOpened
 	switch {
 	case errors.Is(err, errNotAttempted):
 		u.skipped++
@@ -157,6 +162,11 @@ func (u *unheard) count(err error) {
 			u.first = ended
 		}
 		u.ended++
+	case errors.As(err, &unopened):
+		if u.unopened == 0 {
+			u.firstUnopened = unopened
+		}
+		u.unopened++
 	}
 }
 
@@ -180,6 +190,14 @@ func (u unheard) settle(graded *Result, addresses int) bool {
 		graded.Status = status.Unknown
 		graded.Reason = status.ReasonUndetermined
 		graded.Detail = endedDetail(u.ended, addresses, u.first.Words)
+	case u.unopened > 0:
+		// NO HANDSHAKE WAS STARTED WITH THESE ADDRESSES - NotOpened. The same
+		// argument as ADR58: a verdict against a server's TLS requires that this
+		// layer got to ask, and here it did not. The reason is the wire's, which is
+		// what transport_error says.
+		graded.Status = status.Unknown
+		graded.Reason = status.ReasonTransportError
+		graded.Detail = unopenedDetail(u.unopened, addresses, u.firstUnopened.Words)
 	default:
 		return false
 	}
@@ -424,6 +442,7 @@ func certificatesFor(chain []Certificate) []report.Certificate {
 // diagnoses, because each of those sends a person somewhere particular.
 func reasonFor(err error) string {
 	var ended EndedHere
+	var unopened NotOpened
 	switch {
 	case err == nil:
 		return "the handshake did not complete and no reason was given, which is a defect on our side"
@@ -431,8 +450,8 @@ func reasonFor(err error) string {
 		return "there was no budget left to try this address"
 	case errors.Is(err, ErrRefusedByRule):
 		return "this address is not in the set of places this run may connect to"
-	case errors.Is(err, ErrNotReached):
-		return "the connection could not be opened, which layer L3 has already reported"
+	case errors.As(err, &unopened):
+		return "layer L3 connected to this address, and " + unopened.Error()
 	case errors.Is(err, ErrTimeout):
 		return "nothing answered before the deadline"
 	case errors.As(err, &ended):
@@ -454,6 +473,20 @@ const undecided = ", so whether another client would complete it cannot be told 
 func endedDetail(ended, total int, words string) string {
 	return fmt.Sprintf("this program's own TLS library ended the handshake with %d of %d address(es) itself (%s)",
 		ended, total, words) + undecided
+}
+
+// unopenedDetail is the layer's line when no handshake completed and the
+// connection made for it did not open on at least one address L3 had reached -
+// NotOpened.
+//
+// IT IS WRITTEN TO STAND AT THE TOP OF THE REPORT, where the verdict quotes it,
+// so it names layer L3 rather than "this layer". The advice is the one thing a
+// reader can do about a moment on the wire, and the first run that met this
+// case got its answer on the second.
+func unopenedDetail(unopened, total int, words string) string {
+	return fmt.Sprintf("no TLS handshake could start with %d of %d address(es): layer L3 connected to them, "+
+		"and the second connection made for the handshake did not open (%s) - so what the server presents "+
+		"was not established, and running the diagnosis again may get further", unopened, total, words)
 }
 
 // summaryFor is the sentence a surface prints when it has no special handling

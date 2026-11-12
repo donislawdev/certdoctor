@@ -107,7 +107,9 @@ func TestFailureNamesWhatHappenedRatherThanGuessing(t *testing.T) {
 	if dialErr == nil {
 		t.Skip("NOT CHECKED: something answered on a port that was just closed, so there was no refusal to map.")
 	}
-	if got := failure(dialErr); !errors.Is(got, coretcp.ErrRefused) {
+	// ASKED THROUGH Classify, the door L4's handshake names its own failed
+	// connection by - which is failure itself, so this one call holds both.
+	if got := Classify(dialErr); !errors.Is(got, coretcp.ErrRefused) {
 		t.Errorf("a refused connection was mapped to %v - the commonest case in this layer, named wrongly", got)
 	}
 

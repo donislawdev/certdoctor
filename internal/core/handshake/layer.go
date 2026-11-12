@@ -54,9 +54,6 @@ var (
 	// ErrRefusedByRule - the allowed set refused this address, so nothing was
 	// sent. A fact about us, never about their network.
 	ErrRefusedByRule = errors.New("this address is not in the set of places this run may connect to")
-	// ErrNotReached - the connection underneath never opened. L3 has already
-	// reported why, and repeating its diagnosis here would count one fault twice.
-	ErrNotReached = errors.New("the connection could not be opened")
 	// ErrRejected - the connection opened and the server would not complete a
 	// handshake on it. A fact about the server, not about its certificates.
 	ErrRejected = errors.New("the server did not complete a TLS handshake")
@@ -87,6 +84,30 @@ type EndedHere struct {
 
 func (e EndedHere) Error() string {
 	return "this program's own TLS library ended the handshake itself (" + e.Words + ")"
+}
+
+// NotOpened - THE CONNECTION THIS LAYER OPENS FOR THE HANDSHAKE DID NOT OPEN,
+// although L3's connection to the same address did.
+//
+// IT IS NEVER L3's FAILURE REPEATED, and the sentinel this replaced said it
+// was. This layer is handed only the addresses L3 connected to, so a
+// connection that does not open here is a second one failing moments after a
+// first succeeded. Measured 2026-11-12 on untrusted-root.badssl.com: L3
+// connected in 3.2 s, the handshake's own connection did not open, and the row
+// said "the connection could not be opened, which layer L3 has already
+// reported" under an L3 that had reported a connection - while the top of the
+// report blamed the server for a handshake nothing had started.
+//
+// IT IS A TYPE RATHER THAN A SENTINEL because it carries what happened. Words
+// is how the connecting adapter names the failure - refused, nothing answered,
+// reset, no route - in its own sentences, decided by error value and never by
+// the operating system's text, which is localised (inviolable rule 19).
+type NotOpened struct {
+	Words string
+}
+
+func (n NotOpened) Error() string {
+	return "the second connection made for the handshake did not open (" + n.Words + ")"
 }
 
 // Certificate is one certificate as this program reports it.

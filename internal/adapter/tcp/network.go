@@ -96,6 +96,17 @@ func failure(err error) error {
 	return tcp.ErrReset
 }
 
+// Classify names a failed dial with L3's sentinels, for the one other place
+// that dials an address L3 reached: L4's handshake, whose own connection can
+// fail moments after L3's opened.
+//
+// IT IS failure ITSELF, EXPORTED, rather than a second mapping. Two copies of
+// the errno table would name one event two ways, and a copy is the measured
+// shape of OBS50.
+func Classify(err error) error {
+	return failure(err)
+}
+
 // Target is the address L3 will dial, spelled the one way both the allowed set
 // and the dialler will see it.
 //

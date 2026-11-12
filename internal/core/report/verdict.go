@@ -129,7 +129,7 @@ func codeFor(counts map[status.Status]int, total int) exitcode.Code {
 
 // sentenceFor picks the verdict sentence and the layer it speaks about.
 //
-// Six shapes, in this order:
+// Seven shapes, in this order:
 //
 //   - nothing assessed: the settled sentence, because "nothing could be
 //     assessed" reads better than "6 of 6 could not be assessed" and says the
@@ -145,6 +145,9 @@ func codeFor(counts map[status.Status]int, total int) exitcode.Code {
 //   - no failure, but this program's own TLS library ended the handshakes it
 //     could not complete: said out loud, because nothing about TLS was judged.
 //     See handshakeEndedHere.
+//   - no failure, but the connection made for the handshake did not open on
+//     an address L3 had reached: said out loud for the same reason. See
+//     handshakeNotOpened.
 //   - no failure, but the platform's own store could not judge the chain: said
 //     out loud too, because every program without a store of its own judges
 //     by that one. See platformStoreUndetermined.
@@ -178,6 +181,9 @@ func sentenceFor(results []LayerResult, counts map[status.Status]int) (string, l
 		return everythingAssessedPassed + ", but " + demand + tail(counts, total, false), about
 	}
 	if why, about, ok := handshakeEndedHere(results); ok {
+		return everythingAssessedPassed + ", but " + why + tail(counts, total, false), about
+	}
+	if why, about, ok := handshakeNotOpened(results); ok {
 		return everythingAssessedPassed + ", but " + why + tail(counts, total, false), about
 	}
 	if why, about, ok := platformStoreUndetermined(results); ok {
@@ -419,6 +425,29 @@ func handshakeEndedHere(results []LayerResult) (string, layer.ID, bool) {
 	for _, r := range results {
 		if r.ID == layer.TLS && r.Status == status.Unknown &&
 			r.Reason == status.ReasonUndetermined && r.Detail != "" {
+			return period(r.Detail), r.ID, true
+		}
+	}
+	return "", "", false
+}
+
+// handshakeNotOpened returns L4's own account of addresses L3 connected to and
+// the connection made for the handshake did not reach.
+//
+// MEASURED 2026-11-12 ON untrusted-root.badssl.com: L3 connected, the second
+// connection did not open, and the top line read "None of the 1 address(es)
+// completed a TLS handshake" with the exit code of a diagnosis, about a server
+// that had accepted a connection seconds before. With L4 now unknown, the same
+// run would otherwise read "Everything assessed passed" over a layer that
+// assessed nothing about TLS - handshakeEndedHere's argument, met from the wire.
+//
+// A RUNG OF ITS OWN BESIDE THAT ONE, NOT A WIDER CONDITION IN IT: the two are
+// different facts, and each is recognised by the reason L4 gives it alone -
+// transport_error for this, undetermined for that.
+func handshakeNotOpened(results []LayerResult) (string, layer.ID, bool) {
+	for _, r := range results {
+		if r.ID == layer.TLS && r.Status == status.Unknown &&
+			r.Reason == status.ReasonTransportError && r.Detail != "" {
 			return period(r.Detail), r.ID, true
 		}
 	}

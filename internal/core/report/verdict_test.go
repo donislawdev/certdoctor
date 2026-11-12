@@ -114,7 +114,14 @@ const (
 	notFetched      = "the issuer this chain needs is on this machine's copy of Microsoft's root program list and is not installed yet - Windows fetches such a root when it first needs one and this program does not, so whether this store would trust the chain is undetermined"
 	onSchannel      = "this build uses schannel, which reads the platform store rather than a file - the system-store probe answers for it"
 	l4Ended         = "this program's own TLS library ended the handshake with 1 of 1 address(es) itself (tls: failed to parse certificate from server: x509: negative serial number), so whether another client would complete it cannot be told here"
+	l4NotOpened     = "no TLS handshake could start with 1 of 1 address(es): layer L3 connected to them, and the second connection made for the handshake did not open (nothing answered before the deadline) - so what the server presents was not established, and running the diagnosis again may get further"
 )
+
+// notOpened is L4 when the connection made for the handshake did not open on
+// the one address L3 reached - handshake.NotOpened.
+func notOpened() LayerResult {
+	return LayerResult{ID: layer.TLS, Status: status.Unknown, Reason: status.ReasonTransportError, Detail: l4NotOpened}
+}
 
 // endedHere is L4 when this program's own TLS library ended every handshake
 // it could not complete - ADR129.
@@ -495,6 +502,21 @@ var causeScenarios = []struct {
 		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
 			{ID: layer.Proxy, Status: status.Unknown, Reason: status.ReasonCredentialsRequired, Detail: wantsCreds},
 			pass(layer.TCP), endedHere(), row(layer.TrustMatrix, status.Unknown, "no certificate from the server reached this program")},
+		about: layer.Proxy,
+		want:  "Everything assessed passed, but " + wantsCreds + ". 3 of 6 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "the second connection made for the handshake did not open, measured on untrusted-root.badssl.com 2026-11-12: the top line says so instead of blaming the server",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution), pass(layer.Proxy), pass(layer.TCP),
+			notOpened(), row(layer.TrustMatrix, status.Unknown, "no certificate from the server reached this program")},
+		about: layer.TLS,
+		want:  "Everything assessed passed, but " + l4NotOpened + ". 2 of 6 diagnostic layers could not be assessed.",
+	},
+	{
+		name: "the proxy wants credentials AND the handshake's connection did not open: one but, the proxy's first in layer order",
+		rows: []LayerResult{pass(layer.Context), pass(layer.Resolution),
+			{ID: layer.Proxy, Status: status.Unknown, Reason: status.ReasonCredentialsRequired, Detail: wantsCreds},
+			pass(layer.TCP), notOpened(), row(layer.TrustMatrix, status.Unknown, "no certificate from the server reached this program")},
 		about: layer.Proxy,
 		want:  "Everything assessed passed, but " + wantsCreds + ". 3 of 6 diagnostic layers could not be assessed.",
 	},
