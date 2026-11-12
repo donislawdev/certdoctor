@@ -41,8 +41,9 @@ var sizes = []fyne.Size{
 // minimum of 980: the report with the trust matrix needed 988, which nobody
 // had seen on the picture.
 //
-// What it does not see: height, and words cut short inside a part that clips
-// them on purpose - a clipped title asks for no width by design.
+// What it does not see: words cut short inside a part that clips them on
+// purpose - a clipped title asks for no width by design. Height is the next
+// test's.
 func TestEveryScreenFitsItsWindow(t *testing.T) {
 	newApp(t)
 	for _, s := range everyScreen(t) {
@@ -80,6 +81,44 @@ func TestEveryScreenLeadsToGitHubAndDonate(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestEveryScreenFitsItsWindowHeight is the other half since the report stopped
+// scrolling as one (OBS218 b): its title, actions and verdict stand outside any
+// scroll, so a verdict too long for the window would make the screen taller
+// than the window, and the toolkit would either grow the window past its
+// minimum or cut the bottom of the screen off.
+func TestEveryScreenFitsItsWindowHeight(t *testing.T) {
+	newApp(t)
+	for _, s := range everyScreen(t) {
+		for _, size := range sizes {
+			if need := heightNeeded(s.build(), size); need > size.Height {
+				t.Errorf("%s at %v asks for %.1f of height", s.name, size, need)
+			}
+		}
+	}
+}
+
+// TestTheHeightCheckCanFail lays the report out in a window far shorter than
+// any the window allows, where the verdict alone does not fit.
+func TestTheHeightCheckCanFail(t *testing.T) {
+	newApp(t)
+	short := fyne.NewSize(look.WindowMinWidth, look.WindowMinHeight/4)
+	report := fixture(t, "untrusted-root.json")
+	o, _ := Report(icon(t), report, len(report.Layers)-1, 0)
+	if need := heightNeeded(o, short); need <= short.Height {
+		t.Fatalf("the report at %v asks for only %.1f - the check cannot tell a screen that does not fit", short, need)
+	}
+}
+
+// heightNeeded is how tall the content asks to be once laid out at size.
+func heightNeeded(content fyne.CanvasObject, size fyne.Size) float32 {
+	w := test.NewWindow(content)
+	defer w.Close()
+	w.SetPadded(false)
+	w.Resize(size)
+	w.Resize(size)
+	return content.MinSize().Height
 }
 
 // widthNeeded is how wide the content asks to be once laid out at size.

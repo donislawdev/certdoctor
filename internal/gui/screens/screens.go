@@ -176,9 +176,10 @@ type ReportView struct {
 	rail   *parts.Rail
 	shown  *fyne.Container
 	report model.Report
-	// pages is each layer's page, made the first time it is chosen and kept,
-	// so a command opened in one layer is still open on coming back to it.
-	pages map[int]fyne.CanvasObject
+	// pages is each layer's page in its own scroll, made the first time the
+	// layer is chosen and kept, so a command opened in one layer is still
+	// open, and the page still where it was scrolled to, on coming back.
+	pages map[int]*container.Scroll
 }
 
 // Chosen is the layer the screen shows.
@@ -188,17 +189,32 @@ func (v *ReportView) Chosen() int { return v.rail.Chosen() }
 func (v *ReportView) show(i int) {
 	page, ok := v.pages[i]
 	if !ok {
-		page = layerDetail(v.report.Layers[i], -1)
+		page = layerPage(v.report.Layers[i], -1)
 		v.pages[i] = page
 	}
 	v.shown.Objects = []fyne.CanvasObject{page}
 	v.shown.Refresh()
 }
 
+// layerPage is a layer's page as the screen scrolls it. The room below the
+// last card and right of the cards is inside the scroll, so the page ends
+// clear of the window's edge and the scroll bar stands in that room rather
+// than over a card.
+func layerPage(l model.Layer, open int) *container.Scroll {
+	return container.NewVScroll(parts.Inset(0, 0, look.InsetPage, look.InsetPage, layerDetail(l, open)))
+}
+
 // Report is the screen after a run: what was diagnosed and the actions on
 // it, the verdict, then the layers down the side in the report's order and
 // the chosen layer beside them. selected is the layer it opens on, and open
 // the store of that layer whose command it opens on, -1 for none.
+//
+// ONLY THE LAYERS SCROLL - OBS218 (b). The title with its actions and the
+// verdict stand still at the top, and below them the list of layers and the
+// chosen layer's page each scroll on their own. A screen that scrolls as one
+// takes the verdict, Save report and the list of layers off the screen as
+// soon as somebody reads down the trust matrix - seen on the window on
+// 2026-11-10.
 func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.CanvasObject, *ReportView) {
 	v := &ReportView{
 		New:    parts.NewButton(parts.Quiet, words.T(words.NewTarget), theme.NavigateBackIcon(), nil),
@@ -206,9 +222,9 @@ func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.Ca
 		Again:  parts.NewButton(parts.Primary, words.T(words.RunAgain), theme.ViewRefreshIcon(), nil),
 		rail:   parts.NewRail(words.T(words.LayersHead), r.Layers, selected),
 		report: r,
-		pages:  map[int]fyne.CanvasObject{selected: layerDetail(r.Layers[selected], open)},
+		pages:  map[int]*container.Scroll{selected: layerPage(r.Layers[selected], open)},
 	}
-	v.shown = parts.Stack(0, v.pages[selected])
+	v.shown = parts.Layers(v.pages[selected])
 	v.rail.OnChosen = v.show
 	actions := parts.Row(look.GapButtons, v.New, v.Save, v.Again)
 	title := parts.RowGrow(look.GapCard, 0,
@@ -218,11 +234,14 @@ func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.Ca
 		)),
 		parts.Middle(actions),
 	)
-	lower := parts.RowTop(look.GapCard, 1, parts.Width(look.RailWidth, v.rail), v.shown)
-	body := parts.Column(look.PageWidth, parts.Pad(look.InsetPage, parts.Stack(look.GapCard, title, parts.Verdict(r), lower)))
+	top := parts.Column(look.PageWidth, parts.Inset(look.InsetPage, look.InsetPage, look.InsetPage, look.GapCard,
+		parts.Stack(look.GapCard, title, parts.Verdict(r))))
+	rail := container.NewVScroll(parts.Inset(0, 0, 0, look.InsetPage, v.rail))
+	lower := parts.ColumnFill(look.PageWidth, parts.Inset(look.InsetPage, 0, 0, 0,
+		parts.RowTop(look.GapCard, 1, parts.Tall(parts.Width(look.RailWidth, rail)), parts.Tall(v.shown))))
 	bar, links := head(icon, r.Version)
 	v.Links = links
-	return container.NewBorder(bar, nil, nil, nil, container.NewVScroll(body)), v
+	return container.NewBorder(bar, nil, nil, nil, container.NewBorder(top, nil, nil, nil, lower)), v
 }
 
 func layerDetail(l model.Layer, open int) fyne.CanvasObject {

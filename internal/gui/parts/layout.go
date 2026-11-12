@@ -202,12 +202,22 @@ func (p inset) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	}
 }
 
-// column centres one object across, at most limit wide.
-type column struct{ limit float32 }
+// column centres one object across, at most limit wide. fill makes it as tall
+// as the room rather than as tall as what it holds.
+type column struct {
+	limit float32
+	fill  bool
+}
 
 // Column centres an object across and stops it growing past limit.
 func Column(limit float32, o fyne.CanvasObject) *fyne.Container {
 	return fyne.NewContainerWithLayout(column{limit: limit}, o)
+}
+
+// ColumnFill is Column taking all the height it is given - for a part of a
+// screen that scrolls inside the window instead of with it.
+func ColumnFill(limit float32, o fyne.CanvasObject) *fyne.Container {
+	return fyne.NewContainerWithLayout(column{limit: limit, fill: true}, o)
 }
 
 func (c column) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -223,10 +233,14 @@ func (c column) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 		w := min(size.Width, c.limit)
 		w = max(w, o.MinSize().Width)
 		// At its own height: a card in a column is as tall as what it
-		// holds, never as tall as the window.
+		// holds, never as tall as the window - unless the column fills.
 		o.Resize(fyne.NewSize(w, o.MinSize().Height))
+		h := o.MinSize().Height
+		if c.fill {
+			h = size.Height
+		}
 		o.Move(fyne.NewPos((size.Width-w)/2, 0))
-		o.Resize(fyne.NewSize(w, o.MinSize().Height))
+		o.Resize(fyne.NewSize(w, h))
 	}
 }
 
