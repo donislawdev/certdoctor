@@ -306,3 +306,11 @@ github.com/donislawdev/certdoctor/internal/gui/flow 100
 # Windows is run() itself and the system dialog, which no test may show.
 github.com/donislawdev/certdoctor/cmd/certdoctor-gui 58
 github.com/donislawdev/certdoctor/assets/icon none
+
+# The tools (D23, ADR141): the contract, the JSON reader they share and the
+# JWT decoder. Measured 2026-11-12 on Windows, go1.27.4: spec 96.5, jsontext
+# 93.8, jwt 95.3. Pure code with no platform files, so one platform measures
+# both - CI will say whether Linux agrees.
+github.com/donislawdev/certdoctor/internal/tool/spec 96
+github.com/donislawdev/certdoctor/internal/tool/jsontext 93
+github.com/donislawdev/certdoctor/internal/tool/jwt 95

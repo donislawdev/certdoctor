@@ -40,6 +40,16 @@ var layerMap = []layerRule{
 		location:       "internal/guard/",
 		mayImportBelow: nil,
 	},
+	{
+		// THE TOOLS (D23, ADR141), a layer beside the core rather than inside
+		// it: the core grades a run of this machine, a tool judges bytes a
+		// person hands it, and neither knows the other. The one thing of the
+		// core a tool names is the status vocabulary, because a tool's checks
+		// speak the same four statuses as the report (inviolable rule 20) and a
+		// second copy of a closed list is how two lists drift apart.
+		location:       "internal/tool/",
+		mayImportBelow: []string{"internal/core/status/"},
+	},
 	// THE WINDOW, ONE FLOOR PER PACKAGE (D21, ADR121, ADR122). It is the one
 	// part of the tree that knows the toolkit, and it knows the report only as
 	// the document the command line writes - so the only things of the core it
@@ -357,6 +367,16 @@ var intraLayerEdges = map[string][]string{
 	// function from the entry point, exactly as it does for L3, so the number of
 	// packages knowing about the allowed set does not grow with this one.
 	"internal/adapter/handshake": {"internal/adapter/tcp"},
+	// A tool hands back the contract's shape and reads JSON through the one
+	// reader the tools share (ADR141 point 7). The arrows run from the tool to
+	// the two and cannot run back: spec names no tool's code, and jsontext
+	// knows no tool exists. A second JSON reader in a tool would be a second
+	// answer to "what does a name carried twice mean".
+	"internal/tool/jwt": {"internal/tool/spec", "internal/tool/jsontext"},
+	// The contract reads the request document and, for the window, the
+	// document a tool writes - both through the shared reader, so a name
+	// carried twice is refused by the same rule everywhere.
+	"internal/tool/spec": {"internal/tool/jsontext"},
 }
 
 type layerRule struct {

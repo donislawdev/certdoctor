@@ -11,12 +11,14 @@ import (
 	"testing"
 )
 
-// pureLayers are the two layers that work a verdict out of what they are handed
-// and touch nothing themselves: the core, which grades evidence (ADR7), and the
-// orchestrator, which takes every port it uses as a parameter. Three rules in
-// this file hold them to that, and each one turns a sentence already written in
-// a comment into something that fails.
-var pureLayers = []string{"internal/core/", "internal/app/"}
+// pureLayers are the three layers that work a verdict out of what they are
+// handed and touch nothing themselves: the core, which grades evidence (ADR7),
+// the orchestrator, which takes every port it uses as a parameter, and the
+// tools, which judge the bytes a person hands them at the time the entry point
+// hands them (ADR141 point 7). Three rules in this file hold them to that, and
+// each one turns a sentence already written in a comment into something that
+// fails.
+var pureLayers = []string{"internal/core/", "internal/app/", "internal/tool/"}
 
 // closedList is the standard library a layer may import, and why the list is
 // closed.
@@ -63,6 +65,20 @@ var closedStdlib = map[string]closedList{
 	"internal/app/": {
 		why:      "the orchestrator is handed every port it uses and touches nothing itself",
 		packages: []string{"bytes", "context", "fmt", "io", "strings", "testing", "time"},
+	},
+	// The tools read what a person hands them, so their list is the core's
+	// rule - values, never places - with the encodings they read in it
+	// (ADR141 point 7). It is a list of its own rather than the core's grown,
+	// so the core keeps exactly what it uses, and crypto/x509 - kept out of
+	// the core because SystemCertPool reaches the network on Windows (ADR101)
+	// - comes here, when a certificate tool needs it, as a decision of this
+	// list alone. reflect and slices are for the tests.
+	"internal/tool/": {
+		why: "a tool is a pure function of the bytes it is handed and the time it is given",
+		packages: []string{
+			"bytes", "encoding/base64", "encoding/json", "errors", "fmt", "io", "math", "reflect", "regexp",
+			"slices", "sort", "strconv", "strings", "testing", "time", "unicode/utf8",
+		},
 	},
 }
 
