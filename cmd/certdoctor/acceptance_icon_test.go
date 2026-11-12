@@ -9,11 +9,13 @@ import (
 	"testing"
 )
 
-// The resource types Windows reads an executable's icon and manifest from, as
-// winuser.h numbers them (RT_ICON, RT_GROUP_ICON, RT_MANIFEST).
+// The resource types Windows reads an executable's icon, file properties and
+// manifest from, as winuser.h numbers them (RT_ICON, RT_GROUP_ICON,
+// RT_VERSION, RT_MANIFEST).
 const (
 	resourceIcon      = 3
 	resourceIconGroup = 14
+	resourceVersion   = 16
 	resourceManifest  = 24
 )
 
@@ -55,6 +57,13 @@ func TestTheShippedBinaryCarriesItsIconOnWindows(t *testing.T) {
 	if !types[resourceIconGroup] || !types[resourceIcon] {
 		t.Errorf("the resource section carries types %v and an icon needs both %d and %d",
 			types, resourceIconGroup, resourceIcon)
+	}
+	// What the Details tab of the file's properties shows - author, description,
+	// version. Which words it carries is internal/guard's question, asked of the
+	// committed resource; this asks that the linker took it in.
+	if !types[resourceVersion] {
+		t.Errorf("the resource section carries types %v and no version information (%d), so the file's "+
+			"properties name no author, description or version", types, resourceVersion)
 	}
 	if types[resourceManifest] {
 		t.Error("the binary carries a manifest, which changes how Windows runs it - " +

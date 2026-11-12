@@ -81,6 +81,11 @@ cp "${icon}" "${app}/Contents/Resources/icon.icns"
 # project sets it for its window for that reason, and what macOS does with a
 # window from a bundle without it was not measured here. The command line
 # draws nothing, and the key costs it nothing.
+#
+# NSHumanReadableCopyright is "a human-readable copyright notice for the
+# bundle" - the same reference, read 2026-11-12. The same words as the
+# LegalCopyright of the Windows binaries in cmd/*/winres.json, so the author
+# reads the same on both systems.
 cat > "${app}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -104,6 +109,8 @@ cat > "${app}/Contents/Info.plist" <<PLIST
 	<string>13.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (C) 2026 DonislawDev. Licensed under the GNU General Public License version 3.</string>
 </dict>
 </plist>
 PLIST

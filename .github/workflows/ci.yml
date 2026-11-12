@@ -368,33 +368,38 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # THE WINDOWS ICON IS A BINARY FILE IN THE REPOSITORY, and a binary nobody
-      # regenerates is a blob nobody reviews. cmd/certdoctor/rsrc_windows_*.syso
-      # are what the linker puts into the .exe, picked up by their names alone,
-      # and they are made from assets/icon/certdoctor.ico by go-winres. This
-      # makes them again and asks for the same bytes, so a resource that drifted
-      # from its icon - or was swapped for something else - stops the build.
-      # Measured 2026-10-27: two runs on Windows wrote identical files.
+      # THE WINDOWS RESOURCES ARE BINARY FILES IN THE REPOSITORY, and a binary
+      # nobody regenerates is a blob nobody reviews. The rsrc_windows_*.syso in
+      # cmd/certdoctor and cmd/certdoctor-gui are what the linker puts into each
+      # .exe, picked up by their names alone: the icon, and the author, the
+      # description and the version the file's properties show. They are made by
+      # .github/scripts/winres.sh from each winres.json, the icon and the version
+      # in certdoctor.go. This makes them again and asks for the same bytes, both
+      # ways, so a resource that drifted from any of those - or a version raised
+      # without making them again - stops the build. Measured 2026-11-12: two
+      # runs on Windows wrote identical files. Once, on amd64: what go-winres
+      # writes does not depend on the machine it runs on.
       #
       # What it does NOT check: that the .ico is what assets/icon/appicon.py
       # draws. That needs Pillow and numpy, and the drawing is reviewed by eye,
       # at every size, rather than by a hash.
-      #
-      # go-winres v0.3.3 is the newest release, published 2024-04-11 per the
-      # GitHub releases API, read 2026-10-27. 0BSD, as is the winres library it
-      # writes with - both read at source that day. It is a build tool: run by
-      # hand or here, never linked, so it never reaches a user. --manifest none,
-      # because the default adds a manifest and a manifest changes how Windows
-      # runs a program.
-      - name: the icon resource comes from the committed icon
-        if: matrix.goos == 'windows'
+      - name: the Windows resources come from the committed icon, descriptions and version
+        if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
         shell: bash
         run: |
           set -euo pipefail
-          go run github.com/tc-hib/go-winres@v0.3.3 simply --icon assets/icon/certdoctor.ico \
-            --manifest none --arch "${{ matrix.goarch }}" --out "$RUNNER_TEMP/rsrc"
-          cmp "$RUNNER_TEMP/rsrc_windows_${{ matrix.goarch }}.syso" "cmd/certdoctor/rsrc_windows_${{ matrix.goarch }}.syso"
-          echo "cmd/certdoctor/rsrc_windows_${{ matrix.goarch }}.syso is what go-winres makes from the icon"
+          bash .github/scripts/winres.sh "$RUNNER_TEMP/winres"
+          made="$(cd "$RUNNER_TEMP/winres" && find . -name '*.syso' | sed 's#^\./##' | sort)"
+          committed="$(git ls-files '*.syso' | sort)"
+          if [ "$made" != "$committed" ]; then
+            echo "the script makes:"; printf '%s\n' "$made"
+            echo "the repository holds:"; printf '%s\n' "$committed"
+            exit 1
+          fi
+          while read -r f; do
+            cmp "$RUNNER_TEMP/winres/$f" "$f"
+            echo "$f is what winres.sh makes"
+          done <<<"$committed"
 
       - name: build with cgo disabled
         shell: bash
