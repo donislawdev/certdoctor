@@ -1,0 +1,19 @@
+# Problems belong on the issue tracker, where the next person who hits the same
+# thing can find the answer. The links below are for the two things that do not:
+# a vulnerability, which must stay private until there is a fix, and an error
+# message the website already explains.
+#
+# Blank issues are off because every form here asks for what makes a report
+# answerable - the version, what the report said and what the program did. A
+# question that fits none of them still has a home: "Question or problem".
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/donislawdev/certdoctor/security/advisories/new
+    about: Please report security issues privately, never as a public issue. SECURITY.md says what is in scope.
+  - name: Look up the error message first
+    url: https://certdoctor.donislawdev.com/errors/
+    about: PKIX path building failed, unable to get local issuer certificate and other messages - what each one means and what fixes it.
+  - name: Read the documentation
+    url: https://certdoctor.donislawdev.com/docs/
+    about: How to read the report, the trust matrix, proxies and PAC scripts, and the exit codes.

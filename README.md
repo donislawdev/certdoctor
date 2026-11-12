@@ -22,7 +22,7 @@
 ![Platform: macOS](https://img.shields.io/badge/platform-macOS-000000)
 [![Website](https://img.shields.io/badge/website-certdoctor.donislawdev.com-e4573f)](https://certdoctor.donislawdev.com/)
 
-**certdoctor** is a command-line tool, with a window of its own, for QA engineers, helpdesk and
+**certdoctor** is a GUI/CLI tool for QA engineers, helpdesk and
 DevOps - for anyone who has read `PKIX path building failed` or
 `unable to get local issuer certificate` on a corporate laptop, behind a proxy, or inside a
 container that cannot do what the host does without trouble. Point it at
@@ -474,8 +474,7 @@ administrator rights to.
 
 It also connects only to what you pointed it at - the target URL, the addresses it resolves to, your
 configured resolvers and proxies, and the PAC file your machine names or you name with `--pac-url`.
-There is no telemetry, no
-update check and no reporting of any kind.
+There is no telemetry, no update check and no reporting of any kind.
 
 ---
 
@@ -533,9 +532,9 @@ Yes to both. It is GPL-3.0 and costs nothing. The reports you generate belong to
 ## Found a case it gets wrong?
 
 That is the most useful issue you can open. Attach the report made with `--redact --json`, say what
-the right answer was, and name the runtime that disagreed. The
-[issue tracker](https://github.com/donislawdev/certdoctor/issues) is open. Security problems go
-through [SECURITY.md](SECURITY.md) instead.
+the right answer was, and name the runtime that disagreed - the
+[Wrong answer form](https://github.com/donislawdev/certdoctor/issues/new?template=wrong_answer.yml)
+asks for each of them. Security problems go through [SECURITY.md](SECURITY.md) instead.
 
 ---
 

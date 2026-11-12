@@ -1,0 +1,20 @@
+# Who owns this repository, and who GitHub asks to review a change to it.
+#
+# One owner, one line. Finer-grained rules would be fiction here: every path
+# has the same owner, and a list that pretends otherwise ages into a claim
+# nobody checks.
+#
+# What this file does: a pull request opened by anyone else automatically
+# requests a review from the owner, so an outside contribution does not sit
+# unnoticed because nobody was asked.
+#
+# What it does not do: GitHub never requests a review from the person who
+# opened the pull request, and nobody can approve their own. A branch rule that
+# demands a code-owner approval would therefore demand one, on every change the
+# owner writes, from somebody who does not exist - and no pull request could
+# ever be merged. That rule stays off while this file names one person.
+#
+# Syntax: gitignore-style patterns, except that a pattern may not start with
+# `#`, `!` does not negate, and `[ ]` character ranges do not work.
+
+*       @donislawdev

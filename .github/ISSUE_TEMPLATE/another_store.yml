@@ -1,0 +1,54 @@
+name: Another trust store or runtime
+description: Ask certdoctor to check a runtime or trust store it does not ask yet
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The stores certdoctor asks today are listed in
+        [the trust matrix](https://certdoctor.donislawdev.com/docs/trust-matrix/).
+
+        certdoctor says nothing about a runtime without a source for it - where it reads its list,
+        how a root is added, what it does with a damaged file. A request that links the runtime's own
+        documentation is one that can be built.
+  - type: input
+    id: runtime
+    attributes:
+      label: Which runtime or tool?
+      placeholder: .NET on Linux, Ruby, PHP, the Docker daemon
+    validations:
+      required: true
+  - type: textarea
+    id: list
+    attributes:
+      label: Where does it read the certificates it trusts?
+      description: >-
+        The file, folder or system store, and a link to where its own documentation says so. A link is
+        worth more than a description.
+    validations:
+      required: true
+  - type: textarea
+    id: add
+    attributes:
+      label: How does someone add a company root to it?
+      description: >-
+        The command, environment variable or file, with the link that documents it. This is what the
+        fix certdoctor prints for that row would be.
+  - type: textarea
+    id: error
+    attributes:
+      label: The error people see
+      description: >-
+        The message the runtime prints when it does not trust the server, exactly as printed. It is
+        what people search for.
+      render: text
+  - type: dropdown
+    id: systems
+    attributes:
+      label: Where do you use it?
+      multiple: true
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Containers

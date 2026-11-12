@@ -7,7 +7,7 @@ lead: "Pytania, które ludzie zadają najpierw, z odpowiedzią w pierwszym zdani
 layout: faq
 faq:
   - question: Co to jest certdoctor?
-    answer: "Narzędzie wiersza poleceń, z oknem, które ustala, dlaczego ta maszyna nie łączy się z adresem i co uruchomić, żeby to naprawić. Przechodzi DNS, proxy i skrypt PAC, TCP i TLS, a potem pyta każdy magazyn zaufania na maszynie, czy ufa łańcuchowi certyfikatów serwera, i wypisuje polecenie, które naprawia każdy magazyn, który nie ufa."
+    answer: "Narzędzie GUI/CLI, które ustala, dlaczego ta maszyna nie łączy się z adresem i co uruchomić, żeby to naprawić. Przechodzi DNS, proxy i skrypt PAC, TCP i TLS, a potem pyta każdy magazyn zaufania na maszynie, czy ufa łańcuchowi certyfikatów serwera, i wypisuje polecenie, które naprawia każdy magazyn, który nie ufa."
   - question: Dlaczego przeglądarka się łączy, a Java, git albo Python nie?
     answer: "Bo każde z nich ufa innej liście. Przeglądarka na Windowsie czyta magazyn Windows, Java czyta `cacerts` własnej instalacji, Git for Windows czyta własny pakiet, a Python listę, z którą go skonfigurowano. Firmowy certyfikat główny dodany do jednej z nich nie trafia do pozostałych. [Macierz zaufania](/docs/trust-matrix/) pokazuje, która lista odmawia."
   - question: Dlaczego nie wystarczy openssl s_client albo curl -v?

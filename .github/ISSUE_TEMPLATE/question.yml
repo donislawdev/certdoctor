@@ -1,0 +1,32 @@
+name: Question or problem
+description: Ask about using certdoctor or reading its report, or report something that fits no other form
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions belong here rather than in private mail, because the next person to hit the same
+        thing can find the answer.
+
+        If it turns out to be a defect it will be relabelled - you do not have to decide that first.
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: The connection that fails, what certdoctor said, and what you have tried so far.
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: Version
+      description: What `certdoctor --version` prints, if it is already installed.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: The command or the report, if there is one
+      description: >-
+        Paste it rather than describing it. Make the report with `--redact`, or tick Mask names in the
+        window, and read it before you paste - this issue is public.
+      render: text

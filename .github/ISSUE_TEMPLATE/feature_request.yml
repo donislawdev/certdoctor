@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an improvement or a new capability
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Asking for a trust store or runtime certdoctor does not check yet? **Another trust store or
+        runtime** asks for what that takes.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: The connection problem that is hard to diagnose today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed solution
+      description: What you would like certdoctor to do or say.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      description: >-
+        Three things this project has decided and will not revisit without a new argument. Saying so
+        here saves you writing a proposal that was never going to be accepted.
+      options:
+        - label: This keeps certdoctor a diagnosis. It prints commands for you to run and never runs them, changes a trust store or writes anything but the report you ask for.
+          required: true
+        - label: This needs no connection beyond the ones certdoctor makes today - the URL you point it at, its addresses, your resolvers, your proxies and the PAC file. There is no telemetry and no update check.
+          required: true
+        - label: This belongs in the command line first. The window runs the command line and shows its report, so it can do nothing the command line cannot.
+          required: true

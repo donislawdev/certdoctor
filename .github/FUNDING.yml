@@ -1,0 +1,8 @@
+# The sponsor button GitHub shows on the repository.
+#
+# One custom address rather than a platform, because the page behind it is ours
+# and says what the money is for. It is the address the window's Donate button
+# and the last line of the README lead to, so all three agree. GitHub's
+# documentation, checked on 2026-11-12: up to four custom addresses, and one
+# holding a colon has to be quoted, which every https address does.
+custom: ["https://donislawdev.com/support/"]

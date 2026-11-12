@@ -1,0 +1,91 @@
+name: Bug report
+description: certdoctor stopped, refused a valid command, wrote a broken report, or the window misbehaved
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The version, the exact command and the exit code
+        are the three most useful things you can give.
+
+        If the report ran fine but is wrong about a trust store, the proxy or a connection, use
+        **Wrong answer** instead - it asks for what settles that kind of report.
+  - type: textarea
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        What `certdoctor --version` prints, all four lines. The window's archive carries the same
+        `certdoctor` next to the window, so run it from that folder.
+      placeholder: |
+        certdoctor: 0.1.0
+        report schema: 2.4
+        go: go1.27.4
+        platform: windows/amd64
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did it happen?
+      options:
+        - Command line (certdoctor)
+        - Window (certdoctor-gui)
+    validations:
+      required: true
+  - type: dropdown
+    id: machine
+    attributes:
+      label: What kind of machine was it running on?
+      description: >-
+        The window draws with OpenGL, so a virtual machine or a remote desktop session without 3D
+        behaves differently from the machine in front of you.
+      options:
+        - Directly on the machine
+        - Inside a container
+        - In a CI job
+        - In a virtual machine or over remote desktop
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: The command, or the steps in the window
+      description: >-
+        The exact command line, pasted rather than described. If the URL names an internal host you
+        would rather not publish, replace it here and say so.
+      placeholder: certdoctor https://api.example.com/ --redact --format md --out report.md
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: exit
+    attributes:
+      label: Exit code
+      description: >-
+        What `echo $?` printed after the command - `echo $LASTEXITCODE` in PowerShell, `echo %ERRORLEVEL%`
+        in cmd. Every ending has its own code, so a wrong one is a bug on its own even when the report
+        came out right.
+      placeholder: "4"
+  - type: textarea
+    id: output
+    attributes:
+      label: What it printed
+      description: >-
+        Standard error, and the report if it got that far. A report made without `--redact` names
+        internal host names, paths and user names, and this issue is public - read it before you paste
+        it.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: A screenshot of the window, or anything you have already tried.

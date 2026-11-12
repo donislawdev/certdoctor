@@ -1,0 +1,81 @@
+name: Wrong answer
+description: The report says one thing about a trust store, the proxy or a connection, and the program you care about does another
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most useful issue you can open. certdoctor promises that what it says about each
+        trust store matches what the runtime behind it does, so a disagreement on your machine is a bug
+        here until shown otherwise - even when every test passes.
+
+        Run certdoctor and the program that disagrees on the same machine, as the same user, from the
+        same kind of session, so both saw the same configuration. A Java service started by the system
+        can read different settings from the `java` you run in a terminal.
+  - type: input
+    id: part
+    attributes:
+      label: Which part of the report is wrong?
+      description: >-
+        The layer, and for the trust matrix the row with its path - the same runtime can be installed
+        more than once.
+      placeholder: L5, the java row for /usr/lib/jvm/java-21-openjdk
+    validations:
+      required: true
+  - type: textarea
+    id: said
+    attributes:
+      label: What certdoctor said
+      description: The status and the sentence of that row, and the verdict at the top of the report.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: did
+    attributes:
+      label: What the program actually did
+      description: >-
+        The exact error it printed, or the fact that it connected. For example: the Java service fails
+        with PKIX path building failed, while certdoctor says the java row trusts the chain.
+    validations:
+      required: true
+  - type: textarea
+    id: program
+    attributes:
+      label: The program, its version and how it was started
+      description: >-
+        Whichever disagreed - `java -version`, `node --version`, `python --version`, `pip --version`,
+        `git --version` or `curl --version` - and whether it ran as a service, from an IDE, in a
+        container or in a terminal.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: The report, made with --redact --json
+      description: >-
+        `certdoctor <url> --redact --json --out report.json`, then paste the file here. In the window,
+        tick Mask names and save the report as JSON. Masking is a filter, not a guarantee, and this
+        issue is public - read the report before you post it. If GitHub says the text is too long,
+        attach the file under "Anything else?" instead.
+      render: json
+  - type: textarea
+    id: version
+    attributes:
+      label: certdoctor version
+      description: What `certdoctor --version` prints, all four lines.
+      placeholder: |
+        certdoctor: 0.1.0
+        report schema: 2.4
+        go: go1.27.4
+        platform: linux/amd64
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: >-
+        What you have already tried, and whether the command certdoctor printed for that row fixed it.
