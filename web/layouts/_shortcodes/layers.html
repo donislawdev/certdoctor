@@ -1,0 +1,12 @@
+{{- /*
+  The six layers a run walks, from web/data/facts/certdoctor.json, which cmd/sitefacts writes from the program:
+  what each is called and the question it answers.
+*/ -}}
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ T "layer" }}</th><th>{{ T "question" }}</th></tr></thead>
+  <tbody>
+    {{- range hugo.Data.facts.certdoctor.layers }}
+    <tr><td><code>{{ .id }}</code> {{ partial "program-words.html" (dict "en" .name "key" (printf "layer_%s_name" .id)) }}</td><td>{{ partial "program-words.html" (dict "en" .summary "key" (printf "layer_%s_summary" .id)) }}</td></tr>
+    {{- end }}
+  </tbody>
+</table></div>

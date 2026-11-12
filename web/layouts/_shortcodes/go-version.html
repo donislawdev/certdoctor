@@ -1,0 +1,5 @@
+{{- /* The oldest Go a build from source takes, from the go line of go.mod. */ -}}
+{{- $found := findRESubmatch `(?m)^go (\S+)\s*$` (resources.Get "go.mod").Content 1 }}
+{{- if not $found }}{{ errorf "go.mod has no go line" }}{{ end -}}
+{{ index (index $found 0) 1 }}
+{{- /* Nothing after it. */ -}}

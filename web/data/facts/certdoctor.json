@@ -1,0 +1,258 @@
+{
+  "name": "certdoctor",
+  "version": "0.1.0",
+  "statuses": [
+    "FAIL",
+    "WARN",
+    "UNKNOWN",
+    "PASS"
+  ],
+  "variables": [
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE",
+    "CURL_SSL_BACKEND",
+    "REQUESTS_CA_BUNDLE",
+    "NODE_EXTRA_CA_CERTS",
+    "NODE_TLS_REJECT_UNAUTHORIZED",
+    "NODE_USE_ENV_PROXY",
+    "NODE_USE_SYSTEM_CA",
+    "NODE_OPTIONS",
+    "JAVA_TOOL_OPTIONS",
+    "GIT_SSL_CAINFO",
+    "GIT_SSL_CAPATH",
+    "PIP_CERT",
+    "AWS_CA_BUNDLE",
+    "KUBERNETES_SERVICE_HOST",
+    "container"
+  ],
+  "groups": [
+    {
+      "name": "input",
+      "built": true,
+      "switches": [
+        {
+          "name": "pac-url",
+          "aliases": [],
+          "arg": "<url>",
+          "summary": "also read this proxy auto-configuration script and say where it sends the target"
+        },
+        {
+          "name": "from",
+          "aliases": [],
+          "arg": "<file>",
+          "summary": "instead of a URL: write a report saved earlier with --json again, in the format asked for, without running anything. A single dash reads it from standard input"
+        }
+      ]
+    },
+    {
+      "name": "output",
+      "built": true,
+      "switches": [
+        {
+          "name": "format",
+          "aliases": [],
+          "arg": "<terminal|json|md|html>",
+          "summary": "how to write the report. Defaults to terminal"
+        },
+        {
+          "name": "json",
+          "aliases": [],
+          "arg": "",
+          "summary": "the same as --format json"
+        },
+        {
+          "name": "out",
+          "aliases": [],
+          "arg": "<path>",
+          "summary": "where to write the report. A single dash means standard output, which is the default"
+        },
+        {
+          "name": "redact",
+          "aliases": [],
+          "arg": "",
+          "summary": "mask host names, paths and user names. Credentials are masked with or without it"
+        }
+      ]
+    },
+    {
+      "name": "containers",
+      "built": false,
+      "switches": [
+        {
+          "name": "in",
+          "aliases": [],
+          "arg": "<container>",
+          "summary": "diagnose from inside a running container"
+        },
+        {
+          "name": "image",
+          "aliases": [],
+          "arg": "<image>",
+          "summary": "diagnose from inside a throwaway container built from an image"
+        },
+        {
+          "name": "compare",
+          "aliases": [],
+          "arg": "host,container",
+          "summary": "show the host and the container side by side. Needs --in or --image"
+        }
+      ]
+    },
+    {
+      "name": "channels",
+      "built": true,
+      "switches": [
+        {
+          "name": "quiet",
+          "aliases": [],
+          "arg": "",
+          "summary": "keep the log on standard error down to failures"
+        },
+        {
+          "name": "verbose",
+          "aliases": [],
+          "arg": "",
+          "summary": "say more on standard error about what is happening"
+        },
+        {
+          "name": "no-color",
+          "aliases": [],
+          "arg": "",
+          "summary": "never colour the output. NO_COLOR in the environment does the same"
+        }
+      ]
+    },
+    {
+      "name": "budget",
+      "built": true,
+      "switches": [
+        {
+          "name": "timeout",
+          "aliases": [],
+          "arg": "<seconds>",
+          "summary": "limit for the whole run in seconds, at least 0.001. Zero means no limit. Defaults to 60"
+        },
+        {
+          "name": "probe-timeout",
+          "aliases": [],
+          "arg": "<seconds>",
+          "summary": "limit for one layer in seconds, at least 0.001. Zero means no limit. Defaults to 10"
+        }
+      ]
+    },
+    {
+      "name": "meta",
+      "built": true,
+      "switches": [
+        {
+          "name": "version",
+          "aliases": [],
+          "arg": "",
+          "summary": "print the version of the tool and of every schema it emits"
+        },
+        {
+          "name": "license",
+          "aliases": [],
+          "arg": "",
+          "summary": "print the licence, then the notices of the third party code in this binary"
+        },
+        {
+          "name": "help",
+          "aliases": [
+            "h"
+          ],
+          "arg": "",
+          "summary": "print this text"
+        }
+      ]
+    }
+  ],
+  "exitCodes": [
+    {
+      "code": 0,
+      "name": "OK",
+      "meaning": "everything that mattered was assessed and passed"
+    },
+    {
+      "code": 1,
+      "name": "RUNTIME",
+      "meaning": "certdoctor itself failed"
+    },
+    {
+      "code": 2,
+      "name": "USAGE",
+      "meaning": "bad invocation syntax or an unknown flag"
+    },
+    {
+      "code": 3,
+      "name": "CONFIG",
+      "meaning": "flags are valid on their own but contradictory or unsatisfiable"
+    },
+    {
+      "code": 4,
+      "name": "DIAGNOSIS",
+      "meaning": "the run succeeded and found at least one failure"
+    },
+    {
+      "code": 5,
+      "name": "INCONCLUSIVE",
+      "meaning": "no failure, but at least one thing could not be assessed"
+    },
+    {
+      "code": 6,
+      "name": "IO",
+      "meaning": "the report could not be written"
+    },
+    {
+      "code": 130,
+      "name": "INTERRUPTED",
+      "meaning": "interrupted by the user"
+    },
+    {
+      "code": 143,
+      "name": "TERMINATED",
+      "meaning": "terminated by the system"
+    }
+  ],
+  "layers": [
+    {
+      "id": "L0",
+      "name": "Context",
+      "summary": "the machine itself - operating system, container, VPN, the clock, and the environment variables that decide trust and proxying"
+    },
+    {
+      "id": "L1",
+      "name": "Name resolution",
+      "summary": "what the name resolves to, seen both the way this system sees it and the way certdoctor sees it"
+    },
+    {
+      "id": "L2",
+      "name": "Proxy",
+      "summary": "which proxy will actually be used for this URL, and by which tool"
+    },
+    {
+      "id": "L3",
+      "name": "TCP",
+      "summary": "whether each resolved address accepts a connection, and how it refuses when it does not"
+    },
+    {
+      "id": "L4",
+      "name": "TLS",
+      "summary": "the handshake and the chain the server presented, including whether it was re-signed on the way here"
+    },
+    {
+      "id": "L5",
+      "name": "Trust matrix",
+      "summary": "which runtimes on this machine trust that chain, one row per installed instance"
+    }
+  ]
+}

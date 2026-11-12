@@ -1,0 +1,9 @@
+{{- /*
+  A status as the window draws it: a shape that says it without colour, and
+  the word. A status the facts do not name stops the build.
+*/ -}}
+{{- if not (in hugo.Data.facts.certdoctor.statuses .) }}
+  {{- errorf "%s is not one of the program's statuses" . }}
+{{- end -}}
+<span class="status status-{{ lower . }}"><span class="shape" aria-hidden="true"></span>{{ . }}</span>
+{{- /* Nothing after it, so no space creeps in before what follows. */ -}}

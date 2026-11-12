@@ -18,8 +18,8 @@ import (
 // page presents as working, which is what the note was added to stop.
 func TestTheGroupTheHelpCallsNotBuiltIsRefused(t *testing.T) {
 	notes := map[string]string{}
-	for _, group := range helpGroups {
-		notes[group.name] = group.note
+	for _, group := range switches.Groups {
+		notes[group.Name] = group.Note
 	}
 
 	page := helpText()

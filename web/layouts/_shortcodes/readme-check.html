@@ -1,0 +1,18 @@
+{{- /*
+  One command block from the README's section on checking a download, word
+  for word. The release note and the guards read the same section, so the site
+  cannot show a command the release does not answer to. The section has four
+  blocks, and any other number stops the build, because then the words around
+  each block on this site would describe the wrong command. Takes: the block's
+  number, from 1.
+*/ -}}
+{{- $readme := (resources.Get "readme.md").Content }}
+{{- $section := index (findRESubmatch "(?s)### Check what you downloaded\\n(.*?)\\n### " $readme 1) 0 }}
+{{- if not $section }}
+  {{- errorf "the README has no section called Check what you downloaded" }}
+{{- end }}
+{{- $blocks := findRESubmatch "(?s)```[a-z]*\\n(.*?)\\n```" (index $section 1) }}
+{{- if ne (len $blocks) 4 }}
+  {{- errorf "the README's check section has %d command blocks, and the download page explains four" (len $blocks) }}
+{{- end }}
+<pre><code>{{ index (index $blocks (sub (int (.Get 0)) 1)) 1 }}</code></pre>

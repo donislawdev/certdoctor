@@ -1,0 +1,28 @@
+{{- /*
+  The archives of a release, read from the README's download tables, which a
+  guard in internal/guard holds to the release scripts. The README writes
+  <version> in each name, and the site puts in the program's version from the
+  facts. Takes: the program, certdoctor or certdoctor-gui.
+*/ -}}
+{{- $program := .Get 0 }}
+{{- $readme := (resources.Get "readme.md").Content }}
+{{- $pattern := printf "`(%s)_<version>_([a-z]+)_([a-z0-9]+)\\.(zip|tar\\.gz)`" $program }}
+{{- $found := findRESubmatch $pattern $readme }}
+{{- if not $found }}
+  {{- errorf "the README names no archive of %s, and the download page would list none" $program }}
+{{- end }}
+{{- $version := hugo.Data.facts.certdoctor.version }}
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ T "system" }}</th><th>{{ T "archive" }}</th><th>{{ T "you_run" }}</th></tr></thead>
+  <tbody>
+    {{- range $found }}
+    {{- $os := index . 2 }}
+    {{- $arch := index . 3 }}
+    <tr>
+      <td>{{ T (printf "system_%s_%s" $os $arch) }}</td>
+      <td><code>{{ $program }}_{{ $version }}_{{ $os }}_{{ $arch }}.{{ index . 4 }}</code></td>
+      <td>{{ T (printf "run_%s_%s" (replace $program "-" "_") $os) | markdownify }}</td>
+    </tr>
+    {{- end }}
+  </tbody>
+</table></div>

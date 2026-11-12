@@ -1,0 +1,114 @@
+# The website's menus, by the path of the page each entry opens.
+#
+# A path is the same in every language. The page found under it is the one in
+# the language being built, and the words are that language's file. A path
+# with no page in a language stops the build, so a menu cannot lead to a page
+# that is not there.
+
+[[main]]
+key = "nav_docs"
+page = "/docs"
+
+[[main]]
+key = "nav_errors"
+page = "/errors"
+
+[[main]]
+key = "nav_guides"
+page = "/guides"
+
+[[main]]
+key = "nav_download"
+page = "/download"
+
+# The documentation's own menu, in reading order. The pager at the foot of a
+# page follows it too.
+[[sidebar]]
+key = "side_start"
+pages = ["/docs", "/docs/getting-started", "/download", "/docs/read-the-report"]
+
+[[sidebar]]
+key = "side_layers"
+pages = ["/docs/layers", "/docs/trust-matrix", "/docs/proxy-and-pac"]
+
+[[sidebar]]
+key = "side_use"
+pages = ["/docs/reports", "/docs/ci", "/docs/containers", "/docs/window"]
+
+[[sidebar]]
+key = "side_reference"
+pages = ["/docs/cli", "/docs/exit-codes", "/docs/verify-a-download"]
+
+[[sidebar]]
+key = "side_errors"
+pages = [
+  "/errors",
+  "/errors/pkix-path-building-failed",
+  "/errors/unable-to-get-local-issuer-certificate",
+  "/errors/self-signed-certificate-in-certificate-chain",
+  "/errors/x509-certificate-signed-by-unknown-authority",
+  "/errors/certificate-has-expired",
+  "/errors/hostname-does-not-match-certificate",
+  "/errors/missing-intermediate-certificate",
+  "/errors/python-3-13-strict-certificate-checks",
+  "/errors/407-proxy-authentication-required",
+]
+
+[[sidebar]]
+key = "side_guides"
+pages = [
+  "/guides",
+  "/guides/java-cacerts-keytool",
+  "/guides/git-ssl-certificate",
+  "/guides/curl-ca-bundle",
+  "/guides/node-extra-ca-certs",
+  "/guides/python-pip-certificates",
+  "/guides/windows-certificate-store",
+  "/guides/linux-ca-bundle",
+  "/guides/tls-inspection-corporate-proxy",
+  "/guides/test-a-pac-file",
+]
+
+[[sidebar]]
+key = "side_trust"
+pages = ["/security", "/faq"]
+
+[[footer]]
+key = "footer_product"
+pages = ["/download", "/docs/getting-started", "/security", "/faq"]
+
+[[footer]]
+key = "footer_errors"
+pages = [
+  "/errors/pkix-path-building-failed",
+  "/errors/unable-to-get-local-issuer-certificate",
+  "/errors/self-signed-certificate-in-certificate-chain",
+  "/errors/x509-certificate-signed-by-unknown-authority",
+]
+
+[[footer]]
+key = "footer_guides"
+pages = [
+  "/guides/java-cacerts-keytool",
+  "/guides/node-extra-ca-certs",
+  "/guides/python-pip-certificates",
+  "/guides/tls-inspection-corporate-proxy",
+]
+
+# Addresses outside the site. The repository is the only place they point,
+# except the page that says how to support the project.
+[[project]]
+key = "link_github"
+url = "https://github.com/donislawdev/certdoctor"
+
+[[project]]
+key = "link_releases"
+url = "https://github.com/donislawdev/certdoctor/releases"
+
+[[project]]
+key = "link_issues"
+url = "https://github.com/donislawdev/certdoctor/issues"
+
+[[project]]
+key = "link_support"
+url = "https://donislawdev.com/support/"

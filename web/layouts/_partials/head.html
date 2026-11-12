@@ -1,0 +1,61 @@
+{{- /*
+  Everything a search engine and a link preview read about a page.
+
+  A page with no description stops the build: the description is what a search
+  result shows under the title, and an empty one is filled in by the engine from
+  whatever text it finds first.
+*/ -}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{- $title := or .Params.seoTitle .Title }}
+{{- $description := .Description }}
+{{- /*
+  A search result shows about sixty characters of a title. The name of the
+  program goes after the page's own title only when both fit, so the words that
+  say what the page is about are never the ones cut off.
+*/ -}}
+{{- /* A title that already names the program is not given the name twice. */ -}}
+{{- $branded := printf "%s - %s" $title site.Title }}
+{{- $named := strings.Contains (lower $title) (lower site.Title) }}
+{{- if and (not .IsHome) (not $named) (le (strings.RuneCount $branded) site.Params.titleLimit) }}{{ $title = $branded }}{{ end }}
+{{- if and (not $description) (ne .Kind "404") }}
+  {{- errorf "%s has no description, and a search result would make one up" .File.Path }}
+{{- end }}
+<title>{{ $title }}</title>
+<meta name="description" content="{{ $description }}">
+{{- if eq .Kind "404" }}
+<meta name="robots" content="noindex">
+{{- else }}
+<link rel="canonical" href="{{ .Permalink }}">
+{{- range .AllTranslations }}
+<link rel="alternate" hreflang="{{ .Language.Locale }}" href="{{ .Permalink }}">
+{{- end }}
+{{- /* English is the default language, and the address for every other reader. */ -}}
+{{- range where .AllTranslations "Language.Lang" "en" }}
+<link rel="alternate" hreflang="x-default" href="{{ .Permalink }}">
+{{- end }}
+{{- end }}
+{{- $css := resources.Get "css/site.css" | minify | fingerprint }}
+<link rel="stylesheet" href="{{ $css.RelPermalink }}" integrity="{{ $css.Data.Integrity }}">
+{{- $icon := resources.Get "icon.png" }}
+{{- $favicon := $icon.Resize "64x64 png" }}
+{{- $touch := $icon.Resize "180x180 png" }}
+<link rel="icon" href="{{ $favicon.RelPermalink }}" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="{{ $touch.RelPermalink }}">
+<meta name="theme-color" content="{{ site.Params.themeColor }}">
+{{- $picture := resources.Get "social-preview.png" }}
+<meta property="og:type" content="{{ if .IsHome }}website{{ else }}article{{ end }}">
+<meta property="og:site_name" content="{{ site.Title }}">
+<meta property="og:title" content="{{ $title }}">
+<meta property="og:description" content="{{ $description }}">
+<meta property="og:url" content="{{ .Permalink }}">
+<meta property="og:locale" content="{{ site.Language.Params.ogLocale }}">
+{{- range .Translations }}
+<meta property="og:locale:alternate" content="{{ .Language.Params.ogLocale }}">
+{{- end }}
+<meta property="og:image" content="{{ $picture.Permalink }}">
+<meta property="og:image:width" content="{{ $picture.Width }}">
+<meta property="og:image:height" content="{{ $picture.Height }}">
+<meta property="og:image:alt" content="{{ T "picture_alt" }}">
+<meta name="twitter:card" content="summary_large_image">
+{{ partial "structured-data.html" . }}

@@ -89,6 +89,7 @@
 
 # --- Local editor and OS state ---
 .claude/settings.local.json
+.claude/launch.json
 .idea/
 .vscode/
 *.swp

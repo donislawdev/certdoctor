@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -45,6 +46,19 @@ func findingNamed(t *testing.T, result Result, name string) report.Finding {
 // invisible by eye at this length: the same name twice produces two identical
 // rows in every report, which reads as the two spellings of a variable rather
 // than as a mistake.
+// TestVariablesHandsOutACopy holds the one promise Variables makes beyond the
+// list itself: a caller that changes what it was given changes nothing else.
+func TestVariablesHandsOutACopy(t *testing.T) {
+	given := Variables()
+	if !slices.Equal(given, variables) {
+		t.Fatalf("Variables gave %v, the approved list is %v", given, variables)
+	}
+	given[0] = "CHANGED"
+	if variables[0] == "CHANGED" {
+		t.Fatal("changing what Variables gave changed the approved list")
+	}
+}
+
 func TestTheApprovedListIsExactlyTwentyFiveDistinctNames(t *testing.T) {
 	if len(variables) != 25 {
 		t.Fatalf("the approved list holds twenty-five variables, this one holds %d", len(variables))

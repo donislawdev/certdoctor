@@ -92,6 +92,30 @@ var Formats = []string{"terminal", "json", "md", "html"}
 // make this program hold in memory.
 const MaxReport = 32 << 20
 
+// Group is one section of the help, which every switch names by Group.Name.
+type Group struct {
+	Name  string
+	Title string
+	// Note is printed under the title. The one there is says the group's
+	// switches are not built, and TestTheGroupTheHelpCallsNotBuiltIsRefused
+	// in cmd/certdoctor holds it to what the program does with them, so it
+	// comes off the day they work.
+	Note string
+}
+
+// Groups is the order the groups appear in. Declared rather than derived from
+// the switch list so that adding a switch cannot silently reorder the page
+// somebody reads every time they forget a flag name. The help prints it, and
+// the project website lists the switches by it (cmd/sitefacts).
+var Groups = []Group{
+	{"input", "WHAT TO EXAMINE", ""},
+	{"output", "OUTPUT", ""},
+	{"containers", "CONTAINERS", "Not built in this release. Each of these is accepted and refused with the reason."},
+	{"channels", "CHANNELS", ""},
+	{"budget", "BUDGET", ""},
+	{"meta", "META", ""},
+}
+
 // All is the whole flag surface, in the order the help presents it.
 var All = []Switch{
 	{

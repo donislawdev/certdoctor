@@ -1,0 +1,130 @@
+name: site
+
+# The project website under web/, built with Hugo, checked page by page, and
+# published to certdoctor.donislawdev.com.
+#
+# On a pull request this builds and checks, and publishes nothing.
+#
+# It publishes after CI has passed on main, for the exact commit CI passed on,
+# and never on a push of its own. Pages show facts the program writes
+# (web/data/facts/certdoctor.json, by cmd/sitefacts), and CI is where its test
+# compares them with what the program says now. Publishing beside CI would
+# race that comparison and could put up a page CI was about to call wrong. A red
+# CI means the site does not move.
+#
+# A person can publish main by starting this by hand from main. Started from
+# any other branch it builds and checks only, and the github-pages environment
+# takes deployments from main and nothing else.
+#
+# What the build already refuses, before the check runs: a page that links to
+# a page this language does not have, a switch, exit code or layer the facts no
+# longer hold, a README with no archives or check commands where the site reads
+# them, and a word missing from a language file. web/README.md says how.
+#
+# There is no paths filter, on purpose: the facts the site is built from come
+# from the program, so a change anywhere in the code can change a page.
+
+on:
+  pull_request:
+    branches: [main]
+  # This trigger runs in this repository with this repository's permissions
+  # whoever caused the CI run, and the branch filter matches the NAME of the
+  # branch CI ran on, which a fork chooses. The build job below therefore
+  # starts only for CI that passed on a push to this repository, and nothing
+  # here passes text from that run to a shell.
+  workflow_run: # zizmor: ignore[dangerous-triggers] only a push to this repository passes the job condition
+    workflows: ["ci"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per pull request, and a newer push cancels the older run. On main a
+# deployment is never cancelled halfway, so a newer commit waits its turn.
+concurrency:
+  group: site-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Checked at https://github.com/gohugoio/hugo/releases on 2026-11-12: the
+  # newest release.
+  HUGO_VERSION: "0.169.0"
+  # The SHA-256 of hugo_0.169.0_linux-amd64.tar.gz, from the release's
+  # hugo_0.169.0_checksums.txt. A new version is a new digest, set by hand.
+  HUGO_SHA256: "2d2f0bfe357d8cb4cec02f6bb28a3bff34978c8dda44b618029c5eb9d66765a7"
+  # Whether this run puts the site up. Written once here and read by the step
+  # that hands the pages over and by the job that publishes them.
+  PUBLISH: ${{ github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+
+jobs:
+  build:
+    name: build and check the website
+    # CI that failed, CI on a pull request, and CI on a fork's branch called
+    # main all end here, before anything is checked out.
+    #
+    # The checkout below takes the default one, which on workflow_run is the
+    # newest commit on main and never a commit named by the run that triggered
+    # this. The last condition makes that the commit CI passed on. When main
+    # has already moved on, this run publishes nothing, and the run for the
+    # newer commit publishes once its CI has passed.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_sha == github.sha)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      publish: ${{ env.PUBLISH }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: install Hugo, held to its digest
+        run: |
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/hugo.tar.gz" \
+            "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_${HUGO_VERSION}_linux-amd64.tar.gz"
+          echo "${HUGO_SHA256}  $RUNNER_TEMP/hugo.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/hugo"
+          tar -xzf "$RUNNER_TEMP/hugo.tar.gz" -C "$RUNNER_TEMP/hugo" hugo
+          "$RUNNER_TEMP/hugo/hugo" version
+
+      - name: build
+        working-directory: web
+        run: |
+          "$RUNNER_TEMP/hugo/hugo" --printI18nWarnings --panicOnWarning \
+            --destination "$RUNNER_TEMP/public"
+
+      - name: check every page
+        run: python3 .github/scripts/site_check.py "$RUNNER_TEMP/public" --config web/hugo.toml
+
+      # The pages that were just checked, and no others.
+      - name: hand the checked pages over
+        if: env.PUBLISH == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/public
+
+  publish:
+    name: publish the website
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The only job that may write anything, and only to GitHub Pages. It checks
+    # nothing out and runs no code from the repository.
+    permissions:
+      pages: write # to publish the pages the build job handed over
+      id-token: write # to prove to GitHub Pages that this run is the one publishing
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: publish
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

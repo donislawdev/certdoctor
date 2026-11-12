@@ -249,6 +249,15 @@ github.com/donislawdev/certdoctor/internal/adapter/proxyauth 96
 # every platform compiles the same files. The floor is that number rounded down.
 github.com/donislawdev/certdoctor/cmd/sbom 99
 
+# cmd/sitefacts writes what the project website says about the program
+# (web/README.md). It never ships, and its test is what keeps the website true.
+#
+# WHAT THE REMAINDER IS. main, which only hands standard output to write and
+# turns an error into exit code 1, is not run by a test. Measured 2026-11-12 on
+# Windows: 86.4 percent. There is no build tag in this package, so every
+# platform compiles the same files. The floor is that number rounded down.
+github.com/donislawdev/certdoctor/cmd/sitefacts 86
+
 # The window's packages (D21, ADR122). Their tests draw every part and every
 # screen with the toolkit's test driver, in an image and without a window, so
 # they run on all three runners with no display and no C compiler. Measured

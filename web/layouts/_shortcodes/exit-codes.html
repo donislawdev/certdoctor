@@ -1,0 +1,12 @@
+{{- /*
+  Every exit code of certdoctor, from web/data/facts/certdoctor.json, which cmd/sitefacts
+  writes from the program.
+*/ -}}
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ T "code" }}</th><th>{{ T "name" }}</th><th>{{ T "meaning" }}</th></tr></thead>
+  <tbody>
+    {{- range hugo.Data.facts.certdoctor.exitCodes }}
+    <tr><td><code>{{ .code }}</code></td><td><code>{{ .name }}</code></td><td>{{ partial "program-words.html" (dict "en" .meaning "key" (printf "exit_%s" .name)) }}</td></tr>
+    {{- end }}
+  </tbody>
+</table></div>

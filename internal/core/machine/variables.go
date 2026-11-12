@@ -1,6 +1,9 @@
 package machine
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // variables is every environment variable L0 reads, in report order.
 //
@@ -232,6 +235,13 @@ var variables = []string{
 	// present says something. That asymmetry is exactly why this is a hint for
 	// L6 rather than an answer - D11.
 	"container",
+}
+
+// Variables is every variable L0 reads, in report order. It is a copy, so a
+// caller cannot reorder or shorten the approved list for everybody else. The
+// project website lists them from this, through the facts its test writes.
+func Variables() []string {
+	return slices.Clone(variables)
 }
 
 // ProxyVariables returns the declared variables that carry a PROXY ADDRESS, in

@@ -1,0 +1,18 @@
+{{- /*
+  Every switch of certdoctor, in the groups and the order --help prints them,
+  from web/data/facts/certdoctor.json, which cmd/sitefacts writes from the program. A group --help says is not
+  built is left out, because the site shows what the program does.
+*/ -}}
+{{- range hugo.Data.facts.certdoctor.groups }}
+{{- if .built }}
+<h2 id="{{ .name }}">{{ T (printf "group_%s" .name) }}</h2>
+<div class="options">
+  {{- range .switches }}
+  <div class="option" id="{{ .name }}">
+    <div class="flag">--{{ .name }}{{ range .aliases }}, -{{ . }}{{ end }}{{ with .arg }} <span class="arg">{{ . }}</span>{{ end }}</div>
+    <div class="about"><p>{{ partial "program-words.html" (dict "en" .summary "key" (printf "switch_%s" .name)) }}</p></div>
+  </div>
+  {{- end }}
+</div>
+{{- end }}
+{{- end }}

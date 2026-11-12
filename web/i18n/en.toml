@@ -1,0 +1,206 @@
+# The words of the website's own interface, in English.
+#
+# Every other language has a file with the same keys, and more: what the
+# program prints - its switches, exit codes and layers - is shown in English
+# from web/data/facts/, as the program prints it, and translated in the other
+# languages' files. A key a template asks for and a language does not have
+# stops the build (--printI18nWarnings with --panicOnWarning), so no page goes
+# out with a hole where a word should be.
+
+# ---- the frame of every page ------------------------------------------------
+
+[skip_to_content]
+other = "Skip to content"
+
+[nav_label]
+other = "Main"
+
+[nav_docs]
+other = "Documentation"
+
+[nav_errors]
+other = "Errors"
+
+[nav_guides]
+other = "Fix guides"
+
+[nav_download]
+other = "Download"
+
+[link_github]
+other = "GitHub"
+
+[menu]
+other = "Menu"
+
+[language]
+other = "Language"
+
+[home]
+other = "Home"
+
+[pager_label]
+other = "Previous and next page"
+
+[previous]
+other = "Previous"
+
+[next]
+other = "Next"
+
+[on_this_page]
+other = "On this page"
+
+[footer_note]
+other = "Why this machine cannot connect to that URL, and what to run to fix it. Free and open source under GPL-3.0. This site sets no cookies and loads nothing from anywhere else."
+
+[footer_product]
+other = "Product"
+
+[footer_errors]
+other = "Errors"
+
+[footer_guides]
+other = "Fix guides"
+
+[footer_project]
+other = "Project"
+
+[link_releases]
+other = "Releases"
+
+[link_issues]
+other = "Report a case it gets wrong"
+
+[link_support]
+other = "Support the project"
+
+[side_start]
+other = "Start"
+
+[side_layers]
+other = "What it checks"
+
+[side_use]
+other = "Using it"
+
+[side_reference]
+other = "Reference"
+
+[side_errors]
+other = "Errors"
+
+[side_guides]
+other = "Fix guides"
+
+[side_trust]
+other = "Trust"
+
+[picture_alt]
+other = "certdoctor: why this machine cannot connect to that URL, and the command that fixes each trust store"
+
+[not_found_title]
+other = "There is no page here"
+
+[not_found_text]
+other = "The address may be mistyped, or the page has moved. Start from the home page in your language."
+
+# ---- the home page ----------------------------------------------------------
+
+[get_it]
+other = "Download"
+
+[read_the_docs]
+other = "Get started"
+
+# ---- pages and tables -------------------------------------------------------
+
+[messages_label]
+other = "The message, as printed"
+
+[code]
+other = "Code"
+
+[name]
+other = "Name"
+
+[meaning]
+other = "Meaning"
+
+[layer]
+other = "Layer"
+
+[question]
+other = "Question it answers"
+
+[status]
+other = "Status"
+
+[status_FAIL]
+other = "This is what is wrong. A run with one ends with exit code 4."
+
+[status_WARN]
+other = "Works, but something deserves a look. A warning alone keeps exit code 0."
+
+[status_UNKNOWN]
+other = "Could not be assessed, and the reason is always given. Never counted as a pass."
+
+[status_PASS]
+other = "Assessed and fine."
+
+[system]
+other = "Your system"
+
+[archive]
+other = "The archive"
+
+[you_run]
+other = "What you run"
+
+[system_windows_amd64]
+other = "Windows on x64"
+
+[system_windows_arm64]
+other = "Windows on Arm"
+
+[system_linux_amd64]
+other = "Linux on x64"
+
+[system_linux_arm64]
+other = "Linux on Arm"
+
+[system_macos_arm64]
+other = "macOS on Apple silicon"
+
+[run_certdoctor_windows]
+other = "`certdoctor.exe`, signed"
+
+[run_certdoctor_linux]
+other = "`./certdoctor`, one static file"
+
+[run_certdoctor_macos]
+other = "`./certdoctor`, a link into `certdoctor.app`, signed and notarised"
+
+[run_certdoctor_gui_windows]
+other = "`certdoctor-gui.exe`, signed"
+
+[run_certdoctor_gui_linux]
+other = "`./certdoctor-gui`"
+
+[run_certdoctor_gui_macos]
+other = "`certdoctor-gui.app`, signed and notarised"
+
+[group_input]
+other = "What to examine"
+
+[group_output]
+other = "Output"
+
+[group_channels]
+other = "Channels"
+
+[group_budget]
+other = "Budget"
+
+[group_meta]
+other = "Meta"

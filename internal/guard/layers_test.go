@@ -103,6 +103,17 @@ var layerMap = []layerRule{
 		mayImportRoot: true,
 	},
 	{
+		// The writer of the website's facts. It prints what the program says
+		// about itself - switches, exit codes, layers, statuses and the
+		// variables L0 reads - and runs none of it, so it sees those five
+		// registries and the module root for the version, and nothing that
+		// connects, reads the machine or renders.
+		location: "cmd/sitefacts/",
+		mayImportBelow: []string{"internal/core/switches/", "internal/core/exitcode/", "internal/core/layer/",
+			"internal/core/status/", "internal/core/machine/"},
+		mayImportRoot: true,
+	},
+	{
 		// The window's entry point (D21). It knows the command line only
 		// through the document it writes (ADR121), so it sees the window's own
 		// packages, the icon and the module root for the version - never the

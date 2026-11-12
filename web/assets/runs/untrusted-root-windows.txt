@@ -1,0 +1,24 @@
+x CN=BadSSL Untrusted Root Certificate Authority,O=BadSSL,L=San Francisco,ST=California,C=US signed
+  this certificate, and none of the 10 store(s) assessed here holds an anchor for it. 1 of 6
+  diagnostic layers could not be assessed.
+exit 4 DIAGNOSIS
+  ...
+  x FAIL     L5  Trust matrix     15 of 17 store(s) do not trust the presented chain, and 2 could
+                                  not be assessed
+  ...
+      system-store LocalMachine does NOT trust the presented chain (90 anchors)  detected
+        needs elevated rights: the LocalMachine store is read by every account and every service on
+                               this machine, so changing it needs administrator rights
+        run: certutil -addstore Root "<certificate.pem>"
+  ...
+      git C:\Program Files\Git\cmd\git.exe does NOT trust the presented chain (120
+        anchors)  detected
+        needs elevated rights: this store is outside this account's own files, so it belongs to
+                               every account on the machine
+        run: cmd /c copy /b "C:\Program Files\Git\ucrt64\etc\ssl\certs\ca-bundle.crt"+"<certificate.pem>" "C:\Program Files\Git\ucrt64\etc\ssl\certs\ca-bundle.crt"
+  ...
+      java C:\Program Files\OpenJDK\jdk-21.0.2 does NOT trust the presented chain (106
+        anchors)  detected
+        needs elevated rights: this store is outside this account's own files, so it belongs to
+                               every account on the machine
+        run: "C:\Program Files\OpenJDK\jdk-21.0.2\bin\keytool" -importcert -trustcacerts -keystore "C:\Program Files\OpenJDK\jdk-21.0.2\lib\security\cacerts" -storepass changeit -alias "<alias>" -file "<certificate.pem>"

@@ -1,0 +1,12 @@
+{{- /*
+  The four statuses, from the facts, each drawn with the shape the window and
+  the report give it, and what it means in the language being built.
+*/ -}}
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ T "status" }}</th><th>{{ T "meaning" }}</th></tr></thead>
+  <tbody>
+    {{- range hugo.Data.facts.certdoctor.statuses }}
+    <tr><td>{{ partial "status.html" . }}</td><td>{{ T (printf "status_%s" .) }}</td></tr>
+    {{- end }}
+  </tbody>
+</table></div>

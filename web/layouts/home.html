@@ -1,0 +1,160 @@
+{{- /*
+  The home page. Its words are the front matter of content/<language>/_index.md,
+  and the layers and the version are the program's facts.
+*/ -}}
+{{ define "main" }}
+{{- $p := .Params }}
+<div class="container">
+  <section class="hero">
+    <div class="hero-text">
+      <span class="pill">{{ $p.hero.eyebrow }}</span>
+      <h1>{{ $p.hero.title }} <span class="turn">{{ $p.hero.turn }}</span></h1>
+      <p class="lead">{{ $p.hero.lead | markdownify }}</p>
+      <div class="actions">
+        <a class="button primary" href="{{ (partial "find-page.html" "/download").RelPermalink }}">{{ T "get_it" }}</a>
+        <a class="button" href="{{ (partial "find-page.html" "/docs/getting-started").RelPermalink }}">{{ T "read_the_docs" }}</a>
+      </div>
+      <ul class="facts">
+        {{- range $p.hero.facts }}
+        <li>{{ . }}</li>
+        {{- end }}
+      </ul>
+    </div>
+    <div class="panel symptoms">
+      <div class="symptoms-head">{{ $p.hero.panel_title }}</div>
+      {{- range $p.hero.panel_rows }}
+      {{- $page := partial "find-page.html" .page }}
+      <a class="symptoms-row" href="{{ $page.RelPermalink }}"><code>{{ .text }}</code><span class="from">{{ .from }}</span></a>
+      {{- end }}
+      <div class="symptoms-foot"><code><span class="prompt">$ </span>certdoctor https://the-url-that-fails/</code><span>{{ $p.hero.panel_foot }}</span></div>
+    </div>
+  </section>
+</div>
+
+{{- /* A report is laid out 100 columns wide, so the run takes the whole width. */ -}}
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">{{ $p.run.eyebrow }}</span>
+      <h2>{{ $p.run.title }}</h2>
+      <p>{{ $p.run.text | markdownify }}</p>
+      {{- with $p.run.link }}
+      <p><a href="{{ (partial "find-page.html" .page).RelPermalink }}">{{ .text }}</a></p>
+      {{- end }}
+    </div>
+    <div class="panel terminal">
+      <div class="terminal-bar">{{ $p.run.caption }}</div>
+      {{- $output := resources.Get $p.run.output }}
+      {{- if not $output }}{{ errorf "the home page names %s, which is not in web/assets" $p.run.output }}{{ end }}
+      <pre><span class="prompt">$ </span>{{ $p.run.command }}
+{{ $output.Content }}</pre>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">{{ $p.steps.eyebrow }}</span>
+      <h2>{{ $p.steps.title }}</h2>
+    </div>
+    <ol class="steps">
+      {{- range $p.steps.items }}
+      <li><h3>{{ .title }}</h3><p>{{ .text | markdownify }}</p></li>
+      {{- end }}
+    </ol>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">{{ $p.layers.eyebrow }}</span>
+      <h2>{{ $p.layers.title }}</h2>
+      <p>{{ $p.layers.text }}</p>
+    </div>
+    <div class="grid three">
+      {{- range hugo.Data.facts.certdoctor.layers }}
+      <div class="card layer-card">
+        <span class="layer-id">{{ .id }}</span>
+        <h3>{{ partial "program-words.html" (dict "en" .name "key" (printf "layer_%s_name" .id)) }}</h3>
+        <p>{{ partial "program-words.html" (dict "en" .summary "key" (printf "layer_%s_summary" .id)) }}</p>
+      </div>
+      {{- end }}
+    </div>
+    {{- with $p.layers.link }}
+    <p class="section-more"><a href="{{ (partial "find-page.html" .page).RelPermalink }}">{{ .text }}</a></p>
+    {{- end }}
+  </div>
+</section>
+
+{{- range slice $p.errors $p.guides }}
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">{{ .eyebrow }}</span>
+      <h2>{{ .title }}</h2>
+      <p>{{ .text }}</p>
+    </div>
+    <div class="grid three">
+      {{- range .pages }}
+      {{- $page := partial "find-page.html" . }}
+      <a class="card link-card" href="{{ $page.RelPermalink }}">
+        <h3>{{ partial "link-title.html" $page }}</h3>
+        <p>{{ $page.Description }}</p>
+      </a>
+      {{- end }}
+    </div>
+    {{- with .link }}
+    <p class="section-more"><a href="{{ (partial "find-page.html" .page).RelPermalink }}">{{ .text }}</a></p>
+    {{- end }}
+  </div>
+</section>
+{{- end }}
+
+<section class="section">
+  <div class="container split">
+    <div class="section-head flush">
+      <span class="eyebrow">{{ $p.pipeline.eyebrow }}</span>
+      <h2>{{ $p.pipeline.title }}</h2>
+      <p>{{ $p.pipeline.text | markdownify }}</p>
+      {{- with $p.pipeline.link }}
+      <p><a href="{{ (partial "find-page.html" .page).RelPermalink }}">{{ .text }}</a></p>
+      {{- end }}
+    </div>
+    <div class="panel terminal">
+      <div class="terminal-bar">{{ $p.pipeline.caption }}</div>
+      <pre>{{ $p.pipeline.output }}</pre>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">{{ $p.promises.eyebrow }}</span>
+      <h2>{{ $p.promises.title }}</h2>
+      <p>{{ $p.promises.text }}</p>
+    </div>
+    <div class="grid three">
+      {{- range $p.promises.items }}
+      <div class="promise"><h3>{{ .title }}</h3><p>{{ .text | markdownify }}</p></div>
+      {{- end }}
+    </div>
+    {{- with $p.promises.link }}
+    <p class="section-more"><a href="{{ (partial "find-page.html" .page).RelPermalink }}">{{ .text }}</a></p>
+    {{- end }}
+  </div>
+</section>
+
+<section class="section">
+  <div class="container cta">
+    <h2>{{ $p.cta.title }}</h2>
+    <p>{{ $p.cta.text }}</p>
+    <div class="actions">
+      <a class="button primary" href="{{ (partial "find-page.html" "/download").RelPermalink }}">{{ T "get_it" }}</a>
+      <a class="button" href="{{ site.Params.repository }}">{{ T "link_github" }}</a>
+    </div>
+  </div>
+</section>
+{{ end }}

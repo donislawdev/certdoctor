@@ -1,0 +1,9 @@
+{{- /*
+  Every environment variable L0 reads, in the order the report lists them,
+  from web/data/facts/certdoctor.json, which cmd/sitefacts writes from the program.
+*/ -}}
+<ul class="chips">
+  {{- range hugo.Data.facts.certdoctor.variables }}
+  <li><code>{{ . }}</code></li>
+  {{- end }}
+</ul>

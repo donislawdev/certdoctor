@@ -1,0 +1,310 @@
+# The words of the website's own interface, in Polish, with the same keys as
+# en.toml, followed by the translations of what the program prints: its
+# switches, exit codes and layers. The English pages show those from
+# web/data/facts/, word for word. A key missing here stops the build.
+
+# ---- the frame of every page ------------------------------------------------
+
+[skip_to_content]
+other = "Przejdź do treści"
+
+[nav_label]
+other = "Główne"
+
+[nav_docs]
+other = "Dokumentacja"
+
+[nav_errors]
+other = "Błędy"
+
+[nav_guides]
+other = "Poradniki"
+
+[nav_download]
+other = "Pobierz"
+
+[link_github]
+other = "GitHub"
+
+[menu]
+other = "Menu"
+
+[language]
+other = "Język"
+
+[home]
+other = "Strona główna"
+
+[pager_label]
+other = "Poprzednia i następna strona"
+
+[previous]
+other = "Poprzednia"
+
+[next]
+other = "Następna"
+
+[on_this_page]
+other = "Na tej stronie"
+
+[footer_note]
+other = "Dlaczego ta maszyna nie łączy się z tym adresem i co uruchomić, żeby to naprawić. Darmowy i otwarty, na licencji GPL-3.0. Ta strona nie ustawia ciasteczek i niczego nie wczytuje z innych miejsc."
+
+[footer_product]
+other = "Program"
+
+[footer_errors]
+other = "Błędy"
+
+[footer_guides]
+other = "Poradniki"
+
+[footer_project]
+other = "Projekt"
+
+[link_releases]
+other = "Wydania"
+
+[link_issues]
+other = "Zgłoś przypadek, który ocenia źle"
+
+[link_support]
+other = "Wesprzyj projekt"
+
+[side_start]
+other = "Start"
+
+[side_layers]
+other = "Co sprawdza"
+
+[side_use]
+other = "Używanie"
+
+[side_reference]
+other = "Opis"
+
+[side_errors]
+other = "Błędy"
+
+[side_guides]
+other = "Poradniki"
+
+[side_trust]
+other = "Zaufanie"
+
+[picture_alt]
+other = "certdoctor: dlaczego ta maszyna nie łączy się z tym adresem i jakie polecenie naprawia każdy magazyn zaufania"
+
+[not_found_title]
+other = "Nie ma tu strony"
+
+[not_found_text]
+other = "Adres może mieć literówkę albo strona się przeniosła. Zacznij od strony głównej w swoim języku."
+
+# ---- the home page ----------------------------------------------------------
+
+[get_it]
+other = "Pobierz"
+
+[read_the_docs]
+other = "Pierwsze kroki"
+
+# ---- pages and tables -------------------------------------------------------
+
+[messages_label]
+other = "Komunikat, tak jak go wypisuje program"
+
+[code]
+other = "Kod"
+
+[name]
+other = "Nazwa"
+
+[meaning]
+other = "Znaczenie"
+
+[layer]
+other = "Warstwa"
+
+[question]
+other = "Na jakie pytanie odpowiada"
+
+[status]
+other = "Status"
+
+[status_FAIL]
+other = "To jest przyczyna. Przebieg z takim wierszem kończy się kodem wyjścia 4."
+
+[status_WARN]
+other = "Działa, ale coś warto obejrzeć. Samo ostrzeżenie zostawia kod wyjścia 0."
+
+[status_UNKNOWN]
+other = "Nie dało się ocenić, a powód jest zawsze podany. Nigdy nie liczy się jako zaliczenie."
+
+[status_PASS]
+other = "Sprawdzone i w porządku."
+
+[system]
+other = "Twój system"
+
+[archive]
+other = "Archiwum"
+
+[you_run]
+other = "Co uruchamiasz"
+
+[system_windows_amd64]
+other = "Windows na x64"
+
+[system_windows_arm64]
+other = "Windows na Arm"
+
+[system_linux_amd64]
+other = "Linux na x64"
+
+[system_linux_arm64]
+other = "Linux na Arm"
+
+[system_macos_arm64]
+other = "macOS na Apple silicon"
+
+[run_certdoctor_windows]
+other = "`certdoctor.exe`, podpisany"
+
+[run_certdoctor_linux]
+other = "`./certdoctor`, jeden statyczny plik"
+
+[run_certdoctor_macos]
+other = "`./certdoctor`, dowiązanie do `certdoctor.app`, podpisane i notaryzowane"
+
+[run_certdoctor_gui_windows]
+other = "`certdoctor-gui.exe`, podpisany"
+
+[run_certdoctor_gui_linux]
+other = "`./certdoctor-gui`"
+
+[run_certdoctor_gui_macos]
+other = "`certdoctor-gui.app`, podpisany i notaryzowany"
+
+[group_input]
+other = "Co badać"
+
+[group_output]
+other = "Wyjście"
+
+[group_channels]
+other = "Kanały"
+
+[group_budget]
+other = "Budżet czasu"
+
+[group_meta]
+other = "Informacje"
+
+# ---- what the program prints, translated ------------------------------------
+# The English pages show these in the program's own words, from the facts.
+
+[exit_OK]
+other = "wszystko, co miało znaczenie, zostało ocenione i przeszło"
+
+[exit_RUNTIME]
+other = "zawiódł sam certdoctor"
+
+[exit_USAGE]
+other = "błędna składnia wywołania albo nieznana flaga"
+
+[exit_CONFIG]
+other = "flagi są poprawne każda z osobna, ale sprzeczne albo niewykonalne razem"
+
+[exit_DIAGNOSIS]
+other = "przebieg się udał i znalazł co najmniej jedną usterkę"
+
+[exit_INCONCLUSIVE]
+other = "bez usterki, ale co najmniej jednej rzeczy nie dało się ocenić"
+
+[exit_IO]
+other = "nie udało się zapisać raportu"
+
+[exit_INTERRUPTED]
+other = "przerwany przez użytkownika"
+
+[exit_TERMINATED]
+other = "zakończony przez system"
+
+[layer_L0_name]
+other = "Kontekst"
+
+[layer_L0_summary]
+other = "sama maszyna - system operacyjny, kontener, VPN, zegar i zmienne środowiskowe, które decydują o zaufaniu i o proxy"
+
+[layer_L1_name]
+other = "Rozwiązywanie nazw"
+
+[layer_L1_summary]
+other = "na co rozwiązuje się nazwa, widziane tak, jak widzi to system, i tak, jak widzi to certdoctor"
+
+[layer_L2_name]
+other = "Proxy"
+
+[layer_L2_summary]
+other = "przez które proxy naprawdę pójdzie ten adres i które narzędzie o tym decyduje"
+
+[layer_L3_name]
+other = "TCP"
+
+[layer_L3_summary]
+other = "czy każdy rozwiązany adres przyjmuje połączenie, a jeśli nie, to jak odmawia"
+
+[layer_L4_name]
+other = "TLS"
+
+[layer_L4_summary]
+other = "uzgadnianie połączenia i łańcuch, który pokazał serwer, w tym to, czy po drodze ktoś go podpisał na nowo"
+
+[layer_L5_name]
+other = "Macierz zaufania"
+
+[layer_L5_summary]
+other = "które środowiska na tej maszynie ufają temu łańcuchowi, jeden wiersz na każdą zainstalowaną instancję"
+
+[switch_pac-url]
+other = "przeczytaj też ten skrypt automatycznej konfiguracji proxy (PAC) i powiedz, dokąd kieruje badany adres"
+
+[switch_from]
+other = "zamiast adresu: zapisz raport zapisany wcześniej z --json jeszcze raz, w wybranym formacie, niczego nie uruchamiając. Pojedynczy myślnik czyta go ze standardowego wejścia"
+
+[switch_format]
+other = "jak zapisać raport. Domyślnie terminal"
+
+[switch_json]
+other = "to samo co --format json"
+
+[switch_out]
+other = "dokąd zapisać raport. Pojedynczy myślnik oznacza standardowe wyjście, które jest domyślne"
+
+[switch_redact]
+other = "zamaskuj nazwy hostów, ścieżki i nazwy użytkowników. Poświadczenia są maskowane z tą flagą i bez niej"
+
+[switch_quiet]
+other = "ogranicz dziennik na standardowym wyjściu błędów do usterek"
+
+[switch_verbose]
+other = "mów więcej na standardowym wyjściu błędów o tym, co się dzieje"
+
+[switch_no-color]
+other = "nigdy nie koloruj wyjścia. NO_COLOR w środowisku robi to samo"
+
+[switch_timeout]
+other = "limit całego przebiegu w sekundach, co najmniej 0.001. Zero oznacza brak limitu. Domyślnie 60"
+
+[switch_probe-timeout]
+other = "limit jednej warstwy w sekundach, co najmniej 0.001. Zero oznacza brak limitu. Domyślnie 10"
+
+[switch_version]
+other = "wypisz wersję narzędzia i każdego schematu, który wytwarza"
+
+[switch_license]
+other = "wypisz licencję, a po niej noty kodu stron trzecich w tej binarce"
+
+[switch_help]
+other = "wypisz ten tekst"

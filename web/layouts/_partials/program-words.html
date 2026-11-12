@@ -1,0 +1,14 @@
+{{- /*
+  A sentence the program prints, in the language being built. In English it is
+  the program's own words from the facts, as --help prints them. In any other
+  language it is the language file's translation under the key given, and a
+  key with no words stops the build. Takes: en (the program's words), key.
+*/ -}}
+{{- $words := .en }}
+{{- if ne site.Language.Lang "en" }}
+  {{- $words = T .key }}
+  {{- if not $words }}
+    {{- errorf "i18n/%s.toml has no %s, which translates: %s" site.Language.Lang .key .en }}
+  {{- end }}
+{{- end }}
+{{- return $words }}

@@ -1,0 +1,126 @@
+# The project website, built with Hugo.
+#
+# English is served at the root and every other language under its own
+# prefix. A language is listed here only once every one of its pages is
+# translated, because an English page served under another language's address
+# is a duplicate to a search engine and a dead end to a reader.
+
+baseURL = "https://certdoctor.donislawdev.com/"
+defaultContentLanguage = "en"
+defaultContentLanguageInSubdir = false
+# English lives at the root, so the alias page Hugo would write at /en/ is an
+# address nobody needs.
+disableDefaultLanguageRedirect = true
+disableKinds = ["taxonomy", "term", "rss"]
+enableRobotsTXT = true
+# Hugo publishes into public/ next to this file, and nothing there is kept.
+publishDir = "public"
+
+[params]
+  # The colour a phone gives its bar beside the page. It is --page in
+  # assets/css/site.css, the window's own page colour.
+  themeColor = "#16181c"
+  # How many characters of a title a search result shows, about. The check of
+  # the built site holds every title to it.
+  titleLimit = 60
+  # The same for a description.
+  descriptionLimit = 160
+  repository = "https://github.com/donislawdev/certdoctor"
+
+[languages.en]
+  label = "English"
+  locale = "en"
+  title = "certdoctor"
+  weight = 1
+  contentDir = "content/en"
+  [languages.en.params]
+    # The locale a link preview asks for, which is a language and a country.
+    ogLocale = "en_US"
+
+# Its pages have the same files as the English ones, so Hugo pairs them, and
+# a slug in their front matter gives the address in Polish.
+[languages.pl]
+  label = "Polski"
+  locale = "pl"
+  title = "certdoctor"
+  weight = 2
+  contentDir = "content/pl"
+  # GitHub Pages serves the 404 page at the root and no other, so a language
+  # other than English has none. A language's own list replaces the site's,
+  # so it names the site's three kinds again.
+  disableKinds = ["404", "taxonomy", "term", "rss"]
+  [languages.pl.params]
+    ogLocale = "pl_PL"
+
+[markup.goldmark.renderer]
+  # Content is Markdown written for this site, and raw HTML in it would be a
+  # second way of writing a page that no template controls.
+  unsafe = false
+
+[markup.tableOfContents]
+  startLevel = 2
+  endLevel = 2
+  ordered = false
+
+[markup.highlight]
+  # Colours come from the stylesheet, so a code block follows the same tokens
+  # as everything else.
+  noClasses = false
+
+[sitemap]
+  changeFreq = ""
+  priority = -1
+
+[privacy]
+  [privacy.disqus]
+    disable = true
+  [privacy.googleAnalytics]
+    disable = true
+  [privacy.instagram]
+    disable = true
+  [privacy.vimeo]
+    disable = true
+  [privacy.x]
+    disable = true
+  [privacy.youTube]
+    disable = true
+
+# What the site shows about the program is read from where the program keeps
+# it, so the site never carries a copy that could drift from the original. A
+# mount replaces the default one for its component only, so static/, data/ and
+# assets/ are named again.
+[[module.mounts]]
+  source = "static"
+  target = "static"
+
+# The program's icon, drawn by assets/icon/appicon.py.
+[[module.mounts]]
+  source = "../assets/icon/certdoctor.png"
+  target = "assets/icon.png"
+
+[[module.mounts]]
+  source = "data"
+  target = "data"
+
+[[module.mounts]]
+  source = "assets"
+  target = "assets"
+
+# The picture a shared link shows, drawn by assets/social-preview/social_preview.py.
+# An asset rather than a static file, so its width and height are read from the
+# picture itself.
+[[module.mounts]]
+  source = "../assets/social-preview/social-preview.png"
+  target = "assets/social-preview.png"
+
+# The README holds the archives of a release and the commands that check a
+# download, held to the release scripts by internal/guard. The site reads them
+# from there rather than writing them again.
+[[module.mounts]]
+  source = "../README.md"
+  target = "assets/readme.md"
+
+# The Go version a build from source needs.
+[[module.mounts]]
+  source = "../go.mod"
+  target = "assets/go.mod"

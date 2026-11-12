@@ -10,26 +10,6 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/switches"
 )
 
-// helpGroups is the order the groups appear in. Declared rather than derived
-// from the switch list so that adding a switch cannot silently reorder the page
-// somebody reads every time they forget a flag name.
-//
-// A note is printed under the group's title. The one there is says the group's
-// switches are not built, and TestTheGroupTheHelpCallsNotBuiltIsRefused holds
-// it to what the program does with them, so it comes off the day they work.
-var helpGroups = []struct {
-	name  string
-	title string
-	note  string
-}{
-	{"input", "WHAT TO EXAMINE", ""},
-	{"output", "OUTPUT", ""},
-	{"containers", "CONTAINERS", "Not built in this release. Each of these is accepted and refused with the reason."},
-	{"channels", "CHANNELS", ""},
-	{"budget", "BUDGET", ""},
-	{"meta", "META", ""},
-}
-
 // helpText renders --help.
 //
 // Everything in it is derived: the switches from their declarations, the exit
@@ -65,13 +45,13 @@ func writeSwitches(b *strings.Builder) {
 	for _, s := range switches.All {
 		width = max(width, len(switchSpelling(s)))
 	}
-	for _, group := range helpGroups {
-		fmt.Fprintf(b, "\n%s\n", group.title)
-		if group.note != "" {
-			fmt.Fprintf(b, "  %s\n", group.note)
+	for _, group := range switches.Groups {
+		fmt.Fprintf(b, "\n%s\n", group.Title)
+		if group.Note != "" {
+			fmt.Fprintf(b, "  %s\n", group.Note)
 		}
 		for _, s := range switches.All {
-			if s.Group != group.name {
+			if s.Group != group.Name {
 				continue
 			}
 			fmt.Fprintf(b, "  %-*s  %s\n", width, switchSpelling(s), s.Summary)
