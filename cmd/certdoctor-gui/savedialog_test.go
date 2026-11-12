@@ -171,7 +171,9 @@ func TestTheDialogOpensAtHomeTheFirstTime(t *testing.T) {
 // TestClosingTheWindowEndsTheCopy - a copy left being written would write for
 // a window that is gone.
 func TestClosingTheWindowEndsTheCopy(t *testing.T) {
-	test.NewTempApp(t)
+	// The window's theme, as the program sets it (run_cgo.go): the parts
+	// take their sizes from it, and the test theme has none of them.
+	test.NewTempApp(t).Settings().SetTheme(look.Theme())
 	h := &held{}
 	win := newWindow(test.NewWindow(nil), nil, "0.1.0", false, h)
 	win.wait = h.wait

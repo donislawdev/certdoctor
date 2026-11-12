@@ -181,7 +181,16 @@ func TestEveryPartBuildsAndDraws(t *testing.T) {
 	copyButton := NewButton(Secondary, "Copy", theme.ContentCopyIcon(), nil)
 	entry := widget.NewEntry()
 	all := Stack(look.GapCard,
-		Header(nil, "certdoctor", r.Version, NewButton(Quiet, "GitHub", nil, nil), NewButton(Quiet, "Donate", Heart(), nil)),
+		Header(nil, "certdoctor", r.Version, nil, NewButton(Quiet, "GitHub", nil, nil), NewButton(Quiet, "Donate", Heart(), nil)),
+		Header(nil, "certdoctor", r.Version, NewTabs([]string{"Diagnose", "Tools"}, 1), NewButton(Quiet, "GitHub", nil, nil)),
+		Row(look.GapInline, TabItem("Tools", true, Rest), TabItem("Tools", false, Hover), TabItem("Tools", false, Focused),
+			TabItem("Tools", true, Focused)),
+		ToolItem("JWT decoder", "a summary", true, Rest), ToolItem("JWT decoder", "a summary", false, Hover),
+		ToolItem("JWT decoder", "a summary", false, Focused),
+		NewToolList("Tools", "Search", "Nothing", []ToolGroup{{Title: "Tokens", Tools: []ToolEntry{{ID: "jwt", Title: "JWT"}}}}, ""),
+		Check(model.Fail, "expired"), Check(model.Pass, "valid"),
+		Fields([]FieldRow{{Label: "Expires", Value: "2026-11-12", Note: "3 hours ago", Status: model.Fail}, {Label: "Type", Value: "JWT"}}),
+		CodeBlock("{\n  \"alg\": \"RS256\"\n}"),
 		Verdict(r),
 		RowTop(look.GapCard, 1, Width(look.RailWidth, NewRail("Layers", r.Layers, len(r.Layers)-1)), Matrix(l5.Stores, 0)),
 		MatrixHead(),

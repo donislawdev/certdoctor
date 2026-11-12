@@ -431,6 +431,31 @@ save the JSON with `--out` rather than `>`, which writes UTF-16 there.
 
 ---
 
+## Tools
+
+Beside the diagnosis, certdoctor has small tools for what stands around a connection. Each reads
+only what you give it, connects to nothing and changes nothing. `certdoctor tool` lists them, and
+the window has them under **Tools** on its bar.
+
+The first is a **JWT decoder**. It shows a token's header and claims in the order the token has
+them, says when the token was issued, from when it is valid and when it expires, and warns about
+what makes libraries disagree: `alg: none`, a stripped or wrongly shaped signature, a name given
+twice, padding or standard base64. It never checks the signature - that needs the issuer's key -
+and says so every time.
+
+```bash
+certdoctor tool jwt                     # paste the token, then press Enter
+certdoctor tool jwt --file token.txt
+certdoctor tool jwt --json < token.txt
+```
+
+A token is never taken as an argument: an argument stays in your shell's history and in the list
+of running programs. `Bearer` in front and quotes around it are taken off, and the output says so.
+The command ends with `0` whenever it read the token, whatever the token says, and with `3` when
+what it was given is not a token it can read.
+
+---
+
 ## Honest limits
 
 A tool that quietly fails to look at something is worse than one that says what it cannot do.

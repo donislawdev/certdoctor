@@ -138,6 +138,9 @@ const (
 	LabelWidth = 168
 	// FieldWidthShort is the width of a box holding a number.
 	FieldWidthShort = 120
+	// ToolInputRows is how many lines a tool's input box shows before it
+	// scrolls: a token of a kilobyte, broken at the box's width, at a glance.
+	ToolInputRows = 5
 	// ProseWidth is as wide as a paragraph gets: about 95 characters at the
 	// lead size, the upper end of what reads easily.
 	ProseWidth = 820

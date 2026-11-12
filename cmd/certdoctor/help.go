@@ -8,6 +8,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/switches"
+	"github.com/donislawdev/certdoctor/internal/tool/spec"
 )
 
 // helpText renders --help.
@@ -109,6 +110,7 @@ func versionText() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %s\n", toolName, toolVersion)
 	fmt.Fprintf(&b, "report schema: %s\n", render.SchemaVersion)
+	fmt.Fprintf(&b, "tool schema: %s\n", spec.SchemaVersion)
 	fmt.Fprintf(&b, "go: %s\n", runtime.Version())
 	fmt.Fprintf(&b, "platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	return b.String()

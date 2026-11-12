@@ -36,13 +36,17 @@ func AppMark(icon fyne.Resource) fyne.CanvasObject {
 }
 
 // Header is the bar across the top: the program's mark and name on the
-// left, and whatever the screen puts at the far end.
-func Header(icon fyne.Resource, name, version string, trailing ...fyne.CanvasObject) fyne.CanvasObject {
+// left, the places of the window beside them when nav is not nil, and
+// whatever the screen puts at the far end.
+func Header(icon fyne.Resource, name, version string, nav fyne.CanvasObject, trailing ...fyne.CanvasObject) fyne.CanvasObject {
 	left := Row(look.GapInline,
 		Middle(AppMark(icon)),
 		Middle(Text(Heading, name)),
 		Middle(Text(CaptionMuted, version)),
 	)
+	if nav != nil {
+		left = Row(look.GapScreen, left, Middle(nav))
+	}
 	objects := append([]fyne.CanvasObject{left}, trailing...)
 	return Stack(0, Bar(Height(look.ControlHeight, RowGrow(look.GapButtons, 0, objects...))), Rule())
 }

@@ -182,7 +182,7 @@ func everyScreen(t *testing.T) []screen {
 			return o
 		}})
 	}
-	return all
+	return append(all, toolScreens(t, ic)...)
 }
 
 // longPrinted stands for what certdoctor printed before it stopped: one long

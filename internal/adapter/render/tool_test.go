@@ -88,6 +88,32 @@ func TestAFieldWithAStatusIsMarkedAndTheOthersLineUp(t *testing.T) {
 	}
 }
 
+func TestTheDocumentCarriesTheViewSafeToDrawAndTheDataAsItCame(t *testing.T) {
+	out := toolPage().Outcome
+	out.Data = map[string]string{"typ": "\x1b[31mJWT"}
+	out.Notes = append(out.Notes, "right"+string(rune(0x202e))+"left")
+	shown := Shown(out)
+	if shown.Data.(map[string]string)["typ"] != "\x1b[31mJWT" {
+		t.Error("the data was changed - a script reads it as it came")
+	}
+	var words []string
+	words = append(words, shown.Notes...)
+	for _, b := range shown.View {
+		words = append(words, b.Title, b.Body)
+		for _, f := range b.Fields {
+			words = append(words, f.Label, f.Value, f.Note)
+		}
+	}
+	for _, w := range words {
+		if strings.ContainsAny(w, "\x1b\x07"+string(rune(0x202e))) {
+			t.Errorf("a word reached the document unsafe to draw: %q", w)
+		}
+	}
+	if code := shown.View[1].Body; !strings.Contains(code, "\n") || !strings.Contains(code, `\u`+`001b]0;x\u`+`0007`) {
+		t.Errorf("the code block lost its line breaks or its escapes: %q", code)
+	}
+}
+
 func TestWrapKeepsASentenceWithinThePage(t *testing.T) {
 	lines := Wrap(strings.Repeat("word ", 60), 10)
 	if len(lines) < 3 {

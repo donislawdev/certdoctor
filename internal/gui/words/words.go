@@ -185,9 +185,55 @@ const (
 	// given to it in English (OBS206), with the toolkit's reason. The window
 	// opens all the same.
 	ToolkitNotEnglish Key = "toolkit.notenglish"
+
+	// The two places of the window on its bar, and the Tools screen (D23,
+	// ADR141). What each tool is called is in tools.go, by its id.
+	NavDiagnose         Key = "nav.diagnose"
+	NavTools            Key = "nav.tools"
+	ToolsTitle          Key = "tools.title"
+	ToolsLead           Key = "tools.lead"
+	ToolsHead           Key = "tools.head"
+	ToolsSearch         Key = "tools.search"
+	ToolsNoMatch        Key = "tools.nomatch"
+	ToolClear           Key = "tool.clear"
+	ToolChecks          Key = "tool.checks"
+	ToolNotes           Key = "tool.notes"
+	ToolRunning         Key = "tool.running"
+	ToolRefusedTitle    Key = "tool.refused.title"
+	ToolRefusedTodo     Key = "tool.refused.todo"
+	ToolOverranTitle    Key = "tool.overran.title"
+	ToolOverranWhat     Key = "tool.overran.what"
+	ToolCrashedTitle    Key = "tool.crashed.title"
+	ToolCrashedWhat     Key = "tool.crashed.what"
+	ToolUnreadableTitle Key = "tool.unreadable.title"
+	ToolUnreadableWhat  Key = "tool.unreadable.what"
+	ToolVersionWhat     Key = "tool.version.what"
+	ToolTodo            Key = "tool.todo"
 )
 
 var english = map[Key]string{
+	NavDiagnose:         "Diagnose",
+	NavTools:            "Tools",
+	ToolsTitle:          "Tools",
+	ToolsLead:           "Small tools for what stands around a connection. Each reads only what you give it here, connects to nothing and changes nothing.",
+	ToolsHead:           "Tools",
+	ToolsSearch:         "Search tools",
+	ToolsNoMatch:        "No tool matches what is typed above.",
+	ToolClear:           "Clear",
+	ToolChecks:          "Checks",
+	ToolNotes:           "Before reading it",
+	ToolRunning:         "Reading what you gave it...",
+	ToolRefusedTitle:    "This cannot be read",
+	ToolRefusedTodo:     "Check what was pasted - the whole of it, and nothing else - and try again.",
+	ToolOverranTitle:    "The tool did not finish in time",
+	ToolOverranWhat:     "It was still running after %s s, so the window stopped it.",
+	ToolCrashedTitle:    "The tool stopped without an answer",
+	ToolCrashedWhat:     "It ended with exit code %d and wrote nothing to show.",
+	ToolUnreadableTitle: "The tool wrote an answer this window cannot read",
+	ToolUnreadableWhat:  "What it wrote is not an answer: %s.",
+	ToolVersionWhat:     "This window is %s and the certdoctor beside it says %s, so its answer is not drawn.",
+	ToolTodo:            "Run certdoctor tool %s in a terminal with the same input to see what it says, and report it on GitHub.",
+
 	AppName:         "certdoctor",
 	StartTitle:      "Diagnose a connection",
 	StartLead:       "Follows the whole path to an address - name lookup, proxy, TCP and TLS - and asks every trust store on this machine whether it trusts the server.",
@@ -395,6 +441,16 @@ const (
 	// could not be read - with the reason.
 	CatWindow    Key = "cat.window"
 	CatNoExample Key = "cat.noexample"
+	// The tools' parts (D23): the tabs on the bar, a tool in the list, and
+	// the three kinds of block a tool's answer is drawn with.
+	CatToolsPage Key = "cat.toolspage"
+	// CatLongLabel names a sample of long words under it - a short label,
+	// because the long words as their own label run into the next cell.
+	CatLongLabel Key = "cat.long.label"
+	CatTabs      Key = "cat.tabs"
+	CatToolList  Key = "cat.toollist"
+	CatToolParts Key = "cat.toolparts"
+	CatToolCode  Key = "cat.toolcode"
 )
 
 var catalogue = map[Key]string{
@@ -451,6 +507,12 @@ var catalogue = map[Key]string{
 	CatSaved:      "saved",
 	CatWindow:     "certdoctor - every part of the window",
 	CatNoExample:  "The catalogue could not be shown: the example report its parts are drawn from did not read (%s).",
+	CatToolsPage:  "Tools - every part of a tool's page",
+	CatLongLabel:  "long words, cut short",
+	CatTabs:       "Places of the window",
+	CatToolList:   "Tool list",
+	CatToolParts:  "A tool's answer - checks and fields",
+	CatToolCode:   "A tool's answer - code and text",
 }
 
 // Kind is the name the window gives a kind of finding. The kinds are the

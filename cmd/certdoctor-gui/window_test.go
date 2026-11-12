@@ -168,7 +168,7 @@ func TestCancelLeavesTheRunAndDropsItsAnswer(t *testing.T) {
 // closed again when the test ends, and closing a test window twice panics in
 // the toolkit's test driver.
 func TestClosingTheWindowEndsTheRun(t *testing.T) {
-	test.NewTempApp(t)
+	test.NewTempApp(t).Settings().SetTheme(look.Theme())
 	h := &held{}
 	win := newWindow(test.NewWindow(nil), nil, "0.1.0", false, h)
 	win.wait = h.wait

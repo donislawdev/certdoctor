@@ -5,7 +5,6 @@ import (
 	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -181,15 +180,40 @@ func rich(s Style, words string, ink look.Role, wrap fyne.TextWrap, cut fyne.Tex
 // tight sets text without the room the toolkit keeps round it, which is the
 // room of a box to type in. Text on its own keeps none, so the distances
 // between words and the things beside them are the ones look names.
+//
+// IT TAKES THE ROOM BACK BY LAYOUT, NOT BY A THEME OVERRIDE, and that is a
+// measured decision. Until 2026-11-12 every text sat in a ThemeOverride whose
+// theme set the inner padding to 0. Fyne v2.8.2 gives each override a scope
+// of its own - cache.OverrideTheme numbers it from a counter - and keys its
+// cache of font faces by that scope (internal/painter/font.go,
+// CachedFontFace), so every text parsed its fonts again and kept them for the
+// life of the program: drawing the page of parts once allocated 2.7 GB, the
+// window grew with every report it showed, and the render tool ran out of
+// memory. A RichText keeps the inner padding on all four sides, in its
+// minimum size and in its layout alike (widget/richtext.go), so laying it out
+// that much larger and that much up and to the left draws the same pixels with
+// one cache entry for the whole window.
 func tight(o fyne.CanvasObject) fyne.CanvasObject {
-	return container.NewThemeOverride(o, tightTheme{look.Theme()})
+	return fyne.NewContainerWithLayout(tightLayout{}, o)
 }
 
-type tightTheme struct{ fyne.Theme }
+// tightLayout lays out its one text with the toolkit's inner padding outside
+// its own bounds.
+type tightLayout struct{}
 
-func (t tightTheme) Size(name fyne.ThemeSizeName) float32 {
-	if name == theme.SizeNameInnerPadding {
-		return 0
-	}
-	return t.Theme.Size(name)
+// room is the inner padding the toolkit keeps round o, in the theme o is
+// drawn with.
+func room(o fyne.CanvasObject) float32 {
+	return theme.CurrentForWidget(o).Size(theme.SizeNameInnerPadding)
+}
+
+func (tightLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	m, p := objects[0].MinSize(), 2*room(objects[0])
+	return fyne.NewSize(max(0, m.Width-p), max(0, m.Height-p))
+}
+
+func (tightLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	p := room(objects[0])
+	objects[0].Move(fyne.NewPos(-p, -p))
+	objects[0].Resize(fyne.NewSize(size.Width+2*p, size.Height+2*p))
 }

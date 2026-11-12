@@ -44,6 +44,21 @@ func TestEveryToolIsDescribedCompletely(t *testing.T) {
 	}
 }
 
+func TestAToolIsFoundByAnyOfItsWords(t *testing.T) {
+	jwt, _ := Find("jwt")
+	for query, want := range map[string]bool{
+		"": true, "JWT": true, "bearer": true, "  decoder   jwt ": true, "id_token": true, "SIGNATURE": true,
+		"certificate": false, "jwt certificate": false, "my words": false,
+	} {
+		if got := jwt.Match(query); got != want {
+			t.Errorf("Match(%q) = %v, want %v", query, got, want)
+		}
+	}
+	if !jwt.Match("my words", "what the window calls it - my words") {
+		t.Error("the words another surface calls a tool by are not searched")
+	}
+}
+
 // sample is an outcome with every kind of block and every optional part.
 func sample() Outcome {
 	return Outcome{

@@ -23,10 +23,21 @@ import (
 // some: a button that is there on one screen and gone on the next is one
 // people conclude they imagined. Quiet, so neither competes with the
 // screen's one primary action.
-func head(icon fyne.Resource, version string) (fyne.CanvasObject, []Link) {
+//
+// THE TABS BETWEEN THE WINDOW'S PLACES ARE ON IT TOO, with place the one this
+// screen belongs to: every screen of a diagnosis is Diagnose, the tools are
+// Tools (D23). On every screen for the reason the links are.
+func head(icon fyne.Resource, version string, place int) (fyne.CanvasObject, []Link, *parts.Tabs) {
 	l := newLinks()
-	return parts.Header(icon, words.T(words.AppName), version, buttonsOf(l)...), l
+	tabs := parts.NewTabs([]string{words.T(words.NavDiagnose), words.T(words.NavTools)}, place)
+	return parts.Header(icon, words.T(words.AppName), version, tabs, buttonsOf(l)...), l, tabs
 }
+
+// The places of the window, as the tabs on its bar number them.
+const (
+	PlaceDiagnose = iota
+	PlaceTools
+)
 
 // Link is a button that leaves the window for a page in the browser, and the
 // address of that page. What a press does is the window's to say.
@@ -78,6 +89,7 @@ type StartForm struct {
 	Diagnose *parts.Button
 	Options  *parts.Pressable
 	Links    []Link
+	Tabs     *parts.Tabs
 	typed    map[string]*widget.Entry
 	ticked   map[string]*widget.Check
 }
@@ -136,8 +148,8 @@ func Start(icon fyne.Resource, version string, optionsOpen, software bool) (fyne
 	}
 	body := parts.Column(look.ColumnWidth, parts.Inset(0, look.InsetPage, 0, look.InsetPage,
 		parts.Stack(look.GapCard, sections...)))
-	bar, links := head(icon, version)
-	form.Links = links
+	bar, links, tabs := head(icon, version, PlaceDiagnose)
+	form.Links, form.Tabs = links, tabs
 	page := container.NewBorder(bar, nil, nil, nil,
 		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body)))
 	return page, form
@@ -172,6 +184,7 @@ func (f *StartForm) control(o request.Option) fyne.CanvasObject {
 type ReportView struct {
 	New, Save, Again *parts.Button
 	Links            []Link
+	Tabs             *parts.Tabs
 
 	rail   *parts.Rail
 	shown  *fyne.Container
@@ -239,8 +252,8 @@ func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.Ca
 	rail := container.NewVScroll(parts.Inset(0, 0, 0, look.InsetPage, v.rail))
 	lower := parts.ColumnFill(look.PageWidth, parts.Inset(look.InsetPage, 0, 0, 0,
 		parts.RowTop(look.GapCard, 1, parts.Tall(parts.Width(look.RailWidth, rail)), parts.Tall(v.shown))))
-	bar, links := head(icon, r.Version)
-	v.Links = links
+	bar, links, tabs := head(icon, r.Version, PlaceDiagnose)
+	v.Links, v.Tabs = links, tabs
 	return container.NewBorder(bar, nil, nil, nil, container.NewBorder(top, nil, nil, nil, lower)), v
 }
 
@@ -304,6 +317,7 @@ func groups(findings []model.Finding) []group {
 type RunningView struct {
 	Cancel *parts.Button
 	Links  []Link
+	Tabs   *parts.Tabs
 	time   *parts.Changing
 	track  *parts.Track
 }
@@ -343,8 +357,8 @@ func Running(icon fyne.Resource, version, target string) (fyne.CanvasObject, *Ru
 		parts.Para(parts.CaptionMuted, words.T(words.RunningNote)),
 	)
 	body := parts.Column(look.ColumnWidth, parts.Inset(0, look.InsetPage, 0, look.InsetPage, card))
-	bar, links := head(icon, version)
-	v.Links = links
+	bar, links, tabs := head(icon, version, PlaceDiagnose)
+	v.Links, v.Tabs = links, tabs
 	return container.NewBorder(bar, nil, nil, nil,
 		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body))), v
 }
@@ -354,6 +368,7 @@ func Running(icon fyne.Resource, version, target string) (fyne.CanvasObject, *Ru
 type TroubleView struct {
 	Back  *parts.Button
 	Links []Link
+	Tabs  *parts.Tabs
 }
 
 // Trouble is the screen when certdoctor itself could not run.
@@ -361,8 +376,8 @@ func Trouble(icon fyne.Resource, version, title, what, todo, printed string) (fy
 	v := &TroubleView{Back: parts.NewButton(parts.Primary, words.T(words.Back), theme.NavigateBackIcon(), nil)}
 	card := parts.Problem(title, what, todo, printed, v.Back)
 	body := parts.Column(look.ColumnWidth, parts.Inset(0, look.InsetPage, 0, look.InsetPage, card))
-	bar, links := head(icon, version)
-	v.Links = links
+	bar, links, tabs := head(icon, version, PlaceDiagnose)
+	v.Links, v.Tabs = links, tabs
 	return container.NewBorder(bar, nil, nil, nil,
 		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body))), v
 }

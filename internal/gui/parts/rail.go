@@ -16,6 +16,33 @@ import (
 // what it found. chosen is the layer the page beside the list shows.
 func RailItem(l model.Layer, chosen bool, state State) fyne.CanvasObject {
 	tone := ToneOf(l.Status)
+	sentence := l.Detail
+	if sentence == "" {
+		sentence = l.Reason
+	}
+	name := RowGrow(look.GapInline, 1,
+		Text(CaptionMuted, l.ID),
+		Clip(Strong, l.Name),
+		Inked(CaptionStrong, look.ToneRole(tone), string(l.Status)),
+	)
+	text := Stack(look.GapTight, name, Clip(CaptionMuted, sentence))
+	return railRow(chosen, state, RowGrow(look.GapRow, 1,
+		Middle(Mark(tone, look.MarkRow)),
+		Middle(text),
+	))
+}
+
+// ToolItem is how one tool in the list down the side of Tools is drawn: its
+// name and the first line of what it does, in the row a layer is drawn in.
+func ToolItem(title, summary string, chosen bool, state State) fyne.CanvasObject {
+	return railRow(chosen, state, Stack(look.GapTight, Clip(Strong, title), Clip(CaptionMuted, summary)))
+}
+
+// railRow is one row of a list down the side of a screen - a layer, a tool -
+// drawn the same whatever it holds: the face that says chosen, hovered or
+// focused, the bar that marks the chosen one, and the content (GUI rule 5:
+// one drawing for every list, so they cannot come to look different).
+func railRow(chosen bool, state State, content fyne.CanvasObject) fyne.CanvasObject {
 	fill := color.Color(color.Transparent)
 	switch {
 	case chosen:
@@ -35,23 +62,9 @@ func RailItem(l model.Layer, chosen bool, state State) fyne.CanvasObject {
 	}
 	bar.CornerRadius = look.StrokeSelected / 2
 	bar.SetMinSize(fyne.NewSize(look.StrokeSelected, 0))
-
-	sentence := l.Detail
-	if sentence == "" {
-		sentence = l.Reason
-	}
-	name := RowGrow(look.GapInline, 1,
-		Text(CaptionMuted, l.ID),
-		Clip(Strong, l.Name),
-		Inked(CaptionStrong, look.ToneRole(tone), string(l.Status)),
-	)
-	text := Stack(look.GapTight, name, Clip(CaptionMuted, sentence))
-	content := PadXY(look.InsetCell, 0, RowGrow(look.GapRow, 1,
-		Middle(Mark(tone, look.MarkRow)),
-		Middle(text),
-	))
 	return Height(look.RailItemHeight, Layers(face,
-		RowGrow(0, 1, Tall(Inset(0, look.InsetCell, 0, look.InsetCell, bar)), Middle(content)),
+		RowGrow(0, 1, Tall(Inset(0, look.InsetCell, 0, look.InsetCell, bar)),
+			Middle(PadXY(look.InsetCell, 0, content))),
 	))
 }
 

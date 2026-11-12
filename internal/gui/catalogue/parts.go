@@ -2,6 +2,7 @@ package catalogue
 
 import (
 	"fmt"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
@@ -163,7 +164,7 @@ func matrix(r model.Report) fyne.CanvasObject {
 		{no, false, parts.Hover, words.CatHover},
 		{no, false, parts.Focused, words.CatFocus},
 		{no, true, parts.Rest, words.CatOpen},
-		{long, false, parts.Rest, words.CatSampleLong},
+		{long, false, parts.Rest, words.CatLongLabel},
 		{not, false, parts.Rest, words.CatNothing},
 	} {
 		row := parts.StoreRow(s.store, s.open)
@@ -194,7 +195,7 @@ func rail(r model.Report) fyne.CanvasObject {
 		{l[2], false, parts.Hover, words.CatHover},
 		{l[4], false, parts.Focused, words.CatFocus},
 		{l[5], true, parts.Focused, words.CatSelFocus},
-		{long, false, parts.Rest, words.CatSampleLong},
+		{long, false, parts.Rest, words.CatLongLabel},
 	}
 	var cells []fyne.CanvasObject
 	for _, it := range items {
@@ -232,10 +233,90 @@ func badges() fyne.CanvasObject {
 // version string as long as a build of the release candidates writes.
 func header(icon fyne.Resource, r model.Report) fyne.CanvasObject {
 	name := words.T(words.AppName)
+	places := []string{words.T(words.NavDiagnose), words.T(words.NavTools)}
 	return parts.Card(words.T(words.CatHeader), nil,
-		parts.Header(icon, name, r.Version, screens.Links()...),
-		parts.Header(icon, name, "0.1.0-rc.12+20261103.2a8b152dirty", screens.Links()...),
+		parts.Header(icon, name, r.Version, parts.NewTabs(places, screens.PlaceDiagnose), screens.Links()...),
+		parts.Header(icon, name, "0.1.0-rc.12+20261103.2a8b152dirty", parts.NewTabs(places, screens.PlaceTools),
+			screens.Links()...),
 	)
+}
+
+// tabs are the places of the window in every state a tab takes.
+func tabs() fyne.CanvasObject {
+	items := []struct {
+		chosen bool
+		state  parts.State
+		name   words.Key
+	}{
+		{true, parts.Rest, words.CatSelected},
+		{false, parts.Rest, words.CatRest},
+		{false, parts.Hover, words.CatHover},
+		{false, parts.Focused, words.CatFocus},
+		{true, parts.Focused, words.CatSelFocus},
+	}
+	var cells []fyne.CanvasObject
+	for _, it := range items {
+		cells = append(cells, labelled(it.name, parts.TabItem(words.T(words.NavTools), it.chosen, it.state)))
+	}
+	return parts.Card(words.T(words.CatTabs), nil, parts.Row(look.GapCard, cells...))
+}
+
+// toolList is a tool in the list in every state, with a name and a summary
+// as long as any will be, beside the list itself after a search left nothing.
+func toolList() fyne.CanvasObject {
+	w, _ := words.Tool("jwt")
+	items := []struct {
+		title, summary string
+		chosen         bool
+		state          parts.State
+		name           words.Key
+	}{
+		{w.Title, w.Summary, true, parts.Rest, words.CatSelected},
+		{w.Title, w.Summary, false, parts.Rest, words.CatRest},
+		{w.Title, w.Summary, false, parts.Hover, words.CatHover},
+		{w.Title, w.Summary, false, parts.Focused, words.CatFocus},
+		{words.T(words.CatSampleLong), words.T(words.CatSampleLong), false, parts.Rest, words.CatLongLabel},
+	}
+	var cells []fyne.CanvasObject
+	for _, it := range items {
+		cells = append(cells, parts.Width(look.RailWidth, labelled(it.name, parts.ToolItem(it.title, it.summary, it.chosen, it.state))))
+	}
+	empty := parts.NewToolList(words.T(words.ToolsHead), words.T(words.ToolsSearch), words.T(words.ToolsNoMatch),
+		[]parts.ToolGroup{{Title: words.Category("tokens"), Tools: []parts.ToolEntry{{ID: "jwt", Title: w.Title, Summary: w.Summary}}}}, "jwt")
+	empty.Filter(func(string) bool { return false })
+	cells = append(cells, parts.Width(look.RailWidth, labelled(words.CatNothing, empty)))
+	return parts.Card(words.T(words.CatToolList), nil, parts.Row(look.GapCard, cells[:3]...), parts.Row(look.GapCard, cells[3:]...))
+}
+
+// toolAnswer is a tool's answer in every kind of block: a check of each
+// status, one with a sentence as long as they come, a table of fields with
+// and without a judgement and with a value longer than its column, a block
+// of code with a line longer than the card, and a paragraph.
+func toolAnswer() fyne.CanvasObject {
+	var checks []fyne.CanvasObject
+	for _, s := range []model.Status{model.Fail, model.Warn, model.Unknown, model.Pass} {
+		checks = append(checks, parts.Check(s, words.T(words.CatSampleLong)))
+	}
+	fields := parts.Fields([]parts.FieldRow{
+		{Label: "Expires (exp)", Value: "2026-11-12 09:00:00 UTC", Note: "3 hours ago", Status: model.Fail},
+		{Label: "Issued (iat)", Value: "2026-11-12 08:00:00 UTC", Note: "4 hours ago"},
+		{Label: "Key ID", Value: "projects/qa-env/locations/global/keyRings/signing/cryptoKeys/jwt-signer/cryptoKeyVersions/7"},
+		{Label: words.T(words.CatSampleLong), Value: words.T(words.CatSampleLong)},
+	})
+	code := "{\n  \"alg\": \"RS256\",\n  \"x5t\": \"" + strings.Repeat("0123456789abcdef", 8) + "\"\n}"
+	return parts.Stack(look.GapCard,
+		parts.Card(words.T(words.CatToolParts), nil, append(checks, fields)...),
+		parts.Card(words.T(words.CatToolCode), parts.CopyButton(code, false), parts.CodeBlock(code),
+			parts.Para(parts.Body, words.T(words.CatSampleLong))),
+	)
+}
+
+// ToolParts is the page of every part of the tools (D23) in every state:
+// a page of its own beside Parts, because the tools will be dozens and
+// one page holding every part of the window and of every tool is a page
+// nobody reads to its end.
+func ToolParts() fyne.CanvasObject {
+	return page(words.CatToolsPage, parts.Stack(look.GapCard, tabs(), toolList(), toolAnswer()))
 }
 
 // Parts is the page of every part in every state, and the box to type in

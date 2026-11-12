@@ -18,6 +18,8 @@
 // or reused - a tool that goes away is marked as gone, never given to another.
 package spec
 
+import "strings"
+
 // Category is a group the tools are listed under. The list is closed: a new
 // category is a decision, because the window lays its list out by them.
 type Category string
@@ -93,6 +95,21 @@ func Find(id string) (Tool, bool) {
 		}
 	}
 	return Tool{}, false
+}
+
+// Match says whether somebody searching for query is looking for t: every
+// word of the query stands in its id, title, summary or keywords, or in also
+// - the words another surface calls it by - ignoring case. An empty query
+// matches every tool.
+func (t Tool) Match(query string, also ...string) bool {
+	words := append(append([]string{t.ID, t.Title, t.Summary}, t.Keywords...), also...)
+	hay := strings.ToLower(strings.Join(words, " "))
+	for _, word := range strings.Fields(strings.ToLower(query)) {
+		if !strings.Contains(hay, word) {
+			return false
+		}
+	}
+	return true
 }
 
 // Input is the input of t called name, and whether t has one.

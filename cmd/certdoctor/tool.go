@@ -181,7 +181,9 @@ func (o *toolOptions) check(given map[string]bool, asJSON bool) *fault {
 // renderTool is the page or the document for out.
 func renderTool(o *toolOptions, env environment, now time.Time, out spec.Outcome) ([]byte, *fault) {
 	if o.format == "json" {
-		doc, err := spec.NewDocument(o.tool, certdoctor.Version, now.Format(time.RFC3339), out)
+		// The view goes out safe to draw - the window draws it and interprets
+		// nothing - and the data as it came, for a script (render.Shown).
+		doc, err := spec.NewDocument(o.tool, certdoctor.Version, now.Format(time.RFC3339), render.Shown(out))
 		if err == nil {
 			var page []byte
 			if page, err = doc.Marshal(); err == nil {

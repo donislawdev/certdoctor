@@ -50,6 +50,44 @@ func (t Terminal) RenderTool(w io.Writer, p ToolPage) error {
 	return err
 }
 
+// Shown is out with every word a person is shown made safe to draw: notes,
+// checks and every part of the view through visible, line by line, so a
+// line break stays a line break. Data is left as it came - a script reads it
+// and does its own drawing.
+//
+// IT IS WHAT THE DOCUMENT CARRIES, so the window - which draws the view and
+// interprets nothing - gets the same escaping the terminal does, from the
+// one rule that makes it, rather than a second copy of the rule in the
+// window (ADR141 point 9). A bidirectional override in a token's claim
+// reorders text in a window as surely as in a terminal.
+func Shown(out spec.Outcome) spec.Outcome {
+	shown := spec.Outcome{Data: out.Data}
+	for _, note := range out.Notes {
+		shown.Notes = append(shown.Notes, visible(note))
+	}
+	for _, c := range out.Checks {
+		shown.Checks = append(shown.Checks, spec.Check{ID: visible(c.ID), Status: c.Status, Summary: visible(c.Summary)})
+	}
+	for _, b := range out.View {
+		s := spec.Block{Kind: b.Kind, Title: visible(b.Title), Language: visible(b.Language), Body: visibleLines(b.Body)}
+		for _, f := range b.Fields {
+			s.Fields = append(s.Fields, spec.Field{Label: visible(f.Label), Value: visible(f.Value),
+				Note: visible(f.Note), Status: f.Status})
+		}
+		shown.View = append(shown.View, s)
+	}
+	return shown
+}
+
+// visibleLines is visible applied to each line of text, the breaks kept.
+func visibleLines(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = visible(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
 // writeChecks writes one line per check - its marker, its status and its
 // sentence wrapped under itself.
 func (t Terminal) writeChecks(b *strings.Builder, checks []spec.Check) {

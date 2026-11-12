@@ -57,6 +57,14 @@ type window struct {
 
 	// The Save report dialog while it stands over the report.
 	saving *saveDialog
+
+	// place is the place of the window shown (screens.PlaceDiagnose or
+	// screens.PlaceTools), and diagnosis the screen of a diagnosis as it was
+	// last left - kept while Tools is shown, so a run that ends there lands
+	// on Diagnose without taking the window from under the person (tools.go).
+	place     int
+	diagnosis onScreen
+	tools     toolsPlace
 }
 
 // newWindow wires the window of version into w. software says it is drawn by
@@ -79,6 +87,7 @@ func newWindow(w fyne.Window, icon fyne.Resource, version string, software bool,
 // neither is left writing into a window that is gone.
 func (win *window) closed() {
 	win.quiet()
+	win.tools.end()
 	if win.saving != nil {
 		win.saving.end()
 	}
@@ -97,8 +106,9 @@ func (win *window) ready() {
 // made (GUI rule 21), with the links on its bar leading out. Every screen
 // comes through here, so no screen's GitHub or Donate is left pressing
 // nothing.
-func (win *window) show(o fyne.CanvasObject, links []screens.Link) {
+func (win *window) show(o fyne.CanvasObject, links []screens.Link, tabs *parts.Tabs, place int) {
 	win.lead(links)
+	win.steer(tabs, place)
 	win.w.SetContent(parts.AtLeast(look.WindowMinWidth, look.WindowMinHeight, o))
 }
 
@@ -112,8 +122,9 @@ func under(anchor, content fyne.CanvasObject) fyne.Position {
 
 // showStart shows the form as it was left, with the address ready to type in.
 func (win *window) showStart() {
-	win.show(win.start, win.form.Links)
-	win.w.Canvas().Focus(win.form.Address)
+	if win.showDiagnosis(onScreen{win.start, win.form.Links, win.form.Tabs}) {
+		win.w.Canvas().Focus(win.form.Address)
+	}
 }
 
 // diagnose starts a run of what the form says, when there is an address and
@@ -147,7 +158,7 @@ func (win *window) begin(run flow.Run) {
 	// TickAnimations) - and what it sets changes once a second.
 	win.clock = &fyne.Animation{Duration: time.Second, RepeatCount: fyne.AnimationRepeatForever, Tick: func(float32) { win.tick() }}
 	win.clock.Start()
-	win.show(page, view.Links)
+	win.showDiagnosis(onScreen{page, view.Links, view.Tabs})
 	win.wait(ctx, win.port, run.Args, nil, func(p flow.Process) { win.finish(run.ID, p) })
 }
 
@@ -169,7 +180,7 @@ func (win *window) finish(id int, p flow.Process) {
 		s := o.Trouble.Sentences()
 		page, trouble := screens.Trouble(win.icon, win.version, s.Title, s.What, s.Todo, s.Printed)
 		trouble.Back.OnTapped = win.back
-		win.show(page, trouble.Links)
+		win.showDiagnosis(onScreen{page, trouble.Links, trouble.Tabs})
 		return
 	}
 	page, act := screens.Report(win.icon, o.Report, o.Open, -1)
@@ -178,7 +189,7 @@ func (win *window) finish(id int, p flow.Process) {
 	// A copy is written by the command line, from the report it wrote, read
 	// back with --from (ADR121 (c)) - the window renders no page itself.
 	act.Save.OnTapped = func() { win.saveMenu(act.Save) }
-	win.show(page, act.Links)
+	win.showDiagnosis(onScreen{page, act.Links, act.Tabs})
 }
 
 // cancel ends the running run and goes back to the form as it was.

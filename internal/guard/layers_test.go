@@ -80,7 +80,7 @@ var layerMap = []layerRule{
 	{
 		location: "internal/gui/flow/",
 		mayImportBelow: []string{"internal/core/exitcode/", "internal/gui/model/", "internal/gui/request/",
-			"internal/gui/words/"},
+			"internal/gui/words/", "internal/tool/spec/"},
 	},
 	{location: "internal/gui/look/", mayImportBelow: []string{"internal/gui/fonts/"}},
 	{
@@ -88,9 +88,12 @@ var layerMap = []layerRule{
 		mayImportBelow: []string{"internal/gui/look/", "internal/gui/words/", "internal/gui/model/"},
 	},
 	{
+		// The screens draw the tools from the tools' contract (ADR141 point
+		// 11) - the list, a tool's inputs, the blocks of its answer - and
+		// from it alone: a tool's code is never in the window.
 		location: "internal/gui/screens/",
 		mayImportBelow: []string{"internal/gui/parts/", "internal/gui/look/", "internal/gui/words/", "internal/gui/model/",
-			"internal/gui/request/"},
+			"internal/gui/request/", "internal/tool/spec/"},
 	},
 	{
 		location: "internal/gui/catalogue/",
