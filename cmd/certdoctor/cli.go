@@ -71,13 +71,16 @@ type environment struct {
 	// writeFile puts a finished report at a path the user named. It is the only
 	// way this package writes to the file system.
 	writeFile func(path string, data []byte) error
-	// readSaved opens the saved report --from names, through the guarded file
-	// port with switches.MaxReport as its limit. Reading a report a person
-	// named is the one other thing this package does with a file.
-	readSaved file.Source
-	// stdin hands over standard input for --from -, or errNothingPiped when it
-	// is a terminal - nobody pipes a report into one, and waiting for it to be
-	// typed would look like a hang.
+	// openFile opens a file a person named - the saved report --from names, a
+	// tool's input - through the guarded file port, with the limit of what the
+	// file is meant to be (ADR141 point 9). Reading a file a person named is
+	// the one other thing this package does with a file.
+	openFile func(limit int64) file.Source
+	// stdin hands over standard input for --from - and for a tool. When it is
+	// a terminal the answer is errNothingPiped - nobody pipes a report into
+	// one, and waiting for it to be typed would look like a hang - with the
+	// terminal beside it, which a tool reads one pasted line from (ADR141
+	// point 2). A nil reader beside the error is a build with no terminal.
 	stdin func() (io.Reader, error)
 
 	// nameservers enumerates the resolvers this machine is configured to use.
@@ -194,6 +197,11 @@ type environment struct {
 // half a report, because half a report looks exactly like a whole one to
 // whatever reads it next.
 func execute(ctx context.Context, args []string, env environment) exitcode.Code {
+	// A TOOL IS THE FIRST WORD OR NOTHING (ADR141 point 1). It cannot be read
+	// as a target: a target needs http:// or https://, so "tool" never was one.
+	if len(args) > 0 && args[0] == "tool" {
+		return runTool(args[1:], env)
+	}
 	o, parseFault := parse(args)
 	if parseFault != nil {
 		return complain(env, parseFault)

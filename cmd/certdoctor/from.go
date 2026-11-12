@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 
@@ -124,10 +125,10 @@ func readSaved(o *options, env environment) ([]byte, *fault) {
 	if o.from == "-" {
 		return readStandardInput(env)
 	}
-	if env.readSaved == nil {
+	if env.openFile == nil {
 		return nil, &fault{exitcode.Runtime, "this build has no way to read a file, so --from cannot be answered"}
 	}
-	handle, err := env.readSaved(o.from)
+	handle, err := env.openFile(switches.MaxReport)(o.from)
 	if err == nil {
 		defer handle.Close()
 		var document []byte
@@ -141,6 +142,26 @@ func readSaved(o *options, env environment) ([]byte, *fault) {
 // unreadable says why the file --from names was not read, in the words that
 // tell a person what to do about it.
 func unreadable(path string, err error) *fault {
+	return unreadableNamed(namedFile{
+		by:       "--from",
+		what:     "report",
+		tooLarge: fmt.Sprintf("larger than %d MiB - more than any report %s writes -", switches.MaxReport>>20, toolName),
+	}, path, err)
+}
+
+// namedFile is how a refusal to read a file a person named speaks of it: the
+// switch that named it, what the file was meant to be, and why it is too large.
+type namedFile struct {
+	by       string
+	what     string
+	tooLarge string
+}
+
+// unreadableNamed says why a file a person named was not read, in the words
+// that tell them what to do about it. One place for --from and every tool's
+// file, so the answer to a folder or a path on another machine is the same
+// sentence wherever a path is named.
+func unreadableNamed(n namedFile, path string, err error) *fault {
 	var (
 		tooLarge   *file.TooLarge
 		remote     *file.RemotePath
@@ -148,22 +169,21 @@ func unreadable(path string, err error) *fault {
 	)
 	switch {
 	case errors.As(err, &tooLarge):
-		return configFault("--from names %s, which is larger than %d MiB - more than any report %s writes - "+
-			"so it was not read", path, switches.MaxReport>>20, toolName)
+		return configFault("%s names %s, which is %s so it was not read", n.by, path, n.tooLarge)
 	case errors.As(err, &remote) && remote.Via != "":
-		return configFault("--from names %s, which leads to %s on another machine, and opening it would connect "+
-			"there as you. Copy the report to this machine and name the copy", path, remote.Via)
+		return configFault("%s names %s, which leads to %s on another machine, and opening it would connect "+
+			"there as you. Copy the %s to this machine and name the copy", n.by, path, remote.Via, n.what)
 	case errors.As(err, &remote):
-		return configFault("--from names %s, which is on another machine, and opening it would connect there as "+
-			"you. Copy the report to this machine and name the copy", path)
+		return configFault("%s names %s, which is on another machine, and opening it would connect there as "+
+			"you. Copy the %s to this machine and name the copy", n.by, path, n.what)
 	case errors.As(err, &notRegular) && notRegular.Mode.IsDir():
-		return configFault("--from names %s, which is a folder. Name the report file in it", path)
+		return configFault("%s names %s, which is a folder. Name the %s file in it", n.by, path, n.what)
 	case errors.As(err, &notRegular):
-		return configFault("--from names %s, which is not a file, and reading it could wait for ever", path)
+		return configFault("%s names %s, which is not a file, and reading it could wait for ever", n.by, path)
 	case errors.Is(err, fs.ErrNotExist):
-		return configFault("--from names %s, and nothing is there", path)
+		return configFault("%s names %s, and nothing is there", n.by, path)
 	default:
-		return configFault("--from names %s, which could not be read: %v", path, err)
+		return configFault("%s names %s, which could not be read: %v", n.by, path, err)
 	}
 }
 

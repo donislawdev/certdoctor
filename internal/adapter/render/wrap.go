@@ -112,6 +112,13 @@ func lines(pieces []piece, firstWidth, restWidth int) []string {
 	return append(done, line.String())
 }
 
+// Wrap breaks a sentence at its spaces into lines that fit a page of this
+// renderer's width after indent columns - the rule every page here wraps by,
+// for text written outside a report, such as the help of the tools.
+func Wrap(sentence string, indent int) []string {
+	return lines(prose(sentence), pageWidth-indent, pageWidth-indent)
+}
+
 // writeFlow writes a lead and then the pieces, on as many lines as the page
 // needs, with every line after the first starting at indent.
 //

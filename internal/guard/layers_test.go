@@ -32,8 +32,12 @@ var layerMap = []layerRule{
 		// is what the orchestrator is handed as a port, so an adapter reaching
 		// back for the orchestrator would turn the ports inside out. The door was
 		// found by the check that every door in this map is used.
+		//
+		// Of the tools they see the contract alone (ADR141 point 5): the
+		// renderer draws every tool's outcome from its shape, and no adapter
+		// runs a tool - only the entry point joins a tool to its code.
 		location:       "internal/adapter/",
-		mayImportBelow: []string{"internal/core/"},
+		mayImportBelow: []string{"internal/core/", "internal/tool/spec/"},
 	},
 	{
 		// The guards check the repository, so they depend on nothing in it.
@@ -103,7 +107,7 @@ var layerMap = []layerRule{
 		// The command line's wiring. It is allowed to see every layer because
 		// that is its job.
 		location:       "cmd/certdoctor/",
-		mayImportBelow: []string{"internal/core/", "internal/app/", "internal/adapter/"},
+		mayImportBelow: []string{"internal/core/", "internal/app/", "internal/adapter/", "internal/tool/"},
 		mayImportRoot:  true,
 	},
 	{

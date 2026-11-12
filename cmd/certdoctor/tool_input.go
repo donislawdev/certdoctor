@@ -1,0 +1,224 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"unicode/utf8"
+
+	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	"github.com/donislawdev/certdoctor/internal/tool/spec"
+)
+
+// THIS FILE IS WHERE A TOOL'S INPUT IS HELD AT THE DOOR (ADR141 point 9),
+// once for every tool: no tool reads a byte this did not bound first, and no
+// tool sees text this did not check is text. A tool added tomorrow inherits
+// all of it by being on the list.
+//
+// NOTHING HERE REPEATS AN INPUT BACK. A refusal names the input, the switch and
+// a position - the input may be a credential, and a message ends up in tickets.
+
+// readToolInputs reads every input of the tool, from a request document or from
+// the switches and standard input.
+func readToolInputs(o *toolOptions, env environment) (map[string][]byte, *fault) {
+	if o.request != "" {
+		return readRequestInputs(o, env)
+	}
+	inputs := map[string][]byte{}
+	for i, in := range o.tool.Inputs {
+		var data []byte
+		var f *fault
+		switch path, named := o.files[in.Name]; {
+		case named:
+			data, f = readInputFile(env, o.tool, in, "--"+inputSwitch(i, in), path)
+		case i == 0:
+			data, f = readInputStdin(env, o.tool, in)
+		default:
+			f = usageFault("%s tool %s needs its %s - name a file with --%s", toolName, o.tool.ID, in.Name,
+				inputSwitch(i, in))
+		}
+		if f == nil {
+			f = checkText(in, data)
+		}
+		if f != nil {
+			return nil, f
+		}
+		inputs[in.Name] = data
+	}
+	return inputs, nil
+}
+
+// readInputFile reads the file a switch named for in, through the guarded
+// file port with in's limit - so a path on another machine, a folder, a pipe
+// and a file over the limit are refused before a byte reaches the tool.
+func readInputFile(env environment, tool spec.Tool, in spec.Input, by, path string) ([]byte, *fault) {
+	if env.openFile == nil {
+		return nil, &fault{exitcode.Runtime, "this build has no way to read a file, so " + by + " cannot be answered"}
+	}
+	words := namedFile{by: by, what: in.Name, tooLarge: tooLargeWords(tool, in) + " -"}
+	handle, err := env.openFile(int64(in.MaxBytes))(path)
+	if err != nil {
+		return nil, unreadableNamed(words, path, err)
+	}
+	defer handle.Close()
+	data, err := io.ReadAll(handle)
+	if err != nil {
+		return nil, unreadableNamed(words, path, err)
+	}
+	return data, nil
+}
+
+// tooLargeWords says how much a tool reads of an input, after "which is".
+func tooLargeWords(tool spec.Tool, in spec.Input) string {
+	return fmt.Sprintf("larger than %d KiB - the most %s tool %s reads for its %s", in.MaxBytes>>10,
+		toolName, tool.ID, in.Name)
+}
+
+// readInputStdin reads the first input from standard input: piped in, or
+// pasted at a terminal.
+func readInputStdin(env environment, tool spec.Tool, in spec.Input) ([]byte, *fault) {
+	if env.stdin == nil {
+		return nil, &fault{exitcode.Runtime, "this build has no standard input to read"}
+	}
+	input, err := env.stdin()
+	switch {
+	case errors.Is(err, errNothingPiped):
+		return readPasted(env, tool, in, input)
+	case err != nil:
+		return nil, configFault("standard input could not be read: %v", err)
+	}
+	return readBounded(input, tool, in, "standard input")
+}
+
+// readPasted reads one pasted line at a terminal, after saying on standard
+// error what is awaited - a terminal that waits in silence looks like a hang.
+//
+// ONLY A LINE IS READ THIS WAY. Pasting is the way that keeps a token out of
+// the shell's history - "echo token |" puts it there - and a line ends with
+// Enter, which nobody has to be told. Every input of the tools today is a line.
+func readPasted(env environment, tool spec.Tool, in spec.Input, terminal io.Reader) ([]byte, *fault) {
+	if in.Shape != spec.Line || terminal == nil {
+		return nil, configFault("%s tool %s reads its %s from standard input, and nothing is piped in. "+
+			"Pipe it in or name a file with --file", toolName, tool.ID, in.Name)
+	}
+	fmt.Fprintf(env.stderr, "Paste the %s and press Enter:\n", in.Name)
+	line, err := bufio.NewReader(io.LimitReader(terminal, int64(in.MaxBytes)+2)).ReadBytes('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, configFault("the terminal could not be read: %v", err)
+	}
+	if len(bytes.TrimRight(line, "\r\n")) > in.MaxBytes {
+		return nil, configFault("what was pasted is %s, so it was not read", tooLargeWords(tool, in))
+	}
+	return line, nil
+}
+
+// readBounded reads r up to in's limit, refusing more without keeping it.
+func readBounded(r io.Reader, tool spec.Tool, in spec.Input, from string) ([]byte, *fault) {
+	data, err := io.ReadAll(io.LimitReader(r, int64(in.MaxBytes)+1))
+	if err != nil {
+		return nil, configFault("%s could not be read: %v", from, err)
+	}
+	if len(data) > in.MaxBytes {
+		return nil, configFault("%s carries more than %d KiB - the most %s tool %s reads for its %s - "+
+			"so it was not read", from, in.MaxBytes>>10, toolName, tool.ID, in.Name)
+	}
+	return data, nil
+}
+
+// checkText holds a text input to being text: UTF-8 without a NUL. UTF-16 is
+// named for what it is, because Windows PowerShell 5.1 writes it when output
+// is redirected with > - the same answer --from gives a report.
+func checkText(in spec.Input, data []byte) *fault {
+	if bytes.HasPrefix(data, []byte{0xff, 0xfe}) || bytes.HasPrefix(data, []byte{0xfe, 0xff}) {
+		return configFault("the %s is UTF-16 text, and a tool reads UTF-8. Windows PowerShell 5.1 writes "+
+			"UTF-16 when output is redirected with >, so save it with Out-File -Encoding utf8, or pipe it in", in.Name)
+	}
+	if i := bytes.IndexByte(data, 0); i >= 0 {
+		return configFault("the %s has a NUL byte at byte %d, so it is not text", in.Name, i+1)
+	}
+	if !utf8.Valid(data) {
+		return configFault("the %s is not UTF-8 text (it stops being UTF-8 at byte %d)", in.Name, invalidAt(data)+1)
+	}
+	return nil
+}
+
+// invalidAt is the offset of the first byte of data that is not UTF-8.
+func invalidAt(data []byte) int {
+	for i := 0; i < len(data); {
+		r, size := utf8.DecodeRune(data[i:])
+		if r == utf8.RuneError && size == 1 {
+			return i
+		}
+		i += size
+	}
+	return len(data)
+}
+
+// readRequestInputs reads a request document and every input it gives. A
+// path in it is read like a file a switch named, so the window never opens one
+// itself (ADR141 point 3).
+func readRequestInputs(o *toolOptions, env environment) (map[string][]byte, *fault) {
+	raw, f := readRequestDocument(o, env)
+	if f != nil {
+		return nil, f
+	}
+	request, err := spec.ReadRequest(raw, o.tool)
+	if err != nil {
+		return nil, configFault("%v", err)
+	}
+	inputs := map[string][]byte{}
+	for _, in := range o.tool.Inputs {
+		given := request.Inputs[in.Name]
+		data := given.Bytes
+		switch {
+		case given.Path != "":
+			data, f = readInputFile(env, o.tool, in, "the request's "+in.Name, given.Path)
+		case given.Text != nil:
+			data = []byte(*given.Text)
+		}
+		if f == nil && len(data) > in.MaxBytes {
+			f = configFault("the request gives a %s %s, so it was not read", in.Name, tooLargeWords(o.tool, in))
+		}
+		if f == nil {
+			f = checkText(in, data)
+		}
+		if f != nil {
+			return nil, f
+		}
+		inputs[in.Name] = data
+	}
+	return inputs, nil
+}
+
+// requestLimit is the most of a request document read: every input of the
+// tool at its limit, grown by a third for base64, and room for the rest.
+func requestLimit(tool spec.Tool) int {
+	total := 64 << 10
+	for _, in := range tool.Inputs {
+		total += in.MaxBytes/3*4 + 4
+	}
+	return total
+}
+
+// readRequestDocument reads the request --request names.
+func readRequestDocument(o *toolOptions, env environment) ([]byte, *fault) {
+	limit := requestLimit(o.tool)
+	document := spec.Input{Name: "request", MaxBytes: limit}
+	if o.request != "-" {
+		return readInputFile(env, o.tool, document, "--request", o.request)
+	}
+	if env.stdin == nil {
+		return nil, &fault{exitcode.Runtime, "this build has no standard input to read"}
+	}
+	input, err := env.stdin()
+	switch {
+	case errors.Is(err, errNothingPiped):
+		return nil, configFault("--request - reads a request document from standard input, and nothing is " +
+			"piped in. Pipe one in or name the file")
+	case err != nil:
+		return nil, configFault("standard input could not be read: %v", err)
+	}
+	return readBounded(input, o.tool, document, "standard input")
+}

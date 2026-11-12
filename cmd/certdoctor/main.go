@@ -50,7 +50,6 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/redact"
 	"github.com/donislawdev/certdoctor/internal/core/report"
 	"github.com/donislawdev/certdoctor/internal/core/resolve"
-	"github.com/donislawdev/certdoctor/internal/core/switches"
 	coretcp "github.com/donislawdev/certdoctor/internal/core/tcp"
 	"github.com/donislawdev/certdoctor/internal/core/trust"
 )
@@ -126,14 +125,16 @@ func liveEnvironment() environment {
 			return render.DetectCapability(os.Stdout, os.LookupEnv, noColorRequested)
 		},
 		now: time.Now,
-		// A SAVED REPORT IS READ THROUGH THE SAME GUARDED PORT AS EVERY OTHER
-		// FILE, with its own limit - switches.MaxReport, the one the window
-		// keeps of a run's output, so a report the window drew is one it can
-		// hand back here to be saved.
-		readSaved: func() file.Source {
+		// A FILE A PERSON NAMED IS READ THROUGH THE SAME GUARDED PORT AS EVERY
+		// OTHER FILE, with the limit of what it is meant to be: a saved report
+		// switches.MaxReport, the one the window keeps of a run's output, and a
+		// tool's input the limit on the list of tools - a token is refused at
+		// 256 KiB, not at 32 MiB - so the limit stops a read before a parser
+		// holds it.
+		openFile: func(limit int64) file.Source {
 			source, resolvePath := file.Live()
-			return file.Guarded(source, resolvePath, switches.MaxReport, nil)
-		}(),
+			return file.Guarded(source, resolvePath, limit, nil)
+		},
 		stdin: liveStandardInput,
 		// WHERE THIS ACCOUNT'S OWN FILES ARE, asked once and only ever compared
 		// against a store path. An error is not fatal and is not reported as one:
@@ -558,21 +559,23 @@ func liveTrustProbes(addressed bool) map[string]trust.Probe {
 // place is then not asked: a release build has no cgo, so os/user reads
 // /etc/passwd alone, and an account known only to a directory service is not in
 // it. The curl descriptor names that gap.
-// liveStandardInput hands over standard input for --from -.
+// liveStandardInput hands over standard input for --from - and for a tool.
 //
-// A CHARACTER DEVICE IS REFUSED, which is how a console looks to os.File.Stat
-// on every platform this ships for: on Windows a handle of FILE_TYPE_CHAR comes
-// back as ModeDevice|ModeCharDevice (os/types_windows.go), and a terminal on
-// Linux and macOS is a character device. Nobody pipes a report into a
-// terminal, and reading one would wait for a report to be typed - a hang from
-// the person's side. The null device is a character device too, and it holds
-// no report either.
+// A CHARACTER DEVICE IS ANSWERED WITH errNothingPiped, which is how a console
+// looks to os.File.Stat on every platform this ships for: on Windows a handle
+// of FILE_TYPE_CHAR comes back as ModeDevice|ModeCharDevice
+// (os/types_windows.go), and a terminal on Linux and macOS is a character
+// device. Nobody pipes a report into a terminal, and reading one would wait for
+// a report to be typed - a hang from the person's side - so --from refuses it.
+// The terminal is handed over beside the error all the same, for the one
+// reader that wants it: a tool asking for a line to be pasted (ADR141 point 2).
+// The null device is a character device too, and it holds no input either.
 //
 // A Stat that fails hands the input over anyway: the read then says what is
 // wrong in the words of the system, rather than this guessing.
 func liveStandardInput() (io.Reader, error) {
 	if info, err := os.Stdin.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
-		return nil, errNothingPiped
+		return os.Stdin, errNothingPiped
 	}
 	return os.Stdin, nil
 }

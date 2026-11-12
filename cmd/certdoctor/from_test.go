@@ -102,7 +102,9 @@ func TestTheWindowsSaveIsACommandLineThisProgramTakes(t *testing.T) {
 func TestFromIsRefusedWithTheReasonAndWritesNothing(t *testing.T) {
 	failing := func(err error) func(*environment) {
 		return func(e *environment) {
-			e.readSaved = func(string) (io.ReadCloser, error) { return nil, err }
+			e.openFile = func(int64) file.Source {
+				return func(string) (io.ReadCloser, error) { return nil, err }
+			}
 		}
 	}
 	piping := func(r io.Reader, err error) func(*environment) {
@@ -134,7 +136,7 @@ func TestFromIsRefusedWithTheReasonAndWritesNothing(t *testing.T) {
 		{"a folder", []string{"--from", "reports"}, failing(&file.NotRegular{Path: "reports", Mode: fs.ModeDir}), exitcode.Config, "which is a folder"},
 		{"a pipe", []string{"--from", "fifo"}, failing(&file.NotRegular{Path: "fifo", Mode: fs.ModeNamedPipe}), exitcode.Config, "could wait for ever"},
 		{"no permission", []string{"--from", "r.json"}, failing(fs.ErrPermission), exitcode.Config, "could not be read"},
-		{"no file port", []string{"--from", "r.json"}, func(e *environment) { e.readSaved = nil }, exitcode.Runtime, "no way to read a file"},
+		{"no file port", []string{"--from", "r.json"}, func(e *environment) { e.openFile = nil }, exitcode.Runtime, "no way to read a file"},
 		{"a terminal on standard input", []string{"--from", "-"}, nil, exitcode.Config, "Pipe one in, as in certdoctor --from - < report.json"},
 		{"standard input that breaks", []string{"--from", "-"}, piping(nil, errors.New("closed")), exitcode.Config, "could not be read: closed"},
 		{"standard input that breaks while read", []string{"--from", "-"}, piping(io.MultiReader(strings.NewReader("{"), failingReader{}), nil), exitcode.Config, "could not be read"},

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/adapter/file"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/core/report"
@@ -85,11 +86,13 @@ func invokeAdjusted(env map[string]string, level report.PrivilegeLevel, adjust f
 			h.written[path] = data
 			return nil
 		},
-		readSaved: func(path string) (io.ReadCloser, error) {
-			if path != savedPath {
-				return nil, &fs.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
+		openFile: func(int64) file.Source {
+			return func(path string) (io.ReadCloser, error) {
+				if path != savedPath {
+					return nil, &fs.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
+				}
+				return io.NopCloser(bytes.NewReader(invoke("https://example.com", "--json").stdout.Bytes())), nil
 			}
-			return io.NopCloser(bytes.NewReader(invoke("https://example.com", "--json").stdout.Bytes())), nil
 		},
 		stdin: func() (io.Reader, error) { return nil, errNothingPiped },
 	}

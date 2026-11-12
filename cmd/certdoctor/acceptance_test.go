@@ -79,6 +79,9 @@ type invocation struct {
 	dir string
 	// env is added to the minimal environment below.
 	env []string
+	// stdin is piped into the program. Empty leaves the null device there,
+	// which the program reads as a terminal with nothing typed.
+	stdin string
 }
 
 // result is everything a caller of a program can observe.
@@ -114,6 +117,9 @@ func startProgram(t *testing.T, in invocation, args ...string) result {
 	cmd := exec.Command(theBinary(t), args...)
 	cmd.Dir = in.dir
 	cmd.Env = append(minimalEnvironment(), in.env...)
+	if in.stdin != "" {
+		cmd.Stdin = strings.NewReader(in.stdin)
+	}
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
