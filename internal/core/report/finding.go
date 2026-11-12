@@ -1021,7 +1021,9 @@ type TrustStore struct {
 	// certificates, the Python reading it loaded 128, and Go refused one for its
 	// negative serial number. It is set only on a row that trusts, because a
 	// refusal beside such a certificate is one this program cannot stand behind,
-	// and the row says why it has no verdict instead.
+	// and the row says why it has no verdict instead. A refusal kept beside
+	// certificates no path from the chain can reach - ADR136 - counts nothing
+	// either: they decided nothing about it.
 	//
 	// IT IS NOT PART OF THE JSON, as RefusalDetail is not - decided by the owner
 	// 2026-11-04. The row's summary carries it to every surface, and adding it to

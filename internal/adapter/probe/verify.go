@@ -108,42 +108,149 @@ func verify(store *report.TrustStore, anchorsPEM []byte, chain [][]byte, now tim
 	store.TrustsPresentedChain = &trusts
 	store.TrustFailure = failure
 	store.UnreadableCount = skipped.count
-	if skipped.overturns(store) {
+	if skipped.overturns(store, chain, stored) {
 		return nil, nil, skipped
 	}
 	return built, stored, skipped
 }
 
 // unread is what anchorsIn could not read - how many certificates the Go
-// library refused to parse, and the first reason it gave.
+// library refused to parse, and each one's subject and reason.
 type unread struct {
 	count int
-	first error
+	// subjects holds the subject of each certificate counted, folded by
+	// foldedName, with the reason Go gave, in the order they were met.
+	subjects []unreadSubject
+}
+
+// unreadSubject is the subject of one certificate the Go library could not
+// read, read on its own - known false when even that could not be read.
+type unreadSubject struct {
+	name  string
+	known bool
+	why   error
+}
+
+// onPath counts the certificates anchorsIn could not read that a
+// chain-building library could still put on the path of this chain, and gives
+// the first one's reason - ADR136, closing OBS223.
+//
+// AN ISSUER IS FOUND BY ITS NAME. OpenSSL takes as the issuer of a certificate
+// only one whose subject is that certificate's issuer name (X509_check_issued in
+// crypto/x509/v3_purp.c, read 2026-11-12 at
+// https://github.com/openssl/openssl/blob/openssl-3.5/crypto/x509/v3_purp.c), and
+// a certificate whose subject is no issuer name on any path from this chain
+// cannot be on it, whatever its key. Measured 2026-11-12 on this machine: with
+// NODE_USE_SYSTEM_CA=1 Node's list carries CN=Root Agency twice from the Windows
+// store, Go cannot read it, and every node row that refused a chain - a missing
+// company root among them - said it could not judge instead.
+//
+// THE PATH MAY RUN THROUGH THE STORE ITSELF, so the names grow: the issuer of
+// every presented certificate, then the issuer of every stored one whose subject
+// is a name already reached, until nothing new is.
+//
+// A NAME THAT CANNOT BE FOLDED COUNTS EVERYTHING, and so does a subject that
+// cannot be read: either could be any name, and the direction of a mistake must
+// be "cannot be told", never a refusal pinned on a store - ADR128.
+//
+// overturns asks it only after making sure something was not read, so the
+// first subject is always there.
+func (u unread) onPath(chain [][]byte, stored []*x509.Certificate) (int, error) {
+	reached, ok := issuerNames(chain, stored)
+	if !ok {
+		return u.count, u.subjects[0].why
+	}
+	on, first := 0, error(nil)
+	for _, subject := range u.subjects {
+		if subject.known && !reached[subject.name] {
+			continue
+		}
+		if on == 0 {
+			first = subject.why
+		}
+		on++
+	}
+	return on, first
+}
+
+// issuerNames is every issuer name, folded, that a path from the presented
+// chain can reach: the issuers of the presented certificates, then the issuer
+// of every stored certificate whose subject is a name already reached, until
+// nothing new is. It answers false when a certificate or a name on the way
+// cannot be read.
+func issuerNames(chain [][]byte, stored []*x509.Certificate) (map[string]bool, bool) {
+	reached := map[string]bool{}
+	var frontier []string
+	reach := func(raw []byte) bool {
+		name, ok := foldedName(raw)
+		if ok && !reached[name] {
+			reached[name] = true
+			frontier = append(frontier, name)
+		}
+		return ok
+	}
+	for _, der := range chain {
+		certificate, err := x509.ParseCertificate(der)
+		if err != nil || !reach(certificate.RawIssuer) {
+			return nil, false
+		}
+	}
+	bySubject := map[string][]*x509.Certificate{}
+	for _, certificate := range stored {
+		name, ok := foldedName(certificate.RawSubject)
+		if !ok {
+			return nil, false
+		}
+		bySubject[name] = append(bySubject[name], certificate)
+	}
+	for len(frontier) > 0 {
+		name := frontier[len(frontier)-1]
+		frontier = frontier[:len(frontier)-1]
+		for _, certificate := range bySubject[name] {
+			if !reach(certificate.RawIssuer) {
+				return nil, false
+			}
+		}
+	}
+	return reached, true
 }
 
 // overturns takes away a refusal the store made while it held a certificate
-// the Go library could not read, and says why there is no verdict - ADR128,
-// decided by the owner 2026-11-04. It reports whether it did.
+// the Go library could not read and that could be on the chain's path, and says
+// why there is no verdict - ADR128, decided by the owner 2026-11-04, narrowed to
+// the path by ADR136. It reports whether it did.
 //
 // THE CHAIN MAY END AT THAT CERTIFICATE FOR THE PROGRAM JUDGED HERE. Measured on
 // macOS 27.2: Go refused EC-ACC in /private/etc/ssl/cert.pem for its negative
 // serial number and the Python reading the same file loaded it, so a chain whose
 // one path runs through it is refused here and accepted there. A trust stands,
-// because the path Go built is a path whatever else the store holds.
+// because the path Go built is a path whatever else the store holds - and so
+// does a refusal when nothing Go could not read can be on the path.
 //
 // NOT GODEBUG=x509negativeserial=1. Reading such a certificate as an anchor
 // would claim Go builds a path through it, and Go refuses to - and a store holds
 // certificates Go cannot read for more reasons than one.
 //
 // EVERY REFUSAL A STORE WRITES IS ASKED, so this is called where one is written:
-// at the end of verify, and after the strict rules.
-func (u unread) overturns(store *report.TrustStore) bool {
+// at the end of verify, and after the strict rules. The path is asked only
+// then, so a store that trusts, or read everything, pays nothing for it.
+func (u unread) overturns(store *report.TrustStore, chain [][]byte, stored []*x509.Certificate) bool {
 	if u.count == 0 || store.TrustsPresentedChain == nil || *store.TrustsPresentedChain {
+		return false
+	}
+	onPath, first := u.onPath(chain, stored)
+	if onPath == 0 {
+		// A REFUSAL THAT STANDS COUNTS NOTHING IT COULD NOT READ. What no path can
+		// reach decided nothing about it, and the report contract counts unread
+		// certificates only beside a trust - measured 2026-11-12, when a node row
+		// kept its refusal and its count and the whole of L5 was thrown away for
+		// breaking the contract.
+		store.UnreadableCount = 0
 		return false
 	}
 	Undetermined(store, fmt.Sprintf("this store holds %d certificate(s) the Go library could not read (the first: %v), "+
 		"which the program judged here may read and end the chain at, so whether it accepts this chain cannot be told",
-		u.count, u.first))
+		onPath, first))
 	return true
 }
 
@@ -170,9 +277,8 @@ func anchorsIn(anchorsPEM []byte, selfSignedOnly bool) (roots, held *x509.CertPo
 			// away the rest of it - and it is counted, because the program judged
 			// here may read it - ADR128.
 			skipped.count++
-			if skipped.first == nil {
-				skipped.first = err
-			}
+			name, known := subjectOf(block.Bytes)
+			skipped.subjects = append(skipped.subjects, unreadSubject{name: name, known: known, why: err})
 			continue
 		}
 		stored = append(stored, certificate)

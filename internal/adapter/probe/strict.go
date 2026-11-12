@@ -73,7 +73,7 @@ func VerifyStrictly(store *report.TrustStore, anchorsPEM []byte, chain [][]byte,
 		store.RefusalDetail = breach
 		// WITH ITS OWN CERTIFICATES FIRST OpenSSL may take one this program could
 		// not read, and build a chain that keeps to the rules - ADR128.
-		skipped.overturns(store)
+		skipped.overturns(store, chain, stored)
 	}
 }
 
