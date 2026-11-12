@@ -17,6 +17,8 @@ Sama maszyna: jaki system, czy działa w kontenerze i które zmienne środowisko
 
 Są czytane jako rzecz do zdiagnozowania. Żadna nie zmienia tego, co robi sam certdoctor: jedyna zmienna, której słucha, to `NO_COLOR`, a ona zmienia tylko wygląd raportu.
 
+W raporcie każda ustawiona zmienna ma własny wiersz ze swoją wartością. Nieustawione idą po nich, wypisane razem za jedną etykietą `not set`. Raport `--json` zachowuje osobny wpis dla każdej zmiennej.
+
 ## L1 Rozwiązywanie nazw
 
 Nazwa jest sprawdzana dwa razy: każdy skonfigurowany serwer DNS jest pytany wprost, a resolver systemu tak, jak pytają go programy na tej maszynie. Gdy oba widoki się różnią, różnica jest klasyfikowana - podzielony DNS, gdzie serwer wewnętrzny i publiczny odpowiadają inaczej, odpowiedź, która wycieka obok VPN-a, albo nazwa, która nigdzie się nie rozwiązuje. Nazwa, która się nie rozwiązuje, jest przyczyną, cokolwiek dzieje się dalej.

@@ -113,8 +113,15 @@ func (m Markdown) writeFindings(b *strings.Builder, r report.Report) {
 			continue
 		}
 		fmt.Fprintf(b, "\n### %s %s\n\n", mdText(row.ID.String()), mdText(row.ID.Name()))
-		for _, finding := range row.Findings {
+		rows, notSet := splitNotSet(row.Findings)
+		for _, finding := range rows {
 			m.writeFinding(b, finding)
+		}
+		if len(notSet) > 0 {
+			// One bullet for every variable nobody set, the source in the label for
+			// the reason the terminal gives at writeNotSet.
+			fmt.Fprintf(b, "- %s *(%s)*: %s\n", mdText(notSetLabel),
+				mdText(report.SourceDefault.String()), mdText(strings.Join(notSet, ", ")))
 		}
 	}
 }

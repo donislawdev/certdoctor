@@ -171,8 +171,15 @@ func (h HTML) writeFindings(b *strings.Builder, r report.Report) {
 		}
 		fmt.Fprintf(b, "<section class=\"findings\" id=\"%s\">\n", anchorFor(row))
 		fmt.Fprintf(b, "<h2>%s - %s</h2>\n", htmlText(row.ID.String()), htmlText(row.ID.Name()))
-		for _, finding := range row.Findings {
+		rows, notSet := splitNotSet(row.Findings)
+		for _, finding := range rows {
 			h.writeFinding(b, finding)
+		}
+		if len(notSet) > 0 {
+			// One paragraph for every variable nobody set, the source in the label
+			// for the reason the terminal gives at writeNotSet.
+			fmt.Fprintf(b, "<article class=\"finding\">\n<p class=\"summary\">%s <span class=\"source\">%s</span>: %s</p>\n</article>\n",
+				htmlText(notSetLabel), htmlText(report.SourceDefault.String()), htmlText(strings.Join(notSet, ", ")))
 		}
 		b.WriteString("</section>\n")
 	}

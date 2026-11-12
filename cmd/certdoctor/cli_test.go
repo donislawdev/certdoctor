@@ -1367,7 +1367,7 @@ func TestTheTwoSpellingsAreShownSeparately(t *testing.T) {
 	if !strings.Contains(out, "HTTP_PROXY is set") {
 		t.Error("the upper case spelling was set and the report does not say so")
 	}
-	if !strings.Contains(out, "http_proxy is not set") {
+	if !listedAsNotSet(out, "http_proxy") || listedAsNotSet(out, "HTTP_PROXY") {
 		t.Error("the lower case spelling was not set and the report does not say so - the two were merged")
 	}
 }
@@ -1385,7 +1385,7 @@ func TestAVariableSetToNothingReadsDifferentlyFromAnAbsentOne(t *testing.T) {
 	if !strings.Contains(out, "NO_PROXY is set to nothing") {
 		t.Error("a variable set to nothing is not distinguishable in the report")
 	}
-	if !strings.Contains(out, "no_proxy is not set") {
+	if !listedAsNotSet(out, "no_proxy") || listedAsNotSet(out, "NO_PROXY") {
 		t.Error("an absent variable stopped being reported as absent")
 	}
 }

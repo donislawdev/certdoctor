@@ -155,7 +155,7 @@ LAYERS
                                   anchor this runtime knows about, and the issuer is local to this
                                   machine
       HTTPS_PROXY is set and carries credentials  detected  http://[redacted]@proxy.corp:8080
-      SSL_CERT_FILE is not set                    default
+      not set (default): SSL_CERT_FILE
   ! WARN     L1  Name resolution  access_denied  one of the configured resolvers could not be read
   ? UNKNOWN  L2  Proxy            probe_error  not implemented
   + PASS     L3  TCP
@@ -304,6 +304,12 @@ func TestEveryLayerAndEveryNoteReachesThePage(t *testing.T) {
 // HTTPS_PROXY is set without showing what it is set to answers none of the
 // questions it was pasted in to answer. The summary alone would have passed a
 // weaker version of this test.
+//
+// A VARIABLE NOBODY SET IS LOOKED FOR BY ITS NAME IN THE "not set" PARAGRAPH -
+// ADR137. That is where the page says it now, and the paragraph is read back as
+// a list, so a name missing from it is as red here as a sentence missing from
+// the page was, and a name in it that the report never said was absent is red
+// too.
 func TestEveryFindingReachesThePageWithItsValue(t *testing.T) {
 	source := everyStatusReport()
 	var page bytes.Buffer
@@ -311,9 +317,15 @@ func TestEveryFindingReachesThePageWithItsValue(t *testing.T) {
 		t.Fatalf("rendering failed: %v", err)
 	}
 
+	listed := notSetNamesOn(page.String())
 	for _, row := range source.Layers {
 		for _, finding := range row.Findings {
-			if !strings.Contains(page.String(), finding.Summary) {
+			if variable := finding.EnvironmentVariable; variable != nil && !variable.Set {
+				if !listed[variable.Name] {
+					t.Errorf("layer %s says %s is not set and the page does not list it as not set", row.ID, variable.Name)
+				}
+				delete(listed, variable.Name)
+			} else if !strings.Contains(page.String(), finding.Summary) {
 				t.Errorf("layer %s carries a finding summarised %q that never reached the page", row.ID, finding.Summary)
 			}
 			if !strings.Contains(page.String(), finding.Source.String()) {
@@ -327,6 +339,9 @@ func TestEveryFindingReachesThePageWithItsValue(t *testing.T) {
 				t.Errorf("the value of %s is in the report and not on the page", variable.Name)
 			}
 		}
+	}
+	for name := range listed {
+		t.Errorf("the page lists %s as not set and the report never said so", name)
 	}
 }
 
@@ -643,6 +658,14 @@ func reportWithHostileTextEverywhere() report.Report {
 				EnvironmentVariable: &report.EnvironmentVariable{
 					Name: plain, Value: plain, Set: true,
 				},
+			},
+			// A NAME NOBODY SET, so the "not set" paragraph - ADR137 - is on
+			// the hostile page too and not only the rows.
+			{
+				Kind:                report.FindingEnvironmentVariable,
+				Summary:             report.NotSetSummary(hostileText),
+				Source:              report.SourceDefault,
+				EnvironmentVariable: &report.EnvironmentVariable{Name: hostileText},
 			},
 		}
 	}

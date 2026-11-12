@@ -140,7 +140,7 @@ func findingFor(name string, lookup Lookup) report.Finding {
 func summaryFor(name, value string, set bool) string {
 	switch {
 	case !set:
-		return name + " is not set"
+		return report.NotSetSummary(name)
 	case value == "":
 		return name + " is set to nothing"
 	default:

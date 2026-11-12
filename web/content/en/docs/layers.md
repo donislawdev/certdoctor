@@ -16,6 +16,8 @@ The machine itself: which system, whether it runs inside a container, and which 
 
 They are read as things to diagnose. None of them changes what certdoctor itself does: the only variable it obeys is `NO_COLOR`, and that only changes how the report looks.
 
+In the report, every variable that is set gets a line of its own with its value. The ones that are not set come after them, listed together after a single `not set` label. The `--json` report keeps one entry per variable.
+
 ## L1 Name resolution
 
 The name is looked up twice: every configured resolver is asked directly, and the system resolver is asked the way programs on this machine ask it. When the two views differ, the difference is classified - a split horizon, where an internal and a public resolver answer differently, an answer that leaks past a VPN, or a name that resolves nowhere. A name that does not resolve is the cause, whatever happens after it.

@@ -279,7 +279,8 @@ func writeTrimmed(b *strings.Builder, line string) {
 // nothing - it has already said so in its row and in the notes, and a line
 // saying "nothing" would read as a result. A layer that looked and found nothing
 // says exactly that, because an absent section reads as a question nobody asked.
-// A layer that found something prints one line per finding.
+// A layer that found something prints one line per finding, except that the
+// variables nobody set share one paragraph - writeNotSet.
 //
 // The columns are measured within the layer rather than across the report. Two
 // layers' findings have nothing to do with each other, and one long path from
@@ -294,8 +295,12 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 		return
 	}
 
-	columns := measureFindings(row.Findings)
-	for _, finding := range row.Findings {
+	// THE COLUMNS ARE MEASURED ON THE ROWS THAT STAY. A variable that went into
+	// the paragraph below would otherwise go on setting the width of the summary
+	// column for rows it is no longer among.
+	rows, notSet := splitNotSet(row.Findings)
+	columns := measureFindings(rows)
+	for _, finding := range rows {
 		writeFindingRow(b, finding, columns)
 		writeChain(b, finding)
 		writeFix(b, finding)
@@ -303,6 +308,24 @@ func (t Terminal) writeFindings(b *strings.Builder, row report.LayerResult) {
 		writeCaveats(b, finding)
 		writeAsked(b, finding)
 	}
+	writeNotSet(b, notSet)
+}
+
+// writeNotSet prints the variables nobody set as one paragraph of names, under
+// the rows that say something more - ADR137.
+//
+// THE SOURCE IS IN THE LABEL. Every name in the list is known the same way, and
+// one word after the last name would read as belonging to that name alone.
+//
+// A NAME IS DATA, so the list breaks between names and never inside one, with
+// every continuation lined up after the label - the way the blocks under a
+// finding already break.
+func writeNotSet(b *strings.Builder, names []string) {
+	if len(names) == 0 {
+		return
+	}
+	lead := findingIndent + notSetLabel + " (" + report.SourceDefault.String() + "): "
+	writeFlow(b, lead, widthOf(lead), widthOf(lead), items(visibleAll(names)))
 }
 
 // findingIndent is where a finding's row starts, under its layer.
