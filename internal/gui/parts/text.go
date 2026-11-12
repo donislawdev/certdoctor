@@ -1,6 +1,9 @@
 package parts
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
@@ -58,10 +61,52 @@ func Para(s Style, words string) fyne.CanvasObject {
 	return tight(rich(s, words, "", fyne.TextWrapWord, fyne.TextTruncateOff, fyne.TextAlignLeading))
 }
 
-// Code is text that wraps anywhere, for a command or a path - which has no
-// word boundaries worth keeping and must never be cut short.
+// Code is text that wraps anywhere, for a command - which has no word
+// boundaries worth keeping and must never be cut short.
 func Code(s Style, words string) fyne.CanvasObject {
 	return tight(rich(s, words, "", fyne.TextWrapBreak, fyne.TextTruncateOff, fyne.TextAlignLeading))
+}
+
+// pathBreaks are the characters a path or a name may be broken after: the
+// two separators of a path, and the two that join the words of a name.
+const pathBreaks = `\/_-`
+
+// Path is a path, or a list of names, that wraps only after a separator or at
+// a space, and is never cut short - OBS218 (a). Broken anywhere it read as two
+// other names: "NODE_USE_SYS" over "TEM_CA", "jdk-26.0.2" over ".1".
+//
+// HOW: one inline segment for each piece that ends at a separator. The toolkit
+// breaks a line only at a space, but a segment that does not fit in what is
+// left of a line starts the next one (fyne v2.8.2, widget/richtext.go,
+// wrapWordLines). A piece wider than a whole line is still broken inside, so
+// nothing runs past the edge.
+func Path(s Style, words string) fyne.CanvasObject {
+	r := rich(s, "", "", fyne.TextWrapWord, fyne.TextTruncateOff, fyne.TextAlignLeading)
+	style := r.Segments[0].(*widget.TextSegment).Style
+	style.Inline = true
+	r.Segments = nil
+	for _, piece := range pathPieces(words) {
+		r.Segments = append(r.Segments, &widget.TextSegment{Text: piece, Style: style})
+	}
+	return tight(r)
+}
+
+// pathPieces cuts words after every character in pathBreaks. Put back
+// together, the pieces are words again, and there is always at least one.
+func pathPieces(words string) []string {
+	var pieces []string
+	start := 0
+	for i, r := range words {
+		if strings.ContainsRune(pathBreaks, r) {
+			end := i + utf8.RuneLen(r)
+			pieces = append(pieces, words[start:end])
+			start = end
+		}
+	}
+	if start < len(words) || len(pieces) == 0 {
+		pieces = append(pieces, words[start:])
+	}
+	return pieces
 }
 
 // Clip is one line that ends in an ellipsis when it does not fit.

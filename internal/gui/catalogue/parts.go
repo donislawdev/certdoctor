@@ -148,7 +148,7 @@ func matrix(r model.Report) fyne.CanvasObject {
 	not := model.Store{Runtime: "java", Instance: `C:\Program Files\Java\jre1.8.0_503`, Trust: model.TrustNotAssessed, ChosenBy: []string{"JAVA_HOME"}}
 	long := yes
 	long.Instance = `C:\Users\jdoe\AppData\Local\Programs\A deliberately long folder name\that keeps going\python.exe`
-	long.ChosenBy = []string{"PATH", "py launcher", "registry"}
+	long.ChosenBy = []string{"REQUESTS_CA_BUNDLE", "PATH", "py launcher"}
 	// A store with a command to open in every state the pointer and the
 	// keyboard put it in, open, and one with nothing to open, which takes
 	// neither.
