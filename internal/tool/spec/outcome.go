@@ -1,6 +1,8 @@
 package spec
 
 import (
+	"sort"
+
 	"github.com/donislawdev/certdoctor/internal/core/status"
 )
 
@@ -81,3 +83,30 @@ type Refusal struct {
 }
 
 func (r *Refusal) Error() string { return r.Reason }
+
+// SortChecks puts the worst status first (the order of status.All) and,
+// within a status, keeps the order a tool lists its check ids in - one rule
+// for every tool, so two tools never list their findings two ways. A check
+// whose id is not in order goes last within its status.
+func SortChecks(checks []Check, order []string) []Check {
+	rank := func(c Check) (int, int) {
+		severity := len(status.All)
+		for i, s := range status.All {
+			if s == c.Status {
+				severity = i
+			}
+		}
+		for i, id := range order {
+			if id == c.ID {
+				return severity, i
+			}
+		}
+		return severity, len(order)
+	}
+	sort.SliceStable(checks, func(a, b int) bool {
+		sa, oa := rank(checks[a])
+		sb, ob := rank(checks[b])
+		return sa < sb || sa == sb && oa < ob
+	})
+	return checks
+}

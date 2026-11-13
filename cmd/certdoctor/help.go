@@ -30,7 +30,7 @@ func helpText() string {
 	b.WriteString("  Without one there is no way to tell a host name from a port number.\n")
 	b.WriteString("  --from takes the place of the URL: it runs nothing, writes the saved report\n")
 	b.WriteString("  in the format asked for, and ends with 0 once it is written.\n")
-	fmt.Fprintf(&b, "  tool runs a small tool instead of a diagnosis - a JWT decoder, for one.\n")
+	fmt.Fprintf(&b, "  tool runs a small tool instead of a diagnosis - a certificate or a JWT decoder.\n")
 	fmt.Fprintf(&b, "  %s tool lists them, and %s tool <name> --help says what one takes.\n", toolName, toolName)
 
 	writeSwitches(&b)

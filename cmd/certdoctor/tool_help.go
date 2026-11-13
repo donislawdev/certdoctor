@@ -11,7 +11,8 @@ import (
 // categoryTitles are the headings of the list of tools, one per category.
 // TestEveryCategoryHasATitle holds the two lists together.
 var categoryTitles = map[spec.Category]string{
-	spec.Tokens: "TOKENS",
+	spec.Certificates: "CERTIFICATES",
+	spec.Tokens:       "TOKENS",
 }
 
 // toolListText is what "certdoctor tool" prints: every tool, by category, read
@@ -45,12 +46,20 @@ func toolHelpText(t spec.Tool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s tool %s - %s\n\n", toolName, t.ID, t.Title)
 	writeIndented(&b, t.Summary, 2)
-	first := t.Inputs[0].Name
+	first := t.Inputs[0]
 	b.WriteString("\nUSAGE\n")
-	fmt.Fprintf(&b, "  %s tool %s                  paste the %s, then press Enter\n", toolName, t.ID, first)
-	fmt.Fprintf(&b, "  %s tool %s < %s.txt\n", toolName, t.ID, first)
-	fmt.Fprintf(&b, "  %s tool %s --file %s.txt\n", toolName, t.ID, first)
-	fmt.Fprintf(&b, "\n  The %s is never taken as an argument: an argument stays in your shell's history\n", first)
+	if first.Shape == spec.Line {
+		fmt.Fprintf(&b, "  %s tool %s                  paste the %s, then press Enter\n", toolName, t.ID, first.Name)
+	}
+	fmt.Fprintf(&b, "  %s tool %s < %s\n", toolName, t.ID, first.File)
+	fmt.Fprintf(&b, "  %s tool %s --file %s\n", toolName, t.ID, first.File)
+	// An input's name is a noun, singular or plural: the token, the certificates.
+	verb := "is"
+	if strings.HasSuffix(first.Name, "s") {
+		verb = "are"
+	}
+	fmt.Fprintf(&b, "\n  The %s %s never taken as an argument: an argument stays in your shell's history\n",
+		first.Name, verb)
 	b.WriteString("  and in the list of running programs.\n")
 	b.WriteString("\nOPTIONS\n")
 	for _, line := range toolSwitches(t) {

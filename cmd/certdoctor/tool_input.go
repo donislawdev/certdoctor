@@ -97,7 +97,9 @@ func readInputStdin(env environment, tool spec.Tool, in spec.Input) ([]byte, *fa
 //
 // ONLY A LINE IS READ THIS WAY. Pasting is the way that keeps a token out of
 // the shell's history - "echo token |" puts it there - and a line ends with
-// Enter, which nobody has to be told. Every input of the tools today is a line.
+// Enter, which nobody has to be told. An input of many lines - a chain of
+// certificates - has no Enter that ends it, so it is piped in or named with
+// --file (ADR146).
 //
 // A TERMINAL THAT CAN HAND OVER KEYS DOES (paste.go, ADR143): on Linux and
 // macOS the line mode cuts a long token or stops taking keys. Anywhere else,
@@ -105,7 +107,7 @@ func readInputStdin(env environment, tool spec.Tool, in spec.Input) ([]byte, *fa
 func readPasted(env environment, tool spec.Tool, in spec.Input, terminal io.Reader) ([]byte, *fault) {
 	if in.Shape != spec.Line || terminal == nil {
 		return nil, configFault("%s tool %s reads its %s from standard input, and nothing is piped in. "+
-			"Pipe it in or name a file with --file", toolName, tool.ID, in.Name)
+			"Pipe the %s in or name a file with --file", toolName, tool.ID, in.Name, in.Name)
 	}
 	if env.keys != nil {
 		if keys, switched := env.keys(terminal); switched {
@@ -139,7 +141,14 @@ func readBounded(r io.Reader, tool spec.Tool, in spec.Input, from string) ([]byt
 // checkText holds a text input to being text: UTF-8 without a NUL. UTF-16 is
 // named for what it is, because Windows PowerShell 5.1 writes it when output
 // is redirected with > - the same answer --from gives a report.
+//
+// An input of the shape bytes is not text - a certificate arrives as DER as
+// often as PEM (ADR146) - so it passes as it is, bounded by its limit, and the
+// tool reading it says what it is.
 func checkText(in spec.Input, data []byte) *fault {
+	if in.Shape == spec.Bytes {
+		return nil
+	}
 	if bytes.HasPrefix(data, []byte{0xff, 0xfe}) || bytes.HasPrefix(data, []byte{0xfe, 0xff}) {
 		return configFault("the %s is UTF-16 text, and a tool reads UTF-8. Windows PowerShell 5.1 writes "+
 			"UTF-16 when output is redirected with >, so save it with Out-File -Encoding utf8, or pipe it in", in.Name)

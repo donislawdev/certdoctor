@@ -26,11 +26,13 @@ type Category string
 
 // The categories, in the order the lists show them.
 const (
-	Tokens Category = "tokens"
+	Certificates Category = "certificates"
+	Tokens       Category = "tokens"
 )
 
-// Categories is every category, in the order the lists show them.
-var Categories = []Category{Tokens}
+// Categories is every category, in the order the lists show them -
+// certificates first, because they are what the program is about.
+var Categories = []Category{Certificates, Tokens}
 
 // Shape is what an input is made of, which decides how it is read.
 type Shape string
@@ -40,7 +42,18 @@ const (
 	// Line is text on one line: read from a terminal by one paste and Enter,
 	// and from a file or a pipe as the whole of it.
 	Line Shape = "line"
+	// Bytes is the whole of a file or a pipe, text or not - a certificate
+	// arrives as PEM text or as DER bytes (ADR146). It is not held to being
+	// text at the door: the tool reading it says what it is. A terminal is
+	// not asked for it, because a paste of many lines has no Enter that ends
+	// it - it is piped in or named with --file.
+	Bytes Shape = "bytes"
 )
+
+// Shapes is every shape an input can have. The list is closed: a new shape
+// is how the command line and the window read an input, so it is a decision
+// with a reading in each (ADR141 point 2).
+var Shapes = []Shape{Line, Bytes}
 
 // Input is one thing a tool takes.
 type Input struct {
@@ -52,6 +65,9 @@ type Input struct {
 	// MaxBytes is the most of it that is read. More is refused before anything
 	// parses it.
 	MaxBytes int
+	// File is the name of a file --help shows it read from, saying what kind
+	// of file it is: token.txt, chain.pem.
+	File string
 	// There is no field saying an input is a secret yet: the first tool taking
 	// a password or a key brings it, with how the window hides it (ADR141 point
 	// 10). No input of any tool comes back in a message - that holds for all.
@@ -77,13 +93,23 @@ type Tool struct {
 // All is every tool, in the order the lists show them within a category.
 var All = []Tool{
 	{
+		ID:       "cert",
+		Category: Certificates,
+		Title:    "Certificate decoder",
+		Summary: "Shows what a certificate or a chain says - names, dates, key, fingerprints - and whether " +
+			"the chain is complete and in order, without connecting anywhere.",
+		Keywords: []string{"certificate", "x509", "pem", "der", "crt", "cer", "chain", "fingerprint", "thumbprint",
+			"expiry", "san", "x5c"},
+		Inputs: []Input{{Name: "certificates", Shape: Bytes, MaxBytes: 256 << 10, File: "chain.pem"}},
+	},
+	{
 		ID:       "jwt",
 		Category: Tokens,
 		Title:    "JWT decoder",
 		Summary: "Shows what a JSON Web Token says - its header, its claims and its times - " +
 			"without checking its signature.",
 		Keywords: []string{"token", "bearer", "jws", "jwe", "oauth", "oidc", "id_token", "access_token", "claims"},
-		Inputs:   []Input{{Name: "token", Shape: Line, MaxBytes: 256 << 10}},
+		Inputs:   []Input{{Name: "token", Shape: Line, MaxBytes: 256 << 10, File: "token.txt"}},
 	},
 }
 

@@ -58,6 +58,7 @@ func TestADiagnosisThatEndsWhileToolsIsShownWaitsOnDiagnose(t *testing.T) {
 func TestATokenGoesThroughTheCommandLineAndItsAnswerIsShown(t *testing.T) {
 	win, h, _ := testWindow(t)
 	win.goTo(screens.PlaceTools)
+	win.tools.view.List.Choose("jwt")
 	p := win.tools.view.Pages["jwt"]
 	if !p.Run.Disabled() {
 		t.Error("Decode can be pressed with no token")
@@ -92,6 +93,7 @@ func TestATokenGoesThroughTheCommandLineAndItsAnswerIsShown(t *testing.T) {
 func TestARefusalIsShownInTheCommandLinesWords(t *testing.T) {
 	win, h, _ := testWindow(t)
 	win.goTo(screens.PlaceTools)
+	win.tools.view.List.Choose("jwt")
 	p := win.tools.view.Pages["jwt"]
 	p.Inputs["token"].SetText("abc.def")
 	p.Run.OnTapped()
@@ -106,6 +108,7 @@ func TestARefusalIsShownInTheCommandLinesWords(t *testing.T) {
 func TestClearAndClosingEndATokensRun(t *testing.T) {
 	win, h, _ := testWindow(t)
 	win.goTo(screens.PlaceTools)
+	win.tools.view.List.Choose("jwt")
 	p := win.tools.view.Pages["jwt"]
 	p.Inputs["token"].SetText("eyJ.eyJ.sig")
 	p.Run.OnTapped()

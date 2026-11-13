@@ -12,6 +12,7 @@ import (
 	certdoctor "github.com/donislawdev/certdoctor"
 	"github.com/donislawdev/certdoctor/internal/adapter/render"
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
+	"github.com/donislawdev/certdoctor/internal/tool/cert"
 	"github.com/donislawdev/certdoctor/internal/tool/jwt"
 	"github.com/donislawdev/certdoctor/internal/tool/spec"
 )
@@ -21,6 +22,9 @@ import (
 // reads the list, links no tool. TestEveryToolOnTheListRuns holds the two to
 // each other in both directions.
 var runs = map[string]func(inputs map[string][]byte, now time.Time) (spec.Outcome, error){
+	"cert": func(in map[string][]byte, now time.Time) (spec.Outcome, error) {
+		return cert.Decode(in["certificates"], now)
+	},
 	"jwt": func(in map[string][]byte, now time.Time) (spec.Outcome, error) { return jwt.Decode(in["token"], now) },
 }
 

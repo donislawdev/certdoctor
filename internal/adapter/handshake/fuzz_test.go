@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	core "github.com/donislawdev/certdoctor/internal/core/handshake"
+	"github.com/donislawdev/certdoctor/internal/tool/certfacts"
 )
 
 // FuzzACertificateIsSummarisedOrRefused is docs/22 row 3 at the one place in L4
@@ -60,7 +61,7 @@ func FuzzACertificateIsSummarisedOrRefused(f *testing.F) {
 			return
 		}
 
-		if want := fingerprint(der); summary.FingerprintSHA256 != want {
+		if want := certfacts.FingerprintSHA256(der); summary.FingerprintSHA256 != want {
 			t.Errorf("the fingerprint is %q and the digest of the bytes handed in is %q",
 				summary.FingerprintSHA256, want)
 		}

@@ -29,6 +29,21 @@ type InputWords struct {
 }
 
 var tools = map[string]ToolWords{
+	"cert": {
+		Title: "Certificate decoder",
+		Summary: "Shows what a certificate or a chain says - names, dates, key and fingerprints - and whether the " +
+			"chain is complete and in order. Nothing is checked against a trust store: Diagnose does that for a server.",
+		Action: "Decode",
+		Ready:  "Paste a certificate or a chain and press Decode. It is read here, on this machine, and sent nowhere.",
+		Inputs: map[string]InputWords{
+			"certificates": {
+				Label: "Certificates",
+				Hint: "PEM, as a .pem or .crt file has it - one certificate or a whole chain. Base64 of one " +
+					"certificate, or an x5c array, works too. A private key pasted with it is not read.",
+				Example: "-----BEGIN CERTIFICATE-----",
+			},
+		},
+	},
 	"jwt": {
 		Title: "JWT decoder",
 		Summary: "Shows what a JSON Web Token says - its header, its claims and its times. The signature is not " +
@@ -84,5 +99,6 @@ func Category(c string) string {
 }
 
 var categories = map[string]string{
-	"tokens": "Tokens",
+	"certificates": "Certificates",
+	"tokens":       "Tokens",
 }

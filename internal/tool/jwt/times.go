@@ -8,6 +8,7 @@ import (
 
 	"github.com/donislawdev/certdoctor/internal/core/status"
 	"github.com/donislawdev/certdoctor/internal/tool/jsontext"
+	"github.com/donislawdev/certdoctor/internal/tool/prose"
 	"github.com/donislawdev/certdoctor/internal/tool/spec"
 )
 
@@ -105,10 +106,10 @@ func (d *decoded) expiryCheck() (spec.Check, bool) {
 	case !d.now.Before(exp.at):
 		return spec.Check{ID: "expiry", Status: status.Fail,
 			Summary: fmt.Sprintf("Expired %s ago, at %s - from that moment on it must not be accepted "+
-				"(RFC 7519 section 4.1.4).", span(d.now, exp.at), clock(exp.at))}, true
+				"(RFC 7519 section 4.1.4).", prose.Span(d.now, exp.at), prose.Clock(exp.at))}, true
 	default:
 		return spec.Check{ID: "expiry", Status: status.Pass,
-			Summary: fmt.Sprintf("Valid for %s more, until %s.", span(d.now, exp.at), clock(exp.at))}, true
+			Summary: fmt.Sprintf("Valid for %s more, until %s.", prose.Span(d.now, exp.at), prose.Clock(exp.at))}, true
 	}
 }
 
@@ -122,10 +123,10 @@ func (d *decoded) notBeforeCheck() (spec.Check, bool) {
 	case d.now.Before(nbf.at):
 		return spec.Check{ID: "not_before", Status: status.Fail,
 			Summary: fmt.Sprintf("Not valid yet - for %s more, until %s (RFC 7519 section 4.1.5).",
-				span(d.now, nbf.at), clock(nbf.at))}, true
+				prose.Span(d.now, nbf.at), prose.Clock(nbf.at))}, true
 	default:
 		return spec.Check{ID: "not_before", Status: status.Pass,
-			Summary: fmt.Sprintf("Valid since %s.", clock(nbf.at))}, true
+			Summary: fmt.Sprintf("Valid since %s.", prose.Clock(nbf.at))}, true
 	}
 }
 
@@ -138,7 +139,7 @@ func (d *decoded) issuedCheck() (spec.Check, bool) {
 	}
 	return spec.Check{ID: "issued_at", Status: status.Warn,
 		Summary: fmt.Sprintf("Issued %s from now, at %s - the clock of whoever issued it, or of this "+
-			"machine, is wrong.", span(d.now, iat.at), clock(iat.at))}, true
+			"machine, is wrong.", prose.Span(d.now, iat.at), prose.Clock(iat.at))}, true
 }
 
 // orderCheck warns about a token whose times leave no moment it was valid.
@@ -151,7 +152,7 @@ func (d *decoded) orderCheck() (spec.Check, bool) {
 		if m, ok := d.moment(claim); ok && m.ok && !exp.at.After(m.at) {
 			return spec.Check{ID: "time_order", Status: status.Warn,
 				Summary: fmt.Sprintf("It expires (%s) no later than its %s (%s), so there was never a "+
-					"moment it could be accepted.", clock(exp.at), claim, clock(m.at))}, true
+					"moment it could be accepted.", prose.Clock(exp.at), claim, prose.Clock(m.at))}, true
 		}
 	}
 	return spec.Check{}, false
@@ -170,53 +171,5 @@ func (d *decoded) notATimeCheck() (spec.Check, bool) {
 	}
 	return spec.Check{ID: "times", Status: status.Warn,
 		Summary: fmt.Sprintf("%s: not a number of seconds since 1970 between the years 1 and 9999 "+
-			"(RFC 7519 section 2), so not read as a time.", joinNames(names))}, true
-}
-
-// clock writes a time for a person, in UTC, to the second.
-func clock(t time.Time) string { return t.Format("2006-01-02 15:04:05 UTC") }
-
-// span says how far apart two times are, in the largest unit that has at
-// least two of itself, rounded down. It counts seconds, not a time.Duration,
-// because a Duration stops at 292 years and a token can say the year 9999.
-func span(a, b time.Time) string {
-	s := b.Unix() - a.Unix()
-	if s < 0 {
-		s = -s
-	}
-	switch {
-	case s < 2*60:
-		return plural(s, "second")
-	case s < 2*3600:
-		return plural(s/60, "minute")
-	case s < 2*86400:
-		return plural(s/3600, "hour")
-	case s < 2*365*86400:
-		return plural(s/86400, "day")
-	default:
-		return plural(s/31557600, "year")
-	}
-}
-
-func plural(n int64, unit string) string {
-	if n == 1 {
-		return "1 " + unit
-	}
-	return fmt.Sprintf("%d %ss", n, unit)
-}
-
-// joinNames writes names as "a", "a and b" or "a, b and c".
-func joinNames(names []string) string {
-	switch len(names) {
-	case 0:
-		return ""
-	case 1:
-		return names[0]
-	default:
-		out := names[0]
-		for _, n := range names[1 : len(names)-1] {
-			out += ", " + n
-		}
-		return out + " and " + names[len(names)-1]
-	}
+			"(RFC 7519 section 2), so not read as a time.", prose.List(names))}, true
 }

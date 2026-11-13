@@ -101,15 +101,19 @@ func TestTheToolListNarrowsAsASearchIsTyped(t *testing.T) {
 			t.Errorf("Matches(jwt, %q) = %v, want %v", query, got, shown)
 		}
 	}
-	v.List.Search.SetText("certificate")
-	if v.List.Showing("jwt") {
-		t.Error("typing a search that leaves the decoder out left it on the list")
+	first := v.Shown()
+	if first != spec.All[0].ID {
+		t.Errorf("the page shown first is %q, want the first tool on the list", first)
 	}
-	if v.Shown() != "jwt" {
+	v.List.Search.SetText("certificate")
+	if v.List.Showing("jwt") || !v.List.Showing("cert") {
+		t.Error("typing a search that leaves the JWT decoder out left it on the list, or took the other one off")
+	}
+	if v.Shown() != first {
 		t.Error("the page beside the list changed while a search was typed")
 	}
 	v.List.Search.SetText("token")
-	if !v.List.Showing("jwt") || v.Shown() != "jwt" || Matches("no-such-tool", "") {
+	if !v.List.Showing("jwt") || v.Shown() != first || Matches("no-such-tool", "") {
 		t.Error("a search that matches the decoder does not show it, or moved the page")
 	}
 }

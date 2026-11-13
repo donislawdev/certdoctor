@@ -69,15 +69,24 @@ var closedStdlib = map[string]closedList{
 	// The tools read what a person hands them, so their list is the core's
 	// rule - values, never places - with the encodings they read in it
 	// (ADR141 point 7). It is a list of its own rather than the core's grown,
-	// so the core keeps exactly what it uses, and crypto/x509 - kept out of
-	// the core because SystemCertPool reaches the network on Windows (ADR101)
-	// - comes here, when a certificate tool needs it, as a decision of this
-	// list alone. reflect and slices are for the tests.
+	// so the core keeps exactly what it uses. reflect and slices are for the
+	// tests.
+	//
+	// crypto/x509 AND WHAT READS A CERTIFICATE CAME HERE BY THE OWNER'S
+	// DECISION (ADR146 decision 1), for the cert tool and the rules it shares
+	// with L4 - crypto/x509/pkix, encoding/pem and encoding/asn1 to read it,
+	// crypto/sha256, crypto/sha1 and encoding/hex for its fingerprints,
+	// crypto/rsa and crypto/ecdsa for its key. It is
+	// still kept out of the core, and the part of it that reaches the network
+	// - SystemCertPool, and Verify without Roots, on Windows (ADR101) - is
+	// refused everywhere by the guard on connections, so no tool calls it.
 	"internal/tool/": {
 		why: "a tool is a pure function of the bytes it is handed and the time it is given",
 		packages: []string{
-			"bytes", "encoding/base64", "encoding/json", "errors", "fmt", "io", "math", "reflect", "regexp",
-			"slices", "sort", "strconv", "strings", "testing", "time", "unicode/utf8",
+			"bytes", "crypto/ecdsa", "crypto/rsa", "crypto/sha1", "crypto/sha256", "crypto/x509",
+			"crypto/x509/pkix", "encoding/asn1", "encoding/base64", "encoding/hex", "encoding/json",
+			"encoding/pem", "errors", "fmt", "io", "math", "reflect", "regexp", "slices", "sort",
+			"strconv", "strings", "testing", "time", "unicode/utf8",
 		},
 	},
 }

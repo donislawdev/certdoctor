@@ -137,7 +137,7 @@ func (d *decoded) outcome() spec.Outcome {
 	}
 	return spec.Outcome{
 		Notes:  d.tok.notes,
-		Checks: sortChecks(d.checks),
+		Checks: spec.SortChecks(d.checks, checkOrder),
 		Data:   d.data(),
 		View:   d.view(),
 	}

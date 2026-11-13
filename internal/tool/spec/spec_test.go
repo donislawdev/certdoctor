@@ -30,7 +30,8 @@ func TestEveryToolIsDescribedCompletely(t *testing.T) {
 		}
 		names := map[string]bool{}
 		for _, in := range tool.Inputs {
-			if !publicName.MatchString(in.Name) || names[in.Name] || in.MaxBytes <= 0 || in.Shape != Line {
+			if !publicName.MatchString(in.Name) || names[in.Name] || in.MaxBytes <= 0 ||
+				!slices.Contains(Shapes, in.Shape) || !strings.Contains(in.File, ".") {
 				t.Errorf("%s: input %+v", tool.ID, in)
 			}
 			names[in.Name] = true
@@ -87,7 +88,7 @@ func sample() Outcome {
 }
 
 func TestADocumentReadsBackAsWritten(t *testing.T) {
-	d, err := NewDocument(All[0], "0.1.0", "2026-11-12T12:00:00Z", sample())
+	d, err := NewDocument(mustFind(t, "jwt"), "0.1.0", "2026-11-12T12:00:00Z", sample())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestADocumentReadsBackAsWritten(t *testing.T) {
 }
 
 func TestADocumentOutsideTheContractIsRefused(t *testing.T) {
-	d, _ := NewDocument(All[0], "0.1.0", "2026-11-12T12:00:00Z", sample())
+	d, _ := NewDocument(mustFind(t, "jwt"), "0.1.0", "2026-11-12T12:00:00Z", sample())
 	good, _ := d.Marshal()
 	for _, c := range []struct{ name, from, to string }{
 		{"a status outside the four", `"status": "FAIL"`, `"status": "BAD"`},
@@ -192,7 +193,7 @@ func TestARequestOutsideTheContractIsRefused(t *testing.T) {
 // FuzzReadDocument: whatever the window is handed, reading it does not fall
 // over, and a document it accepts writes back as one it accepts the same.
 func FuzzReadDocument(f *testing.F) {
-	d, _ := NewDocument(All[0], "0.1.0", "2026-11-12T12:00:00Z", sample())
+	d, _ := NewDocument(mustFind(f, "jwt"), "0.1.0", "2026-11-12T12:00:00Z", sample())
 	good, _ := d.Marshal()
 	f.Add(good)
 	f.Add([]byte(`{"schema_version":"1.0"}`))
@@ -237,4 +238,31 @@ func FuzzReadRequest(f *testing.F) {
 			}
 		}
 	})
+}
+
+// mustFind is the tool id, which the cases here are written for.
+func mustFind(t testing.TB, id string) Tool {
+	t.Helper()
+	tool, ok := Find(id)
+	if !ok {
+		t.Fatalf("no tool %q", id)
+	}
+	return tool
+}
+
+// TestChecksAreListedWorstFirstThenInTheToolsOrder holds the one order every
+// tool lists its checks in: the order of status.All, and within a status the
+// tool's own order of ids, with an id it did not name last.
+func TestChecksAreListedWorstFirstThenInTheToolsOrder(t *testing.T) {
+	checks := []Check{
+		{ID: "b", Status: status.Pass}, {ID: "unnamed", Status: status.Warn}, {ID: "a", Status: status.Pass},
+		{ID: "c", Status: status.Warn}, {ID: "d", Status: status.Unknown}, {ID: "e", Status: status.Fail},
+	}
+	var got []string
+	for _, c := range SortChecks(checks, []string{"a", "b", "c", "d", "e"}) {
+		got = append(got, c.ID)
+	}
+	if want := []string{"e", "c", "unnamed", "d", "a", "b"}; !slices.Equal(got, want) {
+		t.Errorf("order %q, want %q", got, want)
+	}
 }

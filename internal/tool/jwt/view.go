@@ -3,13 +3,13 @@ package jwt
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/donislawdev/certdoctor/internal/core/status"
 	"github.com/donislawdev/certdoctor/internal/tool/jsontext"
+	"github.com/donislawdev/certdoctor/internal/tool/prose"
 	"github.com/donislawdev/certdoctor/internal/tool/spec"
 )
 
@@ -37,7 +37,7 @@ func (d *decoded) tokenBlock() spec.Block {
 	if d.tok.form == formJWS {
 		fields = append(fields, spec.Field{Label: "Signature", Value: d.signatureWords()})
 	}
-	fields = append(fields, spec.Field{Label: "Length", Value: plural(int64(d.tok.length), "character")})
+	fields = append(fields, spec.Field{Label: "Length", Value: prose.Plural(int64(d.tok.length), "character")})
 	return spec.Block{Kind: spec.Fields, Title: "Token", Fields: fields}
 }
 
@@ -55,7 +55,7 @@ func (d *decoded) signatureWords() string {
 	if len(d.signature) == 0 {
 		return "none"
 	}
-	return plural(int64(len(d.signature)), "byte") + ", not checked"
+	return prose.Plural(int64(len(d.signature)), "byte") + ", not checked"
 }
 
 // memberWords is a header value as a person reads it: a string as itself,
@@ -82,25 +82,13 @@ func (d *decoded) timesBlock() (spec.Block, bool) {
 	for _, m := range d.times {
 		f := spec.Field{Label: fmt.Sprintf("%s (%s)", m.label, m.claim), Status: verdicts[byClaim[m.claim]]}
 		if m.ok {
-			f.Value, f.Note = clock(m.at), distance(d.now, m.at)
+			f.Value, f.Note = prose.Clock(m.at), prose.Distance(d.now, m.at)
 		} else {
 			f.Value, f.Status = "not a time", status.Warn
 		}
 		fields = append(fields, f)
 	}
 	return spec.Block{Kind: spec.Fields, Title: "Times", Fields: fields}, true
-}
-
-// distance says when a time is, seen from now.
-func distance(now, at time.Time) string {
-	switch {
-	case at.After(now):
-		return "in " + span(now, at)
-	case at.Before(now):
-		return span(now, at) + " ago"
-	default:
-		return "now"
-	}
 }
 
 // payloadBlock is the second half of the token, or why it cannot be shown.
@@ -117,7 +105,7 @@ func (d *decoded) payloadBlock() spec.Block {
 		return spec.Block{Kind: spec.Code, Title: "Payload", Language: "json", Body: p.claims.Indent()}
 	case !utf8.Valid(p.bytes):
 		return spec.Block{Kind: spec.Text, Title: "Payload",
-			Body: fmt.Sprintf("%s that are not UTF-8 text, so they are not shown.", plural(int64(len(p.bytes)), "byte"))}
+			Body: fmt.Sprintf("%s that are not UTF-8 text, so they are not shown.", prose.Plural(int64(len(p.bytes)), "byte"))}
 	case p.nested:
 		return spec.Block{Kind: spec.Code, Title: "Payload - another token (cty JWT)", Language: "text",
 			Body: string(p.bytes)}
@@ -194,7 +182,7 @@ func duplicateCheck(dups []duplicate) (spec.Check, bool) {
 		names = append(names, fmt.Sprintf("%q in the %s%s", d.dup.Name, d.in, at(d.dup.Path)))
 	}
 	return spec.Check{ID: "duplicate_names", Status: status.Warn,
-		Summary: "Carried twice: " + joinNames(names) + ". A library may refuse such a token or take the " +
+		Summary: "Carried twice: " + prose.List(names) + ". A library may refuse such a token or take the " +
 			"last one (RFC 7515 section 4, RFC 7519 section 4), so two libraries can read it differently."}, true
 }
 
@@ -211,28 +199,4 @@ func at(path string) string {
 var checkOrder = []string{
 	"algorithm", "signature", "signature_shape", "encrypted", "expiry", "not_before", "issued_at",
 	"time_order", "times", "claims", "encoding", "unencoded", "duplicate_names",
-}
-
-// sortChecks lists the worst first, and within a status in checkOrder.
-func sortChecks(checks []spec.Check) []spec.Check {
-	rank := func(c spec.Check) (int, int) {
-		severity := len(status.All)
-		for i, s := range status.All {
-			if s == c.Status {
-				severity = i
-			}
-		}
-		for i, id := range checkOrder {
-			if id == c.ID {
-				return severity, i
-			}
-		}
-		return severity, len(checkOrder)
-	}
-	sort.SliceStable(checks, func(i, j int) bool {
-		si, oi := rank(checks[i])
-		sj, oj := rank(checks[j])
-		return si < sj || si == sj && oi < oj
-	})
-	return checks
 }

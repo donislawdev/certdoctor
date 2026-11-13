@@ -314,3 +314,10 @@ github.com/donislawdev/certdoctor/assets/icon none
 github.com/donislawdev/certdoctor/internal/tool/spec 96
 github.com/donislawdev/certdoctor/internal/tool/jsontext 93
 github.com/donislawdev/certdoctor/internal/tool/jwt 95
+
+# The certificate decoder, the rules it shares with L4 and the words the tools
+# share (ADR146). Measured 2026-11-13 on Windows, go1.27.4: cert 94.5,
+# certfacts 100.0, prose 100.0. Pure code, as above.
+github.com/donislawdev/certdoctor/internal/tool/cert 94
+github.com/donislawdev/certdoctor/internal/tool/certfacts 100
+github.com/donislawdev/certdoctor/internal/tool/prose 100

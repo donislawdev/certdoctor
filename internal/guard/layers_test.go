@@ -33,11 +33,17 @@ var layerMap = []layerRule{
 		// back for the orchestrator would turn the ports inside out. The door was
 		// found by the check that every door in this map is used.
 		//
-		// Of the tools they see the contract alone (ADR141 point 5): the
-		// renderer draws every tool's outcome from its shape, and no adapter
-		// runs a tool - only the entry point joins a tool to its code.
+		// Of the tools they see the contract (ADR141 point 5): the renderer
+		// draws every tool's outcome from its shape, and no adapter runs a
+		// tool - only the entry point joins a tool to its code.
+		//
+		// And the rules about a certificate that L4 and the cert tool share
+		// (ADR146 decision 2): how a name is spelled, what a fingerprint is
+		// over, what self-signed and issued-by mean. They are one package so
+		// the report and the tool cannot answer the same certificate twice
+		// differently - the owner chose that over a copy held by a test.
 		location:       "internal/adapter/",
-		mayImportBelow: []string{"internal/core/", "internal/tool/spec/"},
+		mayImportBelow: []string{"internal/core/", "internal/tool/spec/", "internal/tool/certfacts/"},
 	},
 	{
 		// The guards check the repository, so they depend on nothing in it.
@@ -379,7 +385,11 @@ var intraLayerEdges = map[string][]string{
 	// the two and cannot run back: spec names no tool's code, and jsontext
 	// knows no tool exists. A second JSON reader in a tool would be a second
 	// answer to "what does a name carried twice mean".
-	"internal/tool/jwt": {"internal/tool/spec", "internal/tool/jsontext"},
+	"internal/tool/jwt": {"internal/tool/spec", "internal/tool/jsontext", "internal/tool/prose"},
+	// The cert tool reads a certificate by the rules it shares with L4
+	// (ADR146) and speaks of time in the words the JWT decoder does - one
+	// sentence for "expired 3 days ago" across the tools.
+	"internal/tool/cert": {"internal/tool/spec", "internal/tool/certfacts", "internal/tool/prose"},
 	// The contract reads the request document and, for the window, the
 	// document a tool writes - both through the shared reader, so a name
 	// carried twice is refused by the same rule everywhere.

@@ -17,6 +17,7 @@ import (
 
 	"github.com/donislawdev/certdoctor/internal/adapter/tcp"
 	core "github.com/donislawdev/certdoctor/internal/core/handshake"
+	"github.com/donislawdev/certdoctor/internal/tool/certfacts"
 )
 
 // minted is one certificate this test made, with everything needed to sign the
@@ -155,7 +156,7 @@ func TestWhatTheServerPresentedIsReportedExactly(t *testing.T) {
 			"one name spelled two ways makes a complete chain look broken",
 			shown.Chain[0].Issuer, shown.Chain[1].Subject)
 	}
-	if shown.Chain[0].FingerprintSHA256 != fingerprint(leaf.der) {
+	if shown.Chain[0].FingerprintSHA256 != certfacts.FingerprintSHA256(leaf.der) {
 		t.Error("the leaf's fingerprint is not the digest of the bytes that arrived")
 	}
 	if shown.Chain[0].SelfSigned || !shown.Chain[1].IsCA {
@@ -249,7 +250,7 @@ func TestTheIssuerOfTheLeafIsFoundByItsKey(t *testing.T) {
 	// The same name and a key of its own: an issuer re-issued, sent in the form
 	// that did not sign this leaf.
 	impostor := mint(t, "certdoctor test intermediate", &root, true)
-	if distinguishedName(impostor.cert.Subject) != distinguishedName(leaf.cert.Issuer) {
+	if certfacts.Name(impostor.cert.Subject) != certfacts.Name(leaf.cert.Issuer) {
 		t.Fatalf("the fixture failed to reproduce the issuer's name")
 	}
 	// A leaf claiming MD5 - its signature cannot be checked against any key, so
@@ -499,7 +500,7 @@ func TestACertificateNobodyCanReadIsRefusedRatherThanSummarised(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a real certificate was refused: %v", err)
 	}
-	if summary.FingerprintSHA256 != fingerprint(root.der) {
+	if summary.FingerprintSHA256 != certfacts.FingerprintSHA256(root.der) {
 		t.Error("the fingerprint is not the digest of the bytes handed in")
 	}
 	if !summary.SelfSigned || !summary.IsCA {

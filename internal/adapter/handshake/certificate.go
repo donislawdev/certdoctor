@@ -1,15 +1,11 @@
 package handshake
 
 import (
-	"crypto/sha256"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/asn1"
-	"encoding/hex"
-	"errors"
 	"fmt"
 
 	core "github.com/donislawdev/certdoctor/internal/core/handshake"
+	"github.com/donislawdev/certdoctor/internal/tool/certfacts"
 )
 
 // certificates turns what arrived on the wire into records with no code attached
@@ -34,32 +30,15 @@ func certificates(chain []*x509.Certificate) []core.Certificate {
 }
 
 // issuerSent says whether the issuer of the first certificate is among the
-// others that arrived: its subject is the leaf's issuer, by the one function
-// both names are rendered by, and its key verifies the leaf's signature -
-// ADR114.
+// others that arrived, by the rule certfacts.IssuedBy keeps for this layer and
+// the cert tool alike: its subject is the leaf's issuer and its key verifies
+// the leaf's signature - ADR114, ADR146.
 //
 // IN ANY POSITION, not only the next one. RFC 8446 section 4.4.2 asks
 // receivers to cope with certificates in any order after the first.
-//
-// NOT CheckSignatureFrom, for the reason selfSigned gives: that function also
-// refuses a parent that is not an authority, and the question here is whether
-// the issuer ARRIVED. Whether a client will accept it as an issuer is a path
-// question, and L5 asks it with a store.
-//
-// A SIGNATURE THAT CANNOT BE CHECKED AT ALL leaves the name to decide, as it
-// did before this function existed. MD5, or an algorithm Go does not know, says
-// nothing about the key, and "the server did not send it" would be a claim this
-// program cannot make.
 func issuerSent(chain []*x509.Certificate) bool {
-	leaf := chain[0]
-	issuer := distinguishedName(leaf.Issuer)
 	for _, candidate := range chain[1:] {
-		if distinguishedName(candidate.Subject) != issuer {
-			continue
-		}
-		err := candidate.CheckSignature(leaf.SignatureAlgorithm, leaf.RawTBSCertificate, leaf.Signature)
-		var insecure x509.InsecureAlgorithmError
-		if err == nil || errors.As(err, &insecure) || errors.Is(err, x509.ErrUnsupportedAlgorithm) {
+		if certfacts.IssuedBy(chain[0], candidate) {
 			return true
 		}
 	}
@@ -69,20 +48,16 @@ func issuerSent(chain []*x509.Certificate) bool {
 // summarise is one certificate, exactly as it was presented.
 func summarise(certificate *x509.Certificate) core.Certificate {
 	return core.Certificate{
-		// BOTH NAMES GO THROUGH ONE FUNCTION, and the completeness check is what
-		// makes that load bearing rather than tidy. Whether the issuer of the leaf
-		// arrived starts as a STRING COMPARISON in issuerSent, before any key is
-		// asked: two spellings of one distinguished name would report a complete
-		// chain as broken, and send somebody to fix a server that is already
-		// correct. The same failure tcp.Target exists to prevent one layer down.
-		Subject:   distinguishedName(certificate.Subject),
-		Issuer:    distinguishedName(certificate.Issuer),
+		// BOTH NAMES GO THROUGH ONE FUNCTION, certfacts.Name, and the
+		// completeness check is what makes that load bearing rather than tidy:
+		// whether the issuer of the leaf arrived starts as a string comparison.
+		// The same failure tcp.Target exists to prevent one layer down.
+		Subject:   certfacts.Name(certificate.Subject),
+		Issuer:    certfacts.Name(certificate.Issuer),
 		NotBefore: certificate.NotBefore,
 		NotAfter:  certificate.NotAfter,
-		// OVER THE RAW DER, which is what identifies a certificate exactly. A
-		// fingerprint over anything we re-encoded would be a fingerprint of our
-		// parser, and two programs would then disagree about the same bytes.
-		FingerprintSHA256: fingerprint(certificate.Raw),
+		// Over the raw DER, by the one function the cert tool prints it with.
+		FingerprintSHA256: certfacts.FingerprintSHA256(certificate.Raw),
 		// EXACTLY AS PRESENTED, in the order presented, and never rebuilt from the
 		// common name. RFC 6125 section 6.4.4 makes these the identity a client
 		// matches on; inventing one from the subject would be this program
@@ -94,37 +69,12 @@ func summarise(certificate *x509.Certificate) core.Certificate {
 		// so nothing downstream can write into a buffer the parser still owns. L5
 		// needs them to verify a path, which a summary cannot support.
 		Raw: append([]byte(nil), certificate.Raw...),
-		// FROM THE SIGNATURE, NOT FROM THE NAMES MATCHING ALONE. A certificate can
-		// name itself as its own issuer without having signed itself, and treating
-		// that as self-signed would call a broken chain complete - which is the
+		// FROM THE SIGNATURE, NOT FROM THE NAMES MATCHING ALONE - certfacts
+		// says why. Treating a certificate that merely names itself as its
+		// issuer as self-signed would call a broken chain complete, which is the
 		// exact verdict this layer exists to get right.
-		SelfSigned: selfSigned(certificate),
+		SelfSigned: certfacts.SelfSigned(certificate),
 	}
-}
-
-// selfSigned says whether a certificate issued itself: its issuer is its own
-// subject, and its own key verifies its signature. RFC 5280 section 3.2 defines
-// the term with exactly those two parts, for CA certificates. The same test is
-// applied here whatever the CA flag says, because that flag is about what the
-// key may sign for others - section 4.2.1.9 - and not about whether it signed
-// this.
-//
-// NOT CheckSignatureFrom, AND THE REASON IS MEASURED. That function refuses a
-// "parent" that is not an authority - crypto/x509/x509.go in Go 1.27.2, the
-// RFC 5280 section 4.2.1.9 check at its top - so a self-signed SERVER
-// certificate, which carries CA:FALSE like the one self-signed.badssl.com
-// presents, came back as not self-signed, and L4 told the reader that the
-// server had withheld an issuer which does not exist (OBS163, 2026-10-19).
-// CheckSignature asks only whether the key verifies the bytes.
-//
-// THE NAMES GO THROUGH distinguishedName, the one function chain completeness
-// compares by, so "issued itself" and "its issuer arrived" cannot disagree
-// about the same two names.
-func selfSigned(certificate *x509.Certificate) bool {
-	if distinguishedName(certificate.Subject) != distinguishedName(certificate.Issuer) {
-		return false
-	}
-	return certificate.CheckSignature(certificate.SignatureAlgorithm, certificate.RawTBSCertificate, certificate.Signature) == nil
 }
 
 // addresses renders the iPAddress entries the way the standard library spells
@@ -166,7 +116,7 @@ func nameMatch(chain []*x509.Certificate, name string) core.NameMatch {
 	if leaf.VerifyHostname(name) == nil {
 		return core.NameCovered
 	}
-	if !hasSubjectAltName(leaf) && leaf.Subject.CommonName != "" {
+	if !certfacts.HasSubjectAltName(leaf) && leaf.Subject.CommonName != "" {
 		legacy := *leaf
 		legacy.DNSNames = []string{leaf.Subject.CommonName}
 		if legacy.VerifyHostname(name) == nil {
@@ -174,41 +124,6 @@ func nameMatch(chain []*x509.Certificate, name string) core.NameMatch {
 		}
 	}
 	return core.NameNotCovered
-}
-
-// oidSubjectAltName is id-ce-subjectAltName, RFC 5280 section 4.2.1.6.
-var oidSubjectAltName = asn1.ObjectIdentifier{2, 5, 29, 17}
-
-// hasSubjectAltName asks whether the extension is present at all, by its
-// identifier. Asking whether the parsed lists are empty instead would call a
-// certificate whose subjectAltName holds only entries Go does not parse - a
-// directory name, say - one that has none, and fall back to the common name
-// RFC 6125 forbade in exactly that case.
-func hasSubjectAltName(certificate *x509.Certificate) bool {
-	for _, extension := range certificate.Extensions {
-		if extension.Id.Equal(oidSubjectAltName) {
-			return true
-		}
-	}
-	return false
-}
-
-// distinguishedName renders one name, and it is the ONE function that does.
-//
-// It is a named function rather than a call to String() at each site precisely
-// because there are two sites. A subject rendered one way and an issuer rendered
-// another is not a formatting difference - it is a complete chain reported as
-// broken, silently, on somebody else's working server.
-func distinguishedName(name pkix.Name) string { return name.String() }
-
-// fingerprint is the SHA-256 of the presented bytes, lower case hex.
-//
-// It is never masked and never shortened: it is the evidence inviolable rule 21
-// requires beside any claim about interception, and half a fingerprint cannot be
-// compared against anything.
-func fingerprint(der []byte) string {
-	sum := sha256.Sum256(der)
-	return hex.EncodeToString(sum[:])
 }
 
 // CertificateFrom summarises one certificate straight from its DER bytes.
