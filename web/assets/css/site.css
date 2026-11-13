@@ -844,6 +844,10 @@ pre .stderr {
   background: var(--surface-raised);
 }
 
+.sidebar-wide {
+  display: none;
+}
+
 @media (min-width: 64rem) {
   .sidebar {
     position: sticky;
@@ -853,8 +857,12 @@ pre .stderr {
     overflow-y: auto;
   }
 
-  .sidebar summary {
+  .sidebar-narrow {
     display: none;
+  }
+
+  .sidebar-wide {
+    display: block;
   }
 }
 
