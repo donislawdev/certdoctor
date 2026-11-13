@@ -441,8 +441,15 @@ assert_trust() {
   if [ -n "$want_l5" ] && [ "$got_l5" != "$want_l5" ]; then
     say "L5 says $got_l5, expected $want_l5"
   fi
+  # THE ROWS ARE NAMED WHEN THE COUNT IS WRONG. Twice a row arrived with its
+  # probe and the count in expected/ stayed behind - python, then pip - and a
+  # bare number sent whoever read it into the container to find out which row
+  # it was. The names are the runtimes in the order the matrix lists them.
   if [ -n "$want_rows" ] && [ "$got_rows" != "$want_rows" ]; then
-    say "$got_rows store(s) refused the chain, expected $want_rows"
+    local refusing
+    refusing="$(echo "$document" |
+      jq -r '[.layers[] | select(.id=="L5") | .findings[]? | .trust_store | select(.trusts_presented_chain == false) | .runtime] | join(", ")')"
+    say "$got_rows store(s) refused the chain, expected $want_rows - refusing: $refusing"
   fi
   if [ -n "$want_failure" ] && [ "$got_failure" != "$want_failure" ]; then
     say "the refusal was classified as $got_failure, expected $want_failure"

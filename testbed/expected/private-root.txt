@@ -63,8 +63,15 @@ chain_complete=true
 # /etc/ssl/cert.pem, and judges it with a list of its own, so it refuses as a
 # row of its own. Found by the run of 2026-10-26 - the row arrived with the
 # python probe on 2026-10-21 and this count stayed behind.
+#
+# FIVE SINCE THE pip ROW, STILL ONE STORE. pip 26.1 here runs on truststore, which
+# loads the same bundle with the certifi pip carries beside it, so it refuses as
+# a row of its own and names the same file for its command. The real pip in this
+# image refuses the same chain - "unable to get local issuer certificate", asked
+# 2026-11-13. Found by the run of that day, the second time a row arrived with
+# its probe and this count stayed behind.
 l5_status=FAIL
-l5_rows_not_trusting=4
+l5_rows_not_trusting=5
 l5_trust_failure=unknown_authority
 
 # THE INDEPENDENT WITNESS IS THE RUNTIME ITSELF, and this is the first time in
