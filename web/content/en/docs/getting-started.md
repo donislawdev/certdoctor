@@ -7,11 +7,11 @@ lead: "From the download to the sentence that names the cause in about two minut
 
 ## What you need
 
-A computer with Windows, Linux or macOS on Apple silicon, and the URL that fails. Nothing is installed: the [download](/download/) is an archive with one program in it, and on Linux that program is one static file that also runs inside a container. No administrator rights are needed.
+A computer with Windows, Linux or macOS on Apple silicon, and the URL that fails. Nothing has to be installed: the command line's [download](/download/) is an archive with one program in it, and on Linux that program is one static file that also runs inside a container. No administrator rights are needed. On Windows you can install it instead, and then the command works in any new terminal.
 
 ## Run it against the URL
 
-Open a terminal where the archive was unpacked and give Cert Doctor the address exactly as the failing program uses it, with `https://` or `http://` in front:
+Open a terminal where the archive was unpacked, or any new terminal once it is installed, and give Cert Doctor the address exactly as the failing program uses it, with `https://` or `http://` in front:
 
 ```
 certdoctor https://api.example.com/

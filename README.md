@@ -149,8 +149,9 @@ day the refused root is your own company's.
 ## Download and run
 
 **Download a release.** Take the archive for your system from the
-[releases page](https://github.com/donislawdev/certdoctor/releases/latest) and unpack it. There is
-nothing to install.
+[releases page](https://github.com/donislawdev/certdoctor/releases/latest) and unpack it - the
+programs run from wherever you unpack them. On Windows on x64 you can [install it](#install-it-on-windows)
+instead.
 
 | Your system | The archive | What you run |
 |---|---|---|
@@ -186,6 +187,26 @@ an image with nothing else in it. `certdoctor --license` prints the notices that
 window is different: it needs a desktop session with OpenGL, and loads `libGL.so.1` and
 `libwayland-client.so.0`, which a desktop installation has.
 
+### Install it on Windows
+
+| Your system | The installer | What you run |
+|---|---|---|
+| Windows on x64 | `certdoctor-setup_<version>_windows_amd64.msi` | Cert Doctor from the Start menu, and `certdoctor` in a terminal |
+
+The installer puts the window and the command line in `C:\Program Files\Cert Doctor` for every
+account on the machine, adds that folder to the system `PATH` and puts Cert Doctor in the Start
+menu. Installing asks for administrator rights - running Cert Doctor does not. The installer is
+signed, and the files it installs are the files of the window's archive for Windows. A terminal
+that was already open does not see the new `PATH`, so open a new one to type `certdoctor`.
+
+**A newer version installs over the older one, and closes nothing.** If Cert Doctor is running at
+the time, Windows asks you to close it or to restart later, and the next start is the new version.
+An older version does not install over a newer one.
+
+**To remove it,** uninstall Cert Doctor in Settings, under Apps. The programs, the Start menu entry
+and the `PATH` entry go. A file you put in that folder yourself stays, and so do the window's
+settings in your user folder.
+
 ### Check what you downloaded
 
 Each release lists the digest of every file it publishes in `verify-SHA256SUMS.txt`. Download it
@@ -196,11 +217,11 @@ sha256sum -c --ignore-missing verify-SHA256SUMS.txt        # Linux
 shasum -a 256 -c --ignore-missing verify-SHA256SUMS.txt    # macOS
 ```
 
-On Windows, in PowerShell, `True` beside the archive means it is the file the release published:
+On Windows, in PowerShell, `True` beside a file means it is the file the release published:
 
 ```
 $listed = (Get-Content verify-SHA256SUMS.txt) -replace ' .*'
-Get-FileHash certdoctor*.zip | ForEach-Object { "$($_.Hash -in $listed)  $(Split-Path -Leaf $_.Path)" }
+Get-FileHash certdoctor*.zip, certdoctor*.msi | ForEach-Object { "$($_.Hash -in $listed)  $(Split-Path -Leaf $_.Path)" }
 ```
 
 A digest file from the same page only proves that the two agree. What proves where they came from is
@@ -221,9 +242,10 @@ provenance answers for it too:
 gh attestation verify <the archive> -R donislawdev/certdoctor
 ```
 
-The Windows and macOS archives were signed after the build, so their bytes are no longer the
-build's, and that second command finds nothing for them by design. The signature answers for them
-instead: Windows checks it when the program starts, and on macOS `spctl -a -vv certdoctor.app` - or
+The Windows and macOS archives and the installer were signed after the build, so their bytes are no
+longer the build's, and that second command finds nothing for them by design. The signature answers
+for them instead: Windows checks it when the program starts, and shows whose it is when the
+installer asks for administrator rights, and on macOS `spctl -a -vv certdoctor.app` - or
 `certdoctor-gui.app` - asks Gatekeeper.
 
 ### Build it from source
@@ -568,7 +590,8 @@ certificate authority looks like too.
 
 No. It runs as whoever started it, and the report records which rights it ran with, because what a
 store looks like can depend on them. A printed fix says when running it needs administrator or root
-rights.
+rights. Only the Windows installer asks for them, because it writes to `C:\Program Files` and to the
+system `PATH`.
 
 ### Is it free? Can I use it at work?
 

@@ -26,7 +26,7 @@ Nazwy użytkowników i hasła w adresach proxy, nagłówki autoryzacji i ciastec
 
 ## Nie wymaga uprawnień administratora
 
-Działa jako ten, kto go uruchomił, a raport zapisuje, z jakimi uprawnieniami działał, bo od nich może zależeć, jak wygląda magazyn.
+Działa jako ten, kto go uruchomił, a raport zapisuje, z jakimi uprawnieniami działał, bo od nich może zależeć, jak wygląda magazyn. O uprawnienia administratora prosi tylko instalator na Windows, bo instaluje program dla każdego konta na komputerze.
 
 ## Co uruchamia
 

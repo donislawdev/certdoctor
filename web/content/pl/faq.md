@@ -15,7 +15,7 @@ faq:
   - question: Czy zmienia cokolwiek na mojej maszynie?
     answer: "Nie. Czyta, łączy się tam, gdzie go skierujesz, i zapisuje jeden raport, jeśli poprosisz o niego przez `--out`. Polecenia, które wypisuje, są do uruchomienia przez ciebie, po przeczytaniu. Szczegóły na stronie [bezpieczeństwo i prywatność](/security/)."
   - question: Czy wymaga uprawnień administratora?
-    answer: "Nie. Działa jako ten, kto go uruchomił, a raport zapisuje, z jakimi uprawnieniami działał. Wypisana naprawa mówi, kiedy jej uruchomienie wymaga uprawnień administratora albo roota."
+    answer: "Nie. Działa jako ten, kto go uruchomił, a raport zapisuje, z jakimi uprawnieniami działał. Wypisana naprawa mówi, kiedy jej uruchomienie wymaga uprawnień administratora albo roota. Prosi o nie tylko instalator na Windows, bo instaluje program dla każdego konta na komputerze."
   - question: Czy powie mi, że firma przechwytuje mój ruch?
     answer: "Mówi, kto podpisał certyfikat i ile magazynów na twojej maszynie ufa temu urzędowi, a nazywa produkt do inspekcji, gdy certyfikat mówi o nim tak, jak publikuje to producent. Z jednego połączenia proxy z inspekcją i własny urząd certyfikacji firmy wyglądają tak samo, więc nigdy nikogo nie oskarża na podstawie domysłu. Jak to czytać, mówi strona [inspekcja TLS](/guides/tls-inspection-corporate-proxy/)."
   - question: Czy potrafi powiedzieć, że winny jest serwer?

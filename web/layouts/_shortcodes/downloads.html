@@ -2,18 +2,19 @@
   The archives of a release, read from the README's download tables, which a
   guard in internal/guard holds to the release scripts. The README writes
   <version> in each name, and the site puts in the program's version from the
-  facts. Takes: the program, certdoctor or certdoctor-gui.
+  facts. Takes: the program, certdoctor or certdoctor-gui, or the installer,
+  certdoctor-setup.
 */ -}}
 {{- $program := .Get 0 }}
 {{- $readme := (resources.Get "readme.md").Content }}
-{{- $pattern := printf "`(%s)_<version>_([a-z]+)_([a-z0-9]+)\\.(zip|tar\\.gz)`" $program }}
+{{- $pattern := printf "`(%s)_<version>_([a-z]+)_([a-z0-9]+)\\.(zip|tar\\.gz|msi)`" $program }}
 {{- $found := findRESubmatch $pattern $readme }}
 {{- if not $found }}
   {{- errorf "the README names no archive of %s, and the download page would list none" $program }}
 {{- end }}
 {{- $version := hugo.Data.facts.certdoctor.version }}
 <div class="table-wrap"><table>
-  <thead><tr><th>{{ T "system" }}</th><th>{{ T "archive" }}</th><th>{{ T "you_run" }}</th></tr></thead>
+  <thead><tr><th>{{ T "system" }}</th><th>{{ if eq $program "certdoctor-setup" }}{{ T "installer" }}{{ else }}{{ T "archive" }}{{ end }}</th><th>{{ T "you_run" }}</th></tr></thead>
   <tbody>
     {{- range $found }}
     {{- $os := index . 2 }}

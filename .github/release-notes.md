@@ -14,6 +14,8 @@ Two programs. **certdoctor** is the command line, in five builds:
 - `certdoctor-gui_<version>_linux_amd64.tar.gz`
 - `certdoctor-gui_<version>_macos_arm64.tar.gz`, for Apple silicon
 
+**On Windows on x64 you can install Cert Doctor instead** with `certdoctor-setup_<version>_windows_amd64.msi`. It puts both programs in `C:\Program Files\Cert Doctor` for every account, adds that folder to the system `PATH` and puts Cert Doctor in the Start menu. It installs the same files as the window's archive for Windows, a newer version installs over it, and it closes nothing that is running. A pre-release has no installer.
+
 Take the archive for your system and architecture. Every archive carries `LICENSE`, `README.md` and `THIRD-PARTY-NOTICES.md`, and the window's archives also `THIRD-PARTY-NOTICES-GUI.md`.
 
 The command line's Linux builds are static and run in a container with no C library at all, so the binary can be copied into an image on its own - `certdoctor --license` prints the notices that travel with it.
@@ -24,7 +26,7 @@ Check what you downloaded against `verify-SHA256SUMS.txt`, at the bottom of this
 
 ## Signing
 
-**The Windows programs are signed** - `certdoctor.exe`, `certdoctor-gui.exe`, and the two libraries of the software renderer in the window's `opengl` folder. Each signature carries a timestamp and is issued by Certum. Windows checks it when you run the program. The `certdoctor.exe` in the window's archive is the same file as the one in the command line's archive.
+**The Windows programs are signed** - `certdoctor.exe`, `certdoctor-gui.exe`, the two libraries of the software renderer in the window's `opengl` folder, and the installer. Each signature carries a timestamp and is issued by Certum. Windows checks it when you run the program, and shows whose it is when the installer asks for administrator rights. The `certdoctor.exe` in the window's archive is the same file as the one in the command line's archive.
 
 **The macOS programs are signed and notarised by Apple.** The command line lives inside `certdoctor.app`, and the window inside `certdoctor-gui.app` together with the `certdoctor` it runs. Next to each bundle is a link for each program in it, so you still type `./certdoctor`. macOS runs them without asking the network, because the notarisation ticket travels inside the bundle.
 
@@ -49,7 +51,7 @@ Where a **Linux** archive came from. These are exactly the bytes the build produ
 gh attestation verify <the file you downloaded> -R donislawdev/certdoctor
 ```
 
-That one does not answer for a **Windows or macOS** archive, and on purpose: those were signed after the build, so their bytes are no longer the bytes the build made. What answers for them is the signature itself - Authenticode on Windows, and on macOS:
+That one does not answer for a **Windows or macOS** archive or the installer, and on purpose: those were signed after the build, so their bytes are no longer the bytes the build made. What answers for them is the signature itself - Authenticode on Windows, and on macOS:
 
 ```
 spctl -a -vv certdoctor.app            # what Gatekeeper thinks of it

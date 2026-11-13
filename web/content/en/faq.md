@@ -14,7 +14,7 @@ faq:
   - question: Does it change anything on my machine?
     answer: "No. It reads, connects where you pointed it, and writes one report if you ask for one with `--out`. The commands it prints are for you to run, after reading them. [Security and privacy](/security/) has the details."
   - question: Does it need administrator rights?
-    answer: "No. It runs as whoever started it, and the report records which rights it ran with. A printed fix says when running it needs administrator or root rights."
+    answer: "No. It runs as whoever started it, and the report records which rights it ran with. A printed fix says when running it needs administrator or root rights. Only the Windows installer asks for them, because it installs for every account on the machine."
   - question: Will it tell me my company is intercepting my traffic?
     answer: "It tells you who signed the certificate and how many stores on your machine trust that authority, and it names the inspection product when the certificate says so in a way the vendor publishes. From one connection, an inspecting proxy and your own company's certificate authority look the same, so it never accuses anyone on a guess. [TLS inspection](/guides/tls-inspection-corporate-proxy/) says how to read it."
   - question: Can it tell whether the server is at fault?

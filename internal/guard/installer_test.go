@@ -27,7 +27,12 @@ const (
 	windowCatalogue   = "internal/gui/words/words.go"
 	commandResources  = "cmd/certdoctor/winres.json"
 	windowResources   = "cmd/certdoctor-gui/winres.json"
+	siteConfig        = "web/hugo.toml"
 )
+
+// installerFile is the installer as the README and the release note name it,
+// with <version> where the release puts its version.
+const installerFile = "`certdoctor-setup_<version>_windows_amd64.msi`"
 
 // installerUpgradeCode is the product's identity in Windows Installer, for
 // good. Every machine that has the program finds the version it has through
@@ -325,6 +330,22 @@ func checkInstallerNames(files map[string]string) []string {
 			v = append(v, fmt.Sprintf("%s does not hold %q, so it names the product otherwise", path, text))
 		}
 	}
+	// Where a person first reads the name, and where a person is told which
+	// file to download: the README's title, the website's title, and the
+	// installer in the README's download tables (which the download page reads)
+	// and in the release note.
+	for path, text := range map[string]string{
+		readmeFile:   "# " + app + " ",
+		siteConfig:   `title = "` + app + `"`,
+		releaseNotes: installerFile,
+	} {
+		if !strings.Contains(files[path], text) {
+			v = append(v, fmt.Sprintf("%s does not hold %q", path, text))
+		}
+	}
+	if !strings.Contains(files[readmeFile], "| "+installerFile+" |") {
+		v = append(v, readmeFile+" has no row for "+installerFile+", so the download page lists no installer")
+	}
 
 	repo := ""
 	if m := catalogueRepo.FindStringSubmatch(files[windowCatalogue]); m != nil {
@@ -343,7 +364,7 @@ func installerFiles(t *testing.T) map[string]string {
 	root := moduleRoot(t)
 	files := map[string]string{}
 	for _, rel := range []string{installerScript, signingScript, verifyWorkflow, releaseWorkflow, windowCatalogue,
-		commandResources, windowResources, buildScript} {
+		commandResources, windowResources, buildScript, readmeFile, siteConfig, releaseNotes} {
 		files[rel] = readRel(t, root, rel)
 	}
 	return files
@@ -360,6 +381,9 @@ func TestTheInstallerNameGuardCanFail(t *testing.T) {
 		{windowResources, `"ProductName": "Cert Doctor"`, `"ProductName": "certdoctor"`, "ProductName in " + windowResources},
 		{signingScript, `INSTALLER = "certdoctor-setup_%s_windows_amd64.msi"`, `INSTALLER = "certdoctor_%s_windows_amd64.msi"`, "INSTALLER in"},
 		{releaseWorkflow, "--global wix --version 5.0.2", "--global wix --version 6.0.0", "the WiX"},
+		{readmeFile, "# Cert Doctor ", "# certdoctor ", readmeFile + " does not hold"},
+		{readmeFile, "| " + installerFile + " |", "| `certdoctor-setup_<version>_windows_amd64.exe` |", "has no row for"},
+		{releaseNotes, installerFile, "`certdoctor_<version>_windows_amd64.msi`", releaseNotes + " does not hold"},
 	} {
 		files := installerFiles(t)
 		if strings.Count(files[c.file], c.old) != 1 {

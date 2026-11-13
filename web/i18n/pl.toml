@@ -150,6 +150,9 @@ other = "Twój system"
 [archive]
 other = "Archiwum"
 
+[installer]
+other = "Instalator"
+
 [you_run]
 other = "Co uruchamiasz"
 
@@ -185,6 +188,9 @@ other = "`./certdoctor-gui`"
 
 [run_certdoctor_gui_macos]
 other = "`certdoctor-gui.app`, podpisany i notaryzowany"
+
+[run_certdoctor_setup_windows]
+other = "Cert Doctor z menu Start i `certdoctor` w terminalu"
 
 [group_input]
 other = "Co badać"

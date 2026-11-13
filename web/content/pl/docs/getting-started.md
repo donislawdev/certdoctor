@@ -8,11 +8,11 @@ lead: "Od pobrania do zdania, które nazywa przyczynę, w mniej więcej dwie min
 
 ## Czego potrzebujesz
 
-Komputera z Windowsem, Linuksem albo macOS na Apple silicon i adresu, który nie działa. Nic się nie instaluje: [pobierasz](/download/) archiwum z jednym programem, a na Linuksie ten program to jeden statyczny plik, który działa też w kontenerze. Uprawnienia administratora nie są potrzebne.
+Komputera z Windowsem, Linuksem albo macOS na Apple silicon i adresu, który nie działa. Niczego nie trzeba instalować: wiersz poleceń [pobierasz](/download/) jako archiwum z jednym programem, a na Linuksie ten program to jeden statyczny plik, który działa też w kontenerze. Uprawnienia administratora nie są potrzebne. Na Windowsie możesz go zamiast tego zainstalować i wtedy polecenie działa w każdym nowym terminalu.
 
 ## Uruchom go na adresie
 
-Otwórz terminal w folderze z rozpakowanym archiwum i uruchom Cert Doctor z adresem dokładnie takim, jakiego używa program, który nie działa, z `https://` albo `http://` na początku:
+Otwórz terminal w folderze z rozpakowanym archiwum, a po instalacji dowolny nowy terminal, i uruchom Cert Doctor z adresem dokładnie takim, jakiego używa program, który nie działa, z `https://` albo `http://` na początku:
 
 ```
 certdoctor https://api.example.com/

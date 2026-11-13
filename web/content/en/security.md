@@ -25,7 +25,7 @@ Proxy user names and passwords in proxy addresses, authorization headers and coo
 
 ## It needs no administrator rights
 
-It runs as whoever started it, and the report records which rights it ran with, because what a store looks like can depend on them.
+It runs as whoever started it, and the report records which rights it ran with, because what a store looks like can depend on them. Only the Windows installer asks for administrator rights, because it installs for every account on the machine.
 
 ## What it runs
 
