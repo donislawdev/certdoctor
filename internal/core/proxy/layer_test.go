@@ -383,10 +383,10 @@ func TestANamedProxyBesideDiscoveryWarnsRatherThanPasses(t *testing.T) {
 	}
 }
 
-// TestOneExceptionListIsReadTwiceForTheEnvironment is the product: one NO_PROXY,
-// two runtimes, two answers. A single boolean here would be true of curl and
-// false of .NET on one machine.
-func TestOneExceptionListIsReadTwiceForTheEnvironment(t *testing.T) {
+// TestOneExceptionListIsReadPerRuntimeForTheEnvironment is the product: one
+// NO_PROXY, several runtimes, several answers. A single boolean here would be
+// true of curl and false of .NET on one machine.
+func TestOneExceptionListIsReadPerRuntimeForTheEnvironment(t *testing.T) {
 	lens := namingLens(StackEnvironment, "proxy.example:8080")
 	// A bare suffix: curl excuses api.example.com under it, .NET documents that
 	// it does not - "NO_PROXY=example.com will NOT match www.example.com".
@@ -407,6 +407,42 @@ func TestOneExceptionListIsReadTwiceForTheEnvironment(t *testing.T) {
 	}
 	if answers[string(RuleNoProxyDotNet)] {
 		t.Error("the .NET reading excuses a subdomain under a bare suffix, and Microsoft documents that it does not")
+	}
+}
+
+// TestDotNetIsReadOnBothSidesOfItsNetworkEntries is why .NET has two rows: an
+// entry written as a network sends an address direct from .NET 11 and through
+// the proxy up to .NET 10, and one machine runs apps on both. The rows come in
+// the order EnvironmentRules gives, which is the order every surface prints.
+func TestDotNetIsReadOnBothSidesOfItsNetworkEntries(t *testing.T) {
+	lens := namingLens(StackEnvironment, "proxy.example:8080")
+	lens.Bypass, lens.BypassSet = "10.0.0.0/8", true
+	address := Target{Scheme: "https", Host: "10.1.2.3", Port: "443"}
+
+	result := askLayer(t, Input{Lenses: lensesOf(lens), Target: address})
+	row := findingOf(t, result, StackEnvironment)
+
+	want := []report.ProxyBypassRule{
+		{Rule: string(RuleNoProxyCurl), Bypasses: true},
+		{Rule: string(RuleNoProxyDotNet), Bypasses: false},
+		{Rule: string(RuleNoProxyDotNetNetworks), Bypasses: true},
+	}
+	if len(row.BypassRules) != len(want) {
+		t.Fatalf("the environment list was read as %v, want %v", row.BypassRules, want)
+	}
+	for i := range want {
+		if row.BypassRules[i] != want[i] {
+			t.Errorf("reading %d came out %+v, want %+v", i, row.BypassRules[i], want[i])
+		}
+	}
+	var summary string
+	for _, finding := range result.Findings {
+		if finding.ProxyStack != nil {
+			summary = finding.Summary
+		}
+	}
+	if !strings.Contains(summary, "disagree about whether") {
+		t.Errorf("two .NET rows answering two ways were summed up as %q", summary)
 	}
 }
 

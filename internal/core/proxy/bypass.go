@@ -56,6 +56,12 @@ func throughProxy() Decision { return Decision{Basis: BasisNoEntry} }
 // into punycode, Python lower-cases by its own Unicode tables - and none of that
 // is read here, so an answer about such a list would be a guess presented as a
 // fact about somebody's program.
+//
+// .NET FROM 11 IS THE ONE EXCEPTION, because L2 reads the machine's NO_PROXY
+// with it and has to answer for whatever the machine holds. It is the code of
+// .NET up to 10 with entries written as networks added, so it answers for any
+// text exactly as that reading does - and one .NET row refusing a list the other
+// answers would leave a report one row short without a word.
 func Decide(r Rule, list string, t Target) (Decision, error) {
 	read, ok := readings[r]
 	if !ok {
@@ -87,7 +93,8 @@ func Bypasses(r Rule, list string, t Target) (bool, error) {
 //
 // THE FIRST SIX SEE THE HOST IN ONE SPELLING, lower case and without a trailing
 // dot (Target.normalise), because the lists they read are compared that way by
-// their programs or by the vendor's description. THE READINGS ADDED WITH ADR147
+// their programs or by the vendor's description - and .NET from 11 with them,
+// being .NET's code with networks added. THE OTHER READINGS ADDED WITH ADR147
 // SEE THE HOST AS GIVEN and spell it the way their program does - Go keeps
 // "LOCALHOST" apart from "localhost", Python keeps a trailing dot - because each
 // was read from the program's code, and that code does not all agree.
@@ -107,9 +114,9 @@ func asWritten(read func(string, Target) Decision) reading {
 var readings = map[Rule]reading{
 	RuleNoProxyCurl:   normalised(bypassNoProxyCurl),
 	RuleNoProxyDotNet: normalised(func(list string, t Target) Decision { return bypassNoProxyDotNet(list, t, false) }),
-	RuleNoProxyDotNetNetworks: {decide: func(list string, t Target) Decision {
-		return bypassNoProxyDotNet(list, t.normalise(), true)
-	}, asciiOnly: true},
+	RuleNoProxyDotNetNetworks: normalised(func(list string, t Target) Decision {
+		return bypassNoProxyDotNet(list, t, true)
+	}),
 	RuleNoProxyGo:     asWritten(bypassNoProxyGo),
 	RuleNoProxyPython: asWritten(bypassNoProxyPython),
 	RuleNoProxyRequests: asWritten(func(list string, t Target) Decision {

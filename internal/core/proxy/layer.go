@@ -17,12 +17,25 @@ import (
 // because one NO_PROXY is read differently by different runtimes - so the
 // reading belongs to whoever is being asked about rather than to the variable.
 //
-// THERE ARE TWO OF THEM AND NOT THREE. Go reads that variable a third way and
-// its wording is quoted beside RuleNoProxyCurl, but Go is not one of the
-// thirteen probes this program asks about, so a row reporting its reading would
-// be an answer about a runtime nothing here examines - the rule ADR88 wrote down
-// for this vocabulary, read from the reporting end.
-var EnvironmentRules = []Rule{RuleNoProxyCurl, RuleNoProxyDotNet}
+// .NET IS READ TWICE BECAUSE ONE MACHINE RUNS BOTH LINES OF IT. From 11 an
+// entry written as a network ("10.0.0.0/8") is read as one, and up to 10 it is
+// not (OBS235) - and installing .NET 11 does not move an app built for 10 onto
+// it, so both answers are true of programs on the same machine.
+//
+// SOURCE: Microsoft, "Select the .NET version to use", read 2026-11-13 - unless
+// a setting says otherwise, an app rolls forward only to a newer minor release
+// of the major version it was built for, and only when that release is missing,
+// while a self-contained app carries its own runtime.
+// https://learn.microsoft.com/en-us/dotnet/core/versions/selection
+//
+// THE OTHER READINGS OF THIS PACKAGE ARE NOT HERE, and that is a decision rather
+// than a gap (ADR147). Go is not one of the thirteen probes this program asks
+// about, so a row reporting its reading would be an answer about a runtime
+// nothing here examines - the rule ADR88 wrote down for this vocabulary, read
+// from the reporting end. Node, Python, requests and pip are probes, and taking
+// their readings into the diagnosis is a decision of its own - they stand here
+// for the noproxy tool.
+var EnvironmentRules = []Rule{RuleNoProxyCurl, RuleNoProxyDotNet, RuleNoProxyDotNetNetworks}
 
 // Input is everything L2 was given by the entry point.
 type Input struct {
@@ -286,9 +299,9 @@ func serverOf(server Server) report.ProxyServer {
 //
 // ONE PLACE, SEVERAL READINGS, AND ONLY FOR THE ENVIRONMENT. A system stack
 // holds its list under one documented rule, so there is one answer. The
-// environment holds NO_PROXY, which curl and .NET read differently - measured
-// and sourced in this package - so a single "bypassed: yes" there would be true
-// of one runtime on the machine and false of another.
+// environment holds NO_PROXY, which curl, .NET up to 10 and .NET from 11 read
+// differently - measured and sourced in this package - so a single "bypassed:
+// yes" there would be true of one runtime on the machine and false of another.
 func bypassRulesOf(lens Lens, target Target) []report.ProxyBypassRule {
 	if !lens.BypassSet {
 		return nil

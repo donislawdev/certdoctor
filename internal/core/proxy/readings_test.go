@@ -174,9 +174,19 @@ func TestDecideNamesTheEntryAndWhatItRestsOn(t *testing.T) {
 
 // TestTheNewReadingsAnswerOnlyForPrintableASCII is the refusal Decide
 // documents: Go converts an entry to punycode and Python folds case by its own
-// tables, and neither is read here.
+// tables, and neither is read here. The readings L2 reports answer for any text
+// instead, because L2 hands them whatever the machine holds.
 func TestTheNewReadingsAnswerOnlyForPrintableASCII(t *testing.T) {
-	for _, r := range NoProxyRules[2:] {
+	forL2 := map[Rule]bool{}
+	for _, r := range EnvironmentRules {
+		forL2[r] = true
+	}
+	refusing := 0
+	for _, r := range NoProxyRules {
+		if forL2[r] {
+			continue
+		}
+		refusing++
 		for _, c := range []struct{ list, host, port string }{
 			{"b\xc3\xbccher.example", "a.example", ""},
 			{"a.example", "b\xc3\xbccher.example", ""},
@@ -192,10 +202,15 @@ func TestTheNewReadingsAnswerOnlyForPrintableASCII(t *testing.T) {
 			t.Errorf("%s: a tab is printable enough for every program and was refused: %v", r, err)
 		}
 	}
-	for _, r := range NoProxyRules[:2] {
-		if _, err := Decide(r, "b\xc3\xbccher.example", https("a.example")); err != nil {
-			t.Errorf("%s reads the environment for L2, which hands it whatever the machine holds, and refused: %v",
-				r, err)
+	if refusing == 0 {
+		t.Error("no reading was left to refuse, so the refusal above asked nothing")
+	}
+	for _, r := range EnvironmentRules {
+		for _, list := range []string{"b\xc3\xbccher.example", "a\x1cb", "10.0.0.0/8,b\xc3\xbccher.example"} {
+			if _, err := Decide(r, list, https("a.example")); err != nil {
+				t.Errorf("%s reads the environment for L2, which hands it whatever the machine holds, "+
+					"and refused %q: %v", r, list, err)
+			}
 		}
 	}
 }
