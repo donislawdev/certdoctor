@@ -265,6 +265,27 @@ jobs:
               missing=1
             fi
           done
+          # One installer for a release and none for a release candidate - a
+          # hyphen in the tag, the rule release.yml marks a pre-release by and
+          # build_msi.py refuses one by (ADR148). Windows Installer reads only
+          # the three numbers of a version, so a candidate's installer would
+          # carry the release's own version.
+          shopt -s nullglob
+          installers=(*.msi)
+          shopt -u nullglob
+          echo "installers: ${#installers[@]}"
+          case "$TAG" in
+            *-*)
+              if [ "${#installers[@]}" != "0" ]; then
+                echo "a release candidate carries an installer: ${installers[*]}"
+                missing=1
+              fi ;;
+            *)
+              if [ "${#installers[@]}" != "1" ] || [ ! -f "certdoctor-setup_${version}_windows_amd64.msi" ]; then
+                echo "expected one installer, certdoctor-setup_${version}_windows_amd64.msi"
+                missing=1
+              fi ;;
+          esac
           test "$missing" = "0"
           echo "every expected file is published"
 
@@ -400,6 +421,67 @@ jobs:
           }
           "$checked file(s) signed by the pinned certificate, each with a timestamp"
 
+      # The installer is what an administrator runs with the machine's highest
+      # rights (ADR148), so it is checked the way the programs are, on a line
+      # of its own in the verdict. Its files are unpacked with an
+      # administrative install, which installs nothing, and compared with the
+      # window's archive byte for byte: an installer built before the card
+      # signed the programs would carry unsigned copies inside a valid
+      # signature. A release candidate publishes no installer, and the count
+      # above says whether that held.
+      - name: the installer is signed, stamped, by our certificate, and carries the signed files
+        id: installer
+        continue-on-error: true
+        shell: pwsh
+        working-directory: published
+        env:
+          TAG: ${{ steps.which.outputs.tag }}
+        run: |
+          $installers = @(Get-ChildItem -Filter *.msi)
+          if ($installers.Count -eq 0) { "no installer is published, so there is nothing to check here"; exit 0 }
+          $pinLine = Select-String -Path ../.github/signing-certificates.txt -Pattern '^windows-code-signing\s+([0-9a-f]{64})\s'
+          if (-not $pinLine) { throw "could not read the pinned certificate out of .github/signing-certificates.txt" }
+          $pinned = $pinLine.Matches[0].Groups[1].Value
+          $version = $env:TAG.TrimStart('v')
+          $archive = "certdoctor-gui_${version}_windows_amd64.zip"
+          if (-not (Test-Path -LiteralPath $archive)) { throw "missing: $archive, which the installer is made of" }
+          $window = Join-Path $env:RUNNER_TEMP 'installer_window_archive'
+          Expand-Archive -LiteralPath $archive -DestinationPath $window -Force
+          $listing = {
+            param($dir)
+            @(Get-ChildItem -LiteralPath $dir -Recurse -File | ForEach-Object {
+              $_.FullName.Substring($dir.Length + 1).Replace('\', '/') + ' ' + (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash
+            } | Sort-Object)
+          }
+          $want = & $listing $window
+          foreach ($msi in $installers) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $msi.FullName
+            "$($msi.Name): $($sig.Status)"
+            if ($sig.Status -ne 'Valid') { throw "$($msi.Name): the signature status is $($sig.Status)" }
+            if (-not $sig.TimeStamperCertificate) { throw "$($msi.Name): the signature carries no timestamp" }
+            $bytes = [System.Security.Cryptography.SHA256]::Create().ComputeHash($sig.SignerCertificate.RawData)
+            $actual = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
+            if ($actual -ne $pinned) { throw "$($msi.Name) was signed by a DIFFERENT certificate: $actual" }
+
+            # msiexec with its arguments in a variable and a limit on the wait:
+            # without a file it waits for a help window nobody can close.
+            $image = Join-Path $env:RUNNER_TEMP ('installer_image_' + $msi.BaseName)
+            New-Item -ItemType Directory -Force -Path $image | Out-Null
+            $log = Join-Path $env:RUNNER_TEMP ($msi.BaseName + '.admin.log')
+            $argv = @('/a', ('"' + $msi.FullName + '"'), '/qn', ('TARGETDIR="' + $image + '"'), '/l*v', ('"' + $log + '"'))
+            $p = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\msiexec.exe') -ArgumentList $argv -PassThru
+            if (-not $p.WaitForExit(600000)) { throw "msiexec /a $($msi.Name) did not finish in ten minutes" }
+            if ($p.ExitCode -ne 0) { throw "msiexec /a $($msi.Name) exited $($p.ExitCode)" }
+            $inside = Join-Path $image 'PFiles64\Cert Doctor'
+            if (-not (Test-Path -LiteralPath $inside)) { throw "$($msi.Name) unpacks no 'Cert Doctor' folder under Program Files" }
+            $have = & $listing $inside
+            if (($have -join "`n") -ne ($want -join "`n")) {
+              throw ("$($msi.Name) does not carry the window archive's files byte for byte`n  installer: " +
+                ($have -join ', ') + "`n  archive:   " + ($want -join ', '))
+            }
+            "$($msi.Name): by the pinned certificate, with a timestamp, and its $($have.Count) files are the window archive's, byte for byte"
+          }
+
       # The readme and the site point at /releases/latest, so "published" and
       # "what people get" are the same thing only while this holds. Asked of the
       # API rather than of the event, because a dispatch has no event and a
@@ -439,6 +521,7 @@ jobs:
           COMMANDS_API: ${{ steps.commands_api.outcome }}
           COMMANDS_OFFLINE: ${{ steps.commands_offline.outcome }}
           SIGNATURES: ${{ steps.signatures.outcome }}
+          INSTALLER: ${{ steps.installer.outcome }}
           LATEST: ${{ steps.latest.outcome }}
         run: |
           set -euo pipefail
@@ -455,6 +538,7 @@ jobs:
           report "$COMMANDS_API" "the commands the notes tell people to run"
           report "$COMMANDS_OFFLINE" "the same commands with no network"
           report "$SIGNATURES" "every Windows program and library by our certificate"
+          report "$INSTALLER" "the installer by our certificate, with the signed files"
           report "$LATEST" "a full release is the one people are offered"
           echo
           if [ "$failed" != "0" ]; then

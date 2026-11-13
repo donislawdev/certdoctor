@@ -283,9 +283,175 @@ jobs:
           path: ${{ runner.temp }}/release/dist/*
           if-no-files-found: error
 
+  # What the Windows installer DOES, asked on a clean Windows machine before
+  # anything is signed (ADR148): the window's archive of this very build, made
+  # into an installer by the script the signing step uses, installed, built
+  # again and installed over itself, and removed. Nothing here is published -
+  # the installer people download is built on the machine with the card, from
+  # the signed archive. A release candidate gets no installer, so there is
+  # nothing to install for one. The draft waits for this job.
+  installer:
+    name: the Windows installer installs, replaces itself and leaves nothing behind
+    needs: [check, build]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: fetch the build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build
+          path: ${{ runner.temp }}/build
+
+      # Two builds of one version, because every build carries a new
+      # ProductCode, and the second installed over the first is what a rebuild
+      # held in a feed's moderation does on somebody's machine. WiX at the
+      # version build_msi.py builds with, which refuses any other.
+      - name: build the installer twice
+        id: built
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          if ($env:VERSION.Contains('-')) {
+            "$env:VERSION is a release candidate, which gets no installer"
+            "built=no" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { throw "dotnet tool install wix exited $LASTEXITCODE" }
+          foreach ($leg in 'first', 'second') {
+            $out = Join-Path $env:RUNNER_TEMP $leg
+            New-Item -ItemType Directory -Force -Path $out | Out-Null
+            python .github/scripts/build_msi.py --tag "v$env:VERSION" --archives (Join-Path $env:RUNNER_TEMP 'build') --out-dir $out
+            if ($LASTEXITCODE -ne 0) { throw "build_msi.py refused v$env:VERSION" }
+          }
+          "built=yes" >> $env:GITHUB_OUTPUT
+
+      # Each check is asked of what Windows did, not of what the source says:
+      # the programs' versions in the installer's own table, the folder
+      # against the archive byte for byte, the machine's PATH as a new process
+      # reads it, the shortcut's target, the entry in Programs and Features.
+      # The versions come first because they decide upgrades: a program
+      # without one is a file Windows Installer leaves in place, and an
+      # upgrade then reports the new version over the old program (measured
+      # on Windows Server 2025, 2026-11-13).
+      - name: install, install a rebuild over it, uninstall
+        if: steps.built.outputs.built == 'yes'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:VERSION
+          $name = 'Cert Doctor'
+          $installDir = Join-Path $env:ProgramFiles $name
+          $shortcut = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) ($name + '.lnk')
+          $regKey = 'HKLM:\Software\DonislawDev\' + $name
+          $first = (Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'first') -Filter *.msi).FullName
+          $second = (Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'second') -Filter *.msi).FullName
+          $script:failed = 0
+          function Check($ok, [string]$what) {
+            if ($ok) { Write-Host "ok      $what" } else { Write-Host "FAILED  $what"; $script:failed++ }
+          }
+          function Listing([string]$dir) {
+            if (-not (Test-Path -LiteralPath $dir)) { return '(no folder)' }
+            return (@(Get-ChildItem -LiteralPath $dir -Recurse -File | ForEach-Object {
+              $_.FullName.Substring($dir.Length + 1).Replace('\', '/') + ' ' + (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash
+            } | Sort-Object) -join "`n")
+          }
+          function Entries {
+            return @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -eq $name })
+          }
+          function Ours-On-Path {
+            return @(([Environment]::GetEnvironmentVariable('Path', 'Machine')).Split(';') | Where-Object { $_.TrimEnd('\') -eq $installDir })
+          }
+          # msiexec with its arguments in a variable and a limit on the wait:
+          # a quote that swallows the file name leaves it waiting for a help
+          # window nobody can close.
+          function Msi([string]$verb, [string]$file, [string]$log) {
+            $argv = @($verb, ('"' + $file + '"'), '/qn', '/norestart', '/l*v', ('"' + (Join-Path $env:RUNNER_TEMP $log) + '"'))
+            $p = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\msiexec.exe') -ArgumentList $argv -PassThru
+            $null = $p.Handle
+            if (-not $p.WaitForExit(600000)) { throw "msiexec $verb $file did not finish in ten minutes" }
+            Write-Host "msiexec $verb $(Split-Path -Leaf $file) -> $($p.ExitCode)"
+            return $p.ExitCode
+          }
+
+          $wi = New-Object -ComObject WindowsInstaller.Installer
+          $db = $wi.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $wi, @($first, 0))
+          $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @('SELECT `FileName`, `Version` FROM `File`'))
+          $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
+          $versions = @{}
+          while ($rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)) {
+            $file = ($rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, @(1)) -split '\|')[-1]
+            $versions[$file] = $rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, @(2))
+          }
+          $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null) | Out-Null
+          foreach ($program in 'certdoctor.exe', 'certdoctor-gui.exe') {
+            Check ($versions[$program] -eq "$version.0") "the installer records $program as version $version.0 ($($versions[$program]))"
+          }
+
+          $window = Join-Path $env:RUNNER_TEMP 'window-archive'
+          Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP "build\certdoctor-gui_${version}_windows_amd64.zip") -DestinationPath $window -Force
+          $want = Listing $window
+          function Check-Installed {
+            $entries = @(Entries)
+            Check ($entries.Count -eq 1) "one entry in Programs and Features ($($entries.Count))"
+            if ($entries.Count -ge 1) {
+              Check ($entries[0].DisplayVersion -eq $version) "it says $version ($($entries[0].DisplayVersion))"
+              Check ($entries[0].Publisher -eq 'DonislawDev') "publisher DonislawDev ($($entries[0].Publisher))"
+            }
+            Check ((Listing $installDir) -eq $want) "the folder holds the window archive, byte for byte"
+            Check (@(Ours-On-Path).Count -eq 1) "the install folder is on the machine PATH once ($(@(Ours-On-Path).Count))"
+            Check (-not (Test-Path -LiteralPath (Join-Path $installDir 'opengl32.dll'))) 'opengl32.dll is not in the folder on PATH'
+            $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+            $said = (@(& cmd.exe /c 'certdoctor --version' 2>&1)[0] | Out-String).Trim()
+            Check ($said -eq "certdoctor: $version") "certdoctor found on PATH by a new process says $version ($said)"
+            Check (Test-Path -LiteralPath $shortcut) "the Start menu has the shortcut for every account"
+            if (Test-Path -LiteralPath $shortcut) {
+              $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
+              Check ($link.TargetPath -eq (Join-Path $installDir 'certdoctor-gui.exe')) "it starts the window ($($link.TargetPath))"
+            }
+          }
+
+          Check (@(Entries).Count -eq 0 -and -not (Test-Path -LiteralPath $installDir)) 'nothing of ours on the runner before'
+          Check ((Msi '/i' $first 'install.log') -eq 0) 'installed'
+          Check-Installed
+          $firstCode = @(Entries)[0].PSChildName
+
+          Check ((Msi '/i' $second 'rebuild.log') -eq 0) 'a rebuild of the same version installed over it'
+          Check-Installed
+          Check (@(Entries)[0].PSChildName -ne $firstCode) "the rebuild replaced the first build ($firstCode -> $(@(Entries)[0].PSChildName))"
+
+          Set-Content -LiteralPath (Join-Path $installDir 'somebody-elses.txt') -Value 'not ours'
+          Check ((Msi '/x' $second 'uninstall.log') -eq 0) 'uninstalled, with a file of somebody else in the folder'
+          Check (@(Entries).Count -eq 0) 'no entry in Programs and Features'
+          Check (@(Ours-On-Path).Count -eq 0) 'nothing of ours on the machine PATH'
+          Check (-not (Test-Path -LiteralPath $shortcut)) 'no shortcut'
+          Check (-not (Test-Path -LiteralPath $regKey)) "no registry key $regKey"
+          $left = (@(Get-ChildItem -LiteralPath $installDir -Recurse -File | ForEach-Object { $_.Name }) -join ', ')
+          Check ($left -eq 'somebody-elses.txt') "the folder holds only the file that is not ours ($left)"
+
+          if ($script:failed -ne 0) { throw "$($script:failed) check(s) of the installer failed" }
+          "the installer installs, replaces itself and leaves nothing of its own behind"
+
+      - name: keep what msiexec said, when a check failed
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-logs
+          path: ${{ runner.temp }}/*.log
+          if-no-files-found: ignore
+
   publish:
     name: attest the build and open an empty draft
-    needs: [check, build]
+    needs: [check, build, installer]
     # The only job that writes anything, and the only one fenced behind a tag.
     # Running this workflow by hand stops before here on purpose.
     if: startsWith(github.ref, 'refs/tags/')
@@ -383,7 +549,8 @@ jobs:
           echo
           echo "It checks this build's provenance before touching it, signs every program and"
           echo "library in the three Windows archives with the card, hands the two macOS"
-          echo "archives to the Mac to be signed, notarised and stapled, writes"
+          echo "archives to the Mac to be signed, notarised and stapled, builds the Windows"
+          echo "installer from the signed window archive and signs it, writes"
           echo "verify-SHA256SUMS.txt over what it made, uploads everything to the draft and"
           echo "asks attest-release.yml for the statement about the signed bytes. Then read"
           echo "the draft and publish it."

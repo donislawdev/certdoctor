@@ -239,9 +239,14 @@ func TestThePinnedCertificatesAreDigestsWithADate(t *testing.T) {
 	}
 	// The line that reads the file, not a mention of its name - both files also
 	// name it in their messages, and those would survive the reading going away.
+	// The verifier reads it in two steps, the programs' and the installer's
+	// (ADR148), each named by what it reads into: a reading named only by the
+	// file would be satisfied by either step while the other went astray.
 	for rel, readers := range map[string][]string{
-		signingScript:  {`PIN_FILE = os.path.join(".github", "signing-certificates.txt")`},
-		verifyWorkflow: {` .github/signing-certificates.txt)"`, `Select-String -Path ../.github/signing-certificates.txt`},
+		signingScript: {`PIN_FILE = os.path.join(".github", "signing-certificates.txt")`},
+		verifyWorkflow: {` .github/signing-certificates.txt)"`,
+			`$line = Select-String -Path ../.github/signing-certificates.txt`,
+			`$pinLine = Select-String -Path ../.github/signing-certificates.txt`},
 	} {
 		body := readRel(t, root, rel)
 		for _, reader := range readers {

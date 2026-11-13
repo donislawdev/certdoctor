@@ -70,6 +70,8 @@ var proseFiles = []string{
 	".github/scripts/make_app_bundle.sh",
 	".github/scripts/sign_release.py",
 	".github/scripts/sign_macos.sh",
+	".github/scripts/build_msi.py",
+	"packaging/msi/certdoctor-setup.wxs.in",
 	".github/release-notes.md",
 	".github/signing-certificates.txt",
 	"assets/icon/appicon.py",

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Windows installer of Cert Doctor: the window and the command line, for
+  every account on the machine (ADR148). Rendered by .github/scripts/build_msi.py,
+  which fills every doubled-brace placeholder from the one place its value lives
+  and hands WiX two paths - $(PayloadDir), the signed archive of the window
+  unpacked, and $(IconFile), the program's icon.
+
+  The shape is the one the maintainer's other Go project measured line by line
+  on Windows Server 2025 before writing it, and what this installer does was
+  measured again on the same system before this file was committed. No
+  extension, no custom action and no dialogs of WiX's own, so nothing but these
+  files and Windows Installer's own tables goes into the package.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="{{APP_NAME}}"
+      Manufacturer="{{PUBLISHER}}"
+      Version="{{VERSION}}"
+      UpgradeCode="{{UPGRADE_CODE}}"
+      Scope="perMachine">
+
+    <!--
+      The UpgradeCode is the product, not a build, and it never changes. Every
+      machine finds the version it has through it, and a new one would leave
+      the old install in place beside the new one for good. A guard pins it.
+
+      afterInstallExecute puts the new files down before the old version is
+      removed. AllowSameVersionUpgrades because a version held in a feed's
+      moderation is rebuilt under the same number, and without it an equal
+      version installs as a second entry beside the first.
+    -->
+    <MajorUpgrade
+        Schedule="afterInstallExecute"
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of [ProductName] is already installed. Uninstall it first to install this one." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!--
+      Nothing that is running gets closed or ended - a diagnosis in progress or
+      a report being written is cut off by neither (ADR148 decision 4).
+
+      With the Restart Manager on, an upgrade while the command line ran waited
+      thirty seconds, failed with 1601 and closed the program anyway. With it
+      off the file in use is set aside, the new version is in place at once,
+      the program keeps running, and the installer answers 3010 so the old
+      copy goes at the next restart. An open window is named by Windows
+      Installer's own Files in Use question, which offers Cancel, Retry and
+      Ignore and closes nothing.
+
+      It has to be here, in the package, from the first installer on. An
+      upgrade removes the old version under the OLD package's properties, so
+      the same property given on the command line changes nothing, and a
+      package published without it cannot be fixed afterwards.
+    -->
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
+
+    <!-- What Programs and Features shows. There is nothing to repair or to
+         change - one feature, and no choices. -->
+    <Property Id="ARPURLINFOABOUT" Value="{{PROJECT_URL}}" />
+    <Property Id="ARPHELPLINK" Value="{{ISSUES_URL}}" />
+    <Property Id="ARPURLUPDATEINFO" Value="{{RELEASE_NOTES_URL}}" />
+    <Property Id="ARPPRODUCTICON" Value="ProgramIcon" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <Icon Id="ProgramIcon" SourceFile="$(IconFile)" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="{{APP_NAME}}" />
+    </StandardDirectory>
+
+    <!--
+      The window's archive as it is: both programs, the software renderer in
+      the opengl folder and the documents. The window starts the command line
+      from its own folder and, without an OpenGL driver, loads the renderer
+      from the opengl folder beside it (ADR121, ADR125), so the shape of this
+      folder is part of the program.
+    -->
+    <ComponentGroup Id="Programs" Directory="INSTALLFOLDER">
+      <Files Include="$(PayloadDir)\**" />
+    </ComponentGroup>
+
+    <!--
+      The folder on the machine's PATH, once, so certdoctor answers in every
+      account and for a build agent that runs as a service. Only the folder the
+      programs are in: the renderer's opengl32.dll is one level down, because a
+      library of that name in a folder on PATH is one other programs would
+      load. Permanent="no" takes the entry off again at uninstall.
+    -->
+    <ComponentGroup Id="OnThePath" Directory="INSTALLFOLDER">
+      <Component Id="MachinePath">
+        <Environment Id="MachinePath" Name="PATH" Value="[INSTALLFOLDER]"
+                     Part="last" Action="set" System="yes" Permanent="no" />
+        <RegistryValue Root="HKLM" Key="Software\{{PUBLISHER}}\{{APP_NAME}}"
+                       Name="Path" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      The window in the Start menu, started in the folder it is installed in.
+      The window writes nothing where it starts: Save report opens in the
+      folder a report was last saved to, or the home folder of whoever opened
+      it. The command line gets no shortcut - it is typed.
+    -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut">
+        <Shortcut Id="Window"
+                  Name="{{APP_NAME}}"
+                  Description="{{SHORTCUT_DESCRIPTION}}"
+                  Target="[INSTALLFOLDER]{{WINDOW_EXE}}"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="ProgramIcon" />
+        <RegistryValue Root="HKLM" Key="Software\{{PUBLISHER}}\{{APP_NAME}}"
+                       Name="Shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Feature Id="Everything">
+      <ComponentGroupRef Id="Programs" />
+      <ComponentGroupRef Id="OnThePath" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>
