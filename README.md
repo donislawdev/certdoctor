@@ -437,7 +437,26 @@ Beside the diagnosis, certdoctor has small tools for what stands around a connec
 only what you give it, connects to nothing and changes nothing. `certdoctor tool` lists them, and
 the window has them under **Tools** on its bar.
 
-The first is a **JWT decoder**. It shows a token's header and claims in the order the token has
+The **certificate decoder** reads a certificate or a whole chain - a `.pem` or `.crt` file, the
+output of `openssl s_client -showcerts`, base64 of one certificate or an `x5c` array, or a DER file -
+and shows each certificate: who it is for and who issued it, its host names, when it is valid and
+how long is left, its key and signature, and the fingerprints you compare elsewhere - SHA-256, the
+SHA-1 Windows shows as the thumbprint, and the SPKI pin used for pinning. It says whether the chain
+is complete and in order, and warns about an expired certificate, an MD5 or SHA-1 signature, a short
+RSA key and a server certificate with no host name in it. A private key pasted along with the
+certificates is not read and not shown. It checks nothing against a trust store - the diagnosis
+does that for a server.
+
+```bash
+certdoctor tool cert --file chain.pem
+openssl s_client -showcerts -connect example.com:443 </dev/null | certdoctor tool cert
+certdoctor tool cert --json < server.crt
+```
+
+A chain has many lines and no single Enter that ends it, so it is piped in or named with `--file`
+rather than pasted at a prompt.
+
+The **JWT decoder** shows a token's header and claims in the order the token has
 them, says when the token was issued, from when it is valid and when it expires, and warns about
 what makes libraries disagree: `alg: none`, a stripped or wrongly shaped signature, a name given
 twice, padding or standard base64. It never checks the signature - that needs the issuer's key -
@@ -454,8 +473,8 @@ of running programs. `Bearer` in front and quotes around it are taken off, and t
 On Linux and macOS nothing appears while you paste: the terminal's own line handling cuts a long
 line or stops taking keys, so the token is read key by key, and after Enter the command says how
 many characters it read.
-The command ends with `0` whenever it read the token, whatever the token says, and with `3` when
-what it was given is not a token it can read.
+Every tool ends with `0` whenever it read its input, whatever it found there, and with `3` when
+what it was given is not something it can read.
 
 ---
 
