@@ -1000,4 +1000,11 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except subprocess.CalledProcessError as failed:
+        # The command that failed has printed its own reason just above -
+        # sign_macos.sh, signtool and wix each say why - and a Python traceback
+        # under that sentence only pushes it off the screen.
+        sys.exit("sign_release: %s stopped with exit code %d, and the lines above say why."
+                 % (os.path.basename(str(failed.cmd[0])), failed.returncode))
