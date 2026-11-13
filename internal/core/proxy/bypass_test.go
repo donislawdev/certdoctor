@@ -18,9 +18,11 @@ func ask(t *testing.T, r Rule, list string, target Target) bool {
 
 func host(name string) Target { return Target{Scheme: "https", Host: name, Port: "443"} }
 
-func TestTheRuleListIsClosedAtSix(t *testing.T) {
-	if len(AllRules) != 6 {
-		t.Fatalf("AllRules has %d entries and the vocabulary is six. A seventh reading needs TWO things: a source, read at the vendor or measured here, AND a consumer among the thirteen probes", len(AllRules))
+func TestTheRuleListIsClosed(t *testing.T) {
+	if len(AllRules) != 18 || len(NoProxyRules) != 14 {
+		t.Fatalf("AllRules has %d entries and NoProxyRules %d, and the vocabulary is eighteen, fourteen of them "+
+			"NO_PROXY. Another reading needs TWO things: the program's code, read, AND a consumer - a probe or "+
+			"the noproxy tool (ADR147)", len(AllRules), len(NoProxyRules))
 	}
 	seen := map[Rule]bool{}
 	for _, r := range AllRules {
@@ -36,6 +38,19 @@ func TestTheRuleListIsClosedAtSix(t *testing.T) {
 		}
 		if r.String() != string(r) {
 			t.Errorf("String() of %q gave %q", r, r.String())
+		}
+	}
+	for i, r := range NoProxyRules {
+		if AllRules[i] != r {
+			t.Errorf("AllRules[%d] is %q, and AllRules starts with NoProxyRules in their order", i, AllRules[i])
+		}
+		if r.Program() == "" || r.Versions() == "" {
+			t.Errorf("NO_PROXY reading %q does not say which program or which releases it speaks for", r)
+		}
+	}
+	for _, r := range AllRules[len(NoProxyRules):] {
+		if r.Program() != "" || r.Versions() != "" {
+			t.Errorf("system list %q names a program, and a list a system keeps is read by every program on it", r)
 		}
 	}
 	if Rule("socks").Valid() {
@@ -145,7 +160,10 @@ func TestOneListMeansDifferentThingsToDifferentRuntimes(t *testing.T) {
 				RuleNonProxyHosts:  c.nonProxyHosts,
 				RuleExceptionsList: c.exceptionsList,
 			}
-			for _, r := range AllRules {
+			// The six rules this table was written for. The readings added for
+			// the noproxy tool have their own tables, which name every one of
+			// them in every row (readings_test.go).
+			for r := range want {
 				if got := ask(t, r, c.list, host(c.target)); got != want[r] {
 					t.Errorf("%s: list %q against %q gave %v, want %v (%s)",
 						r, c.list, c.target, got, want[r], c.why)

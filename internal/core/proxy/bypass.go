@@ -6,55 +6,144 @@ import (
 	"strings"
 )
 
-// Bypasses reports whether the target is excused from the proxy by list, read
-// under one runtime family's rule.
+// Decision is what one program does with one list for one place.
+type Decision struct {
+	// Direct is true when the program goes to the place without the proxy.
+	Direct bool
+	// Entry is the part of the list that sent it direct, as the program cut it
+	// out of the list - after the program trimmed it, before it folded case or
+	// took off a dot or a port - so that a person can find it in their own
+	// value. Empty when no entry did.
+	Entry string
+	// Basis is what the decision rests on.
+	Basis Basis
+}
+
+// Basis is what a Decision rests on. The list is closed.
+type Basis string
+
+const (
+	// BasisEntry is an entry of the list applying to the place.
+	BasisEntry Basis = "entry"
+	// BasisWholeValue is a value that is exactly "*", which some programs read
+	// as "never use a proxy" only when it is the whole value.
+	BasisWholeValue Basis = "whole_value"
+	// BasisLocal is a place the program never sends to a proxy, whatever the
+	// list says. Go is the one program with such places: localhost and the
+	// loopback addresses.
+	BasisLocal Basis = "local"
+	// BasisNoEntry is nothing in the list applying: the proxy is used.
+	BasisNoEntry Basis = "no_entry"
+)
+
+func byEntry(entry string) Decision { return Decision{Direct: true, Entry: entry, Basis: BasisEntry} }
+
+func byWholeValue() Decision { return Decision{Direct: true, Entry: "*", Basis: BasisWholeValue} }
+
+func throughProxy() Decision { return Decision{Basis: BasisNoEntry} }
+
+// Decide answers, for one reading, whether the program goes to the target
+// directly or through the proxy, and which entry of the list decided it.
 //
 // THE SAME LIST AND THE SAME HOST GIVE DIFFERENT ANSWERS UNDER DIFFERENT RULES,
 // and that is the point of the function taking the rule rather than guessing it.
 // A report that picked one reading would be right about one runtime on the
 // machine and quietly wrong about the others.
-func Bypasses(r Rule, list string, t Target) (bool, error) {
-	n := t.normalise()
-	switch r {
-	case RuleNoProxyCurl:
-		if n.Host == "" {
-			return false, ErrNoTarget
-		}
-		return bypassNoProxyCurl(list, n), nil
-	case RuleNoProxyDotNet:
-		if n.Host == "" {
-			return false, ErrNoTarget
-		}
-		return bypassNoProxyDotNet(list, n), nil
-	case RuleWinINET:
-		if n.Host == "" {
-			return false, ErrNoTarget
-		}
-		return bypassWinINET(list, n), nil
-	case RuleWinHTTP:
-		if n.Host == "" {
-			return false, ErrNoTarget
-		}
-		return bypassWinHTTP(list, n), nil
-	case RuleNonProxyHosts:
-		if n.Host == "" {
-			return false, ErrNoTarget
-		}
-		return bypassNonProxyHosts(list, n), nil
-	case RuleExceptionsList:
-		if n.Host == "" {
-			return false, ErrNoTarget
-		}
-		return bypassExceptionsList(list, n), nil
-	default:
-		// A FIFTH RULE ARRIVES HERE RATHER THAN INHERITING THE LAST BRANCH.
+//
+// THE READINGS ADDED FOR THE noproxy TOOL TAKE PRINTABLE ASCII ONLY, and say so
+// with ErrNotASCII rather than answering. Every one of those programs trims,
+// folds case and converts international names its own way - Go turns an entry
+// into punycode, Python lower-cases by its own Unicode tables - and none of that
+// is read here, so an answer about such a list would be a guess presented as a
+// fact about somebody's program.
+func Decide(r Rule, list string, t Target) (Decision, error) {
+	read, ok := readings[r]
+	if !ok {
+		// A RULE OUTSIDE THE LIST ARRIVES HERE RATHER THAN INHERITING A READING.
 		// OBS95 was a classification that sorted every input into three cases
 		// and let the fourth fall through every check without one - measured,
 		// and invisible because the fourth case did not exist yet. A default
 		// that silently picks a reading would put an unchecked claim about
 		// somebody's runtime into the report.
-		return false, fmt.Errorf("%w: %q", ErrUnknownRule, string(r))
+		return Decision{}, fmt.Errorf("%w: %q", ErrUnknownRule, string(r))
 	}
+	if t.normalise().Host == "" {
+		return Decision{}, ErrNoTarget
+	}
+	if read.asciiOnly && !(printableASCII(list) && printableASCII(t.Host) && printableASCII(t.Port)) {
+		return Decision{}, ErrNotASCII
+	}
+	return read.decide(list, t), nil
+}
+
+// Bypasses reports whether the target is excused from the proxy by list, read
+// under one runtime family's rule - Decide, without the entry and the basis.
+func Bypasses(r Rule, list string, t Target) (bool, error) {
+	d, err := Decide(r, list, t)
+	return d.Direct, err
+}
+
+// reading is the code of one rule.
+//
+// THE FIRST SIX SEE THE HOST IN ONE SPELLING, lower case and without a trailing
+// dot (Target.normalise), because the lists they read are compared that way by
+// their programs or by the vendor's description. THE READINGS ADDED WITH ADR147
+// SEE THE HOST AS GIVEN and spell it the way their program does - Go keeps
+// "LOCALHOST" apart from "localhost", Python keeps a trailing dot - because each
+// was read from the program's code, and that code does not all agree.
+type reading struct {
+	decide    func(list string, t Target) Decision
+	asciiOnly bool
+}
+
+func normalised(read func(string, Target) Decision) reading {
+	return reading{decide: func(list string, t Target) Decision { return read(list, t.normalise()) }}
+}
+
+func asWritten(read func(string, Target) Decision) reading {
+	return reading{decide: read, asciiOnly: true}
+}
+
+var readings = map[Rule]reading{
+	RuleNoProxyCurl:   normalised(bypassNoProxyCurl),
+	RuleNoProxyDotNet: normalised(func(list string, t Target) Decision { return bypassNoProxyDotNet(list, t, false) }),
+	RuleNoProxyDotNetNetworks: {decide: func(list string, t Target) Decision {
+		return bypassNoProxyDotNet(list, t.normalise(), true)
+	}, asciiOnly: true},
+	RuleNoProxyGo:     asWritten(bypassNoProxyGo),
+	RuleNoProxyPython: asWritten(bypassNoProxyPython),
+	RuleNoProxyRequests: asWritten(func(list string, t Target) Decision {
+		return bypassNoProxyRequests(list, t, false)
+	}),
+	RuleNoProxyRequestsDotBoundary: asWritten(func(list string, t Target) Decision {
+		return bypassNoProxyRequests(list, t, true)
+	}),
+	RuleNoProxyNodeHTTP: asWritten(func(list string, t Target) Decision {
+		return bypassNoProxyNodeHTTP(list, t, false)
+	}),
+	RuleNoProxyNodeHTTPDotBoundary: asWritten(func(list string, t Target) Decision {
+		return bypassNoProxyNodeHTTP(list, t, true)
+	}),
+	RuleNoProxyNodeFetch:            undiciReading(undiciFeatures{}),
+	RuleNoProxyNodeFetchApex:        undiciReading(undiciFeatures{apex: true}),
+	RuleNoProxyNodeFetchBareIPv6:    undiciReading(undiciFeatures{apex: true, bareIPv6: true}),
+	RuleNoProxyNodeFetchTrailingDot: undiciReading(undiciFeatures{apex: true, bareIPv6: true, trailingDot: true}),
+	RuleNoProxyNodeFetchWildcard: undiciReading(undiciFeatures{apex: true, bareIPv6: true, trailingDot: true,
+		wildcard: true}),
+	RuleWinINET:        normalised(bypassWinINET),
+	RuleWinHTTP:        normalised(bypassWinHTTP),
+	RuleNonProxyHosts:  normalised(bypassNonProxyHosts),
+	RuleExceptionsList: normalised(bypassExceptionsList),
+}
+
+// printableASCII reports whether s holds only printable ASCII and tabs.
+func printableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < ' ' && c != '\t') || c > '~' {
+			return false
+		}
+	}
+	return true
 }
 
 // bypassNoProxyCurl reads the list the way curl's own code walks NO_PROXY.
@@ -79,15 +168,15 @@ func Bypasses(r Rule, list string, t Target) (bool, error) {
 // THE LONE ASTERISK IS THE WHOLE VALUE, BYTE FOR BYTE. curl compares the value
 // with "*" before reading any entry, so " *" is not it and "a.com,*" holds an
 // entry named "*" that matches nothing - both measured.
-func bypassNoProxyCurl(list string, t Target) bool {
+func bypassNoProxyCurl(list string, t Target) Decision {
 	if list == "*" {
-		return true
+		return byWholeValue()
 	}
 	addr, isAddr := curlHostAddr(t.Host)
 	for _, entry := range curlEntries(list) {
 		if isAddr {
 			if curlAddressMatches(entry, addr) {
-				return true
+				return byEntry(entry)
 			}
 			continue
 		}
@@ -98,10 +187,10 @@ func bypassNoProxyCurl(list string, t Target) bool {
 			continue
 		}
 		if t.Host == name || strings.HasSuffix(t.Host, "."+name) {
-			return true
+			return byEntry(entry)
 		}
 	}
-	return false
+	return throughProxy()
 }
 
 // curlEntries cuts a NO_PROXY value the way proxy_check_noproxy walks it: an
@@ -240,28 +329,41 @@ func curlNetwork(entry string) (netip.Addr, int, bool) {
 // through the proxy - and an IPv6 address is held against the host as .NET's
 // Uri spells it, in brackets: "[::1]" excused [::1] and "::1" did not.
 //
-// THERE IS NO WILDCARD AND NO NETWORK UP TO .NET 10. "*" and "*.example.test"
-// are names nobody has - which is why NO_PROXY=* leaves .NET using the proxy -
-// and "10.0.0.0/8" did not excuse 10.0.0.1. .NET 11 reads networks (OBS235);
-// this rule, like L2's row, speaks for .NET 10 and older.
-func bypassNoProxyDotNet(list string, t Target) bool {
+// THERE IS NO WILDCARD UP TO NOW AND NO NETWORK UP TO .NET 10. "*" and
+// "*.example.test" are names nobody has - which is why NO_PROXY=* leaves .NET
+// using the proxy - and "10.0.0.0/8" did not excuse 10.0.0.1 in .NET 10.
+//
+// .NET 11 READS NETWORKS, and with networks set this is its reading (OBS235).
+// SOURCE: HttpEnvironmentProxy.cs at tag v11.0.0, read 2026-11-13 - the
+// constructor hands every entry IPNetwork.TryParse accepts to a list of
+// networks INSTEAD of the list of names, and IsMatchInBypassList asks the
+// networks after the names, only for a host that is an address. The tag's file
+// is byte for byte the one on main read the same day. dotNetNetwork is how an
+// entry becomes a network. L2's row stays on .NET 10's reading, as ADR147 point
+// 2 decided.
+func bypassNoProxyDotNet(list string, t Target, networks bool) Decision {
 	host := t.Host
 	if addr, err := netip.ParseAddr(host); err == nil && addr.Is6() {
 		host = "[" + host + "]"
 	}
+	var nets []string
 	for _, entry := range splitList(list, ",") {
+		if _, ok := dotNetNetwork(entry); ok && networks {
+			nets = append(nets, entry)
+			continue
+		}
 		name := lower(entry)
 		if strings.HasPrefix(name, ".") {
 			if host == name[1:] || strings.HasSuffix(host, name) {
-				return true
+				return byEntry(entry)
 			}
 			continue
 		}
 		if host == name {
-			return true
+			return byEntry(entry)
 		}
 	}
-	return false
+	return dotNetNetworkDecision(nets, t.Host)
 }
 
 // bypassWinINET reads the list the way Internet Explorer settings document it -
@@ -304,11 +406,11 @@ func bypassNoProxyDotNet(list string, t Target) bool {
 // does not know the scheme cannot be told an entry applies, because the vendor
 // says it applies only to that protocol - so the honest answer is "not excused",
 // which sends the run through the proxy rather than claiming it will not.
-func bypassWinINET(list string, t Target) bool {
+func bypassWinINET(list string, t Target) Decision {
 	for _, entry := range splitList(list, ";") {
 		if isLocalMacro(entry) {
 			if !strings.Contains(t.Host, ".") {
-				return true
+				return byEntry(entry)
 			}
 			continue
 		}
@@ -320,10 +422,10 @@ func bypassWinINET(list string, t Target) bool {
 			continue
 		}
 		if matchStar(t.Host, lower(trimTrailingDot(unwrap(pattern)))) {
-			return true
+			return byEntry(entry)
 		}
 	}
-	return false
+	return throughProxy()
 }
 
 // bypassWinHTTP reads the bypass list the way WinHTTP documents its own.
@@ -354,11 +456,11 @@ func bypassWinINET(list string, t Target) bool {
 // beside it, and the direction is the safe one for a diagnostic: the entry
 // excuses nobody, so the run goes through the proxy rather than being told it
 // will not.
-func bypassWinHTTP(list string, t Target) bool {
+func bypassWinHTTP(list string, t Target) Decision {
 	for _, entry := range splitList(list, "; \t\r\n") {
 		if isLocalMacro(entry) {
 			if !strings.Contains(t.Host, ".") {
-				return true
+				return byEntry(entry)
 			}
 			continue
 		}
@@ -366,15 +468,15 @@ func bypassWinHTTP(list string, t Target) bool {
 		if rest := strings.TrimLeft(pattern, "*"); len(rest) < len(pattern) {
 			// A left-most wildcard, which is the only kind this stack honours.
 			if strings.HasSuffix(t.Host, rest) {
-				return true
+				return byEntry(entry)
 			}
 			continue
 		}
 		if t.Host == pattern {
-			return true
+			return byEntry(entry)
 		}
 	}
-	return false
+	return throughProxy()
 }
 
 // bypassNonProxyHosts reads the list the way the JVM documents nonProxyHosts.
@@ -395,13 +497,13 @@ func bypassWinHTTP(list string, t Target) bool {
 // put NonProxyHostsDefault in its place. Substituting it here would make "nobody
 // configured this" and "somebody configured exactly the default" give the same
 // answer with no way to tell them apart.
-func bypassNonProxyHosts(list string, t Target) bool {
+func bypassNonProxyHosts(list string, t Target) Decision {
 	for _, entry := range splitList(list, "|") {
 		if matchesEntry(t.Host, entry) {
-			return true
+			return byEntry(entry)
 		}
 	}
-	return false
+	return throughProxy()
 }
 
 // matchesEntry is the comparison the two asterisk-only rules share: normalise
@@ -440,19 +542,19 @@ func matchesEntry(host, entry string) bool {
 // reading the macOS default under curl's rule would turn the link-local entry
 // into a host name nobody has, and silently drop a bypass that is really
 // happening on every Mac.
-func bypassExceptionsList(list string, t Target) bool {
+func bypassExceptionsList(list string, t Target) Decision {
 	for _, entry := range splitList(list, "\n\r") {
 		if prefix, ok := asAbbreviatedPrefix(entry); ok {
 			if addr, ok := asAddr(t.Host); ok && prefix.Contains(addr) {
-				return true
+				return byEntry(entry)
 			}
 			continue
 		}
 		if matchesEntry(t.Host, entry) {
-			return true
+			return byEntry(entry)
 		}
 	}
-	return false
+	return throughProxy()
 }
 
 // asAbbreviatedPrefix reads an entry as a network written in the BSD form where

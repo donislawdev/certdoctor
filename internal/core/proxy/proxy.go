@@ -35,12 +35,18 @@ import "fmt"
 // THE LIST IS CLOSED, for the same reason the status vocabulary is: an open one
 // means the next person adds a reading and the report starts claiming things
 // about a runtime nobody checked. AN ENTRY NEEDS TWO THINGS AND NOT ONE: a
-// source, read at the vendor or measured here, AND a consumer among the thirteen
-// probes. Go has the first and not the second, so it is quoted at
-// RuleNoProxyCurl and is not a rule.
+// source - the program's own code, read, and a measurement where one can be
+// taken - AND a consumer, a probe of the diagnosis or the noproxy tool (ADR147).
 //
-// THERE ARE SIX, THE CARVING SAID THREE, AND EACH EXTRA ONE ARRIVED FROM A
-// SOURCE RATHER THAN FROM A HUNCH. The fourth: the two Windows stacks were
+// ONE PROGRAM MAY HOLD SEVERAL READINGS OF NO_PROXY, one per range of versions
+// whose code reads the list the same way. Node.js changed its reading five times
+// in two years, inside release lines as well as between them, and a person on
+// one release told what another release does has been told something untrue
+// about their machine. Program and Versions say which range a reading speaks
+// for.
+//
+// THE SYSTEM LISTS WERE SIX, THE CARVING SAID THREE, AND EACH EXTRA ONE ARRIVED
+// FROM A SOURCE RATHER THAN FROM A HUNCH. The fourth: the two Windows stacks were
 // expected to share a rule and do not. Measured against the vendor's own pages
 // on 2026-09-05, WinHTTP says a wildcard "must be the left-most character" and
 // gives "aaa.*" as an example of what it does not support, while the Internet
@@ -75,16 +81,13 @@ const (
 	// the leading dot instead, so ".y.com" excuses "y.com" there and not here.
 	//
 	// SO ONE NO_PROXY=example.com MEANS THREE DIFFERENT THINGS on one machine.
-	// .NET's reading is RuleNoProxyDotNet below. Go's is NOT implemented, and
-	// the reason is a rule of this project rather than an oversight: Go is not
-	// one of the thirteen probes, so a rule for it would be code nothing in this
-	// program could ever execute - the shape OBS98 names and the coverage gate
-	// exists to find. The quotation stays here so that the day a Go runtime
-	// becomes a probe, the source is already read.
+	// .NET's reading is RuleNoProxyDotNet below and Go's is RuleNoProxyGo, read
+	// from Go's code rather than from this page (bypassNoProxyGo).
 	//
-	// This constant therefore promises curl and nothing wider, because a rule
-	// claiming to speak for runtimes it was never checked against is exactly what
-	// inviolable rule 18 exists to stop.
+	// This constant therefore promises curl, and git through the libcurl it is
+	// linked with, and nothing wider, because a rule claiming to speak for
+	// runtimes it was never checked against is exactly what inviolable rule 18
+	// exists to stop.
 	RuleNoProxyCurl Rule = "no_proxy_curl"
 	// RuleNoProxyDotNet is the same variable read the way .NET reads it, which
 	// is the strictest of the three: a bare name excuses only itself.
@@ -117,6 +120,41 @@ const (
 	// for to turn proxying off entirely, is not a wildcard here at all - it is a
 	// host name nobody has, so .NET keeps using the proxy.
 	RuleNoProxyDotNet Rule = "no_proxy_dotnet"
+	// RuleNoProxyDotNetNetworks is .NET from 11, which reads an entry written as
+	// a network ("10.0.0.0/8") as a network and every other entry as before.
+	RuleNoProxyDotNetNetworks Rule = "no_proxy_dotnet_11"
+	// RuleNoProxyGo is Go's net/http, which never sends localhost or a loopback
+	// address to a proxy and reads "*" in any position.
+	RuleNoProxyGo Rule = "no_proxy_go"
+	// RuleNoProxyPython is Python's urllib, which compares names as text, an
+	// address included.
+	RuleNoProxyPython Rule = "no_proxy_python"
+	// RuleNoProxyRequests is requests up to 2.33, whose own loop compares the
+	// end of the name as text, and pip up to 26.1, which carries it.
+	RuleNoProxyRequests Rule = "no_proxy_requests"
+	// RuleNoProxyRequestsDotBoundary is requests from 2.34, which matches only
+	// at a dot, and pip from 26.2.
+	RuleNoProxyRequestsDotBoundary Rule = "no_proxy_requests_2_34"
+	// RuleNoProxyNodeHTTP is Node.js's own http and https modules up to the
+	// release that made a leading dot match only at a dot.
+	RuleNoProxyNodeHTTP Rule = "no_proxy_node_http"
+	// RuleNoProxyNodeHTTPDotBoundary is the same modules from 24.16 and 26.1.
+	RuleNoProxyNodeHTTPDotBoundary Rule = "no_proxy_node_http_24_16"
+	// RuleNoProxyNodeFetch is fetch in Node.js - undici - before it learned to
+	// read a leading dot as the domain too.
+	RuleNoProxyNodeFetch Rule = "no_proxy_node_fetch"
+	// RuleNoProxyNodeFetchApex is fetch from undici 7.22, where a leading dot or
+	// "*." reaches the domain itself.
+	RuleNoProxyNodeFetchApex Rule = "no_proxy_node_fetch_24_14_1"
+	// RuleNoProxyNodeFetchBareIPv6 is fetch from undici 8.10, which reads an
+	// IPv6 address without brackets.
+	RuleNoProxyNodeFetchBareIPv6 Rule = "no_proxy_node_fetch_26_8"
+	// RuleNoProxyNodeFetchTrailingDot is fetch from undici 8.10.2, which drops a
+	// trailing dot on both sides.
+	RuleNoProxyNodeFetchTrailingDot Rule = "no_proxy_node_fetch_26_8_2"
+	// RuleNoProxyNodeFetchWildcard is fetch from undici 8.11, where "*" counts in
+	// any position and "*." stops reaching the domain itself.
+	RuleNoProxyNodeFetchWildcard Rule = "no_proxy_node_fetch_26_11"
 	// RuleWinINET is the ProxyOverride list, which Internet Explorer settings
 	// hold and Edge, Chrome and .NET follow.
 	RuleWinINET Rule = "wininet"
@@ -131,26 +169,86 @@ const (
 	RuleExceptionsList Rule = "exceptions_list"
 )
 
-var ruleMeanings = map[Rule]string{
-	RuleNoProxyCurl:    "the NO_PROXY environment variable, as curl reads it",
-	RuleNoProxyDotNet:  "the NO_PROXY environment variable, as .NET reads it",
-	RuleWinINET:        "the Windows ProxyOverride list, as Internet Explorer settings hold it",
-	RuleWinHTTP:        "the bypass list in this machine's default WinHTTP configuration",
-	RuleNonProxyHosts:  "the JVM's http.nonProxyHosts property",
-	RuleExceptionsList: "the macOS ExceptionsList, as the system configuration holds it",
+// ruleText is what a person is told about a reading: what it reads, and for a
+// reading of NO_PROXY, which program and which of its releases.
+//
+// THE VERSIONS ARE SOURCED, and where they come from is said once here rather
+// than at every row. A range comes from the program's release notes and the
+// history of the file holding the code - Node.js's changelogs and the undici
+// tags that carry each change, the requests and pip release notes - read
+// 2026-11-13 (ADR147). A single release names the one the code was read in,
+// because nothing older was read.
+type ruleText struct {
+	meaning  string
+	program  string
+	versions string
 }
 
-// AllRules lists every reading exactly once, in declaration order.
-var AllRules = []Rule{RuleNoProxyCurl, RuleNoProxyDotNet, RuleWinINET, RuleWinHTTP, RuleNonProxyHosts, RuleExceptionsList}
+var ruleTexts = map[Rule]ruleText{
+	RuleNoProxyCurl: {"the NO_PROXY environment variable, as curl reads it",
+		"curl, and git through libcurl", "8.23.0"},
+	RuleNoProxyDotNet: {"the NO_PROXY environment variable, as .NET reads it",
+		".NET", "10 and earlier"},
+	RuleNoProxyDotNetNetworks: {"the NO_PROXY environment variable, as .NET 11 reads it",
+		".NET", "11 and later"},
+	RuleNoProxyGo: {"the NO_PROXY environment variable, as Go's net/http reads it",
+		"Go", "1.27"},
+	RuleNoProxyPython: {"the NO_PROXY environment variable, as Python's urllib reads it",
+		"Python urllib", "3.10 and later"},
+	RuleNoProxyRequests: {"the NO_PROXY environment variable, as requests up to 2.33 reads it",
+		"requests, and pip", "requests 2.33 and earlier, pip 26.1 and earlier"},
+	RuleNoProxyRequestsDotBoundary: {"the NO_PROXY environment variable, as requests from 2.34 reads it",
+		"requests, and pip", "requests 2.34 and later, pip 26.2 and later"},
+	RuleNoProxyNodeHTTP: {"the NO_PROXY environment variable, as Node.js http reads it",
+		"Node.js http and https", "22.21 and later 22, 24.5 to 24.15, 26.0"},
+	RuleNoProxyNodeHTTPDotBoundary: {"the NO_PROXY environment variable, as Node.js http from 24.16 reads it",
+		"Node.js http and https", "24.16 and later 24, 26.1 and later"},
+	RuleNoProxyNodeFetch: {"the NO_PROXY environment variable, as Node.js fetch reads it",
+		"Node.js fetch", "22.21 and later 22, 24.0 to 24.14.0"},
+	RuleNoProxyNodeFetchApex: {"the NO_PROXY environment variable, as Node.js fetch from 24.14.1 reads it",
+		"Node.js fetch", "24.14.1 and later 24, 26.0 to 26.7"},
+	RuleNoProxyNodeFetchBareIPv6: {"the NO_PROXY environment variable, as Node.js fetch from 26.8 reads it",
+		"Node.js fetch", "26.8.0 to 26.8.1"},
+	RuleNoProxyNodeFetchTrailingDot: {"the NO_PROXY environment variable, as Node.js fetch from 26.8.2 reads it",
+		"Node.js fetch", "26.8.2 to 26.10"},
+	RuleNoProxyNodeFetchWildcard: {"the NO_PROXY environment variable, as Node.js fetch from 26.11 reads it",
+		"Node.js fetch", "26.11 and later"},
+	RuleWinINET:        {meaning: "the Windows ProxyOverride list, as Internet Explorer settings hold it"},
+	RuleWinHTTP:        {meaning: "the bypass list in this machine's default WinHTTP configuration"},
+	RuleNonProxyHosts:  {meaning: "the JVM's http.nonProxyHosts property"},
+	RuleExceptionsList: {meaning: "the macOS ExceptionsList, as the system configuration holds it"},
+}
 
-// Valid reports whether r is one of the six.
+// NoProxyRules are the readings of the NO_PROXY variable, one per program and
+// range of releases, in the order a person looks for them: the command line
+// tools first, then the runtimes, each program's oldest reading first.
+var NoProxyRules = []Rule{
+	RuleNoProxyCurl, RuleNoProxyDotNet, RuleNoProxyDotNetNetworks, RuleNoProxyGo, RuleNoProxyPython,
+	RuleNoProxyRequests, RuleNoProxyRequestsDotBoundary, RuleNoProxyNodeHTTP, RuleNoProxyNodeHTTPDotBoundary,
+	RuleNoProxyNodeFetch, RuleNoProxyNodeFetchApex, RuleNoProxyNodeFetchBareIPv6,
+	RuleNoProxyNodeFetchTrailingDot, RuleNoProxyNodeFetchWildcard,
+}
+
+// AllRules lists every reading exactly once: the NO_PROXY readings, then the
+// lists a system keeps.
+var AllRules = append(append([]Rule{}, NoProxyRules...),
+	RuleWinINET, RuleWinHTTP, RuleNonProxyHosts, RuleExceptionsList)
+
+// Valid reports whether r is one of AllRules.
 func (r Rule) Valid() bool {
-	_, ok := ruleMeanings[r]
+	_, ok := ruleTexts[r]
 	return ok
 }
 
 // Meaning returns the English text for r, or the empty string outside the list.
-func (r Rule) Meaning() string { return ruleMeanings[r] }
+func (r Rule) Meaning() string { return ruleTexts[r].meaning }
+
+// Program names the program a NO_PROXY reading speaks for, and is empty for a
+// list a system keeps.
+func (r Rule) Program() string { return ruleTexts[r].program }
+
+// Versions names the releases of Program a reading speaks for.
+func (r Rule) Versions() string { return ruleTexts[r].versions }
 
 // String makes Rule printable without a conversion at every call site.
 func (r Rule) String() string { return string(r) }
@@ -190,11 +288,13 @@ const ExceptionsListDefault = "*.local\n169.254/16"
 
 // Target is the place a run is asking about.
 //
-// IT CARRIES MORE THAN A HOST BECAUSE ONE OF THE FOUR RULES NEEDS MORE. A
-// WinINET exception entry may begin with a protocol and may end with a port,
-// and the vendor documents both as NARROWING the match. A signature of
-// (list, host) would have to ignore them, which is the same as claiming an
-// entry matches when the vendor says it does not.
+// IT CARRIES MORE THAN A HOST BECAUSE SEVERAL RULES NEED MORE. A WinINET
+// exception entry may begin with a protocol and may end with a port, and the
+// vendor documents both as NARROWING the match; Go, Python, requests and
+// Node.js read a port in a NO_PROXY entry, and some of them compare it only
+// when the URL wrote one. A signature of (list, host) would have to ignore
+// them, which is the same as claiming an entry matches when the program says
+// it does not.
 type Target struct {
 	// Scheme is the URL scheme, lower case, without "://". It may be empty when
 	// a caller genuinely does not know it; see bypassWinINET for what an empty
@@ -208,7 +308,9 @@ type Target struct {
 	// and this program already has internal/core/idna for exactly that
 	// conversion - ADR57.
 	Host string
-	// Port is the decimal port, or empty when the URL did not name one.
+	// Port is the decimal port, or empty when the URL did not name one. EMPTY
+	// IS NOT THE DEFAULT PORT: Python's urllib and requests compare an entry's
+	// port only with a port the URL wrote, so the two are different questions.
 	Port string
 }
 
@@ -216,21 +318,26 @@ type Target struct {
 //
 // Host names are case insensitive and a trailing dot is the same name, so the
 // comparison has to happen on one spelling. Doing it here rather than in each
-// of the four rules keeps it one rule in one place - the shape OBS50 has
-// measured four times in this tree.
+// of the six rules that read the host this way keeps it one rule in one place -
+// the shape OBS50 has measured four times in this tree. The readings added for
+// the noproxy tool do not use it; see reading in bypass.go.
 func (t Target) normalise() Target {
 	t.Scheme = lower(t.Scheme)
 	t.Host = lower(trimTrailingDot(unwrap(t.Host)))
 	return t
 }
 
-// ErrUnknownRule is returned for a reading outside the four.
+// ErrUnknownRule is returned for a reading outside AllRules.
 //
 // It is an error rather than a false, because a rule this program does not know
 // is a defect on our side and not something arriving from the machine being
 // diagnosed. Answering "not excused" would put that defect in the report as a
 // fact about somebody's proxy.
 var ErrUnknownRule = fmt.Errorf("a proxy exception list can only be read under one of the rules in proxy.AllRules")
+
+// ErrNotASCII is returned by a reading that takes printable ASCII only, for a
+// list or a target holding anything else. See Decide.
+var ErrNotASCII = fmt.Errorf("this reading of NO_PROXY answers only for printable ASCII text")
 
 // ErrNoTarget is returned when there is no host to ask about.
 var ErrNoTarget = fmt.Errorf("a proxy exception list is asked about a host, and none was given")
