@@ -125,8 +125,14 @@ func TestOneListMeansDifferentThingsToDifferentRuntimes(t *testing.T) {
 		{
 			name: "a leading dot against the bare domain",
 			list: ".local.com", target: "local.com",
-			curl: true, dotNet: false, winINET: false, winHTTP: false, nonProxyHosts: false, exceptionsList: false,
-			why: "curl strips the leading dot and .NET keeps it, so the entry excuses the domain itself in one and only its subdomains in the other",
+			curl: true, dotNet: true, winINET: false, winHTTP: false, nonProxyHosts: false, exceptionsList: false,
+			why: "curl and .NET both match the domain itself under a leading dot - measured on both, against the page Microsoft wrote (OBS233)",
+		},
+		{
+			name: "names separated by a space instead of a comma",
+			list: "a.local b.local", target: "a.local",
+			curl: true, dotNet: false, winINET: false, winHTTP: true, nonProxyHosts: false, exceptionsList: false,
+			why: "curl reads the first name and stops at the space (measured, OBS234), WinHTTP splits on whitespace, and the others read one name with a space in it",
 		},
 	}
 	for _, c := range cases {
@@ -169,6 +175,31 @@ func TestNoProxyMatchesADomainOrTheHostItself(t *testing.T) {
 		{"", "a.com", false},
 		{".", "a.com", false},
 		{",,", "a.com", false},
+		{"LOCAL.COM.", "www.local.com", true},
+	}
+	for _, c := range cases {
+		if got := ask(t, RuleNoProxyCurl, c.list, host(c.target)); got != c.want {
+			t.Errorf("NO_PROXY %q against %q gave %v, want %v", c.list, c.target, got, c.want)
+		}
+	}
+}
+
+// TestCurlEndsTheListAtABlankThatNoCommaFollows holds the way lib/proxy.c walks
+// the value, measured with curl 8.23 on 2026-11-13 (OBS234): blanks around a
+// comma are passed over, and a space or a tab that no comma follows ends the
+// list, so the names after it are never read.
+func TestCurlEndsTheListAtABlankThatNoCommaFollows(t *testing.T) {
+	cases := []struct {
+		list, target string
+		want         bool
+	}{
+		{"a.test b.test", "a.test", true},
+		{"a.test b.test", "b.test", false},
+		{"a.test\tb.test", "b.test", false},
+		{"a.test ,b.test", "b.test", true},
+		{"a.test,  ,, b.test", "b.test", true},
+		{" , ,a.test", "a.test", true},
+		{"a.test,b.test x.test,c.test", "c.test", false},
 	}
 	for _, c := range cases {
 		if got := ask(t, RuleNoProxyCurl, c.list, host(c.target)); got != c.want {
@@ -185,10 +216,33 @@ func TestNoProxyUnderstandsCIDR(t *testing.T) {
 		{"192.168.0.0/16", "192.168.1.1", true},
 		{"192.168.0.0/16", "192.169.1.1", false},
 		{"192.168.0.0/16", "www.example.com", false},
-		{"192.168.0.0/16", "::ffff:192.168.1.1", true},
 		{"fd00::/8", "fd00::1", true},
 		{"fd00::/8", "fe00::1", false},
 		{"not/a/prefix", "192.168.1.1", false},
+		// Measured with curl 8.23 on 2026-11-13 (OBS234). An IPv4 address in
+		// its IPv6-mapped spelling stays IPv6 in curl.
+		{"192.168.0.0/16", "::ffff:192.168.1.1", false},
+		// An address is held against addresses, never against a name's tail.
+		{"0.0.1", "10.0.0.1", false},
+		{"10.0.0.1", "10.0.0.1", true},
+		{"10.0.0.1/32", "10.0.0.1", true},
+		// "/0" is the address itself in curl 8.23 - a later curl excuses
+		// everything for 0.0.0.0/0 (be652f3), and this rule reads the curl
+		// people have.
+		{"0.0.0.0/0", "10.0.0.1", false},
+		{"10.0.0.1/0", "10.0.0.1", true},
+		{"::/0", "::1", false},
+		{"10.0.0.0/33", "10.0.0.1", false},
+		{"10.0.0.0/x", "10.0.0.1", false},
+		{"::1/129", "::1", false},
+		{"::1/0128", "::1", true},
+		{"::1/99999999999999999999", "::1", false},
+		{"::1/", "::1", false},
+		{"fe80::1%1", "fe80::1", false},
+		// A bracketed IPv6 entry is not an address to curl.
+		{"[::1]", "::1", false},
+		{"::1", "::1", true},
+		{"::1", "127.0.0.1", false},
 	}
 	for _, c := range cases {
 		if got := ask(t, RuleNoProxyCurl, c.list, host(c.target)); got != c.want {
@@ -197,15 +251,15 @@ func TestNoProxyUnderstandsCIDR(t *testing.T) {
 	}
 }
 
-// TestALoneAsteriskIsTheWholeNoProxyValue holds the documented case and refuses
-// the undocumented one. curl says NO_PROXY may be set TO a single asterisk; it
-// says nothing about a star sitting beside real names.
+// TestALoneAsteriskIsTheWholeNoProxyValue holds curl's comparison of the whole
+// value with "*", byte for byte - measured with curl 8.23: "*" excused every
+// host, " *" excused none, and a star beside a real name excused nothing.
 func TestALoneAsteriskIsTheWholeNoProxyValue(t *testing.T) {
 	if !ask(t, RuleNoProxyCurl, "*", host("anything.example")) {
 		t.Error("a lone asterisk did not excuse every host")
 	}
-	if !ask(t, RuleNoProxyCurl, "  *  ", host("anything.example")) {
-		t.Error("a lone asterisk with spaces around it did not excuse every host")
+	if ask(t, RuleNoProxyCurl, " *", host("anything.example")) {
+		t.Error("an asterisk with a space before it excused every host, and curl compares the whole value with \"*\"")
 	}
 	if ask(t, RuleNoProxyCurl, "a.com,*", host("b.com")) {
 		t.Error("an asterisk beside a real name excused an unrelated host, which no source documents")
@@ -446,6 +500,8 @@ func TestTheMacDefaultBypassesLocalNamesAndLinkLocal(t *testing.T) {
 		{"169.254.255.255", true, "and it covers the whole block"},
 		{"169.255.1.1", false, "one octet outside it is outside it"},
 		{"10.0.0.1", false, "an ordinary private address is not link-local"},
+		{"::ffff:169.254.1.1", true, "an IPv4 address in its IPv6-mapped spelling is read as IPv4 here - " +
+			"unmeasured on a Mac, and pinned so that changing it is a decision rather than a side effect"},
 	}
 	for _, c := range cases {
 		if got := ask(t, RuleExceptionsList, ExceptionsListDefault, host(c.target)); got != c.want {
@@ -504,26 +560,31 @@ func TestTheMacListSeparatorIsOursAndNotTheVendors(t *testing.T) {
 	}
 }
 
-// TestDotNetReadsTheLeadingDotTheOppositeWayFromCurl is Microsoft's own worked
-// example, kept as the vendor wrote it: ".example.com" matches www.example.com
-// but not example.com, and "example.com" does not match www.example.com.
-func TestDotNetReadsTheLeadingDotTheOppositeWayFromCurl(t *testing.T) {
+// TestDotNetReadsTheLeadingDotTheWayItsCodeDoes holds what .NET 10 did against
+// a proxy that records what reaches it, on 2026-11-13 (OBS233): a leading dot
+// matches the domain and its subdomains - not the subdomains only, as the page
+// at RuleNoProxyDotNet says - a bare name matches only itself, an entry keeps
+// its trailing dot, and an IPv6 entry is written in brackets.
+func TestDotNetReadsTheLeadingDotTheWayItsCodeDoes(t *testing.T) {
 	cases := []struct {
 		list, target string
 		want         bool
 	}{
 		{".example.com", "www.example.com", true},
-		{".example.com", "example.com", false},
+		{".example.com", "example.com", true},
+		{" .example.com ", "example.com", true},
+		{".example.com", "notexample.com", false},
 		{"example.com", "www.example.com", false},
 		{"example.com", "example.com", true},
+		{"EXAMPLE.COM", "example.com", true},
+		{"example.com.", "example.com", false},
+		{"[::1]", "::1", true},
+		{"::1", "::1", false},
+		{"10.0.0.1", "10.0.0.1", true},
 		{"a.com,b.com", "b.com", true},
 		{" a.com , b.com ", "b.com", true},
 		{"", "a.com", false},
 		{".", "a.com", false},
-		// An entry that normalises to nothing. It excuses nobody either way -
-		// the defensive guard in the rule is named as not decisive - but the
-		// coverage gate asks whether anything ever EXECUTED that line, and this
-		// is the only input that does.
 		{"[]", "a.com", false},
 	}
 	for _, c := range cases {
@@ -531,8 +592,8 @@ func TestDotNetReadsTheLeadingDotTheOppositeWayFromCurl(t *testing.T) {
 			t.Errorf(".NET NO_PROXY %q against %q gave %v, want %v", c.list, c.target, got, c.want)
 		}
 	}
-	// The same four rows under curl's rule, to keep the disagreement visible in
-	// one place rather than only in the table above.
+	// Where .NET and curl still part company - a bare name - kept beside the
+	// rows above so the disagreement stays visible in one place.
 	for _, c := range []struct {
 		list, target string
 		want         bool
@@ -541,7 +602,7 @@ func TestDotNetReadsTheLeadingDotTheOppositeWayFromCurl(t *testing.T) {
 		{"example.com", "www.example.com", true},
 	} {
 		if got := ask(t, RuleNoProxyCurl, c.list, host(c.target)); got != c.want {
-			t.Errorf("curl NO_PROXY %q against %q gave %v, want %v - the two readings have stopped disagreeing", c.list, c.target, got, c.want)
+			t.Errorf("curl NO_PROXY %q against %q gave %v, want %v - curl's reading has changed", c.list, c.target, got, c.want)
 		}
 	}
 }

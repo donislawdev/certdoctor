@@ -87,7 +87,14 @@ const (
 	// inviolable rule 18 exists to stop.
 	RuleNoProxyCurl Rule = "no_proxy_curl"
 	// RuleNoProxyDotNet is the same variable read the way .NET reads it, which
-	// is the strictest of the three and disagrees with curl twice over.
+	// is the strictest of the three: a bare name excuses only itself.
+	//
+	// THE PAGE BELOW IS WRONG ABOUT THE LEADING DOT, and that is measured, not
+	// suspected (OBS233). .NET's own code matches ".example.com" against
+	// example.com as well, and has since at least 2020; .NET 10 sent
+	// example.test direct under NO_PROXY=.example.test. The quotation stays for
+	// what it gets right - no asterisk, a bare name matching only itself - and
+	// bypassNoProxyDotNet cites the code it follows instead.
 	//
 	// SOURCE: Microsoft, HttpClient.DefaultProxy, read 2026-09-05 - "NO_PROXY: a
 	// comma-separated list of hostnames that should be excluded from proxying.

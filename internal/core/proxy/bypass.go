@@ -57,40 +57,43 @@ func Bypasses(r Rule, list string, t Target) (bool, error) {
 	}
 }
 
-// bypassNoProxyCurl reads the list the way curl documents NO_PROXY.
+// bypassNoProxyCurl reads the list the way curl's own code walks NO_PROXY.
 //
-// SOURCE: curl, docs/cmdline-opts/noproxy.md, read 2026-09-05 -
-// "Comma-separated list of hosts for which not to use a proxy"; "Each name in
-// this list is matched as either a domain which contains the hostname, or the
-// hostname itself"; "For example, local.com would match local.com, local.com:80,
-// and www.local.com, but not www.notlocal.com"; and CIDR notation "added in
-// 7.86.0" where "an appended slash and number specifies the number of network
-// bits out of the address to use in the comparison".
-// https://raw.githubusercontent.com/curl/curl/master/docs/cmdline-opts/noproxy.md
+// SOURCE: curl, lib/proxy.c at tag curl-8_23_0 - proxy_check_noproxy,
+// match_host, match_ip, cidr4_match and cidr6_match - read 2026-11-13, and
+// MEASURED the same day with curl 8.23.0 against a proxy that records what
+// reaches it (ADR147). The page docs/cmdline-opts/noproxy.md this rule was first
+// written from says less than the code does, and three of the differences
+// changed answers (OBS234).
+// https://raw.githubusercontent.com/curl/curl/curl-8_23_0/lib/proxy.c
 //
-// A LEADING DOT CHANGES NOTHING HERE AND THAT IS THE SOURCE, NOT A SHORTCUT.
-// Everything curl says "if a name in the exclusion list starts with a dot, then
-// the name matches that entire domain", which is the same match the sentence
-// above already gives every entry. The dot is stripped so that ".local.com" and
+// A NAME matches itself or any name ending in a dot and itself, without regard
+// to case, with one leading dot and one trailing dot ignored - ".local.com" and
 // "local.com" cannot answer differently.
-// https://everything.curl.dev/usingcurl/proxies/env.html
 //
-// THE LONE ASTERISK IS THE WHOLE VALUE, not one entry among several. The source
-// says "you can set NO_PROXY to be a single asterisk" and says nothing about a
-// star sitting in a list beside real names, so this reads the documented case
-// and leaves the undocumented one to match nothing.
+// AN ADDRESS IS COMPARED AS AN ADDRESS AND NEVER AS A NAME. A host that is an
+// IP literal is held against the entries that are addresses or networks, and
+// a name entry cannot match it: measured, "0.0.1" does not excuse 10.0.0.1,
+// although the text ends in ".0.0.1". See curlAddressMatches.
+//
+// THE LONE ASTERISK IS THE WHOLE VALUE, BYTE FOR BYTE. curl compares the value
+// with "*" before reading any entry, so " *" is not it and "a.com,*" holds an
+// entry named "*" that matches nothing - both measured.
 func bypassNoProxyCurl(list string, t Target) bool {
-	if strings.TrimSpace(list) == "*" {
+	if list == "*" {
 		return true
 	}
-	for _, entry := range splitList(list, ",") {
-		if prefix, ok := asPrefix(entry); ok {
-			if addr, ok := asAddr(t.Host); ok && prefix.Contains(addr) {
+	addr, isAddr := curlHostAddr(t.Host)
+	for _, entry := range curlEntries(list) {
+		if isAddr {
+			if curlAddressMatches(entry, addr) {
 				return true
 			}
 			continue
 		}
-		name := lower(trimTrailingDot(unwrap(strings.TrimPrefix(entry, "."))))
+		// match_host drops one trailing dot and then one leading dot, in that
+		// order, and nothing else.
+		name := lower(strings.TrimPrefix(trimTrailingDot(entry), "."))
 		if name == "" {
 			continue
 		}
@@ -101,46 +104,160 @@ func bypassNoProxyCurl(list string, t Target) bool {
 	return false
 }
 
-// bypassNoProxyDotNet reads the same variable the way .NET documents it, and
-// disagrees with curl in both directions.
-//
-// SOURCE: the quotation is at RuleNoProxyDotNet, read 2026-09-05 at Microsoft.
-//
-// THE LEADING DOT IS THE WHOLE RULE HERE AND IT IS THE OPPOSITE OF CURL'S. curl
-// strips it, so ".example.com" and "example.com" answer alike and both excuse
-// www.example.com. .NET keeps it: with the dot an entry matches SUBDOMAINS ONLY
-// and not the bare domain, and without the dot it matches the name ITSELF and no
-// subdomain. Two vendors, one variable, and no way to satisfy both with one
-// comparison.
-//
-// THERE IS NO WILDCARD AND NO NETWORK, and neither is an omission. The vendor
-// says asterisks are not supported, so an asterisk here is an ordinary character
-// in a host name nobody has - which is why NO_PROXY=* leaves .NET using the
-// proxy. Nothing in the page mentions CIDR either, so an entry with a slash gets
-// no special reading: this rule refuses to invent what its vendor did not write.
-func bypassNoProxyDotNet(list string, t Target) bool {
-	for _, entry := range splitList(list, ",") {
-		// An entry can normalise to nothing - "[]" unwraps to the empty string.
-		// THE GUARD IS DEFENSIVE AND NOT DECISIVE TODAY, and saying so is the
-		// point: an empty name has no leading dot, so it reaches the exact
-		// comparison and loses there anyway. It stays because the day the
-		// comparison below becomes any looser, an empty entry would start
-		// excusing every host on the machine - and it gets NO mutation entry,
-		// because an entry aimed at a line that cannot change an answer is a
-		// SKIP dressed up as proof. The first draft of this comment claimed the
-		// guard stopped a match under HasSuffix, which was untrue, and the
-		// mutation that survived is what found it.
-		name := lower(trimTrailingDot(unwrap(entry)))
-		if name == "" {
-			continue
+// curlEntries cuts a NO_PROXY value the way proxy_check_noproxy walks it: an
+// entry ends at a comma, a space or a tab, blanks around a comma are passed
+// over, and A BLANK THAT NO COMMA FOLLOWS ENDS THE LIST. "a.test b.test" is the
+// one entry a.test - measured, b.test went through the proxy and a.test did
+// not - which is the difference a list pasted with spaces instead of commas
+// makes, and the one this rule got wrong while it split on commas alone.
+func curlEntries(list string) []string {
+	var entries []string
+	i := 0
+	for i < len(list) {
+		i = curlPassBlanks(list, i)
+		start := i
+		for i < len(list) && list[i] != ',' && !curlBlank(list[i]) {
+			i++
 		}
+		if i > start {
+			entries = append(entries, list[start:i])
+		}
+		i = curlPassBlanks(list, i)
+		if i >= len(list) || list[i] != ',' {
+			break
+		}
+		for i < len(list) && list[i] == ',' {
+			i++
+		}
+	}
+	return entries
+}
+
+// curlBlank is ISBLANK in curl: a space or a tab, and nothing else - a line
+// break stays inside an entry.
+func curlBlank(c byte) bool { return c == ' ' || c == '\t' }
+
+func curlPassBlanks(list string, i int) int {
+	for i < len(list) && curlBlank(list[i]) {
+		i++
+	}
+	return i
+}
+
+// curlHostAddr reads the host as curl does before walking the list: an IPv4
+// literal, else an IPv6 literal, else a name. An IPv4 address in its
+// IPv6-mapped spelling STAYS IPv6, because curl tries AF_INET6 on it and never
+// unmaps it - measured, "10.0.0.0/8" does not excuse [::ffff:10.0.0.1].
+func curlHostAddr(host string) (netip.Addr, bool) {
+	addr, err := netip.ParseAddr(host)
+	if err != nil || addr.Zone() != "" {
+		return netip.Addr{}, false
+	}
+	return addr, true
+}
+
+// curlAddressMatches holds one entry against an address host, by match_ip and
+// the two cidr functions of curl 8.23.
+//
+// The entry is a full address with an optional "/bits" in decimal, read by
+// inet_pton of the host's own family - so an IPv4 entry never matches an IPv6
+// host, a bracketed "[::1]" never matches anything (measured: [::1] went
+// through the proxy, ::1 did not), and the abbreviated "169.254/16" macOS ships
+// is not an address here.
+//
+// "/0" IS NOT EVERYTHING IN CURL 8.23, and that is measured too: "0.0.0.0/0"
+// did not excuse 10.0.0.1. Absent bits, "/0" and "/32" all mean the address
+// itself for IPv4, and absent bits and "/0" mean all 128 bits for IPv6. curl
+// changed that two days after 8.23 shipped (be652f3, "proxy: fix 0.0.0.0/0 and
+// ::/0 CIDR matching", 2026-10-16), so a later curl excuses everything for
+// those two entries. THIS RULE READS THE CURL PEOPLE HAVE: it cannot tell which
+// curl a machine runs, and of the two answers it keeps the one that claims no
+// bypass.
+func curlAddressMatches(entry string, host netip.Addr) bool {
+	network, bits, ok := curlNetwork(entry)
+	if !ok || network.Is4() != host.Is4() {
+		return false
+	}
+	if host.Is4() {
+		if bits > 32 {
+			return false
+		}
+		if bits > 0 && bits != 32 {
+			return netip.PrefixFrom(network, bits).Masked().Contains(host)
+		}
+		return network == host
+	}
+	// curlNetwork has refused more than 128 bits already.
+	if bits == 0 {
+		bits = 128
+	}
+	return netip.PrefixFrom(network, bits).Masked().Contains(host)
+}
+
+// curlNetwork splits an entry into its address and its bits, 0 when it has no
+// slash. The bits are read the way curlx_str_number reads them with a ceiling
+// of 128: decimal digits, leading zeros allowed ("0128" is 128), and a value
+// over the ceiling makes the entry unreadable as a network.
+func curlNetwork(entry string) (netip.Addr, int, bool) {
+	text, bitsText, slash := strings.Cut(entry, "/")
+	bits := 0
+	if slash {
+		if !isDigits(bitsText) {
+			return netip.Addr{}, 0, false
+		}
+		for _, c := range bitsText {
+			if bits = bits*10 + int(c-'0'); bits > 128 {
+				return netip.Addr{}, 0, false
+			}
+		}
+	}
+	addr, err := netip.ParseAddr(text)
+	if err != nil || addr.Zone() != "" {
+		return netip.Addr{}, 0, false
+	}
+	return addr, bits, true
+}
+
+// bypassNoProxyDotNet reads the same variable the way .NET's own code does,
+// which agrees with curl about a leading dot and disagrees about everything
+// else.
+//
+// SOURCE: dotnet/runtime, HttpEnvironmentProxy.cs, IsMatchInBypassList - read
+// 2026-11-13 on main and in its 2020 and 2023 versions, the same branch in all
+// three - and MEASURED the same day with .NET 10 against a proxy that records
+// what reaches it (ADR147, OBS233). The page quoted at RuleNoProxyDotNet says
+// the opposite about the leading dot, and the code and the measurement win.
+// https://github.com/dotnet/runtime/blob/main/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/HttpEnvironmentProxy.cs
+//
+// A LEADING DOT MATCHES THE DOMAIN AND EVERY SUBDOMAIN - the code says ".foo.com
+// will match foo.com it self or *.foo.com", and NO_PROXY=.example.test sent both
+// example.test and www.example.test direct. A BARE NAME MATCHES ONLY ITSELF:
+// NO_PROXY=example.test sent www.example.test through the proxy, which is
+// where .NET and curl part company.
+//
+// THE ENTRY IS COMPARED AS WRITTEN, apart from the case and the spaces around
+// it. A trailing dot is not dropped - "example.test." left example.test going
+// through the proxy - and an IPv6 address is held against the host as .NET's
+// Uri spells it, in brackets: "[::1]" excused [::1] and "::1" did not.
+//
+// THERE IS NO WILDCARD AND NO NETWORK UP TO .NET 10. "*" and "*.example.test"
+// are names nobody has - which is why NO_PROXY=* leaves .NET using the proxy -
+// and "10.0.0.0/8" did not excuse 10.0.0.1. .NET 11 reads networks (OBS235);
+// this rule, like L2's row, speaks for .NET 10 and older.
+func bypassNoProxyDotNet(list string, t Target) bool {
+	host := t.Host
+	if addr, err := netip.ParseAddr(host); err == nil && addr.Is6() {
+		host = "[" + host + "]"
+	}
+	for _, entry := range splitList(list, ",") {
+		name := lower(entry)
 		if strings.HasPrefix(name, ".") {
-			if strings.HasSuffix(t.Host, name) {
+			if host == name[1:] || strings.HasSuffix(host, name) {
 				return true
 			}
 			continue
 		}
-		if t.Host == name {
+		if host == name {
 			return true
 		}
 	}
@@ -485,18 +602,6 @@ func matchStar(text, pattern string) bool {
 		pi++
 	}
 	return pi == len(p)
-}
-
-// asPrefix reads an entry as a CIDR block, or says it is not one.
-func asPrefix(entry string) (netip.Prefix, bool) {
-	if !strings.Contains(entry, "/") {
-		return netip.Prefix{}, false
-	}
-	prefix, err := netip.ParsePrefix(entry)
-	if err != nil {
-		return netip.Prefix{}, false
-	}
-	return prefix, true
 }
 
 // asAddr reads a host as an IP address, or says it is a name.
