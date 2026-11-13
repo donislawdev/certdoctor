@@ -178,41 +178,58 @@ const (
 // tags that carry each change, the requests and pip release notes - read
 // 2026-11-13 (ADR147). A single release names the one the code was read in,
 // because nothing older was read.
+//
+// THE KEY IS A NAME A SCRIPT READS, the program's and not the reading's: the
+// noproxy tool writes it into its document (ADR147), so it never changes. A
+// reading's own identifier carries a release where its code changed, and stays
+// out of that document, because a measurement can still move the release.
 type ruleText struct {
 	meaning  string
 	program  string
+	key      string
 	versions string
+	// condition is what a program needs before it reads the list at all, or
+	// empty when reading the list is what it does with a proxy anyway.
+	condition string
 }
 
+// nodeCondition is what Node.js needs before it takes a proxy, and with it
+// NO_PROXY, from the environment - readings_node.go.
+const nodeCondition = "NODE_USE_ENV_PROXY=1"
+
 var ruleTexts = map[Rule]ruleText{
-	RuleNoProxyCurl: {"the NO_PROXY environment variable, as curl reads it",
-		"curl, and git through libcurl", "8.23.0"},
-	RuleNoProxyDotNet: {"the NO_PROXY environment variable, as .NET reads it",
-		".NET", "10 and earlier"},
-	RuleNoProxyDotNetNetworks: {"the NO_PROXY environment variable, as .NET 11 reads it",
-		".NET", "11 and later"},
-	RuleNoProxyGo: {"the NO_PROXY environment variable, as Go's net/http reads it",
-		"Go", "1.27"},
-	RuleNoProxyPython: {"the NO_PROXY environment variable, as Python's urllib reads it",
-		"Python urllib", "3.10 and later"},
-	RuleNoProxyRequests: {"the NO_PROXY environment variable, as requests up to 2.33 reads it",
-		"requests, and pip", "requests 2.33 and earlier, pip 26.1 and earlier"},
-	RuleNoProxyRequestsDotBoundary: {"the NO_PROXY environment variable, as requests from 2.34 reads it",
-		"requests, and pip", "requests 2.34 and later, pip 26.2 and later"},
-	RuleNoProxyNodeHTTP: {"the NO_PROXY environment variable, as Node.js http reads it",
-		"Node.js http and https", "22.21 and later 22, 24.5 to 24.15, 26.0"},
-	RuleNoProxyNodeHTTPDotBoundary: {"the NO_PROXY environment variable, as Node.js http from 24.16 reads it",
-		"Node.js http and https", "24.16 and later 24, 26.1 and later"},
-	RuleNoProxyNodeFetch: {"the NO_PROXY environment variable, as Node.js fetch reads it",
-		"Node.js fetch", "22.21 and later 22, 24.0 to 24.14.0"},
-	RuleNoProxyNodeFetchApex: {"the NO_PROXY environment variable, as Node.js fetch from 24.14.1 reads it",
-		"Node.js fetch", "24.14.1 and later 24, 26.0 to 26.7"},
-	RuleNoProxyNodeFetchBareIPv6: {"the NO_PROXY environment variable, as Node.js fetch from 26.8 reads it",
-		"Node.js fetch", "26.8.0 to 26.8.1"},
-	RuleNoProxyNodeFetchTrailingDot: {"the NO_PROXY environment variable, as Node.js fetch from 26.8.2 reads it",
-		"Node.js fetch", "26.8.2 to 26.10"},
-	RuleNoProxyNodeFetchWildcard: {"the NO_PROXY environment variable, as Node.js fetch from 26.11 reads it",
-		"Node.js fetch", "26.11 and later"},
+	RuleNoProxyCurl: {meaning: "the NO_PROXY environment variable, as curl reads it",
+		program: "curl and git", key: "curl", versions: "8.23.0"},
+	RuleNoProxyDotNet: {meaning: "the NO_PROXY environment variable, as .NET reads it",
+		program: ".NET", key: "dotnet", versions: "10 and earlier"},
+	RuleNoProxyDotNetNetworks: {meaning: "the NO_PROXY environment variable, as .NET 11 reads it",
+		program: ".NET", key: "dotnet", versions: "11 and later"},
+	RuleNoProxyGo: {meaning: "the NO_PROXY environment variable, as Go's net/http reads it",
+		program: "Go", key: "go", versions: "1.27"},
+	RuleNoProxyPython: {meaning: "the NO_PROXY environment variable, as Python's urllib reads it",
+		program: "Python urllib", key: "python", versions: "3.10 and later"},
+	RuleNoProxyRequests: {meaning: "the NO_PROXY environment variable, as requests up to 2.33 reads it",
+		program: "requests and pip", key: "requests", versions: "requests 2.33 and earlier, pip 26.1 and earlier"},
+	RuleNoProxyRequestsDotBoundary: {meaning: "the NO_PROXY environment variable, as requests from 2.34 reads it",
+		program: "requests and pip", key: "requests", versions: "requests 2.34 and later, pip 26.2 and later"},
+	RuleNoProxyNodeHTTP: {meaning: "the NO_PROXY environment variable, as Node.js http reads it",
+		program: "Node.js http and https", key: "node_http", versions: "22.21 and later 22, 24.5 to 24.15, 26.0",
+		condition: nodeCondition},
+	RuleNoProxyNodeHTTPDotBoundary: {meaning: "the NO_PROXY environment variable, as Node.js http from 24.16 reads it",
+		program: "Node.js http and https", key: "node_http", versions: "24.16 and later 24, 26.1 and later",
+		condition: nodeCondition},
+	RuleNoProxyNodeFetch: {meaning: "the NO_PROXY environment variable, as Node.js fetch reads it",
+		program: "Node.js fetch", key: "node_fetch", versions: "22.21 and later 22, 24.0 to 24.14.0",
+		condition: nodeCondition},
+	RuleNoProxyNodeFetchApex: {meaning: "the NO_PROXY environment variable, as Node.js fetch from 24.14.1 reads it",
+		program: "Node.js fetch", key: "node_fetch", versions: "24.14.1 and later 24, 26.0 to 26.7",
+		condition: nodeCondition},
+	RuleNoProxyNodeFetchBareIPv6: {meaning: "the NO_PROXY environment variable, as Node.js fetch from 26.8 reads it",
+		program: "Node.js fetch", key: "node_fetch", versions: "26.8.0 to 26.8.1", condition: nodeCondition},
+	RuleNoProxyNodeFetchTrailingDot: {meaning: "the NO_PROXY environment variable, as Node.js fetch from 26.8.2 reads it",
+		program: "Node.js fetch", key: "node_fetch", versions: "26.8.2 to 26.10", condition: nodeCondition},
+	RuleNoProxyNodeFetchWildcard: {meaning: "the NO_PROXY environment variable, as Node.js fetch from 26.11 reads it",
+		program: "Node.js fetch", key: "node_fetch", versions: "26.11 and later", condition: nodeCondition},
 	RuleWinINET:        {meaning: "the Windows ProxyOverride list, as Internet Explorer settings hold it"},
 	RuleWinHTTP:        {meaning: "the bypass list in this machine's default WinHTTP configuration"},
 	RuleNonProxyHosts:  {meaning: "the JVM's http.nonProxyHosts property"},
@@ -247,8 +264,17 @@ func (r Rule) Meaning() string { return ruleTexts[r].meaning }
 // list a system keeps.
 func (r Rule) Program() string { return ruleTexts[r].program }
 
+// ProgramKey names Program for a script: one lower case word per program, the
+// same for every reading of it, and empty for a list a system keeps.
+func (r Rule) ProgramKey() string { return ruleTexts[r].key }
+
 // Versions names the releases of Program a reading speaks for.
 func (r Rule) Versions() string { return ruleTexts[r].versions }
+
+// Condition is what Program needs before it reads the list at all - Node.js
+// takes no proxy from the environment without NODE_USE_ENV_PROXY=1 - and is
+// empty for a program that reads it whenever it has a proxy.
+func (r Rule) Condition() string { return ruleTexts[r].condition }
 
 // String makes Rule printable without a conversion at every call site.
 func (r Rule) String() string { return string(r) }

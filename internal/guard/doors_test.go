@@ -44,8 +44,15 @@ func TestAnUnusedDoorIsReportedAndAUsedOneIsNot(t *testing.T) {
 		loadFixture(t, "imports_toolkit.go", "internal/gui/parts/planted.go"),
 	}}
 	unused := strings.Join(unusedDoors(planted), "\n")
+	through := tree{modulePath: planted.modulePath, files: []sourceFile{
+		loadFixture(t, "uses_a_package_door.go", "internal/tool/noproxy/planted.go"),
+	}}
+	if strings.Contains(strings.Join(unusedDoors(through), "\n"), "packageDoors lets internal/tool/noproxy") {
+		t.Error("the door of internal/tool/noproxy was named as unused by a tree that goes through it")
+	}
 
 	for _, shut := range []string{
+		"packageDoors lets internal/tool/noproxy import internal/core/proxy/",
 		"intraLayerEdges lets internal/core/report import internal/core/layer",
 		"layerMap has a rule for internal/gui/fonts/ and no file stands under it",
 		"internal/gui/parts/ may import internal/gui/model/ and no file under it does",
@@ -91,6 +98,7 @@ func unusedDoors(tr tree) []string {
 	var unused []string
 	unused = append(unused, unusedRules(tr.modulePath, byRule)...)
 	unused = append(unused, unusedEdges(tr.modulePath, byPackage)...)
+	unused = append(unused, unusedPackageDoors(tr.modulePath, byPackage)...)
 	unused = append(unused, unusedStdlib(byRule)...)
 	unused = append(unused, unusedPlaces(tr)...)
 	sort.Strings(unused)
@@ -147,6 +155,20 @@ func unusedEdges(module string, byPackage map[string]map[string]bool) []string {
 		for _, to := range tos {
 			if !byPackage[from][module+"/"+to] {
 				unused = append(unused, fmt.Sprintf("intraLayerEdges lets %s import %s and no file there does", from, to))
+			}
+		}
+	}
+	return unused
+}
+
+// unusedPackageDoors names the doors for one package that the package does not
+// go through.
+func unusedPackageDoors(module string, byPackage map[string]map[string]bool) []string {
+	var unused []string
+	for from, doors := range packageDoors {
+		for _, door := range doors {
+			if !importsUnder(byPackage[from], module, door) {
+				unused = append(unused, fmt.Sprintf("packageDoors lets %s import %s and no file there does", from, door))
 			}
 		}
 	}

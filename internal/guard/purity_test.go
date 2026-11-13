@@ -80,12 +80,17 @@ var closedStdlib = map[string]closedList{
 	// still kept out of the core, and the part of it that reaches the network
 	// - SystemCertPool, and Verify without Roots, on Windows (ADR101) - is
 	// refused everywhere by the guard on connections, so no tool calls it.
+	//
+	// net/netip CAME BY THE OWNER'S DECISION TOO (ADR147), for the NO_PROXY
+	// tester to tell an IPv6 address in its long form and a name that ends in
+	// a number from the spellings every program reads one way. It parses and
+	// formats addresses and opens nothing, as it does on the core's list.
 	"internal/tool/": {
 		why: "a tool is a pure function of the bytes it is handed and the time it is given",
 		packages: []string{
 			"bytes", "crypto/ecdsa", "crypto/rsa", "crypto/sha1", "crypto/sha256", "crypto/x509",
 			"crypto/x509/pkix", "encoding/asn1", "encoding/base64", "encoding/hex", "encoding/json",
-			"encoding/pem", "errors", "fmt", "io", "math", "reflect", "regexp", "slices", "sort",
+			"encoding/pem", "errors", "fmt", "io", "math", "net/netip", "reflect", "regexp", "slices", "sort",
 			"strconv", "strings", "testing", "time", "unicode/utf8",
 		},
 	},

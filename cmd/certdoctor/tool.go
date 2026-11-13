@@ -14,6 +14,7 @@ import (
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
 	"github.com/donislawdev/certdoctor/internal/tool/cert"
 	"github.com/donislawdev/certdoctor/internal/tool/jwt"
+	"github.com/donislawdev/certdoctor/internal/tool/noproxy"
 	"github.com/donislawdev/certdoctor/internal/tool/spec"
 )
 
@@ -26,6 +27,9 @@ var runs = map[string]func(inputs map[string][]byte, now time.Time) (spec.Outcom
 		return cert.Decode(in["certificates"], now)
 	},
 	"jwt": func(in map[string][]byte, now time.Time) (spec.Outcome, error) { return jwt.Decode(in["token"], now) },
+	"noproxy": func(in map[string][]byte, _ time.Time) (spec.Outcome, error) {
+		return noproxy.Ask(in["list"], in["address"])
+	},
 }
 
 // toolOptions is a tool's command line, parsed.

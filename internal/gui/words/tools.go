@@ -44,6 +44,28 @@ var tools = map[string]ToolWords{
 			},
 		},
 	},
+	"noproxy": {
+		Title: "NO_PROXY tester",
+		Summary: "Shows which programs go to an address through the proxy and which go to it directly under a " +
+			"NO_PROXY list. Each program reads the list its own way, so one list can send curl directly and " +
+			"Node.js through the proxy on the same machine.",
+		Action: "Test",
+		Ready: "Paste a NO_PROXY list and an address and press Test. Nothing is connected to - the answer comes " +
+			"from how each program reads the list.",
+		Inputs: map[string]InputWords{
+			"list": {
+				Label: "NO_PROXY list",
+				Hint: "The value of NO_PROXY exactly as it is set, entries separated by commas. NO_PROXY= in " +
+					"front of it is taken off.",
+				Example: "localhost,127.0.0.1,.corp.example",
+			},
+			"address": {
+				Label:   "Address",
+				Hint:    "A URL or a host name, with its port if it has one. Without a scheme it is read as https://.",
+				Example: "https://api.corp.example:8443",
+			},
+		},
+	},
 	"jwt": {
 		Title: "JWT decoder",
 		Summary: "Shows what a JSON Web Token says - its header, its claims and its times. The signature is not " +
@@ -100,5 +122,6 @@ func Category(c string) string {
 
 var categories = map[string]string{
 	"certificates": "Certificates",
+	"proxy":        "Proxy",
 	"tokens":       "Tokens",
 }

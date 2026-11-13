@@ -137,6 +137,10 @@ const valueColumn = 40
 // writeFields writes a table of labels and values, a note beside each value
 // that has one, and the marker of a status in front of each row that carries
 // a judgement. The columns are measured, not chosen.
+//
+// A NOTE IS PROSE AND WRAPS at the page's width, every line after its first
+// under the note column - the rule the report's pages follow (ADR109). The
+// label and the value are data and never break.
 func (t Terminal) writeFields(b *strings.Builder, fields []spec.Field) {
 	labelWidth, valueWidth, markWidth := 0, 0, 0
 	for _, f := range fields {
@@ -149,11 +153,14 @@ func (t Terminal) writeFields(b *strings.Builder, fields []spec.Field) {
 	for _, f := range fields {
 		line := "  " + t.fieldMark(f.Status, markWidth) + pad(visible(f.Label), labelWidth) + "  "
 		if f.Note == "" {
-			line += visible(f.Value)
-		} else {
-			line += pad(visible(f.Value), valueWidth) + "  " + visible(f.Note)
+			writeTrimmed(b, line+visible(f.Value))
+			continue
 		}
-		writeTrimmed(b, line)
+		// Counted rather than measured: the marker may carry a colour, and its
+		// escape sequence takes no room on the screen (writeFlow).
+		noteColumn := 2 + markWidth + labelWidth + 2 + max(valueWidth, widthOf(visible(f.Value))) + 2
+		lead := line + pad(visible(f.Value), valueWidth) + "  "
+		writeFlow(b, lead, noteColumn, noteColumn, prose(visible(f.Note)))
 	}
 }
 

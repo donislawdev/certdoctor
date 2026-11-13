@@ -155,6 +155,22 @@ var layerMap = []layerRule{
 	},
 }
 
+// packageDoors are doors for ONE package through its layer's wall: the package
+// named, and none of its children or of its neighbours, may import what is
+// listed below its layer.
+//
+// THEY ARE NOT RULES OF THE LAYER MAP, and that is their point. A rule for the
+// package itself would be the most specific rule for its files and would take
+// over from its layer's - the layer's sideways edges, and the closed list of the
+// standard library its layer keeps (closedStdlib), which is looked up by the
+// rule. A door leaves both standing and opens one thing more.
+var packageDoors = map[string][]string{
+	// The NO_PROXY tester asks the readings L2 asks (ADR147 decision 1), so the
+	// tool and the diagnosis answer one list one way. The rest of the tools
+	// stay where the layer puts them, seeing the status vocabulary only.
+	"internal/tool/noproxy": {"internal/core/proxy/"},
+}
+
 // rootRule covers the package sitting directly in the module root.
 //
 // It is not in layerMap because it cannot be described by a path prefix: an
@@ -390,6 +406,9 @@ var intraLayerEdges = map[string][]string{
 	// (ADR146) and speaks of time in the words the JWT decoder does - one
 	// sentence for "expired 3 days ago" across the tools.
 	"internal/tool/cert": {"internal/tool/spec", "internal/tool/certfacts", "internal/tool/prose"},
+	// The NO_PROXY tester hands back the contract's shape. The readings it
+	// asks stand below its layer, through its door in packageDoors.
+	"internal/tool/noproxy": {"internal/tool/spec"},
 	// The contract reads the request document and, for the window, the
 	// document a tool writes - both through the shared reader, so a name
 	// carried twice is refused by the same rule everywhere.
@@ -428,6 +447,39 @@ func TestARuleNamingAPackageAdmitsThatPackageAndNoNameLikeIt(t *testing.T) {
 	for _, v := range violations {
 		if strings.HasSuffix(v.Detail, "internal/gui/look - that points upwards") {
 			t.Errorf("the package the rule names was reported: %s", v.Detail)
+		}
+	}
+}
+
+// TestAPackageDoorAdmitsItsPackageAndNoOther plants the same imports in the
+// package a door names, in another package of its layer and in a child of the
+// named one, and expects the import through the door reported in the two
+// others alone - and the layer's own door to the status vocabulary open in all
+// three.
+func TestAPackageDoorAdmitsItsPackageAndNoOther(t *testing.T) {
+	const door = "internal/core/proxy - that points upwards"
+	for _, c := range []struct {
+		at       string
+		reported bool
+	}{
+		{"internal/tool/noproxy/planted.go", false},
+		{"internal/tool/jwt/planted.go", true},
+		{"internal/tool/noproxy/inner/planted.go", true},
+	} {
+		planted := tree{
+			modulePath: "github.com/donislawdev/certdoctor",
+			files:      []sourceFile{loadFixture(t, "uses_a_package_door.go", c.at)},
+		}
+		reported := false
+		for _, v := range checkLayerDirection(planted) {
+			if strings.HasSuffix(v.Detail, door) {
+				reported = true
+			} else {
+				t.Errorf("%s: an import its layer allows was reported: %s", c.at, v.Detail)
+			}
+		}
+		if reported != c.reported {
+			t.Errorf("%s: the import of the readings was reported %v, want %v", c.at, reported, c.reported)
 		}
 	}
 }
@@ -619,7 +671,7 @@ func checkOurImport(sf sourceFile, rule layerRule, inside string, imp declaredIm
 	// With a slash added, so a rule naming one package with its closing slash
 	// matches that package and its children and no package whose name merely
 	// begins the same way. A rule naming a whole layer matches as before.
-	if !hasAnyPrefix(inside+"/", rule.mayImportBelow) {
+	if !hasAnyPrefix(inside+"/", rule.mayImportBelow) && !hasAnyPrefix(inside+"/", packageDoors[fromPackage]) {
 		return []Violation{{
 			File:   sf.rel,
 			Line:   imp.line,

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -40,16 +41,32 @@ func TestTheRuleListIsClosed(t *testing.T) {
 			t.Errorf("String() of %q gave %q", r, r.String())
 		}
 	}
+	keyOf, programOf := map[string]string{}, map[string]string{}
 	for i, r := range NoProxyRules {
 		if AllRules[i] != r {
 			t.Errorf("AllRules[%d] is %q, and AllRules starts with NoProxyRules in their order", i, AllRules[i])
 		}
-		if r.Program() == "" || r.Versions() == "" {
-			t.Errorf("NO_PROXY reading %q does not say which program or which releases it speaks for", r)
+		if r.Program() == "" || r.Versions() == "" || r.ProgramKey() == "" {
+			t.Errorf("NO_PROXY reading %q does not say which program, under which key, or which releases it "+
+				"speaks for", r)
+		}
+		// One key per program and one program per key: a script groups the
+		// readings by the key, a person by the name, and the two groupings
+		// have to be the same.
+		if k, seen := keyOf[r.Program()]; seen && k != r.ProgramKey() {
+			t.Errorf("%q is keyed %q and %q", r.Program(), k, r.ProgramKey())
+		}
+		if p, seen := programOf[r.ProgramKey()]; seen && p != r.Program() {
+			t.Errorf("the key %q names %q and %q", r.ProgramKey(), p, r.Program())
+		}
+		keyOf[r.Program()], programOf[r.ProgramKey()] = r.ProgramKey(), r.Program()
+		if node := strings.HasPrefix(r.Program(), "Node.js"); node != (r.Condition() == "NODE_USE_ENV_PROXY=1") ||
+			!node && r.Condition() != "" {
+			t.Errorf("%q has the condition %q, and only Node.js needs one - NODE_USE_ENV_PROXY=1", r, r.Condition())
 		}
 	}
 	for _, r := range AllRules[len(NoProxyRules):] {
-		if r.Program() != "" || r.Versions() != "" {
+		if r.Program() != "" || r.Versions() != "" || r.ProgramKey() != "" || r.Condition() != "" {
 			t.Errorf("system list %q names a program, and a list a system keeps is read by every program on it", r)
 		}
 	}

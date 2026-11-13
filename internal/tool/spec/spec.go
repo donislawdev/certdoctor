@@ -27,12 +27,14 @@ type Category string
 // The categories, in the order the lists show them.
 const (
 	Certificates Category = "certificates"
+	Proxy        Category = "proxy"
 	Tokens       Category = "tokens"
 )
 
 // Categories is every category, in the order the lists show them -
-// certificates first, because they are what the program is about.
-var Categories = []Category{Certificates, Tokens}
+// certificates first, because they are what the program is about, then the
+// proxy, which stands on the way to every server it asks about.
+var Categories = []Category{Certificates, Proxy, Tokens}
 
 // Shape is what an input is made of, which decides how it is read.
 type Shape string
@@ -101,6 +103,22 @@ var All = []Tool{
 		Keywords: []string{"certificate", "x509", "pem", "der", "crt", "cer", "chain", "fingerprint", "thumbprint",
 			"expiry", "san", "x5c"},
 		Inputs: []Input{{Name: "certificates", Shape: Bytes, MaxBytes: 256 << 10, File: "chain.pem"}},
+	},
+	{
+		ID:       "noproxy",
+		Category: Proxy,
+		Title:    "NO_PROXY tester",
+		Summary: "Shows which programs send an address through the proxy and which go to it directly under a " +
+			"NO_PROXY list - curl, .NET, Go, Python, requests and pip, Node.js - since each reads the list its own way.",
+		Keywords: []string{"no_proxy", "proxy", "bypass", "exception", "exclusion", "curl", "git", "dotnet",
+			"golang", "python", "pip", "requests", "node", "fetch", "undici", "java", "environment", "variable"},
+		// 64 KiB holds any list kept by hand many times over - an ASSESSMENT,
+		// not a source. The address is read for its scheme, host and port only,
+		// and a URL copied from a browser can be long past them.
+		Inputs: []Input{
+			{Name: "list", Shape: Line, MaxBytes: 64 << 10, File: "no_proxy.txt"},
+			{Name: "address", Shape: Line, MaxBytes: 64 << 10, File: "address.txt"},
+		},
 	},
 	{
 		ID:       "jwt",

@@ -1,6 +1,7 @@
 package render
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +86,48 @@ func TestAFieldWithAStatusIsMarkedAndTheOthersLineUp(t *testing.T) {
 	marker := Of(status.Fail).Marker(GlyphASCII)
 	if !strings.HasPrefix(expires, "  "+marker+" ") || strings.Index(issued, "Issued") != strings.Index(expires, "Expires") {
 		t.Errorf("rows do not line up behind the marker:\n%q\n%q", issued, expires)
+	}
+}
+
+// TestANoteWrapsUnderItsColumn holds a note that runs past the page to the
+// page, every line after its first starting under the note - with a status
+// marker in colour in front of the row, whose escape sequence takes no room on
+// the screen and so may not push the continuation right.
+func TestANoteWrapsUnderItsColumn(t *testing.T) {
+	note := strings.Repeat("several words of a note ", 8) + "end"
+	for _, colour := range []ColorMode{ColorOff, ColorOn} {
+		page := toolPage()
+		page.Outcome.View = []spec.Block{{Kind: spec.Fields, Title: "Rows", Fields: []spec.Field{
+			{Label: "Label", Value: "value", Note: note, Status: status.Warn},
+			{Label: "Longer label", Value: "v", Note: "short"},
+		}}}
+		var b strings.Builder
+		if err := (Terminal{Color: colour}).RenderTool(&b, page); err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(escapeSequence.ReplaceAllString(b.String(), ""), "\n")
+		start := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "several") })
+		if start < 0 {
+			t.Fatalf("colour %v: no row with the note:\n%s", colour, b.String())
+		}
+		column := strings.Index(lines[start], "several")
+		var words []string
+		for i := start; i < len(lines) && !strings.Contains(lines[i], "Longer label"); i++ {
+			if utf8.RuneCountInString(lines[i]) > pageWidth {
+				t.Errorf("colour %v: the note ran past the page: %q", colour, lines[i])
+			}
+			if i > start && (len(lines[i]) <= column || strings.TrimSpace(lines[i][:column]) != "" ||
+				lines[i][column] == ' ') {
+				t.Errorf("colour %v: a line of the note does not start under it (column %d): %q", colour, column, lines[i])
+			}
+			words = append(words, strings.Fields(lines[i])...)
+		}
+		if got := strings.Join(words, " "); !strings.HasSuffix(got, strings.Join(strings.Fields(note), " ")) {
+			t.Errorf("colour %v: the note lost words: %q", colour, got)
+		}
+		if start+1 >= len(lines) || strings.Contains(lines[start+1], "Longer label") {
+			t.Errorf("colour %v: a note longer than the page stayed on one line: %q", colour, lines[start])
+		}
 	}
 }
 

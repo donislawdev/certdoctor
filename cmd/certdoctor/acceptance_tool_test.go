@@ -31,6 +31,29 @@ func TestTheShippedBinaryDecodesATokenPipedIn(t *testing.T) {
 	}
 }
 
+// TestTheShippedBinaryReadsTwoInputsFromTwoLines holds ADR147 point 3 through
+// a real pipe: the list on the first line and the address on the second, with
+// the line endings PowerShell writes, and a third line refused.
+func TestTheShippedBinaryReadsTwoInputsFromTwoLines(t *testing.T) {
+	r := startProgram(t, invocation{stdin: "NO_PROXY=.corp.example\r\napi.corp.example\r\n"}, "tool", "noproxy",
+		"--json")
+	if r.code != 0 || r.stderr != "" {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	doc, err := spec.ReadDocument([]byte(r.stdout))
+	if err != nil {
+		t.Fatalf("the window could not read what the binary wrote: %v\n%s", err, r.stdout)
+	}
+	if doc.Tool != "noproxy" || len(doc.Checks) != 1 || doc.Checks[0].Status != "PASS" ||
+		!strings.Contains(string(doc.Data), `"host":"api.corp.example"`) {
+		t.Errorf("the document is not the answer about api.corp.example: %+v", doc)
+	}
+	r = startProgram(t, invocation{stdin: "a\nb\nc\n"}, "tool", "noproxy")
+	if r.code != 3 || r.stdout != "" || !strings.Contains(r.stderr, "more lines than") {
+		t.Errorf("a third line: exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+	}
+}
+
 func TestTheShippedBinaryRefusesATokenAsAnArgumentWithoutRepeatingIt(t *testing.T) {
 	r := runProgram(t, "tool", "jwt", testToken)
 	if r.code != 2 || r.stdout != "" {

@@ -321,3 +321,8 @@ github.com/donislawdev/certdoctor/internal/tool/jwt 95
 github.com/donislawdev/certdoctor/internal/tool/cert 94
 github.com/donislawdev/certdoctor/internal/tool/certfacts 100
 github.com/donislawdev/certdoctor/internal/tool/prose 100
+
+# The NO_PROXY tester (ADR147). Measured 2026-11-13 on Windows, go1.27.4:
+# noproxy 99.5 - the one statement unrun is a reading that does not answer,
+# which the inputs the tester takes cannot reach. Pure code, as above.
+github.com/donislawdev/certdoctor/internal/tool/noproxy 99

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/donislawdev/certdoctor/internal/core/exitcode"
@@ -27,14 +28,22 @@ func readToolInputs(o *toolOptions, env environment) (map[string][]byte, *fault)
 		return readRequestInputs(o, env)
 	}
 	inputs := map[string][]byte{}
+	var lines *stdinLines
 	for i, in := range o.tool.Inputs {
 		var data []byte
 		var f *fault
 		switch path, named := o.files[in.Name]; {
 		case named:
 			data, f = readInputFile(env, o.tool, in, "--"+o.tool.FileSwitch(i), path)
-		case i == 0:
+		case i == 0 && !severalLines(o.tool):
 			data, f = readInputStdin(env, o.tool, in)
+		case in.Shape == spec.Line && severalLines(o.tool):
+			if lines == nil {
+				lines, f = openLines(env, o.tool)
+			}
+			if f == nil {
+				data, f = lines.next(in)
+			}
 		default:
 			f = usageFault("%s tool %s needs its %s - name a file with --%s", toolName, o.tool.ID, in.Name,
 				o.tool.FileSwitch(i))
@@ -47,7 +56,125 @@ func readToolInputs(o *toolOptions, env environment) (map[string][]byte, *fault)
 		}
 		inputs[in.Name] = data
 	}
+	if lines != nil {
+		if f := lines.end(); f != nil {
+			return nil, f
+		}
+	}
 	return inputs, nil
+}
+
+// severalLines says the tool reads its inputs from standard input one line
+// each (ADR147 point 3): it takes more than one, and the first is a line. A
+// tool taking one input reads the whole of standard input as it, and a first
+// input of bytes takes the whole of it too, leaving every other to its file.
+func severalLines(t spec.Tool) bool {
+	return len(t.Inputs) > 1 && t.Inputs[0].Shape == spec.Line
+}
+
+// stdinLines hands out standard input one line per input: asked for one by one
+// at a terminal, or cut out of what is piped in.
+type stdinLines struct {
+	env  environment
+	tool spec.Tool
+	// terminal is standard input when nothing is piped in - nil in a build
+	// with no terminal to read - and pipe is it when something is.
+	terminal io.Reader
+	pipe     *bufio.Reader
+	// typed reads the terminal in its line mode, one reader for every input,
+	// so a second line typed ahead is not lost in a reader made for the first.
+	typed *bufio.Reader
+}
+
+// openLines opens standard input for its lines.
+func openLines(env environment, tool spec.Tool) (*stdinLines, *fault) {
+	if env.stdin == nil {
+		return nil, &fault{exitcode.Runtime, "this build has no standard input to read"}
+	}
+	input, err := env.stdin()
+	switch {
+	case errors.Is(err, errNothingPiped):
+		s := &stdinLines{env: env, tool: tool, terminal: input}
+		if input != nil {
+			s.typed = bufio.NewReader(input)
+		}
+		return s, nil
+	case err != nil:
+		return nil, configFault("standard input could not be read: %v", err)
+	}
+	return &stdinLines{env: env, tool: tool, pipe: bufio.NewReader(input)}, nil
+}
+
+// next is the next line, for in.
+func (s *stdinLines) next(in spec.Input) ([]byte, *fault) {
+	if s.pipe == nil {
+		return readPasted(s.env, s.tool, in, s.terminal, s.typed)
+	}
+	line, ended, err := lineOf(s.pipe, in.MaxBytes)
+	switch {
+	case err != nil:
+		return nil, configFault("standard input could not be read: %v", err)
+	case ended:
+		return nil, configFault("standard input ended before the %s - %s tool %s reads one line each: %s",
+			in.Name, toolName, s.tool.ID, s.order())
+	case len(line) > in.MaxBytes:
+		return nil, configFault("the %s line of standard input is %s, so it was not read", in.Name,
+			tooLargeWords(s.tool, in))
+	}
+	return line, nil
+}
+
+// lineOf reads one line of r - up to a line feed or the end - without its line
+// ending, a CR before the line feed included: the ending of Windows, which a
+// pipe from PowerShell carries. ended is the end coming before any byte.
+//
+// IT STOPS ONE BYTE PAST limit, so a line too long - which the caller refuses
+// by its length - is never read whole into memory.
+func lineOf(r *bufio.Reader, limit int) (line []byte, ended bool, err error) {
+	for {
+		c, err := r.ReadByte()
+		switch {
+		case errors.Is(err, io.EOF):
+			return bytes.TrimSuffix(line, []byte("\r")), len(line) == 0, nil
+		case err != nil:
+			return nil, false, err
+		case c == '\n':
+			return bytes.TrimSuffix(line, []byte("\r")), false, nil
+		}
+		// Room for the CR, and one byte more than that is too long already.
+		if line = append(line, c); len(line) > limit+1 {
+			return line, false, nil
+		}
+	}
+}
+
+// end refuses what is piped in after the last line the tool reads - blank
+// lines aside - rather than leave it unread without a word: a line too many is
+// as likely a list broken in two as something to ignore.
+func (s *stdinLines) end() *fault {
+	if s.pipe == nil {
+		return nil
+	}
+	const look = 4 << 10
+	rest, err := io.ReadAll(io.LimitReader(s.pipe, look+1))
+	if err != nil {
+		return configFault("standard input could not be read: %v", err)
+	}
+	if len(rest) > look || len(bytes.TrimSpace(rest)) > 0 {
+		return configFault("standard input carries more lines than %s tool %s reads - one line each: %s",
+			toolName, s.tool.ID, s.order())
+	}
+	return nil
+}
+
+// order names the tool's inputs in the order their lines come: "the list,
+// then the address".
+func (s *stdinLines) order() string {
+	names := make([]string, len(s.tool.Inputs))
+	for i, in := range s.tool.Inputs {
+		names[i] = "the " + in.Name
+	}
+	return strings.Join(names, ", then ")
 }
 
 // readInputFile reads the file a switch named for in, through the guarded
@@ -85,7 +212,11 @@ func readInputStdin(env environment, tool spec.Tool, in spec.Input) ([]byte, *fa
 	input, err := env.stdin()
 	switch {
 	case errors.Is(err, errNothingPiped):
-		return readPasted(env, tool, in, input)
+		var typed *bufio.Reader
+		if input != nil {
+			typed = bufio.NewReader(input)
+		}
+		return readPasted(env, tool, in, input, typed)
 	case err != nil:
 		return nil, configFault("standard input could not be read: %v", err)
 	}
@@ -103,11 +234,13 @@ func readInputStdin(env environment, tool spec.Tool, in spec.Input) ([]byte, *fa
 //
 // A TERMINAL THAT CAN HAND OVER KEYS DOES (paste.go, ADR143): on Linux and
 // macOS the line mode cuts a long token or stops taking keys. Anywhere else,
-// and when the switch fails, the line is read in the line mode.
-func readPasted(env environment, tool spec.Tool, in spec.Input, terminal io.Reader) ([]byte, *fault) {
+// and when the switch fails, the line is read in the line mode, from typed -
+// one reader over the terminal for every input a tool asks for.
+func readPasted(env environment, tool spec.Tool, in spec.Input, terminal io.Reader, typed *bufio.Reader) ([]byte,
+	*fault) {
 	if in.Shape != spec.Line || terminal == nil {
 		return nil, configFault("%s tool %s reads its %s from standard input, and nothing is piped in. "+
-			"Pipe the %s in or name a file with --file", toolName, tool.ID, in.Name, in.Name)
+			"Pipe the %s in or name a file with --%s", toolName, tool.ID, in.Name, in.Name, fileSwitchOf(tool, in))
 	}
 	if env.keys != nil {
 		if keys, switched := env.keys(terminal); switched {
@@ -115,14 +248,24 @@ func readPasted(env environment, tool spec.Tool, in spec.Input, terminal io.Read
 		}
 	}
 	fmt.Fprintf(env.stderr, "Paste the %s and press Enter:\n", in.Name)
-	line, err := bufio.NewReader(io.LimitReader(terminal, int64(in.MaxBytes)+2)).ReadBytes('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+	line, _, err := lineOf(typed, in.MaxBytes)
+	if err != nil {
 		return nil, configFault("the terminal could not be read: %v", err)
 	}
-	if len(bytes.TrimRight(line, "\r\n")) > in.MaxBytes {
+	if len(line) > in.MaxBytes {
 		return nil, configFault("what was pasted is %s, so it was not read", tooLargeWords(tool, in))
 	}
 	return line, nil
+}
+
+// fileSwitchOf is the switch, without its dashes, that names a file for in.
+func fileSwitchOf(tool spec.Tool, in spec.Input) string {
+	for i, each := range tool.Inputs {
+		if each.Name == in.Name {
+			return tool.FileSwitch(i)
+		}
+	}
+	return "file"
 }
 
 // readBounded reads r up to in's limit, refusing more without keeping it.
