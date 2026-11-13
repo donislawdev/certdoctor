@@ -155,7 +155,7 @@ func notWritten(p Process) string {
 func firstSentence(printed []byte) string {
 	text := strings.ToValidUTF8(string(printed), string(utf8.RuneError))
 	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), words.T(words.AppName)+":"))
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), request.Command+":"))
 		if line != "" {
 			return asSentence(withoutFullStop(line))
 		}
@@ -260,7 +260,7 @@ const maxHost = 120
 // letters, digits, dots and dashes, and anything else - the brackets of an
 // IPv6 address, the marker of a masked host - becomes a dash.
 func SuggestedName(target string, f request.Format, began time.Time) string {
-	parts := []string{words.T(words.AppName)}
+	parts := []string{request.Command}
 	if host := nameOf(target); host != "" {
 		parts = append(parts, host)
 	}

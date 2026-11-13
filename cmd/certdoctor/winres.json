@@ -10,11 +10,11 @@
         "info": {
           "0409": {
             "CompanyName": "DonislawDev",
-            "FileDescription": "certdoctor - finds why this machine cannot connect to a URL, from the command line",
+            "FileDescription": "Cert Doctor - finds why this machine cannot connect to a URL, from the command line",
             "InternalName": "certdoctor",
             "LegalCopyright": "Copyright (C) 2026 DonislawDev. Licensed under the GNU General Public License version 3.",
             "OriginalFilename": "certdoctor.exe",
-            "ProductName": "certdoctor"
+            "ProductName": "Cert Doctor"
           }
         }
       }

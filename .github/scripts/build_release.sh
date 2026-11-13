@@ -259,7 +259,7 @@ for target in "${targets[@]}"; do
   # notarisation ticket, so Gatekeeper refuses it even signed and notarised. A
   # link goes beside it, so a person still types ./certdoctor.
   if [ "$os" = "darwin" ]; then
-    bash .github/scripts/make_app_bundle.sh "$pack" "$binary" "com.donislawdev.certdoctor" "$version"
+    bash .github/scripts/make_app_bundle.sh "$pack" "$binary" "com.donislawdev.certdoctor" "$version" "$binary"
   fi
 
   # The notices travel with the binary because the licences in them ask for
@@ -318,7 +318,7 @@ for target in "${window_targets[@]}"; do
   # from its own folder, which on macOS is Contents/MacOS. It has the window's
   # identifier (ADR127 decision 1), and a link to each program beside it.
   if [ "$os" = "darwin" ]; then
-    bash .github/scripts/make_app_bundle.sh "$pack" "$window" "com.donislawdev.certdoctor-gui" "$version" "$binary"
+    bash .github/scripts/make_app_bundle.sh "$pack" "$window" "com.donislawdev.certdoctor-gui" "$version" "Cert Doctor" "$binary"
   fi
 
   cp LICENSE THIRD-PARTY-NOTICES.md THIRD-PARTY-NOTICES-GUI.md README.md "$pack/"

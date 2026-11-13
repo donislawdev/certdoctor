@@ -60,6 +60,15 @@ var Offered = []Option{
 // back to it.
 const MaxReport = switches.MaxReport
 
+// Command is the command line's name as a person types it, as it puts it
+// before every line it prints on stderr, and as the start of the name a saved
+// report is offered under. Not the product's name, which the window shows from
+// words.AppName (ADR148): the product is Cert Doctor, the command is
+// certdoctor, and a file name holds no space. The window cannot import the
+// constant the command line takes it from, so a test in cmd/certdoctor-gui
+// holds the two equal.
+const Command = "certdoctor"
+
 // NotOffered is every switch the window leaves to the command line, with the
 // reason. The reasons are for whoever reads this file - the window does not
 // show them.

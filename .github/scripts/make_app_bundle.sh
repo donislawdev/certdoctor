@@ -2,9 +2,13 @@
 # Wrap the macOS binary in a .app bundle, because that is the only shape that
 # can carry a notarisation ticket.
 #
-#   bash .github/scripts/make_app_bundle.sh <workdir> <binary> <bundle-id> <version> [<another binary>...]
+#   bash .github/scripts/make_app_bundle.sh <workdir> <binary> <bundle-id> <version> <name> [<another binary>...]
 #
-# The binary the bundle opens is <binary>. Each other binary named after the
+# The binary the bundle opens is <binary>, and <name> is what macOS calls the
+# program on screen - in the menu bar, for one. The command line's bundle is
+# certdoctor, the command. The window's is Cert Doctor, the product (ADR148),
+# while its file and the link beside it stay certdoctor-gui, a name with no
+# space to type. Each other binary named after the
 # version goes into the bundle beside it, in Contents/MacOS: the window starts
 # certdoctor from its own folder and from nowhere else (ADR121 point 1), so on
 # macOS the command line it runs is inside its bundle. Every binary gets a link
@@ -31,8 +35,8 @@
 # bundle, not the file.
 set -euo pipefail
 
-if [ "$#" -lt 4 ]; then
-  echo "usage: make_app_bundle.sh <workdir> <binary> <bundle-id> <version> [<another binary>...]" >&2
+if [ "$#" -lt 5 ]; then
+  echo "usage: make_app_bundle.sh <workdir> <binary> <bundle-id> <version> <name> [<another binary>...]" >&2
   exit 2
 fi
 
@@ -40,8 +44,19 @@ work="$1"
 binary="$2"
 bundle_id="$3"
 version="$4"
-shift 4
+shown="$5"
+shift 5
 inside=("$binary" "$@")
+
+# CFBundleName is "a user-visible short name for the bundle. This name can
+# contain up to 15 characters" - Apple's Information Property List reference,
+# read 2026-11-13. It is written into the property list below as it is, so it
+# is held to letters, digits, spaces, dots and dashes: nothing XML would read
+# as markup.
+if ! [[ "$shown" =~ ^[A-Za-z0-9][A-Za-z0-9\ .-]{0,14}$ ]]; then
+  echo "make_app_bundle: the name '${shown}' is not 1 to 15 letters, digits, spaces, dots or dashes" >&2
+  exit 2
+fi
 
 for name in "${inside[@]}"; do
   if [ ! -f "${work}/${name}" ]; then
@@ -98,7 +113,7 @@ cat > "${app}/Contents/Info.plist" <<PLIST
 	<key>CFBundleIdentifier</key>
 	<string>${bundle_id}</string>
 	<key>CFBundleName</key>
-	<string>${binary}</string>
+	<string>${shown}</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

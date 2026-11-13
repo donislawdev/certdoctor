@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/donislawdev/certdoctor"
 	"github.com/donislawdev/certdoctor/internal/gui/flow"
+	"github.com/donislawdev/certdoctor/internal/gui/request"
 )
 
 // TestASecondStartHandsOverTheFlagTheDriverAndTheCode starts this test binary
@@ -177,6 +179,22 @@ func TestTheCommandLineBesideTheWindowIsRun(t *testing.T) {
 	}
 	if a := ask("--json", "--", answerInput); a.Out != "" || a.Code != 0 || time.Duration(a.TookMS)*time.Millisecond > 10*time.Second {
 		t.Errorf("a run handed nothing read %q with code %d after %d ms, want nothing at once", a.Out, a.Code, a.TookMS)
+	}
+}
+
+// TestTheWindowCallsTheCommandLineByItsOwnName holds the window's two
+// spellings of the command line's name to the one the command line itself
+// takes from certdoctor.Name: request.Command, which the window strips off
+// what the command line printed and starts a saved report's name with, and
+// the file it runs beside itself. The name the window shows for the product is
+// another one (ADR148), and the two were one key until then - so a window that
+// went back to calling the command by its title would be caught here.
+func TestTheWindowCallsTheCommandLineByItsOwnName(t *testing.T) {
+	if request.Command != certdoctor.Name {
+		t.Errorf("the window calls the command line %q, and it calls itself %q", request.Command, certdoctor.Name)
+	}
+	if file := strings.TrimSuffix(commandLineFile, ".exe"); file != certdoctor.Name {
+		t.Errorf("the window runs %q beside itself, and the command line is %q", commandLineFile, certdoctor.Name)
 	}
 }
 
