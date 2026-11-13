@@ -4,7 +4,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 
 	"github.com/donislawdev/certdoctor/internal/gui/look"
 	"github.com/donislawdev/certdoctor/internal/gui/model"
@@ -94,31 +93,36 @@ func (v *ToolsView) show(id string) {
 // place its answer is shown in.
 type ToolPage struct {
 	Tool   spec.Tool
-	Inputs map[string]*widget.Entry
-	Run    *parts.Button
-	Clear  *parts.Button
-	words  words.ToolWords
-	answer *fyne.Container
-	scroll *container.Scroll
+	Inputs map[string]*parts.LimitedEntry
+	// Notes are the line under each input: its hint, or why what was pasted
+	// was not taken (ADR144).
+	Notes map[string]*parts.FieldNote
+	Run   *parts.Button
+	Clear *parts.Button
+	// OnEdited is called after the text of an input changed.
+	OnEdited func()
+	words    words.ToolWords
+	answer   *fyne.Container
+	scroll   *container.Scroll
 }
 
 // toolPage is the page of t, ready for its input.
+//
+// AN INPUT TAKES NO MORE THAN look.ToolInputBytes (ADR144), whatever the
+// tool reads: a tool reading less refuses the rest itself, in the command
+// line's own sentence, as it does any input it cannot use.
 func toolPage(t spec.Tool) *ToolPage {
 	w, _ := words.Tool(t.ID)
-	p := &ToolPage{Tool: t, Inputs: map[string]*widget.Entry{}, words: w,
+	p := &ToolPage{Tool: t, Inputs: map[string]*parts.LimitedEntry{}, Notes: map[string]*parts.FieldNote{}, words: w,
 		Run:   parts.NewButton(parts.Primary, w.Action, theme.MediaPlayIcon(), nil),
 		Clear: parts.NewButton(parts.Quiet, words.T(words.ToolClear), theme.ContentClearIcon(), nil),
 	}
 	var fields []fyne.CanvasObject
-	for _, in := range t.Inputs {
-		iw := w.Inputs[in.Name]
-		box := widget.NewMultiLineEntry()
-		box.Wrapping = fyne.TextWrapBreak
-		box.TextStyle = fyne.TextStyle{Monospace: true}
-		box.SetPlaceHolder(iw.Example)
-		box.SetMinRowsVisible(look.ToolInputRows)
-		p.Inputs[in.Name] = box
-		fields = append(fields, parts.Field(iw.Label, box, iw.Hint))
+	for i, in := range t.Inputs {
+		box, note, field := toolInput(t, i)
+		box.OnChanged = func(string) { p.edited(box, note) }
+		p.Inputs[in.Name], p.Notes[in.Name] = box, note
+		fields = append(fields, field)
 	}
 	form := parts.Card("", nil, append(fields, parts.Row(look.GapButtons, p.Run, p.Clear))...)
 	intro := parts.Stack(look.GapRow, parts.Text(parts.Heading, w.Title), parts.Para(parts.BodyMuted, w.Summary))
@@ -138,14 +142,65 @@ func (p *ToolPage) Request() map[string]string {
 	return r
 }
 
-// Ready says whether every input has something typed in it.
+// Ready says whether every input has something typed in it, and no more than
+// it takes.
 func (p *ToolPage) Ready() bool {
 	for _, box := range p.Inputs {
-		if box.Text == "" {
+		if box.Text == "" || box.Over() {
 			return false
 		}
 	}
 	return true
+}
+
+// ClearInputs empties every input and shows its hint again.
+func (p *ToolPage) ClearInputs() {
+	for name, box := range p.Inputs {
+		box.SetText("")
+		p.Notes[name].Clear()
+	}
+}
+
+// ToolInput is the field of input i of the tool id as its page has it - the
+// box, the line under it, and both beside the input's name - for the
+// catalogue, which shows the part the page shows rather than a copy of it.
+// The box says why it refused a paste through its OnRefused.
+func ToolInput(id string, i int) (*parts.LimitedEntry, *parts.FieldNote, fyne.CanvasObject, bool) {
+	t, ok := spec.Find(id)
+	if !ok || i >= len(t.Inputs) {
+		return nil, nil, nil, false
+	}
+	box, note, field := toolInput(t, i)
+	return box, note, field, true
+}
+
+// toolInput is the field of input i of t.
+func toolInput(t spec.Tool, i int) (*parts.LimitedEntry, *parts.FieldNote, fyne.CanvasObject) {
+	w, _ := words.Tool(t.ID)
+	iw := w.Inputs[t.Inputs[i].Name]
+	box := parts.NewLimitedEntry(look.ToolInputBytes)
+	box.Wrapping = fyne.TextWrapBreak
+	box.TextStyle = fyne.TextStyle{Monospace: true}
+	box.SetPlaceHolder(iw.Example)
+	box.SetMinRowsVisible(look.ToolInputRows)
+	note := parts.NewFieldNote(iw.Hint)
+	refused := words.InputTooLong(look.ToolInputBytes, t.Inputs[i].MaxBytes, t.ID, t.FileSwitch(i))
+	box.OnRefused = func() { note.Refuse(refused) }
+	return box, note, parts.FieldWith(iw.Label, box, note)
+}
+
+// edited keeps an input's note true to what is in it - the hint, or the
+// refusal while the input holds more than it takes, which text set by the
+// program can make it - and tells the window.
+func (p *ToolPage) edited(box *parts.LimitedEntry, note *parts.FieldNote) {
+	if box.Over() {
+		box.OnRefused()
+	} else {
+		note.Clear()
+	}
+	if p.OnEdited != nil {
+		p.OnEdited()
+	}
 }
 
 func (p *ToolPage) set(o fyne.CanvasObject) {

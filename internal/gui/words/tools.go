@@ -1,6 +1,9 @@
 package words
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+)
 
 // ToolWords is what the window calls a tool and the parts of its page. The
 // tools are the contract's list (internal/tool/spec), by id - the window has
@@ -46,6 +49,18 @@ var tools = map[string]ToolWords{
 func Tool(id string) (ToolWords, bool) {
 	w, ok := tools[id]
 	return w, ok
+}
+
+// InputTooLong is what a tool's input box says under itself when it refused
+// what was pasted or typed into it (ADR144): the most the box takes in KiB
+// and - when the command line reads more - the command that reads it from a
+// file. windowBytes and lineBytes are the two limits, fileSwitch the switch
+// without its dashes.
+func InputTooLong(windowBytes, lineBytes int, tool, fileSwitch string) string {
+	if lineBytes <= windowBytes {
+		return fmt.Sprintf(T(ToolInputFull), windowBytes>>10)
+	}
+	return fmt.Sprintf(T(ToolInputTooLong), windowBytes>>10, lineBytes>>10, tool, fileSwitch)
 }
 
 // ToolIDs are the tools the window has words for, sorted.

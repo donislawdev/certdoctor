@@ -2,8 +2,28 @@ package words
 
 import (
 	"sort"
+	"strings"
 	"testing"
 )
+
+// TestAnInputTooLongSaysHowMuchFitsAndWhereMoreGoes - the numbers are the
+// limits handed in, the command named is the tool's with its switch, and a
+// box that takes as much as the command line does sends nobody there.
+func TestAnInputTooLongSaysHowMuchFitsAndWhereMoreGoes(t *testing.T) {
+	more := InputTooLong(32<<10, 256<<10, "jwt", "file")
+	for _, want := range []string{"at most 32 KiB", "up to 256 KiB", "certdoctor tool jwt --file <file>"} {
+		if !strings.Contains(more, want) {
+			t.Errorf("%q does not say %q", more, want)
+		}
+	}
+	if strings.Contains(more, "%!") {
+		t.Errorf("%q has a number it could not place", more)
+	}
+	if as := InputTooLong(32<<10, 32<<10, "jwt", "file"); !strings.Contains(as, "at most 32 KiB") ||
+		strings.Contains(as, "certdoctor tool") {
+		t.Errorf("a box taking all the command line takes says %q", as)
+	}
+}
 
 // TestEveryToolsWordsAreThereAndComplete - every tool the window has words
 // for has all of them, the ids come back sorted so a list of them reads the

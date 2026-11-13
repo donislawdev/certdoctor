@@ -111,7 +111,7 @@ func parseTool(tool spec.Tool, args []string) (*toolOptions, *fault) {
 	named := map[string]*string{}
 	for i, in := range tool.Inputs {
 		named[in.Name] = new(string)
-		fs.StringVar(named[in.Name], inputSwitch(i, in), "", "")
+		fs.StringVar(named[in.Name], tool.FileSwitch(i), "", "")
 	}
 	asJSON := fs.Bool("json", false, "")
 	fs.StringVar(&o.request, "request", "", "")
@@ -129,20 +129,11 @@ func parseTool(tool spec.Tool, args []string) (*toolOptions, *fault) {
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
 	for i, in := range tool.Inputs {
-		if given[inputSwitch(i, in)] {
+		if given[tool.FileSwitch(i)] {
 			o.files[in.Name] = *named[in.Name]
 		}
 	}
 	return o, o.check(given, *asJSON)
-}
-
-// inputSwitch is the switch that names a file for input i: --file for the
-// first, --<name>-file for every other (ADR141 point 2).
-func inputSwitch(i int, in spec.Input) string {
-	if i == 0 {
-		return "file"
-	}
-	return in.Name + "-file"
 }
 
 // check applies the rules between a tool's switches. Each is CONFIG: spelled

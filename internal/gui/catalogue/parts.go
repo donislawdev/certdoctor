@@ -311,12 +311,36 @@ func toolAnswer() fyne.CanvasObject {
 	)
 }
 
+// toolInput is a tool's input box with the line under it: empty with its
+// hint, filled with a token longer than its width, after a paste over what it
+// takes (ADR144), and disabled.
+func toolInput() fyne.CanvasObject {
+	token := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9." + strings.Repeat("eyJzdWIiOiJxYS11c2VyLTAwNDIifQ", 6) + ".c2lnbmF0dXJl"
+	box := func(text string, refused, disabled bool) fyne.CanvasObject {
+		e, _, field, _ := screens.ToolInput("jwt", 0)
+		e.SetText(text)
+		if disabled {
+			e.Disable()
+		}
+		if refused {
+			e.OnRefused()
+		}
+		return field
+	}
+	return parts.Card(words.T(words.CatToolInput), nil,
+		labelled(words.CatEmpty, box("", false, false)),
+		labelled(words.CatFilled, box(token, false, false)),
+		labelled(words.CatTooLong, box("", true, false)),
+		labelled(words.CatDisabled, box(token, false, true)),
+	)
+}
+
 // ToolParts is the page of every part of the tools (D23) in every state:
 // a page of its own beside Parts, because the tools will be dozens and
 // one page holding every part of the window and of every tool is a page
 // nobody reads to its end.
 func ToolParts() fyne.CanvasObject {
-	return page(words.CatToolsPage, parts.Stack(look.GapCard, tabs(), toolList(), toolAnswer()))
+	return page(words.CatToolsPage, parts.Stack(look.GapCard, tabs(), toolList(), toolInput(), toolAnswer()))
 }
 
 // Parts is the page of every part in every state, and the box to type in

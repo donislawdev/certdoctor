@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/donislawdev/certdoctor/internal/gui/look"
 	"github.com/donislawdev/certdoctor/internal/gui/parts"
 	"github.com/donislawdev/certdoctor/internal/gui/words"
 	"github.com/donislawdev/certdoctor/internal/tool/spec"
@@ -144,6 +145,57 @@ func TestAToolsPageIsReadyOnlyWithEveryInput(t *testing.T) {
 	p.Inputs["token"].SetText("eyJ")
 	if !p.Ready() || p.Request()["token"] != "eyJ" {
 		t.Errorf("a page with its token typed: ready %v, request %v", p.Ready(), p.Request())
+	}
+}
+
+// A token over what the window takes is not put in, and the line under the
+// box says so with the command line's way to read it; text over it put in by
+// the program leaves the page not ready; Clear brings the hint back (ADR144).
+func TestAnInputOverWhatTheWindowTakesIsRefusedUnderItsBox(t *testing.T) {
+	newApp(t)
+	_, v := Tools(icon(t), "0.1.0")
+	p := v.Pages["jwt"]
+	box, note := p.Inputs["token"], p.Notes["token"]
+	if box.Limit != look.ToolInputBytes {
+		t.Fatalf("the token box takes %d bytes, want %d", box.Limit, look.ToolInputBytes)
+	}
+	fyne.CurrentApp().Clipboard().SetContent(strings.Repeat("a", look.ToolInputBytes+1))
+	box.TypedShortcut(&fyne.ShortcutPaste{Clipboard: fyne.CurrentApp().Clipboard()})
+	// Read from the page down rather than from the note: a note Fyne does not
+	// draw - the first version of the part - is not reached from the page.
+	said := strings.Join(texts(p.scroll), " ")
+	if box.Text != "" || !note.Refused() || !strings.Contains(said, "certdoctor tool jwt --file <file>") {
+		t.Errorf("a paste over the limit: %d bytes in the box, note %q", len(box.Text), said)
+	}
+	box.SetText(strings.Repeat("a", look.ToolInputBytes+1))
+	if p.Ready() || !note.Refused() {
+		t.Errorf("text over the limit set by the program: ready %v, refused %v", p.Ready(), note.Refused())
+	}
+	p.ClearInputs()
+	if box.Text != "" || note.Refused() {
+		t.Errorf("after Clear: %d bytes, refused %v", len(box.Text), note.Refused())
+	}
+}
+
+// The catalogue's field is the page's: the same limit and the same refusal -
+// and an input the contract does not have is no field at all.
+func TestTheCatalogueGetsTheFieldThePageHas(t *testing.T) {
+	newApp(t)
+	box, note, field, ok := ToolInput("jwt", 0)
+	if !ok || box.Limit != look.ToolInputBytes || field == nil {
+		t.Fatalf("the decoder's token field: ok %v", ok)
+	}
+	box.OnRefused()
+	if !note.Refused() || !strings.Contains(strings.Join(texts(field), " "), "certdoctor tool jwt --file <file>") {
+		t.Error("the catalogue's field does not refuse the way the page's does")
+	}
+	for _, c := range []struct {
+		id string
+		i  int
+	}{{"no-such-tool", 0}, {"jwt", 1}} {
+		if _, _, _, ok := ToolInput(c.id, c.i); ok {
+			t.Errorf("input %d of %s was built", c.i, c.id)
+		}
 	}
 }
 

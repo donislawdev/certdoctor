@@ -87,6 +87,17 @@ var All = []Tool{
 	},
 }
 
+// FileSwitch is the switch, without its dashes, that names a file for the
+// input at index i: file for the first, <name>-file for every other (ADR141
+// point 2). Public - the command line takes it, and the window names it when
+// it sends a person there for an input longer than it takes (ADR144).
+func (t Tool) FileSwitch(i int) string {
+	if i == 0 {
+		return "file"
+	}
+	return t.Inputs[i].Name + "-file"
+}
+
 // Find is the tool with id, and whether there is one.
 func Find(id string) (Tool, bool) {
 	for _, t := range All {

@@ -209,6 +209,8 @@ const (
 	ToolUnreadableWhat  Key = "tool.unreadable.what"
 	ToolVersionWhat     Key = "tool.version.what"
 	ToolTodo            Key = "tool.todo"
+	ToolInputTooLong    Key = "tool.input.toolong"
+	ToolInputFull       Key = "tool.input.full"
 )
 
 var english = map[Key]string{
@@ -232,6 +234,8 @@ var english = map[Key]string{
 	ToolUnreadableTitle: "The tool wrote an answer this window cannot read",
 	ToolUnreadableWhat:  "What it wrote is not an answer: %s.",
 	ToolVersionWhat:     "This window is %s and the certdoctor beside it says %s, so its answer is not drawn.",
+	ToolInputTooLong:    "This box takes at most %d KiB, so that was not put in. The command line reads up to %d KiB from a file: certdoctor tool %s --%s <file>",
+	ToolInputFull:       "This box takes at most %d KiB, so that was not put in.",
 	ToolTodo:            "Run certdoctor tool %s in a terminal with the same input to see what it says, and report it on GitHub.",
 
 	AppName:         "certdoctor",
@@ -451,6 +455,10 @@ const (
 	CatToolList  Key = "cat.toollist"
 	CatToolParts Key = "cat.toolparts"
 	CatToolCode  Key = "cat.toolcode"
+	// A tool's input box (ADR144): what it says under itself when it took
+	// nothing of a paste over its limit.
+	CatToolInput Key = "cat.toolinput"
+	CatTooLong   Key = "cat.toolong"
 )
 
 var catalogue = map[Key]string{
@@ -513,6 +521,8 @@ var catalogue = map[Key]string{
 	CatToolList:   "Tool list",
 	CatToolParts:  "A tool's answer - checks and fields",
 	CatToolCode:   "A tool's answer - code and text",
+	CatToolInput:  "A tool's input",
+	CatTooLong:    "a paste over what it takes",
 }
 
 // Kind is the name the window gives a kind of finding. The kinds are the

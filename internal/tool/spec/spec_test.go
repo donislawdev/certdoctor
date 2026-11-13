@@ -44,6 +44,16 @@ func TestEveryToolIsDescribedCompletely(t *testing.T) {
 	}
 }
 
+func TestTheFirstInputIsReadWithFileAndEveryOtherByItsName(t *testing.T) {
+	tool := Tool{Inputs: []Input{{Name: "token"}, {Name: "key"}}}
+	if got := tool.FileSwitch(0); got != "file" {
+		t.Errorf("the first input's switch is %q, want file", got)
+	}
+	if got := tool.FileSwitch(1); got != "key-file" {
+		t.Errorf("the second input's switch is %q, want key-file", got)
+	}
+}
+
 func TestAToolIsFoundByAnyOfItsWords(t *testing.T) {
 	jwt, _ := Find("jwt")
 	for query, want := range map[string]bool{

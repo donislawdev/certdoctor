@@ -76,7 +76,7 @@ func writeIndented(b *strings.Builder, sentence string, indent int) {
 func toolSwitches(t spec.Tool) [][2]string {
 	var lines [][2]string
 	for i, in := range t.Inputs {
-		lines = append(lines, [2]string{"--" + inputSwitch(i, in) + " <path>", "read the " + in.Name + " from this file"})
+		lines = append(lines, [2]string{"--" + t.FileSwitch(i) + " <path>", "read the " + in.Name + " from this file"})
 	}
 	return append(lines,
 		[2]string{"--request <path>", "read every input from a request document, - for standard input"},

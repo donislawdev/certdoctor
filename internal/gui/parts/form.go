@@ -12,9 +12,18 @@ import (
 // name stands in the middle of the control's height, so it reads on the
 // control's line whatever the control is.
 func Field(name string, control fyne.CanvasObject, note string) fyne.CanvasObject {
+	if note == "" {
+		return FieldWith(name, control, nil)
+	}
+	return FieldWith(name, control, Para(CaptionMuted, note))
+}
+
+// FieldWith is a field whose note is a part of its own - a FieldNote that
+// turns from the hint to a refusal - or none when note is nil.
+func FieldWith(name string, control, note fyne.CanvasObject) fyne.CanvasObject {
 	right := []fyne.CanvasObject{control}
-	if note != "" {
-		right = append(right, Para(CaptionMuted, note))
+	if note != nil {
+		right = append(right, note)
 	}
 	return RowTop(look.GapField, 1,
 		Width(look.LabelWidth, Height(look.ControlHeight, Middle(Text(Strong, name)))),

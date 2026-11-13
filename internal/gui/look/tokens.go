@@ -141,6 +141,13 @@ const (
 	// ToolInputRows is how many lines a tool's input box shows before it
 	// scrolls: a token of a kilobyte, broken at the box's width, at a glance.
 	ToolInputRows = 5
+	// ToolInputBytes is the most a tool's input box takes, in bytes - the
+	// owner's decision against a recommendation of 16 KiB (ADR144). A Fyne box
+	// and the answer drawn from what is in it cost the window's one thread
+	// roughly the square of their length: 64 KiB pasted froze the window for
+	// about 0.9 s and every key after it for as long, measured 2026-11-12
+	// (OBS230). A longer input goes to the command line, which reads more.
+	ToolInputBytes = 32 << 10
 	// ProseWidth is as wide as a paragraph gets: about 95 characters at the
 	// lead size, the upper end of what reads easily.
 	ProseWidth = 820

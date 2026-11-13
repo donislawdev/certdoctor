@@ -32,12 +32,12 @@ func readToolInputs(o *toolOptions, env environment) (map[string][]byte, *fault)
 		var f *fault
 		switch path, named := o.files[in.Name]; {
 		case named:
-			data, f = readInputFile(env, o.tool, in, "--"+inputSwitch(i, in), path)
+			data, f = readInputFile(env, o.tool, in, "--"+o.tool.FileSwitch(i), path)
 		case i == 0:
 			data, f = readInputStdin(env, o.tool, in)
 		default:
 			f = usageFault("%s tool %s needs its %s - name a file with --%s", toolName, o.tool.ID, in.Name,
-				inputSwitch(i, in))
+				o.tool.FileSwitch(i))
 		}
 		if f == nil {
 			f = checkText(in, data)

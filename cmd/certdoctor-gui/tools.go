@@ -99,9 +99,7 @@ func (win *window) buildTools() {
 	for _, p := range win.tools.view.Pages {
 		p.Run.OnTapped = func() { win.runTool(p) }
 		p.Clear.OnTapped = func() { win.clearTool(p) }
-		for _, box := range p.Inputs {
-			box.OnChanged = func(string) { win.toolReady(p) }
-		}
+		p.OnEdited = func() { win.toolReady(p) }
 		win.toolReady(p)
 	}
 }
@@ -160,9 +158,7 @@ func (win *window) clearTool(p *screens.ToolPage) {
 		run.stop()
 		delete(win.tools.runs, p.Tool.ID)
 	}
-	for _, box := range p.Inputs {
-		box.SetText("")
-	}
+	p.ClearInputs()
 	p.ShowReady()
 	win.toolReady(p)
 }
