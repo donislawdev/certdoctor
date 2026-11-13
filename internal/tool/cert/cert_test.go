@@ -236,13 +236,21 @@ func TestWhatHoldsNoCertificateIsRefusedWithoutBeingQuoted(t *testing.T) {
 	}{
 		{"nothing", []byte(" \n"), "empty"},
 		{"words", []byte("hello " + marker), "not a certificate"},
+		{"one word of base64 letters", []byte(marker + "x"), "no PEM block (-----BEGIN CERTIFICATE-----) and does not decode"},
 		{"a private key alone", []byte(fixtureKey), "a private key"},
 		{"a request and a block of another kind", []byte(csr + odd), "a certificate request (CSR) and a block of a kind"},
 		{"an x5c that is not one", []byte(`["` + marker), "not a JSON array"},
 		{"a broken block alone", []byte("-----BEGIN CERTIFICATE-----\n" + marker + "!\n"), "none could be read"},
+		// A word typed by mistake gets as far as base64 or DER, and is not
+		// told it holds a certificate.
 		{"base64 of something else", []byte(base64.StdEncoding.EncodeToString([]byte(marker + marker))),
-			"cannot read"},
-		{"a certificate the library refuses", []byte(fixtureNegativeSerial), "negative serial"},
+			"The input decodes as base64, but not to a certificate"},
+		{"a word starting with the byte DER starts with", []byte("0." + marker),
+			"The input starts like DER, but is not a certificate"},
+		{"a certificate the library refuses", []byte(fixtureNegativeSerial),
+			"The input holds a certificate this program's X.509 library cannot read: x509: negative serial"},
+		{"two certificates the library refuses", []byte(fixtureNegativeSerial + fixtureNegativeSerial),
+			"The input holds 2 certificates and this program's X.509 library can read none"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Decode(tc.input, now)

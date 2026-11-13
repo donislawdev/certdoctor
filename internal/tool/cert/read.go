@@ -244,7 +244,8 @@ func isBase64(text []byte) bool {
 func readBase64(text []byte) (input, error) {
 	der, ok := decodeBase64(string(text))
 	if !ok {
-		return input{}, refuse("The input looks like base64 but does not decode as base64.")
+		return input{}, refuse("The input has no PEM block (-----BEGIN CERTIFICATE-----) and does not decode " +
+			"as base64.")
 	}
 	return input{form: formBase64, entries: []entry{parsed(1, der)}}, nil
 }

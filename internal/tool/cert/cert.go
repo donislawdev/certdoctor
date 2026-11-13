@@ -64,7 +64,7 @@ func Decode(raw []byte, now time.Time) (spec.Outcome, error) {
 		}
 	}
 	if len(readable) == 0 {
-		return spec.Outcome{}, noneReadable(in.entries)
+		return spec.Outcome{}, noneReadable(in)
 	}
 	j := judged{in: in, read: readable, now: now, chain: chainOf(readable)}
 	return spec.Outcome{Notes: in.notes, Checks: spec.SortChecks(j.checks(), checkOrder), Data: j.data(), View: j.view()}, nil
@@ -72,14 +72,26 @@ func Decode(raw []byte, now time.Time) (spec.Outcome, error) {
 
 // noneReadable is the refusal for an input whose every certificate the
 // library refused - in its words, which describe the certificate's shape.
-func noneReadable(entries []entry) error {
-	first := entries[0]
-	if len(entries) == 1 {
-		return refuse(fmt.Sprintf("The input holds a certificate this program's X.509 library cannot read: %s.",
-			libraryWords(first.err)))
+//
+// ONLY WHAT SAYS IT IS A CERTIFICATE IS CALLED ONE: a PEM block labelled so, or
+// a member of an x5c array. Base64 and DER are named by how they were read,
+// because a word typed by mistake gets there too - "test" decodes as base64
+// and "0.5" starts with the byte DER starts with - and telling that person the
+// input holds a certificate would be untrue.
+func noneReadable(in input) error {
+	words := libraryWords(in.entries[0].err)
+	switch {
+	case len(in.entries) > 1:
+		return refuse(fmt.Sprintf("The input holds %d certificates and this program's X.509 library can read "+
+			"none of them - the first: %s.", len(in.entries), words))
+	case in.form == formBase64:
+		return refuse(fmt.Sprintf("The input decodes as base64, but not to a certificate this program's X.509 "+
+			"library can read: %s.", words))
+	case in.form == formDER:
+		return refuse(fmt.Sprintf("The input starts like DER, but is not a certificate this program's X.509 "+
+			"library can read: %s.", words))
 	}
-	return refuse(fmt.Sprintf("The input holds %d certificates and this program's X.509 library can read none "+
-		"of them - the first: %s.", len(entries), libraryWords(first.err)))
+	return refuse(fmt.Sprintf("The input holds a certificate this program's X.509 library cannot read: %s.", words))
 }
 
 // data is what was found, for a script.
