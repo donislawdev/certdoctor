@@ -141,17 +141,20 @@ var sandboxAllowlist = map[string]int{
 	// interrupt code we did not write. ADR8 permits executing a PAC file under
 	// five conditions; this file is how the third of them is enforced.
 	"internal/adapter/pac/stopwatch.go": 1,
-	// The window's two goroutines, each a decision of the owner. The wait for
-	// the command line it runs (2026-11-09, ADR121) and the hand-off of a page
-	// to the browser, which the toolkit makes by waiting for a program to end
-	// on Windows and macOS (2026-11-10, ADR122). The same shape as the
-	// stopwatch: a go statement and nothing shared, because each answer goes
-	// back through the toolkit's own fyne.Do the way the stopwatch's goes back
-	// through goja's interrupt. Without them the window stops drawing while it
-	// waits, and Cancel cannot be pressed during a run. The clock on the
-	// running screen needs no goroutine: the toolkit ticks an animation from
-	// its own loop.
-	"cmd/certdoctor-gui/waiting.go": 2,
+	// The window's three goroutines, each a decision of the owner. The wait for
+	// the command line it runs (2026-11-09, ADR121), the hand-off of a page to
+	// the browser, which the toolkit makes by waiting for a program to end on
+	// Windows and macOS (2026-11-10, ADR122), and the release of memory the
+	// window no longer uses, which once took 2.5 s on the window's thread of
+	// another program on this toolkit (2026-11-13, ADR145). The same shape as
+	// the stopwatch: a go statement and nothing shared, because each answer
+	// goes back through the toolkit's own fyne.Do the way the stopwatch's goes
+	// back through goja's interrupt - and the release has no answer at all.
+	// Without the first two the window stops drawing while it waits, and
+	// Cancel cannot be pressed during a run. Neither the clock on the running
+	// screen nor the one that waits for quiet needs a goroutine: the toolkit
+	// ticks an animation from its own loop.
+	"cmd/certdoctor-gui/waiting.go": 3,
 }
 
 // listed is the files of a list that counts something per file.

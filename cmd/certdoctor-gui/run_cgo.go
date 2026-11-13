@@ -80,6 +80,9 @@ func run(args []string, errOut io.Writer) int {
 	}
 	w.Resize(fyne.NewSize(look.WindowWidth, look.WindowHeight))
 	w.CenterOnScreen()
+	// What the window no longer uses goes back once it is left alone
+	// (ADR145) - the catalogue's too, which builds every part in every state.
+	tidyWhenLeftAlone(w.Canvas())
 
 	// When the toolkit gave no window, tried again in a second process with the
 	// software renderer where one ships, and only then refused out loud. The

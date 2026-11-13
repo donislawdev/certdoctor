@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"net/url"
+	"runtime/debug"
 
 	"fyne.io/fyne/v2"
 
@@ -13,10 +14,10 @@ import (
 
 // THIS FILE IS ON THE CONCURRENCY GUARD'S sandboxAllowlist, AND IT IS A FILE OF
 // ITS OWN FOR THAT REASON. The entry excuses go statements and nothing else:
-// no sync, no channel, no select. It counts them - two, each the owner's
-// decision: waitFor (2026-11-09, ADR121) and openBeside (2026-11-10, ADR122).
-// A third goroutine here changes that count in the guard first, and so is a
-// question before it is code.
+// no sync, no channel, no select. It counts them - three, each the owner's
+// decision: waitFor (2026-11-09, ADR121), openBeside (2026-11-10, ADR122) and
+// releaseBeside (2026-11-13, ADR145). A fourth goroutine here changes that
+// count in the guard first, and so is a question before it is code.
 
 // waitFor runs args through port beside the toolkit's loop, with input on the
 // run's standard input, and hands what came of it to done on the toolkit's
@@ -54,4 +55,17 @@ func openBeside(u *url.URL, done func(error)) {
 		err := open(u)
 		fyne.Do(func() { done(err) })
 	}()
+}
+
+// releaseBeside gives the memory the window no longer uses back to the system
+// beside the toolkit's loop, once the window has been left alone (tidy.go).
+//
+// Beside the loop because debug.FreeOSMemory once took 2491 ms on the window's
+// thread of another program on this toolkit, against 4.6 to 16.2 ms for the
+// other nine of ten calls, for a reason nobody found - and it would land on
+// somebody coming back to the window. Nothing goes back to the window: the
+// call answers nothing, and the runtime may be asked from any goroutine. The
+// goroutine ends when the release does.
+func releaseBeside() {
+	go debug.FreeOSMemory()
 }
