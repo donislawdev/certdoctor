@@ -91,13 +91,17 @@ func Bypasses(r Rule, list string, t Target) (bool, error) {
 
 // reading is the code of one rule.
 //
-// THE FIRST SIX SEE THE HOST IN ONE SPELLING, lower case and without a trailing
-// dot (Target.normalise), because the lists they read are compared that way by
-// their programs or by the vendor's description - and .NET from 11 with them,
-// being .NET's code with networks added. THE OTHER READINGS ADDED WITH ADR147
-// SEE THE HOST AS GIVEN and spell it the way their program does - Go keeps
-// "LOCALHOST" apart from "localhost", Python keeps a trailing dot - because each
-// was read from the program's code, and that code does not all agree.
+// CURL AND THE FOUR SYSTEM LISTS SEE THE HOST IN ONE SPELLING, lower case and
+// without a trailing dot (Target.normalise), because the lists they read are
+// compared that way by their programs or by the vendor's description. .NET SEES
+// IT IN LOWER CASE WITH ITS TRAILING DOT (Target.foldCase), because its Uri keeps
+// the dot on Host and IsMatchInBypassList compares that string - NO_PROXY of
+// example.test sent example.test. through the proxy in .NET 8, 10 and 11 alike
+// (measured 2026-11-13 against a proxy that records what reaches it, ADR147).
+// THE OTHER READINGS ADDED WITH ADR147 SEE THE HOST AS GIVEN and spell it the way
+// their program does - Go keeps "LOCALHOST" apart from "localhost", Python keeps
+// a trailing dot - because each was read from the program's code, and that code
+// does not all agree.
 type reading struct {
 	decide    func(list string, t Target) Decision
 	asciiOnly bool
@@ -107,14 +111,18 @@ func normalised(read func(string, Target) Decision) reading {
 	return reading{decide: func(list string, t Target) Decision { return read(list, t.normalise()) }}
 }
 
+func caseFolded(read func(string, Target) Decision) reading {
+	return reading{decide: func(list string, t Target) Decision { return read(list, t.foldCase()) }}
+}
+
 func asWritten(read func(string, Target) Decision) reading {
 	return reading{decide: read, asciiOnly: true}
 }
 
 var readings = map[Rule]reading{
 	RuleNoProxyCurl:   normalised(bypassNoProxyCurl),
-	RuleNoProxyDotNet: normalised(func(list string, t Target) Decision { return bypassNoProxyDotNet(list, t, false) }),
-	RuleNoProxyDotNetNetworks: normalised(func(list string, t Target) Decision {
+	RuleNoProxyDotNet: caseFolded(func(list string, t Target) Decision { return bypassNoProxyDotNet(list, t, false) }),
+	RuleNoProxyDotNetNetworks: caseFolded(func(list string, t Target) Decision {
 		return bypassNoProxyDotNet(list, t, true)
 	}),
 	RuleNoProxyGo:     asWritten(bypassNoProxyGo),
@@ -334,7 +342,11 @@ func curlNetwork(entry string) (netip.Addr, int, bool) {
 // THE ENTRY IS COMPARED AS WRITTEN, apart from the case and the spaces around
 // it. A trailing dot is not dropped - "example.test." left example.test going
 // through the proxy - and an IPv6 address is held against the host as .NET's
-// Uri spells it, in brackets: "[::1]" excused [::1] and "::1" did not.
+// Uri spells it, in brackets: "[::1]" excused [::1] and "::1" did not. NOR IS
+// THE HOST'S TRAILING DOT DROPPED: Uri.Host keeps it, so "example.test" left
+// example.test. going through the proxy and "example.test." excused it
+// (measured with .NET 8, 10 and 11, ADR147 - which is why the reading sees the
+// host through Target.foldCase and not Target.normalise).
 //
 // THERE IS NO WILDCARD UP TO NOW AND NO NETWORK UP TO .NET 10. "*" and
 // "*.example.test" are names nobody has - which is why NO_PROXY=* leaves .NET

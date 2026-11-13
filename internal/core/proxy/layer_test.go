@@ -639,22 +639,40 @@ func TestATargetWithNoSchemeIsDescribedByItsNameAlone(t *testing.T) {
 	}
 }
 
-// TestTheHostIsComparedInOneSpelling is normalise reaching the layer. A machine
-// holding an exception in lower case excuses a target somebody typed in capitals
-// - and the comparison has to happen on one spelling or it happens twice.
+// TestTheHostIsComparedInOneSpelling is normalise and foldCase reaching the
+// layer. A machine holding an exception in lower case excuses a target somebody
+// typed in capitals under every reading - and the comparison has to happen on
+// one spelling or it happens twice. A trailing dot on the target is where the
+// readings part company: curl drops it, and .NET's Uri keeps it on the host it
+// compares, so .NET goes through the proxy (measured with .NET 8, 10 and 11,
+// ADR147).
 func TestTheHostIsComparedInOneSpelling(t *testing.T) {
 	lens := namingLens(StackEnvironment, "proxy.example:8080")
 	lens.Bypass, lens.BypassSet = ".example.com", true
 
-	result := askLayer(t, Input{
-		Lenses: lensesOf(lens),
-		Target: Target{Scheme: "HTTPS", Host: "API.Example.COM."},
-	})
-	row := findingOf(t, result, StackEnvironment)
-
-	for _, rule := range row.BypassRules {
-		if !rule.Bypasses {
-			t.Errorf("%s did not excuse a host that differs from the entry only in case and a trailing dot", rule.Rule)
+	for _, c := range []struct {
+		host string
+		want map[Rule]bool
+	}{
+		{"API.Example.COM", map[Rule]bool{RuleNoProxyCurl: true, RuleNoProxyDotNet: true, RuleNoProxyDotNetNetworks: true}},
+		{"API.Example.COM.", map[Rule]bool{RuleNoProxyCurl: true, RuleNoProxyDotNet: false, RuleNoProxyDotNetNetworks: false}},
+	} {
+		result := askLayer(t, Input{
+			Lenses: lensesOf(lens),
+			Target: Target{Scheme: "HTTPS", Host: c.host},
+		})
+		row := findingOf(t, result, StackEnvironment)
+		if len(row.BypassRules) != len(c.want) {
+			t.Fatalf("%s: %d bypass rows, want one for each of %d readings", c.host, len(row.BypassRules), len(c.want))
+		}
+		for _, rule := range row.BypassRules {
+			want, ok := c.want[Rule(rule.Rule)]
+			if !ok {
+				t.Errorf("%s: a row for %s, which this test does not expect", c.host, rule.Rule)
+			}
+			if rule.Bypasses != want {
+				t.Errorf("%s: %s excuses it %v, want %v", c.host, rule.Rule, rule.Bypasses, want)
+			}
 		}
 	}
 }

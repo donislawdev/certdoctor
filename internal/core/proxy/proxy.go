@@ -344,12 +344,21 @@ type Target struct {
 //
 // Host names are case insensitive and a trailing dot is the same name, so the
 // comparison has to happen on one spelling. Doing it here rather than in each
-// of the six rules that read the host this way keeps it one rule in one place -
-// the shape OBS50 has measured four times in this tree. The readings added for
-// the noproxy tool do not use it; see reading in bypass.go.
+// of the rules that read the host this way keeps it one rule in one place -
+// the shape OBS50 has measured four times in this tree. .NET and the readings
+// added for the noproxy tool do not use it; see reading in bypass.go.
 func (t Target) normalise() Target {
+	t = t.foldCase()
+	t.Host = trimTrailingDot(t.Host)
+	return t
+}
+
+// foldCase is normalise without dropping the trailing dot - the host the way
+// .NET's Uri hands it to its NO_PROXY reading, in lower case and with the root
+// label kept. See reading in bypass.go.
+func (t Target) foldCase() Target {
 	t.Scheme = lower(t.Scheme)
-	t.Host = lower(trimTrailingDot(unwrap(t.Host)))
+	t.Host = lower(unwrap(t.Host))
 	return t
 }
 

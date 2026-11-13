@@ -599,7 +599,8 @@ func TestTheMacListSeparatorIsOursAndNotTheVendors(t *testing.T) {
 // a proxy that records what reaches it, on 2026-11-13 (OBS233): a leading dot
 // matches the domain and its subdomains - not the subdomains only, as the page
 // at RuleNoProxyDotNet says - a bare name matches only itself, an entry keeps
-// its trailing dot, and an IPv6 entry is written in brackets.
+// its trailing dot, and an IPv6 entry is written in brackets. The host keeps its
+// trailing dot too, measured with .NET 8, 10 and 11 the same day (ADR147).
 func TestDotNetReadsTheLeadingDotTheWayItsCodeDoes(t *testing.T) {
 	cases := []struct {
 		list, target string
@@ -613,6 +614,9 @@ func TestDotNetReadsTheLeadingDotTheWayItsCodeDoes(t *testing.T) {
 		{"example.com", "example.com", true},
 		{"EXAMPLE.COM", "example.com", true},
 		{"example.com.", "example.com", false},
+		{"example.com", "example.com.", false},
+		{"example.com.", "EXAMPLE.com.", true},
+		{".example.com", "www.example.com.", false},
 		{"[::1]", "::1", true},
 		{"::1", "::1", false},
 		{"10.0.0.1", "10.0.0.1", true},
