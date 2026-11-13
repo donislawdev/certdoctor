@@ -1,8 +1,8 @@
 ---
 title: Użycie w CI
 slug: ci
-seoTitle: certdoctor w CI - kody wyjścia i JSON dla pipeline'u
-description: "Sprawdź, czy agent budujący dosięga rejestru albo API: kody wyjścia certdoctor, JSON sprawdzony ze schematem i raport zachowany jako artefakt."
+seoTitle: Cert Doctor w CI - kody wyjścia i JSON dla pipeline'u
+description: "Sprawdź, czy agent budujący dosięga rejestru albo API: kody wyjścia Cert Doctor, JSON sprawdzony ze schematem i raport zachowany jako artefakt."
 lead: "Czy ten agent budujący dosięga rejestru? Jeden krok na to odpowiada, z kodem wyjścia, po którym pipeline może się rozgałęzić."
 ---
 

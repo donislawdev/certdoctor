@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to certdoctor that a user would notice when running the program.
+All notable changes to Cert Doctor that a user would notice when running the program.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 

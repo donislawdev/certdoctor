@@ -27,6 +27,6 @@ certdoctor https://api.example.com/ --pac-url http://wpad.example.com/proxy.pac
 
 ## What the answer means
 
-- **A proxy** - this URL goes through it. certdoctor then asks the proxy whether it wants credentials, and names a [407](/errors/407-proxy-authentication-required/).
+- **A proxy** - this URL goes through it. Cert Doctor then asks the proxy whether it wants credentials, and names a [407](/errors/407-proxy-authentication-required/).
 - **`DIRECT`** - this URL goes straight to the server.
 - **No usable answer** - reported as `UNKNOWN` with the reason, never as `DIRECT`, because guessing "no proxy" would send you looking in the wrong place.

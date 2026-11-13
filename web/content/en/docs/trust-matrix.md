@@ -1,7 +1,7 @@
 ---
 title: The trust matrix
 seoTitle: Trust matrix - which trust stores on this machine refuse
-description: "certdoctor asks every trust store on the machine - Windows store, Linux bundle, each JDK, git, curl, node, Python and pip - and prints the fix for each."
+description: "Cert Doctor asks every trust store on the machine - Windows store, Linux bundle, each JDK, git, curl, node, Python and pip - and prints the fix for each."
 lead: "The browser works, curl works, the application does not. That is several trust stores disagreeing, and the trust matrix shows which."
 ---
 
@@ -26,7 +26,7 @@ One row per store, not per runtime:
 | `python` | every Python on PATH, by the list its `ssl` module trusts |
 | `pip` | the `pip` of each Python, by its own rule |
 
-The report lists the families it asked, so a missing row always means nobody looked, never that a store agreed. On the machine certdoctor was built on, one run in November 2026 read seventeen stores, eight of them Java runtimes.
+The report lists the families it asked, so a missing row always means nobody looked, never that a store agreed. On the machine Cert Doctor was built on, one run in November 2026 read seventeen stores, eight of them Java runtimes.
 
 ## The command each store gets
 
@@ -43,7 +43,7 @@ A store that refuses because it does not know the authority gets the command tha
 
 A row says when its command needs administrator or root rights, and why. It also says what to watch: a package manager or a runtime update can rewrite a bundle and drop an appended certificate, and a newer JDK brings its own `cacerts`.
 
-certdoctor prints these commands. It never runs them. Each one has placeholders you replace first, named on the row's `replace first:` line.
+Cert Doctor prints these commands. It never runs them. Each one has placeholders you replace first, named on the row's `replace first:` line.
 
 ## When a row points at another
 
@@ -51,7 +51,7 @@ A program that judges by another store says so instead of repeating it. curl bui
 
 ## How the Windows store is asked
 
-The Windows store is asked with every network retrieval switched off. Windows would otherwise fetch a missing certificate from an address written into the certificate by the server you are diagnosing, and certdoctor connects only where you point it. A public root that Windows simply has not downloaded yet is told apart from an authority nobody installed by reading this machine's own copy of Microsoft's root program list.
+The Windows store is asked with every network retrieval switched off. Windows would otherwise fetch a missing certificate from an address written into the certificate by the server you are diagnosing, and Cert Doctor connects only where you point it. A public root that Windows simply has not downloaded yet is told apart from an authority nobody installed by reading this machine's own copy of Microsoft's root program list.
 
 ## Who signed the certificate
 

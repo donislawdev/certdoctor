@@ -2,8 +2,8 @@
 title: Opis wiersza poleceń
 linkTitle: Wiersz poleceń
 slug: wiersz-polecen
-seoTitle: Wiersz poleceń certdoctor - każda flaga
-description: "Każda flaga wiersza poleceń certdoctor: adres, --pac-url, --from, --format, --json, --out, --redact, --quiet, --verbose, limity czasu i pozostałe."
+seoTitle: Wiersz poleceń Cert Doctor - każda flaga
+description: "Każda flaga wiersza poleceń Cert Doctor: adres, --pac-url, --from, --format, --json, --out, --redact, --quiet, --verbose, limity czasu i pozostałe."
 lead: "Każda flaga wiersza poleceń, w grupach i kolejności, w jakiej wypisuje je `certdoctor --help`. Program pisze swoje opisy po angielsku, a tu są przetłumaczone."
 ---
 
@@ -20,7 +20,7 @@ Adres wymaga jawnego schematu `http://` albo `https://`. Bez niego nie da się o
 
 ## Środowisko
 
-`NO_COLOR` ustawiona na dowolną niepustą wartość wyłącza kolory. To jedyna zmienna, która zmienia działanie certdoctor, i zmienia tylko wygląd raportu. Zmienne proxy i magazynów zaufania są czytane jako rzecz do zdiagnozowania, nigdy jako konfiguracja certdoctor.
+`NO_COLOR` ustawiona na dowolną niepustą wartość wyłącza kolory. To jedyna zmienna, która zmienia działanie Cert Doctor, i zmienia tylko wygląd raportu. Zmienne proxy i magazynów zaufania są czytane jako rzecz do zdiagnozowania, nigdy jako konfiguracja Cert Doctor.
 
 ## Kody wyjścia
 

@@ -12,7 +12,7 @@ Obraz ma własny pakiet certyfikatów CA, często starszy albo mniejszy niż hos
 
 ## Skopiuj i uruchom
 
-Wersja certdoctor na Linuksa to jeden statyczny plik bez zależności od biblioteki C, więc działa bez zmian w Alpine, w Ubuntu i w obrazie, w którym nie ma nic innego:
+Wiersz poleceń, `certdoctor`, to na Linuksie jeden statyczny plik bez zależności od biblioteki C, więc działa bez zmian w Alpine, w Ubuntu i w obrazie, w którym nie ma nic innego:
 
 ```
 docker cp certdoctor my-container:/tmp/certdoctor

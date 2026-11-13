@@ -35,7 +35,7 @@ certdoctor https://the-url-that-fails/
 
 `L0` shows which of those variables are set. `L4` shows whether the server sent its whole chain. The trust matrix shows every git, curl, Python, pip and node on the machine, which list each one reads, which of them refuse, and the command that adds the root to each.
 
-If the verdict says the server did not send the issuer of its certificate, the fix belongs on the server, and certdoctor says so: *"this is a fact about the server rather than about this machine."*
+If the verdict says the server did not send the issuer of its certificate, the fix belongs on the server, and Cert Doctor says so: *"this is a fact about the server rather than about this machine."*
 
 ## Fix it
 

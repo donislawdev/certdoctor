@@ -29,7 +29,7 @@ The program sent its request through a proxy, and the proxy refused to pass it o
 certdoctor https://the-url-that-fails/
 ```
 
-`L2` shows every place on the machine that names a proxy - the environment variables, the Windows Internet Settings, the WinHTTP settings and the PAC script - and which one applies to this URL. Then certdoctor asks that proxy whether it accepts the connection without credentials, and when it answers `407`, the report names the authentication schemes it offers.
+`L2` shows every place on the machine that names a proxy - the environment variables, the Windows Internet Settings, the WinHTTP settings and the PAC script - and which one applies to this URL. Then Cert Doctor asks that proxy whether it accepts the connection without credentials, and when it answers `407`, the report names the authentication schemes it offers.
 
 Passwords written into proxy addresses never reach the report: they are cut off where the address is read.
 

@@ -30,7 +30,7 @@ publishDir = "public"
 [languages.en]
   label = "English"
   locale = "en"
-  title = "certdoctor"
+  title = "Cert Doctor"
   weight = 1
   contentDir = "content/en"
   [languages.en.params]
@@ -42,7 +42,7 @@ publishDir = "public"
 [languages.pl]
   label = "Polski"
   locale = "pl"
-  title = "certdoctor"
+  title = "Cert Doctor"
   weight = 2
   contentDir = "content/pl"
   # GitHub Pages serves the 404 page at the root and no other, so a language

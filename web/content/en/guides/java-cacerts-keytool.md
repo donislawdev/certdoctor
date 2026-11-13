@@ -37,11 +37,11 @@ The command uses the `keytool` of the same installation as the `cacerts` it chan
 
 On Windows the command is written for the Command Prompt (`cmd.exe`). In PowerShell, put `&` and a space in front of it.
 
-`keytool -importcert` adds one entry and leaves the rest of the file as it was ([keytool documentation](https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html)). Run certdoctor again afterwards: the row turns to trusted.
+`keytool -importcert` adds one entry and leaves the rest of the file as it was ([keytool documentation](https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html)). Run Cert Doctor again afterwards: the row turns to trusted.
 
 ## When it comes back
 
-A JDK update installs a new `cacerts` and does not carry your certificate across, and every row says so. After an update, run certdoctor again and import into the new installation.
+A JDK update installs a new `cacerts` and does not carry your certificate across, and every row says so. After an update, run Cert Doctor again and import into the new installation.
 
 ## Other JDKs that need it too
 

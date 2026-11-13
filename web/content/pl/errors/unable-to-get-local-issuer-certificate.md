@@ -35,7 +35,7 @@ certdoctor https://adres-ktory-nie-dziala/
 
 `L0` pokazuje, które z tych zmiennych są ustawione. `L4` pokazuje, czy serwer wysłał cały łańcuch. Macierz zaufania pokazuje każdy git, curl, Python, pip i node na maszynie, którą listę czyta każdy z nich, które odmawiają i polecenie, które dodaje certyfikat główny do każdego.
 
-Jeśli werdykt mówi, że serwer nie wysłał wystawcy swojego certyfikatu, naprawa należy do serwera, a certdoctor mówi to wprost: *„this is a fact about the server rather than about this machine.”*
+Jeśli werdykt mówi, że serwer nie wysłał wystawcy swojego certyfikatu, naprawa należy do serwera, a Cert Doctor mówi to wprost: *„this is a fact about the server rather than about this machine.”*
 
 ## Napraw to
 

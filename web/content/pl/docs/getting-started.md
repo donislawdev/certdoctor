@@ -1,8 +1,8 @@
 ---
 title: Pierwsze kroki
 slug: pierwsze-kroki
-seoTitle: Pierwsze kroki - pierwszy raport certdoctor
-description: "Pobierz certdoctor, uruchom go na adresie, który nie działa, i przeczytaj zdanie, które nazywa przyczynę. Potem wypróbuj go na celowo zepsutej stronie."
+seoTitle: Pierwsze kroki - pierwszy raport Cert Doctor
+description: "Pobierz Cert Doctor, uruchom go na adresie, który nie działa, i przeczytaj zdanie, które nazywa przyczynę. Potem wypróbuj go na celowo zepsutej stronie."
 lead: "Od pobrania do zdania, które nazywa przyczynę, w mniej więcej dwie minuty."
 ---
 
@@ -12,7 +12,7 @@ Komputera z Windowsem, Linuksem albo macOS na Apple silicon i adresu, który nie
 
 ## Uruchom go na adresie
 
-Otwórz terminal w folderze z rozpakowanym archiwum i podaj certdoctorowi adres dokładnie taki, jakiego używa program, który nie działa, z `https://` albo `http://` na początku:
+Otwórz terminal w folderze z rozpakowanym archiwum i uruchom Cert Doctor z adresem dokładnie takim, jakiego używa program, który nie działa, z `https://` albo `http://` na początku:
 
 ```
 certdoctor https://api.example.com/
@@ -24,7 +24,7 @@ Schemat jest wymagany. Bez niego nie da się odróżnić nazwy hosta od numeru p
 
 Raport zaczyna się od jednego zdania, które nazywa przyczynę słowami warstwy, która o niej przesądziła. Pod nim jest kod wyjścia, potem każda warstwa z dowodami, a na końcu uwagi o tym, czego nie sprawdzano. Gdy magazyn zaufania odrzuca łańcuch serwera, jego wiersz ma linię `run:` z poleceniem, które dodałoby tam certyfikat. [Czytanie raportu](/docs/read-the-report/) omawia każdą część.
 
-certdoctor wypisuje polecenia. Nigdy ich nie uruchamia. Przeczytaj polecenie, zanim je uruchomisz, i najpierw podstaw to, o co prosi, na przykład `<certificate.pem>`.
+Cert Doctor wypisuje polecenia. Nigdy ich nie uruchamia. Przeczytaj polecenie, zanim je uruchomisz, i najpierw podstaw to, o co prosi, na przykład `<certificate.pem>`.
 
 ## Wypróbuj na zepsutej stronie
 

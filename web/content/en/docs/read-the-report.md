@@ -1,7 +1,7 @@
 ---
 title: Reading a report
-seoTitle: Reading a certdoctor report - verdict, layers, statuses
-description: "What each part of a certdoctor report means: the verdict sentence, the exit code, the six layers, the trust matrix rows and the commands they carry."
+seoTitle: Reading a Cert Doctor report - verdict, layers, statuses
+description: "What each part of a Cert Doctor report means: the verdict sentence, the exit code, the six layers, the trust matrix rows and the commands they carry."
 lead: "The cause first, the numbers after it, the evidence below, and the notes at the end."
 ---
 

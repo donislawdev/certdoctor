@@ -1,9 +1,9 @@
 ---
-title: Pobierz certdoctor
+title: Pobierz Cert Doctor
 linkTitle: Pobierz
 slug: pobierz
-seoTitle: Pobierz certdoctor na Windows, Linux i macOS
-description: "Pobierz certdoctor na Windows, Linux i macOS: wiersz poleceń jako jeden plik bez instalacji i okno na Windows, Linux i macOS."
+seoTitle: Pobierz Cert Doctor na Windows, Linux i macOS
+description: "Pobierz Cert Doctor na Windows, Linux i macOS: wiersz poleceń jako jeden plik bez instalacji i okno na Windows, Linux i macOS."
 lead: "Weź archiwum dla swojego systemu ze [strony wydań](https://github.com/donislawdev/certdoctor/releases/latest) i rozpakuj je. Nic się nie instaluje."
 ---
 

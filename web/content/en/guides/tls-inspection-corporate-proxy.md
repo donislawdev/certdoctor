@@ -28,7 +28,7 @@ The certificate to add is the root at the top of the chain, not the site's own:
 
 - **Ask IT** for the company's root certificate, in PEM (Base-64) form. This is the certificate you can be sure of.
 - **Export it from the Windows store** where IT already installed it: open `certmgr.msc`, find the root under Trusted Root Certification Authorities, and export it as Base-64 encoded X.509.
-- **Compare fingerprints.** The fingerprint in certdoctor's report is what to compare the file you got with, before you trust it.
+- **Compare fingerprints.** The fingerprint in Cert Doctor's report is what to compare the file you got with, before you trust it.
 
 Then use the commands the trust matrix printed for each store that refuses.
 

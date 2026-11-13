@@ -37,11 +37,11 @@ Polecenie używa `keytool` z tej samej instalacji co `cacerts`, który zmienia, 
 
 Na Windowsie polecenie jest napisane dla Wiersza polecenia (`cmd.exe`). W PowerShellu postaw przed nim `&` i spację.
 
-`keytool -importcert` dodaje jeden wpis i zostawia resztę pliku bez zmian ([dokumentacja keytool](https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html)). Uruchom potem certdoctor ponownie: wiersz zmieni się na zaufany.
+`keytool -importcert` dodaje jeden wpis i zostawia resztę pliku bez zmian ([dokumentacja keytool](https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html)). Uruchom potem Cert Doctor ponownie: wiersz zmieni się na zaufany.
 
 ## Gdy problem wraca
 
-Aktualizacja JDK instaluje nowy `cacerts` i nie przenosi twojego certyfikatu, a każdy wiersz to mówi. Po aktualizacji uruchom certdoctor ponownie i zaimportuj do nowej instalacji.
+Aktualizacja JDK instaluje nowy `cacerts` i nie przenosi twojego certyfikatu, a każdy wiersz to mówi. Po aktualizacji uruchom Cert Doctor ponownie i zaimportuj do nowej instalacji.
 
 ## Inne JDK, które też tego potrzebują
 

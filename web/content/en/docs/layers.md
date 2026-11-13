@@ -1,8 +1,8 @@
 ---
 title: What it checks, layer by layer
 linkTitle: The six layers
-seoTitle: What certdoctor checks - DNS, proxy, TCP, TLS, trust
-description: "The six layers of a certdoctor run: environment variables, DNS from every resolver, proxy and PAC, TCP to every address, the TLS chain and the trust matrix."
+seoTitle: What Cert Doctor checks - DNS, proxy, TCP, TLS, trust
+description: "The six layers of a Cert Doctor run: environment variables, DNS from every resolver, proxy and PAC, TCP to every address, the TLS chain and the trust matrix."
 lead: "A connection can fail at six places. A run looks at every one of them, in the order a connection meets them."
 ---
 
@@ -14,7 +14,7 @@ The machine itself: which system, whether it runs inside a container, and which 
 
 {{< variables >}}
 
-They are read as things to diagnose. None of them changes what certdoctor itself does: the only variable it obeys is `NO_COLOR`, and that only changes how the report looks.
+They are read as things to diagnose. None of them changes what Cert Doctor itself does: the only variable it obeys is `NO_COLOR`, and that only changes how the report looks.
 
 In the report, every variable that is set gets a line of its own with its value. The ones that are not set come after them, listed together after a single `not set` label. The `--json` report keeps one entry per variable.
 

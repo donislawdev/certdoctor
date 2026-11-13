@@ -1,7 +1,7 @@
 ---
 title: Reports and formats
-seoTitle: certdoctor reports - Markdown, HTML, JSON and redaction
-description: "Write a certdoctor report as Markdown for a ticket, one self-contained HTML page or JSON, mask host names with --redact, and turn saved JSON into a page later."
+seoTitle: Cert Doctor reports - Markdown, HTML, JSON and redaction
+description: "Write a Cert Doctor report as Markdown for a ticket, one self-contained HTML page or JSON, mask host names with --redact, and turn saved JSON into a page later."
 lead: "One run, four ways to keep what it found, and a mask for the parts that should not leave the building."
 ---
 
@@ -24,7 +24,7 @@ Every format carries the same findings. A report written in one says nothing ano
 certdoctor https://api.example.com/ --format html --out report.html
 ```
 
-This is the only file certdoctor ever writes. If it cannot be written - no space, no permission - the run ends with exit code `6` and says why.
+This is the only file Cert Doctor ever writes. If it cannot be written - no space, no permission - the run ends with exit code `6` and says why.
 
 ## Masking internal names
 

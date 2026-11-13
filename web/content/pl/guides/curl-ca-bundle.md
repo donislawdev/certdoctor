@@ -17,7 +17,7 @@ Dlatego `curl` z System32, ten wewnątrz Git for Windows i ten z menedżera paki
 certdoctor https://adres-ktory-nie-dziala/
 ```
 
-Macierz zaufania ma wiersz dla każdego znalezionego `curl`. certdoctor pyta każdy z nich, jak go zbudowano, przez `curl --version`, i ocenia go według listy, którą czyta ta wersja. curl na Schannel wskazuje wiersz magazynu Windows, zamiast go powtarzać:
+Macierz zaufania ma wiersz dla każdego znalezionego `curl`. Cert Doctor pyta każdy z nich, jak go zbudowano, przez `curl --version`, i ocenia go według listy, którą czyta ta wersja. curl na Schannel wskazuje wiersz magazynu Windows, zamiast go powtarzać:
 
 ```
       curl C:\Windows\system32\curl.exe does NOT trust the presented chain (90 anchors) - it judges

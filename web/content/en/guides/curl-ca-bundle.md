@@ -17,7 +17,7 @@ So the `curl` in System32, the one inside Git for Windows and one from a package
 certdoctor https://the-url-that-fails/
 ```
 
-The trust matrix has a row for every `curl` it finds. certdoctor asks each one how it was built, with `curl --version`, and judges it by the list that build reads. A curl on Schannel points at the Windows store's row rather than repeating it:
+The trust matrix has a row for every `curl` it finds. Cert Doctor asks each one how it was built, with `curl --version`, and judges it by the list that build reads. A curl on Schannel points at the Windows store's row rather than repeating it:
 
 ```
       curl C:\Windows\system32\curl.exe does NOT trust the presented chain (90 anchors) - it judges

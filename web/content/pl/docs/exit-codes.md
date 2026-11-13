@@ -1,8 +1,8 @@
 ---
 title: Kody wyjścia
 slug: kody-wyjscia
-seoTitle: Kody wyjścia certdoctor - co znaczy każde zakończenie
-description: "Kody wyjścia certdoctor: 0 w porządku, 4 znaleziono usterkę, 5 czegoś nie dało się ocenić, oraz kody dla składni, konfiguracji, zapisu i przerwania."
+seoTitle: Kody wyjścia Cert Doctor - co znaczy każde zakończenie
+description: "Kody wyjścia Cert Doctor: 0 w porządku, 4 znaleziono usterkę, 5 czegoś nie dało się ocenić, oraz kody dla składni, konfiguracji, zapisu i przerwania."
 lead: "Każdy sposób zakończenia przebiegu ma własny kod, a zbiór jest kompletny: pipeline może się po nim rozgałęzić."
 ---
 
@@ -10,7 +10,7 @@ lead: "Każdy sposób zakończenia przebiegu ma własny kod, a zbiór jest kompl
 
 ## Które mówią coś o twojej maszynie
 
-`4` i `5` dotyczą maszyny i badanego adresu. `4` znaczy, że przebieg się udał i znalazł co najmniej jedno `FAIL` - coś na drodze do adresu jest nie tak. `5` znaczy, że nie znalazł usterki, ale co najmniej jednej rzeczy nie dało się ocenić, a raport mówi której i dlaczego. Żaden z nich nie znaczy, że zawiódł sam certdoctor: to jest `1`.
+`4` i `5` dotyczą maszyny i badanego adresu. `4` znaczy, że przebieg się udał i znalazł co najmniej jedno `FAIL` - coś na drodze do adresu jest nie tak. `5` znaczy, że nie znalazł usterki, ale co najmniej jednej rzeczy nie dało się ocenić, a raport mówi której i dlaczego. Żaden z nich nie znaczy, że zawiódł sam program: to jest `1`.
 
 ## Ostrzeżenia
 

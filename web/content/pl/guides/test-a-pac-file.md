@@ -28,6 +28,6 @@ certdoctor https://api.example.com/ --pac-url http://wpad.example.com/proxy.pac
 
 ## Co znaczy odpowiedź
 
-- **Proxy** - ten adres idzie przez nie. certdoctor pyta wtedy to proxy, czy chce poświadczeń, i wskazuje [407](/errors/407-proxy-authentication-required/).
+- **Proxy** - ten adres idzie przez nie. Cert Doctor pyta wtedy to proxy, czy chce poświadczeń, i wskazuje [407](/errors/407-proxy-authentication-required/).
 - **`DIRECT`** - ten adres idzie prosto do serwera.
 - **Brak użytecznej odpowiedzi** - raportowany jako `UNKNOWN` z powodem, nigdy jako `DIRECT`, bo zgadywanie „bez proxy” kazałoby ci szukać w złym miejscu.

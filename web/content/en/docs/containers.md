@@ -11,7 +11,7 @@ An image has its own CA bundle, often older or smaller than the host's, and a co
 
 ## Copy it in and run it
 
-The Linux build of certdoctor is one static file with no C library to depend on, so it runs as it is in Alpine, in Ubuntu and in an image with nothing else in it:
+The command line, `certdoctor`, is one static file on Linux with no C library to depend on, so it runs as it is in Alpine, in Ubuntu and in an image with nothing else in it:
 
 ```
 docker cp certdoctor my-container:/tmp/certdoctor

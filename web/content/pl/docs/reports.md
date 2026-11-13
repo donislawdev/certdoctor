@@ -1,8 +1,8 @@
 ---
 title: Raporty i formaty
 slug: raporty
-seoTitle: Raporty certdoctor - Markdown, HTML, JSON i maskowanie
-description: "Zapisz raport certdoctor jako Markdown do zgłoszenia, samodzielną stronę HTML albo JSON, zamaskuj nazwy hostów przez --redact i zrób stronę z JSON-a."
+seoTitle: Raporty Cert Doctor - Markdown, HTML, JSON i maskowanie
+description: "Zapisz raport Cert Doctor jako Markdown do zgłoszenia, samodzielną stronę HTML albo JSON, zamaskuj nazwy hostów przez --redact i zrób stronę z JSON-a."
 lead: "Jeden przebieg, cztery sposoby na zachowanie tego, co znalazł, i maska na to, co nie powinno wyjść poza firmę."
 ---
 
@@ -25,7 +25,7 @@ Każdy format niesie te same ustalenia. Raport w jednym formacie nie pomija nicz
 certdoctor https://api.example.com/ --format html --out report.html
 ```
 
-To jedyny plik, jaki certdoctor kiedykolwiek zapisuje. Jeśli nie da się go zapisać - brak miejsca, brak uprawnień - przebieg kończy się kodem wyjścia `6` i mówi dlaczego.
+To jedyny plik, jaki Cert Doctor kiedykolwiek zapisuje. Jeśli nie da się go zapisać - brak miejsca, brak uprawnień - przebieg kończy się kodem wyjścia `6` i mówi dlaczego.
 
 ## Maskowanie wewnętrznych nazw
 

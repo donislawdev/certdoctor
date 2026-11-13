@@ -1,4 +1,4 @@
-# certdoctor 🩺 - find out why this machine cannot connect to that URL, and what to run to fix it
+# Cert Doctor 🩺 - find out why this machine cannot connect to that URL, and what to run to fix it
 <p align="center">
   <b>Follow me:</b>
   &nbsp
@@ -22,7 +22,7 @@
 ![Platform: macOS](https://img.shields.io/badge/platform-macOS-000000)
 [![Website](https://img.shields.io/badge/website-certdoctor.donislawdev.com-e4573f)](https://certdoctor.donislawdev.com/)
 
-**certdoctor** is a GUI/CLI tool for QA engineers, helpdesk and
+**Cert Doctor** is a GUI/CLI tool for QA engineers, helpdesk and
 DevOps - for anyone who has read `PKIX path building failed` or
 `unable to get local issuer certificate` on a corporate laptop, behind a proxy, or inside a
 container that cannot do what the host does without trouble. Point it at
@@ -30,7 +30,7 @@ the URL that fails. It walks the whole path in one run - DNS, proxy and PAC scri
 then does the part no other tool does: it asks **each trust store on the machine**, one by one,
 whether it trusts what the server presented, and prints the command that would fix each store that
 does not, with the real paths from your machine in it. `curl -v` and `openssl s_client` answer for
-one program. certdoctor answers for the Windows store or the Linux CA bundle, every Java installation,
+one program. Cert Doctor answers for the Windows store or the Linux CA bundle, every Java installation,
 every `git`, every `curl`, every `node`, every Python and the `pip` of each it finds - and tells you
 whether the fault is on this machine at all.
 
@@ -49,7 +49,7 @@ staring at `PKIX path building failed` finds out it exists.
   that JDK, an append to git's own bundle - and say when it needs administrator rights. It prints
   them. It never runs them.
 - **Notice TLS inspection without accusing anyone** - who signed the certificate, how many stores on
-  this machine know that authority, and the product's name when it is one certdoctor recognises.
+  this machine know that authority, and the product's name when it is one Cert Doctor recognises.
 - **Read your proxy settings the way your programs do** - the environment variables, the Windows
   Internet Settings that Edge, Chrome and .NET follow, and the WinHTTP settings that services follow,
   side by side. It runs your PAC script in a sandbox to see where your URL really goes, and asks the
@@ -69,7 +69,7 @@ staring at `PKIX path building failed` finds out it exists.
   address, press Diagnose, read the report and save it as HTML, Markdown or JSON. The window runs the
   command line next to it, so it knows nothing the command line does not.
 
-![certdoctor run against untrusted-root.badssl.com, paged through less: the verdict at the top names
+![Cert Doctor run against untrusted-root.badssl.com, paged through less: the verdict at the top names
 the BadSSL root that the Java stores lack, then the trust matrix shows the system store trusting the
 site, both Java runtimes refusing it, and a keytool command for each](.github/certdoctor-in-action.gif)
 
@@ -85,7 +85,7 @@ and the two Java runtimes in it were never told.*
 ## Try it on a broken site
 
 [badssl.com](https://badssl.com/) keeps deliberately broken HTTPS sites for exactly this. Three of
-them, with the first sentence certdoctor prints at the top of each report:
+them, with the first sentence Cert Doctor prints at the top of each report:
 
 ```
 certdoctor https://incomplete-chain.badssl.com/
@@ -303,7 +303,7 @@ was not looked at. Every flag is in `certdoctor --help`, and
 
 ## Symptoms
 
-If you searched for one of these, you are in the right place. certdoctor is built to tell you
+If you searched for one of these, you are in the right place. Cert Doctor is built to tell you
 **which** of the many possible causes is yours:
 
 ```
@@ -320,7 +320,7 @@ They are the same complaint in the words of different runtimes, and each runtime
 of whom to trust. The browser works. `curl` works. The application does not. That is not a paradox -
 it is several trust stores disagreeing.
 
-| You saw | Usually from | What certdoctor asks |
+| You saw | Usually from | What Cert Doctor asks |
 |---|---|---|
 | `PKIX path building failed`, `unable to find valid certification path` | Java | every JDK and JRE on the machine, each `cacerts` as its own row |
 | `SSL certificate problem: ...` | `curl`, and `git` over HTTPS | every `git` and `curl` it finds, and which store each of them reads |
@@ -331,7 +331,7 @@ it is several trust stores disagreeing.
 | `SELF_SIGNED_CERT_IN_CHAIN` | Node.js, `npm` | every `node` on PATH, by the list that binary trusts - `npm`'s own `cafile` is not read yet |
 
 Each of these messages has [its own page on the website](https://certdoctor.donislawdev.com/errors/):
-what it means, what causes it, and how certdoctor tells you which cause is yours.
+what it means, what causes it, and how Cert Doctor tells you which cause is yours.
 
 ---
 
@@ -373,7 +373,7 @@ leaves you with no certificates to look at, and here the evidence is the product
 
 **The Windows store is asked with every network retrieval switched off.** The address Windows would
 fetch a missing certificate from is written into that certificate by the server you are diagnosing,
-and certdoctor connects only where you pointed it. It tells a public root Windows has simply not
+and Cert Doctor connects only where you pointed it. It tells a public root Windows has simply not
 downloaded yet from an authority nobody installed by reading this machine's own copy of Microsoft's
 root program list.
 
@@ -385,7 +385,7 @@ does not understand what it saw reports `UNKNOWN`. There are exactly four status
 
 ## What makes it different
 
-Other tools look at the certificate. certdoctor looks at **the machine in front of you** and at which
+Other tools look at the certificate. Cert Doctor looks at **the machine in front of you** and at which
 of its runtimes accept that certificate.
 
 It does not compete with these, and links to them on purpose:
@@ -394,7 +394,7 @@ It does not compete with these, and links to them on purpose:
 - [testssl.sh](https://testssl.sh) - audits the TLS configuration of a server
 - [tlstools](https://github.com/frdmn/tlstools) - certificate utilities
 
-When the trouble is the server, they tell you more about the server than certdoctor does. When the
+When the trouble is the server, they tell you more about the server than Cert Doctor does. When the
 trouble is that one runtime on your machine disagrees with another, they cannot see it at all.
 
 ---
@@ -433,7 +433,7 @@ save the JSON with `--out` rather than `>`, which writes UTF-16 there.
 
 ## Tools
 
-Beside the diagnosis, certdoctor has small tools for what stands around a connection. Each reads
+Beside the diagnosis, Cert Doctor has small tools for what stands around a connection. Each reads
 only what you give it, connects to nothing and changes nothing. `certdoctor tool` lists them, and
 the window has them under **Tools** on its bar.
 
@@ -512,7 +512,7 @@ A tool that quietly fails to look at something is worse than one that says what 
 
 ## What it will never do
 
-**certdoctor diagnoses. It does not repair.**
+**Cert Doctor diagnoses. It does not repair.**
 
 It never writes to a trust store, never edits a configuration file, and never runs the commands it
 generates. It prints them for you to read and run yourself. This is a deliberate limit, not a missing
@@ -555,7 +555,7 @@ folder. Delete both when you remove the window.
 ### Why not just `openssl s_client` or `curl -v`?
 
 Both answer for themselves. `openssl s_client` tells you what OpenSSL's store thinks, and the Java
-service that fails does not use that store. certdoctor asks every store it can find the same
+service that fails does not use that store. Cert Doctor asks every store it can find the same
 question about the same chain, and the answer is usually that they disagree.
 
 ### Will it tell me my company is intercepting my traffic?
@@ -596,7 +596,7 @@ both from the binary. The window contains more - Fyne and the libraries it draws
 typeface, and on Windows the Mesa software renderer next to it - and its notices are in
 [THIRD-PARTY-NOTICES-GUI.md](THIRD-PARTY-NOTICES-GUI.md).
 
-Reports and any other output you generate with certdoctor belong to you and are not derivative works
+Reports and any other output you generate with Cert Doctor belong to you and are not derivative works
 of this program.
 
 ---

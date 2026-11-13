@@ -24,7 +24,7 @@ Browsers often hide this, because they remember intermediates they met on other 
 certdoctor https://incomplete-chain.badssl.com/
 ```
 
-`L4` counts the certificates the server presented and checks whether each one's issuer is among them. When the server left one out and no store on the machine could build a path without it, certdoctor names the server:
+`L4` counts the certificates the server presented and checks whether each one's issuer is among them. When the server left one out and no store on the machine could build a path without it, Cert Doctor names the server:
 
 ```
 x The server presented 1 certificate(s) and did not send the issuer of the first one, so only a

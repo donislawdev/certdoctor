@@ -28,7 +28,7 @@ Każda instalacja Javy ma własną listę zaufanych urzędów, plik `cacerts` w 
 certdoctor https://adres-ktory-nie-dziala/
 ```
 
-Macierz zaufania ma jeden wiersz na każdy JDK i JRE, jaki certdoctor znajdzie, każdy z własnym `cacerts`. Pokazuje, które z nich odrzucają łańcuch, podczas gdy magazyn systemu go przyjmuje, kto podpisał certyfikat, a dla każdego odmawiającego JDK dokładne polecenie `keytool` ze ścieżkami tej instalacji:
+Macierz zaufania ma jeden wiersz na każdy JDK i JRE, jaki Cert Doctor znajdzie, każdy z własnym `cacerts`. Pokazuje, które z nich odrzucają łańcuch, podczas gdy magazyn systemu go przyjmuje, kto podpisał certyfikat, a dla każdego odmawiającego JDK dokładne polecenie `keytool` ze ścieżkami tej instalacji:
 
 ```
       java C:\Program Files\OpenJDK\jdk-21.0.2 does NOT trust the presented chain (106
@@ -42,7 +42,7 @@ Jeśli werdykt mówi zamiast tego, że serwer nie wysłał wystawcy swojego cert
 
 Zaimportuj brakujący certyfikat główny do `cacerts` JDK, który pada, jego własnym `keytool`, tak jak wypisuje to wiersz. Podstaw za `<alias>` nazwę wpisu, a za `<certificate.pem>` plik z certyfikatem głównym. Przeprowadza przez to poradnik [Java cacerts i keytool](/guides/java-cacerts-keytool/), razem z tym, skąd wziąć certyfikat.
 
-Potem uruchom certdoctor ponownie: wiersz zmieni się na zaufany, a pozostałe JDK pokażą, czy potrzebują tego samego.
+Potem uruchom Cert Doctor ponownie: wiersz zmieni się na zaufany, a pozostałe JDK pokażą, czy potrzebują tego samego.
 
 ## Czego nie robić
 

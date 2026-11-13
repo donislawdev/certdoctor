@@ -1,8 +1,8 @@
 ---
-title: Download certdoctor
+title: Download Cert Doctor
 linkTitle: Download
-seoTitle: Download certdoctor for Windows, Linux and macOS
-description: "Download certdoctor for Windows, Linux and macOS: the command line as one file with nothing to install, and the window for Windows, Linux and macOS."
+seoTitle: Download Cert Doctor for Windows, Linux and macOS
+description: "Download Cert Doctor for Windows, Linux and macOS: the command line as one file with nothing to install, and the window for Windows, Linux and macOS."
 lead: "Take the archive for your system from the [releases page](https://github.com/donislawdev/certdoctor/releases/latest) and unpack it. There is nothing to install."
 ---
 

@@ -1,8 +1,8 @@
 ---
 title: Command line reference
 linkTitle: Command line
-seoTitle: certdoctor command line - every switch
-description: "Every switch of the certdoctor command line: the URL, --pac-url, --from, --format, --json, --out, --redact, --quiet, --verbose, timeouts and more."
+seoTitle: Cert Doctor command line - every switch
+description: "Every switch of the Cert Doctor command line: the URL, --pac-url, --from, --format, --json, --out, --redact, --quiet, --verbose, timeouts and more."
 lead: "Every switch the command line takes, in the groups and the order `certdoctor --help` prints them."
 ---
 
@@ -19,7 +19,7 @@ The URL needs an explicit `http://` or `https://` scheme. Without one there is n
 
 ## Environment
 
-`NO_COLOR`, set to any non-empty value, turns colour off. It is the only variable that changes what certdoctor does, and it changes only how the report looks. Proxy and trust store variables are read as things to diagnose, never as configuration for certdoctor.
+`NO_COLOR`, set to any non-empty value, turns colour off. It is the only variable that changes what Cert Doctor does, and it changes only how the report looks. Proxy and trust store variables are read as things to diagnose, never as configuration for Cert Doctor.
 
 ## Exit codes
 

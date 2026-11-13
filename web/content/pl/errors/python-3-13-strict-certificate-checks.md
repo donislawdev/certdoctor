@@ -23,7 +23,7 @@ Publiczne urzędy wystawiają certyfikaty, które przechodzą. Certyfikaty zrobi
 certdoctor https://adres-ktory-nie-dziala/
 ```
 
-Każdy Python w PATH ma własny wiersz w macierzy zaufania. Na Pythonie z OpenSSL w wersji 3 certdoctor stosuje te same ścisłe reguły do łańcucha, który zbudowałby OpenSSL, a wiersz nazywa certyfikat i regułę, którą łamie, zamiast samej odmowy. Pozostałe wiersze pokazują, czy ten sam certyfikat główny jest zaufany przez całą resztę, co zwykle jest prawdą.
+Każdy Python w PATH ma własny wiersz w macierzy zaufania. Na Pythonie z OpenSSL w wersji 3 Cert Doctor stosuje te same ścisłe reguły do łańcucha, który zbudowałby OpenSSL, a wiersz nazywa certyfikat i regułę, którą łamie, zamiast samej odmowy. Pozostałe wiersze pokazują, czy ten sam certyfikat główny jest zaufany przez całą resztę, co zwykle jest prawdą.
 
 ## Napraw to
 

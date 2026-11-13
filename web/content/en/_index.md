@@ -1,12 +1,12 @@
 ---
-title: certdoctor
-seoTitle: "certdoctor - why this machine cannot connect to that URL"
+title: Cert Doctor
+seoTitle: "Cert Doctor - why this machine cannot connect to that URL"
 description: "Fix PKIX path building failed, unable to get local issuer certificate and SELF_SIGNED_CERT_IN_CHAIN: one command checks every trust store and prints the fix."
 hero:
   eyebrow: Command line and window
   title: The browser connects.
   turn: Your program does not.
-  lead: "**certdoctor** walks the whole path to the URL that fails - DNS, proxy and PAC script, TCP, TLS - then asks every trust store on this machine whether it trusts what the server sent, and prints the command that fixes each one that does not."
+  lead: "**Cert Doctor** walks the whole path to the URL that fails - DNS, proxy and PAC script, TCP, TLS - then asks every trust store on this machine whether it trusts what the server sent, and prints the command that fixes each one that does not."
   facts:
     - Free and open source, GPL-3.0
     - Changes nothing, no telemetry
@@ -29,7 +29,7 @@ hero:
 run:
   eyebrow: A real run
   title: The cause first, then a command for every store
-  text: "A site whose root no store trusts, checked on a Windows machine with Git and eight Java runtimes. The first sentence names the cause. Below it every store has its own row, and every row that refuses carries the command that would add the root there, with this machine's paths in it. certdoctor prints the commands. It never runs them."
+  text: "A site whose root no store trusts, checked on a Windows machine with Git and eight Java runtimes. The first sentence names the cause. Below it every store has its own row, and every row that refuses carries the command that would add the root there, with this machine's paths in it. Cert Doctor prints the commands. It never runs them."
   caption: Windows, an excerpt
   command: certdoctor https://untrusted-root.badssl.com/
   # An excerpt of a real run on 2026-11-12, cut line for line from what it printed.
@@ -57,7 +57,7 @@ layers:
 errors:
   eyebrow: Error messages
   title: Find the message you saw
-  text: "Each runtime words the same problem in its own way. Every page says what the message means, which causes it has, and how certdoctor tells you which one is yours."
+  text: "Each runtime words the same problem in its own way. Every page says what the message means, which causes it has, and how Cert Doctor tells you which one is yours."
   pages:
     - /errors/pkix-path-building-failed
     - /errors/unable-to-get-local-issuer-certificate

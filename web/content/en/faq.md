@@ -1,16 +1,16 @@
 ---
 title: Questions
-seoTitle: certdoctor FAQ - certificate errors, proxies, trust stores
-description: "Answers about certdoctor: what it does, how it differs from openssl s_client and curl -v, whether it changes anything, whether it needs admin rights, and more."
+seoTitle: Cert Doctor FAQ - certificate errors, proxies, trust stores
+description: "Answers about Cert Doctor: what it does, how it differs from openssl s_client and curl -v, whether it changes anything, whether it needs admin rights, and more."
 lead: "The questions people ask first, answered in the first sentence."
 layout: faq
 faq:
-  - question: What is certdoctor?
+  - question: What is Cert Doctor?
     answer: "A GUI/CLI tool that finds out why this machine cannot connect to a URL and what to run to fix it. It walks DNS, the proxy and PAC script, TCP and TLS, then asks every trust store on the machine whether it trusts the server's certificate chain, and prints the command that fixes each store that does not."
   - question: Why does the browser connect when Java, git or Python does not?
     answer: "Because each of them trusts a different list. A browser on Windows reads the Windows store, Java reads the `cacerts` of its own installation, Git for Windows reads its own bundle and Python reads the list it was set up with. A company root added to one of them does not reach the others. [The trust matrix](/docs/trust-matrix/) shows which list refuses."
   - question: Why not just openssl s_client or curl -v?
-    answer: "Both answer for themselves. `openssl s_client` tells you what OpenSSL's store thinks, and the Java service that fails does not use that store. certdoctor asks every store it finds the same question about the same chain, and the answer is usually that they disagree."
+    answer: "Both answer for themselves. `openssl s_client` tells you what OpenSSL's store thinks, and the Java service that fails does not use that store. Cert Doctor asks every store it finds the same question about the same chain, and the answer is usually that they disagree."
   - question: Does it change anything on my machine?
     answer: "No. It reads, connects where you pointed it, and writes one report if you ask for one with `--out`. The commands it prints are for you to run, after reading them. [Security and privacy](/security/) has the details."
   - question: Does it need administrator rights?

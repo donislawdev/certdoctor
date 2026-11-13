@@ -1,7 +1,7 @@
 ---
 title: Proxy and PAC script
 seoTitle: Which proxy does this URL use? Proxy and PAC diagnosis
-description: "How certdoctor finds which proxy a URL really goes through: environment variables, Windows Internet and WinHTTP settings, the PAC script, and 407 checks."
+description: "How Cert Doctor finds which proxy a URL really goes through: environment variables, Windows Internet and WinHTTP settings, the PAC script, and 407 checks."
 lead: "On one machine the proxy is decided in several places at once, and different programs listen to different ones."
 ---
 
@@ -19,7 +19,7 @@ When these disagree, the report says which program follows which, so a browser t
 
 A proxy auto-configuration script is a small JavaScript program that decides, URL by URL, which proxy to use. Many companies send one host past the proxy everything else goes through, and the only way to know what a script does for your URL is to run it.
 
-certdoctor fetches the script your machine names and runs it in a sandbox to see where it sends this URL. The answer is reported for the script itself, not for the setting that named it, so two settings naming two scripts that disagree are both shown.
+Cert Doctor fetches the script your machine names and runs it in a sandbox to see where it sends this URL. The answer is reported for the script itself, not for the setting that named it, so two settings naming two scripts that disagree are both shown.
 
 A script that answers nothing usable is reported as `UNKNOWN`, never as a direct connection: guessing "no proxy" would send you looking in the wrong place.
 
@@ -33,7 +33,7 @@ certdoctor https://api.example.com/ --pac-url http://wpad.example.com/proxy.pac
 
 ## Does the proxy want credentials
 
-When a proxy applies, certdoctor asks it whether it accepts the connection without credentials. A proxy that answers `407 Proxy Authentication Required` is named, with the authentication schemes it offers. [407 Proxy Authentication Required](/errors/407-proxy-authentication-required/) says what to do about it.
+When a proxy applies, Cert Doctor asks it whether it accepts the connection without credentials. A proxy that answers `407 Proxy Authentication Required` is named, with the authentication schemes it offers. [407 Proxy Authentication Required](/errors/407-proxy-authentication-required/) says what to do about it.
 
 ## Passwords in proxy addresses
 

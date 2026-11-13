@@ -1,8 +1,8 @@
 ---
 title: Czytanie raportu
 slug: czytanie-raportu
-seoTitle: Jak czytać raport certdoctor - werdykt, warstwy, statusy
-description: "Co znaczy każda część raportu certdoctor: zdanie z werdyktem, kod wyjścia, sześć warstw, wiersze macierzy zaufania i polecenia, które niosą."
+seoTitle: Jak czytać raport Cert Doctor - werdykt, warstwy, statusy
+description: "Co znaczy każda część raportu Cert Doctor: zdanie z werdyktem, kod wyjścia, sześć warstw, wiersze macierzy zaufania i polecenia, które niosą."
 lead: "Najpierw przyczyna, za nią liczby, niżej dowody, a na końcu uwagi."
 ---
 

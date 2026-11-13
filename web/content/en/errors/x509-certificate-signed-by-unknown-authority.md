@@ -24,7 +24,7 @@ Go's TLS library verifies the server's chain against the platform's trust store:
 
 ## Find which one is yours
 
-Run certdoctor where the program fails - on the host, or inside the container:
+Run Cert Doctor where the program fails - on the host, or inside the container:
 
 ```
 certdoctor https://registry.example.com/

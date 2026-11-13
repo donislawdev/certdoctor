@@ -33,7 +33,7 @@ To nie znaczy, że serwer ma źle skonfigurowany, domowej roboty certyfikat, cho
 certdoctor https://adres-ktory-nie-dziala/
 ```
 
-Macierz zaufania mówi, kto podpisał certyfikat i ile magazynów na tej maszynie ma ten urząd. Certyfikat główny, który ma magazyn Windows, a nie mają node i git, to certyfikat, który dotarł tylko do części maszyny. Gdy podpisujący jest produktem do inspekcji, który certdoctor rozpoznaje, raport go nazywa.
+Macierz zaufania mówi, kto podpisał certyfikat i ile magazynów na tej maszynie ma ten urząd. Certyfikat główny, który ma magazyn Windows, a nie mają node i git, to certyfikat, który dotarł tylko do części maszyny. Gdy podpisujący jest produktem do inspekcji, który Cert Doctor rozpoznaje, raport go nazywa.
 
 Każdy wiersz node jest oceniany według listy, której ufa ta binarka `node`, a jego polecenie zależy od tego, co domknęłoby łańcuch: włączenia własnej listy systemu, jeśli ma ona ten certyfikat główny, albo dodania go do pliku wskazanego przez `NODE_EXTRA_CA_CERTS`.
 
@@ -46,4 +46,4 @@ Każdy wiersz node jest oceniany według listy, której ufa ta binarka `node`, a
 
 ## Czego nie robić
 
-`npm config set strict-ssl false` i `NODE_TLS_REJECT_UNAUTHORIZED=0` wyłączają weryfikację dla wszystkiego, z czym łączy się ten proces. certdoctor czyta `NODE_TLS_REJECT_UNAUTHORIZED` w `L0`, więc raport pokazuje, gdy ktoś już to zrobił.
+`npm config set strict-ssl false` i `NODE_TLS_REJECT_UNAUTHORIZED=0` wyłączają weryfikację dla wszystkiego, z czym łączy się ten proces. Cert Doctor czyta `NODE_TLS_REJECT_UNAUTHORIZED` w `L0`, więc raport pokazuje, gdy ktoś już to zrobił.

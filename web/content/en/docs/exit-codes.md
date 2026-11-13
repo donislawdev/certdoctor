@@ -1,7 +1,7 @@
 ---
 title: Exit codes
-seoTitle: certdoctor exit codes - what each ending means
-description: "The exit codes of certdoctor: 0 OK, 4 a failure was found, 5 something could not be assessed, and the codes for usage, configuration, output and interruption."
+seoTitle: Cert Doctor exit codes - what each ending means
+description: "The exit codes of Cert Doctor: 0 OK, 4 a failure was found, 5 something could not be assessed, and the codes for usage, configuration, output and interruption."
 lead: "Every way a run can end has its own code, and the set is complete: a pipeline can branch on it."
 ---
 
@@ -9,7 +9,7 @@ lead: "Every way a run can end has its own code, and the set is complete: a pipe
 
 ## Which of them say something about your machine
 
-`4` and `5` are about the machine and the URL under test. `4` means the run succeeded and found at least one `FAIL` - something on the path to the URL is wrong. `5` means it found no failure, but at least one thing could not be assessed, and the report says which and why. Neither means certdoctor itself went wrong: that is `1`.
+`4` and `5` are about the machine and the URL under test. `4` means the run succeeded and found at least one `FAIL` - something on the path to the URL is wrong. `5` means it found no failure, but at least one thing could not be assessed, and the report says which and why. Neither means the program itself went wrong: that is `1`.
 
 ## Warnings
 

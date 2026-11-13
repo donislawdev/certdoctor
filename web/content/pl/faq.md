@@ -1,17 +1,17 @@
 ---
 title: Pytania
 slug: pytania
-seoTitle: certdoctor FAQ - błędy certyfikatów, proxy, magazyny
-description: "Odpowiedzi o certdoctor: co robi, czym różni się od openssl s_client i curl -v, czy cokolwiek zmienia, czy wymaga uprawnień administratora i więcej."
+seoTitle: Cert Doctor FAQ - błędy certyfikatów, proxy, magazyny
+description: "Odpowiedzi o Cert Doctor: co robi, czym różni się od openssl s_client i curl -v, czy cokolwiek zmienia, czy wymaga uprawnień administratora i więcej."
 lead: "Pytania, które ludzie zadają najpierw, z odpowiedzią w pierwszym zdaniu."
 layout: faq
 faq:
-  - question: Co to jest certdoctor?
+  - question: Co to jest Cert Doctor?
     answer: "Narzędzie GUI/CLI, które ustala, dlaczego ta maszyna nie łączy się z adresem i co uruchomić, żeby to naprawić. Przechodzi DNS, proxy i skrypt PAC, TCP i TLS, a potem pyta każdy magazyn zaufania na maszynie, czy ufa łańcuchowi certyfikatów serwera, i wypisuje polecenie, które naprawia każdy magazyn, który nie ufa."
   - question: Dlaczego przeglądarka się łączy, a Java, git albo Python nie?
     answer: "Bo każde z nich ufa innej liście. Przeglądarka na Windowsie czyta magazyn Windows, Java czyta `cacerts` własnej instalacji, Git for Windows czyta własny pakiet, a Python listę, z którą go skonfigurowano. Firmowy certyfikat główny dodany do jednej z nich nie trafia do pozostałych. [Macierz zaufania](/docs/trust-matrix/) pokazuje, która lista odmawia."
   - question: Dlaczego nie wystarczy openssl s_client albo curl -v?
-    answer: "Oba odpowiadają za siebie. `openssl s_client` mówi, co myśli magazyn OpenSSL, a usługa w Javie, która pada, z tego magazynu nie korzysta. certdoctor zadaje każdemu znalezionemu magazynowi to samo pytanie o ten sam łańcuch, a odpowiedź zwykle brzmi: nie zgadzają się."
+    answer: "Oba odpowiadają za siebie. `openssl s_client` mówi, co myśli magazyn OpenSSL, a usługa w Javie, która pada, z tego magazynu nie korzysta. Cert Doctor zadaje każdemu znalezionemu magazynowi to samo pytanie o ten sam łańcuch, a odpowiedź zwykle brzmi: nie zgadzają się."
   - question: Czy zmienia cokolwiek na mojej maszynie?
     answer: "Nie. Czyta, łączy się tam, gdzie go skierujesz, i zapisuje jeden raport, jeśli poprosisz o niego przez `--out`. Polecenia, które wypisuje, są do uruchomienia przez ciebie, po przeczytaniu. Szczegóły na stronie [bezpieczeństwo i prywatność](/security/)."
   - question: Czy wymaga uprawnień administratora?

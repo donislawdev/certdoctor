@@ -1,8 +1,8 @@
 ---
 title: Check what you downloaded
 linkTitle: Verify a download
-seoTitle: Verify a certdoctor download - checksums and attestation
-description: "Check a certdoctor archive against the release's SHA-256 list, and prove where it came from with the signed bill of materials GitHub attests."
+seoTitle: Verify a Cert Doctor download - checksums and attestation
+description: "Check a Cert Doctor archive against the release's SHA-256 list, and prove where it came from with the signed bill of materials GitHub attests."
 lead: "Two questions: is this the file the release published, and was the release made from this repository?"
 ---
 

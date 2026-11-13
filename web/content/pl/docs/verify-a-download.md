@@ -1,8 +1,8 @@
 ---
 title: Sprawdź pobrany plik
 slug: sprawdz-pobrany-plik
-seoTitle: Sprawdź pobrany certdoctor - sumy kontrolne i atestacja
-description: "Sprawdź archiwum certdoctor z listą SHA-256 wydania i udowodnij, skąd pochodzi, podpisanym przez GitHuba zestawieniem składników."
+seoTitle: Sprawdź pobrany Cert Doctor - sumy kontrolne i atestacja
+description: "Sprawdź archiwum Cert Doctor z listą SHA-256 wydania i udowodnij, skąd pochodzi, podpisanym przez GitHuba zestawieniem składników."
 lead: "Dwa pytania: czy to plik, który opublikowało wydanie, i czy wydanie zbudowano z tego repozytorium?"
 ---
 

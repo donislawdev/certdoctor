@@ -1,5 +1,5 @@
 name: Question or problem
-description: Ask about using certdoctor or reading its report, or report something that fits no other form
+description: Ask about using Cert Doctor or reading its report, or report something that fits no other form
 labels: ["question"]
 body:
   - type: markdown
@@ -13,7 +13,7 @@ body:
     id: question
     attributes:
       label: What are you trying to do?
-      description: The connection that fails, what certdoctor said, and what you have tried so far.
+      description: The connection that fails, what Cert Doctor said, and what you have tried so far.
     validations:
       required: true
   - type: textarea

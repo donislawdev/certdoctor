@@ -3,7 +3,7 @@ title: Nazwa hosta nie pasuje do certyfikatu
 slug: nazwa-hosta-nie-pasuje-do-certyfikatu
 seoTitle: "Niezgodna nazwa hosta: certyfikat SSL dla innej nazwy"
 description: "no alternative certificate subject name matches target host name, ERR_TLS_CERT_ALTNAME_INVALID i Hostname mismatch: dlaczego nazwa i certyfikat się różnią."
-lead: "Certyfikat jest ważny, ale nie dla nazwy z adresu. Żaden magazyn zaufania tego nie naprawi, a certdoctor mówi to, zanim zapyta którykolwiek."
+lead: "Certyfikat jest ważny, ale nie dla nazwy z adresu. Żaden magazyn zaufania tego nie naprawi, a Cert Doctor mówi to, zanim zapyta którykolwiek."
 messages:
   - from: curl, git
     text: "SSL: no alternative certificate subject name matches target host name 'wrong.host.badssl.com'"

@@ -25,7 +25,7 @@ Przeglądarki często to ukrywają, bo pamiętają certyfikaty pośrednie spotka
 certdoctor https://incomplete-chain.badssl.com/
 ```
 
-`L4` liczy certyfikaty, które pokazał serwer, i sprawdza, czy wystawca każdego z nich jest wśród nich. Gdy serwer jakiś pominął i żaden magazyn na maszynie nie zbudował bez niego ścieżki, certdoctor wskazuje serwer:
+`L4` liczy certyfikaty, które pokazał serwer, i sprawdza, czy wystawca każdego z nich jest wśród nich. Gdy serwer jakiś pominął i żaden magazyn na maszynie nie zbudował bez niego ścieżki, Cert Doctor wskazuje serwer:
 
 ```
 x The server presented 1 certificate(s) and did not send the issuer of the first one, so only a

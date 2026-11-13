@@ -1,14 +1,14 @@
 ---
 title: Bezpieczeństwo i prywatność
 slug: bezpieczenstwo
-seoTitle: Bezpieczeństwo - czego certdoctor nigdy nie robi
-description: "certdoctor niczego nie zmienia na maszynie, nie uruchamia napraw, łączy się tylko tam, gdzie wskażesz, zawsze maskuje poświadczenia i nie wymaga administratora."
+seoTitle: Bezpieczeństwo - czego Cert Doctor nigdy nie robi
+description: "Cert Doctor nic nie zmienia na maszynie, nie uruchamia napraw, łączy się tylko tam, gdzie wskażesz, zawsze maskuje poświadczenia i nie wymaga administratora."
 lead: "Narzędzie, które uruchamiasz tam, gdzie połączenia padają, widzi wewnętrzne nazwy, ścieżki i serwery proxy. Oto obietnice, których dotrzymuje."
 ---
 
 ## Niczego nie zmienia
 
-certdoctor nigdy nie zapisuje do magazynu zaufania, nigdy nie edytuje pliku konfiguracyjnego i nigdy nie uruchamia poleceń, które wypisuje. Jedyny plik, jaki zapisuje, to raport, pod ścieżką podaną w `--out`. Narzędzie diagnostyczne, które po cichu zmienia magazyny zaufania, byłoby narzędziem, któremu nikt nie powinien dawać uprawnień administratora.
+Cert Doctor nigdy nie zapisuje do magazynu zaufania, nigdy nie edytuje pliku konfiguracyjnego i nigdy nie uruchamia poleceń, które wypisuje. Jedyny plik, jaki zapisuje, to raport, pod ścieżką podaną w `--out`. Narzędzie diagnostyczne, które po cichu zmienia magazyny zaufania, byłoby narzędziem, któremu nikt nie powinien dawać uprawnień administratora.
 
 Okno zachowuje jedno własne ustawienie, folder, do którego ostatnio zapisano raport. Gdzie, mówi opis [okna](/docs/window/).
 
@@ -18,7 +18,7 @@ Każde polecenie w raporcie jest do przeczytania, dopasowania i uruchomienia prz
 
 ## Łączy się tylko tam, gdzie wskażesz
 
-Przebieg łączy się z podanym adresem, adresami IP, na które się rozwiązuje, skonfigurowanymi serwerami DNS, twoimi proxy i skryptem PAC wskazanym przez maszynę. Z niczym więcej: bez telemetrii, bez sprawdzania aktualizacji, bez jakiegokolwiek raportowania. Na Windowsie magazyn zaufania jest pytany z wyłączonym każdym pobieraniem z sieci, więc nawet Windows nie pobiera niczego w imieniu certdoctor.
+Przebieg łączy się z podanym adresem, adresami IP, na które się rozwiązuje, skonfigurowanymi serwerami DNS, twoimi proxy i skryptem PAC wskazanym przez maszynę. Z niczym więcej: bez telemetrii, bez sprawdzania aktualizacji, bez jakiegokolwiek raportowania. Na Windowsie magazyn zaufania jest pytany z wyłączonym każdym pobieraniem z sieci, więc nawet Windows nie pobiera niczego w imieniu Cert Doctor.
 
 ## Poświadczenia nigdy nie trafiają do raportu
 
@@ -30,7 +30,7 @@ Działa jako ten, kto go uruchomił, a raport zapisuje, z jakimi uprawnieniami d
 
 ## Co uruchamia
 
-Żeby dowiedzieć się, czemu ufają niektóre środowiska, certdoctor uruchamia ich własne programy i czyta odpowiedź: `node` i `python` z własnym, stałym skryptem oraz `curl --version`, żeby zobaczyć, jak zbudowano ten curl. Te programy startują bez zmiennych środowiskowych, które kazałyby im wczytać inny kod albo zapisywać pliki.
+Żeby dowiedzieć się, czemu ufają niektóre środowiska, Cert Doctor uruchamia ich własne programy i czyta odpowiedź: `node` i `python` z własnym, stałym skryptem oraz `curl --version`, żeby zobaczyć, jak zbudowano ten curl. Te programy startują bez zmiennych środowiskowych, które kazałyby im wczytać inny kod albo zapisywać pliki.
 
 ## Zgłaszanie podatności
 

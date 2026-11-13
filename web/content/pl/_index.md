@@ -1,12 +1,12 @@
 ---
-title: certdoctor
-seoTitle: "certdoctor - dlaczego ta maszyna nie łączy się z adresem"
+title: Cert Doctor
+seoTitle: "Cert Doctor - dlaczego ta maszyna nie łączy się z adresem"
 description: "Napraw PKIX path building failed, unable to get local issuer certificate i SELF_SIGNED_CERT_IN_CHAIN: jedno polecenie sprawdza każdy magazyn zaufania."
 hero:
   eyebrow: Wiersz poleceń i okno
   title: Przeglądarka się łączy.
   turn: Twój program nie.
-  lead: "**certdoctor** przechodzi całą drogę do adresu, który nie działa - DNS, proxy i skrypt PAC, TCP, TLS - a potem pyta każdy magazyn zaufania na tej maszynie, czy ufa temu, co przysłał serwer, i wypisuje polecenie, które naprawia każdy magazyn, który nie ufa."
+  lead: "**Cert Doctor** przechodzi całą drogę do adresu, który nie działa - DNS, proxy i skrypt PAC, TCP, TLS - a potem pyta każdy magazyn zaufania na tej maszynie, czy ufa temu, co przysłał serwer, i wypisuje polecenie, które naprawia każdy magazyn, który nie ufa."
   facts:
     - Darmowy i otwarty, GPL-3.0
     - Niczego nie zmienia, bez telemetrii
@@ -29,7 +29,7 @@ hero:
 run:
   eyebrow: Prawdziwy przebieg
   title: Najpierw przyczyna, potem polecenie dla każdego magazynu
-  text: "Strona, której certyfikatowi głównemu nie ufa żaden magazyn, sprawdzona na Windowsie z Gitem i ośmioma środowiskami Javy. Pierwsze zdanie nazywa przyczynę. Pod nim każdy magazyn ma własny wiersz, a każdy wiersz z odmową niesie polecenie, które dodałoby tam certyfikat główny, ze ścieżkami z tej maszyny. certdoctor wypisuje polecenia. Nigdy ich nie uruchamia."
+  text: "Strona, której certyfikatowi głównemu nie ufa żaden magazyn, sprawdzona na Windowsie z Gitem i ośmioma środowiskami Javy. Pierwsze zdanie nazywa przyczynę. Pod nim każdy magazyn ma własny wiersz, a każdy wiersz z odmową niesie polecenie, które dodałoby tam certyfikat główny, ze ścieżkami z tej maszyny. Cert Doctor wypisuje polecenia. Nigdy ich nie uruchamia."
   caption: Windows, fragment
   command: certdoctor https://untrusted-root.badssl.com/
   # Fragment prawdziwego przebiegu z 2026-11-12, wycięty linia po linii z tego, co wypisał.
@@ -57,7 +57,7 @@ layers:
 errors:
   eyebrow: Komunikaty błędów
   title: Znajdź komunikat, który widzisz
-  text: "Każde środowisko opisuje ten sam problem po swojemu. Każda strona mówi, co znaczy komunikat, jakie ma przyczyny i jak certdoctor ustala, która dotyczy ciebie."
+  text: "Każde środowisko opisuje ten sam problem po swojemu. Każda strona mówi, co znaczy komunikat, jakie ma przyczyny i jak Cert Doctor ustala, która dotyczy ciebie."
   pages:
     - /errors/pkix-path-building-failed
     - /errors/unable-to-get-local-issuer-certificate

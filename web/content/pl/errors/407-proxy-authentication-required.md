@@ -29,7 +29,7 @@ Program wysłał żądanie przez proxy, a proxy odmówiło przekazania go dalej 
 certdoctor https://adres-ktory-nie-dziala/
 ```
 
-`L2` pokazuje każde miejsce na maszynie, które wskazuje proxy - zmienne środowiskowe, ustawienia internetowe Windows, ustawienia WinHTTP i skrypt PAC - i które z nich dotyczy tego adresu. Potem certdoctor pyta to proxy, czy przyjmie połączenie bez poświadczeń, a gdy odpowie `407`, raport wymienia metody uwierzytelniania, które oferuje.
+`L2` pokazuje każde miejsce na maszynie, które wskazuje proxy - zmienne środowiskowe, ustawienia internetowe Windows, ustawienia WinHTTP i skrypt PAC - i które z nich dotyczy tego adresu. Potem Cert Doctor pyta to proxy, czy przyjmie połączenie bez poświadczeń, a gdy odpowie `407`, raport wymienia metody uwierzytelniania, które oferuje.
 
 Hasła wpisane w adresy proxy nigdy nie trafiają do raportu: są odcinane w miejscu, w którym adres jest czytany.
 

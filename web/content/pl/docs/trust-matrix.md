@@ -2,7 +2,7 @@
 title: Macierz zaufania
 slug: macierz-zaufania
 seoTitle: Macierz zaufania - które magazyny na tej maszynie odmawiają
-description: "certdoctor pyta każdy magazyn zaufania na maszynie - Windows, pakiet Linuksa, każdy JDK, git, curl, node, Python i pip - i wypisuje naprawę dla każdego."
+description: "Cert Doctor pyta każdy magazyn zaufania na maszynie - Windows, pakiet Linuksa, każdy JDK, git, curl, node, Python i pip - i wypisuje naprawę dla każdego."
 lead: "Przeglądarka działa, curl działa, aplikacja nie. To kilka magazynów zaufania, które się nie zgadzają, a macierz zaufania pokazuje które."
 ---
 
@@ -27,7 +27,7 @@ Jeden wiersz na magazyn, a nie na środowisko:
 | `python` | każdy Python w PATH, według listy, której ufa jego moduł `ssl` |
 | `pip` | `pip` każdego Pythona, według jego własnej reguły |
 
-Raport wymienia rodziny, o które pytał, więc brakujący wiersz zawsze znaczy, że nikt nie patrzył, a nigdy, że magazyn się zgodził. Na maszynie, na której powstał certdoctor, jeden przebieg w listopadzie 2026 przeczytał siedemnaście magazynów, w tym osiem środowisk Javy.
+Raport wymienia rodziny, o które pytał, więc brakujący wiersz zawsze znaczy, że nikt nie patrzył, a nigdy, że magazyn się zgodził. Na maszynie, na której powstał Cert Doctor, jeden przebieg w listopadzie 2026 przeczytał siedemnaście magazynów, w tym osiem środowisk Javy.
 
 ## Polecenie dla każdego magazynu
 
@@ -44,7 +44,7 @@ Magazyn, który odmawia, bo nie zna urzędu certyfikacji, dostaje polecenie, kt�
 
 Wiersz mówi, kiedy jego polecenie wymaga uprawnień administratora albo roota, i dlaczego. Mówi też, na co uważać: menedżer pakietów albo aktualizacja środowiska może przepisać pakiet i zgubić dopisany certyfikat, a nowszy JDK przynosi własny `cacerts`.
 
-certdoctor wypisuje te polecenia. Nigdy ich nie uruchamia. Każde ma miejsca do podstawienia, wymienione w linii `replace first:` wiersza.
+Cert Doctor wypisuje te polecenia. Nigdy ich nie uruchamia. Każde ma miejsca do podstawienia, wymienione w linii `replace first:` wiersza.
 
 ## Gdy wiersz wskazuje inny
 
@@ -52,7 +52,7 @@ Program, który ocenia według innego magazynu, mówi to, zamiast go powtarzać.
 
 ## Jak pytany jest magazyn Windows
 
-Magazyn Windows jest pytany z wyłączonym każdym pobieraniem z sieci. Windows pobrałby inaczej brakujący certyfikat spod adresu wpisanego w certyfikat przez serwer, który właśnie diagnozujesz, a certdoctor łączy się tylko tam, gdzie go skierujesz. Publiczny certyfikat główny, którego Windows po prostu jeszcze nie pobrał, jest odróżniany od urzędu, którego nikt nie zainstalował, na podstawie kopii listy programu certyfikatów głównych Microsoftu, którą ma ta maszyna.
+Magazyn Windows jest pytany z wyłączonym każdym pobieraniem z sieci. Windows pobrałby inaczej brakujący certyfikat spod adresu wpisanego w certyfikat przez serwer, który właśnie diagnozujesz, a Cert Doctor łączy się tylko tam, gdzie go skierujesz. Publiczny certyfikat główny, którego Windows po prostu jeszcze nie pobrał, jest odróżniany od urzędu, którego nikt nie zainstalował, na podstawie kopii listy programu certyfikatów głównych Microsoftu, którą ma ta maszyna.
 
 ## Kto podpisał certyfikat
 

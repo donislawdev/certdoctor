@@ -24,7 +24,7 @@ Biblioteka TLS języka Go weryfikuje łańcuch serwera w magazynie zaufania plat
 
 ## Ustal, która dotyczy ciebie
 
-Uruchom certdoctor tam, gdzie program pada - na hoście albo w kontenerze:
+Uruchom Cert Doctor tam, gdzie program pada - na hoście albo w kontenerze:
 
 ```
 certdoctor https://registry.example.com/

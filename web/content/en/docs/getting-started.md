@@ -1,7 +1,7 @@
 ---
 title: Getting started
-seoTitle: Getting started - your first certdoctor report
-description: "Download certdoctor, run it against the URL that fails, and read the sentence that names the cause. Then try it on a deliberately broken site."
+seoTitle: Getting started - your first Cert Doctor report
+description: "Download Cert Doctor, run it against the URL that fails, and read the sentence that names the cause. Then try it on a deliberately broken site."
 lead: "From the download to the sentence that names the cause in about two minutes."
 ---
 
@@ -11,7 +11,7 @@ A computer with Windows, Linux or macOS on Apple silicon, and the URL that fails
 
 ## Run it against the URL
 
-Open a terminal where the archive was unpacked and give certdoctor the address exactly as the failing program uses it, with `https://` or `http://` in front:
+Open a terminal where the archive was unpacked and give Cert Doctor the address exactly as the failing program uses it, with `https://` or `http://` in front:
 
 ```
 certdoctor https://api.example.com/
@@ -23,7 +23,7 @@ The scheme is required. Without it there is no way to tell a host name from a po
 
 The report opens with one sentence naming the cause, in the words of the layer that decided it. Below it is the exit code, then every layer with its evidence, then the notes saying what was not looked at. When a trust store refuses the server's chain, its row carries a `run:` line with the command that would add the certificate there. [Reading a report](/docs/read-the-report/) goes through every part.
 
-certdoctor prints the commands. It never runs them. Read a command before you run it, and replace what it asks you to replace first, such as `<certificate.pem>`.
+Cert Doctor prints the commands. It never runs them. Read a command before you run it, and replace what it asks you to replace first, such as `<certificate.pem>`.
 
 ## Try it on a broken site
 

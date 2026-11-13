@@ -28,7 +28,7 @@ Every Java installation carries its own list of trusted authorities, the `cacert
 certdoctor https://the-url-that-fails/
 ```
 
-The trust matrix has one row for every JDK and JRE certdoctor finds, each with its own `cacerts`. It shows which of them refuse the chain while the system store accepts it, who signed the certificate, and, for each refusing JDK, the exact `keytool` command with that installation's paths:
+The trust matrix has one row for every JDK and JRE Cert Doctor finds, each with its own `cacerts`. It shows which of them refuse the chain while the system store accepts it, who signed the certificate, and, for each refusing JDK, the exact `keytool` command with that installation's paths:
 
 ```
       java C:\Program Files\OpenJDK\jdk-21.0.2 does NOT trust the presented chain (106
@@ -42,7 +42,7 @@ If the verdict instead says the server did not send the issuer of its certificat
 
 Import the missing root into the `cacerts` of the JDK that fails, with that JDK's own `keytool`, as the row prints it. Replace `<alias>` with a name for the entry and `<certificate.pem>` with the file holding the root. [Add a certificate to Java cacerts](/guides/java-cacerts-keytool/) goes through it, including where to get the certificate.
 
-Then run certdoctor again: the row turns to trusted, and the other JDKs show whether they need the same.
+Then run Cert Doctor again: the row turns to trusted, and the other JDKs show whether they need the same.
 
 ## What not to do
 

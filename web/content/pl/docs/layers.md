@@ -2,8 +2,8 @@
 title: Co sprawdza, warstwa po warstwie
 linkTitle: Sześć warstw
 slug: warstwy
-seoTitle: Co sprawdza certdoctor - DNS, proxy, TCP, TLS, zaufanie
-description: "Sześć warstw przebiegu certdoctor: zmienne środowiskowe, DNS z każdego serwera, proxy i PAC, TCP do każdego adresu, łańcuch TLS i macierz zaufania."
+seoTitle: Co sprawdza Cert Doctor - DNS, proxy, TCP, TLS, zaufanie
+description: "Sześć warstw przebiegu Cert Doctor: zmienne środowiskowe, DNS z każdego serwera, proxy i PAC, TCP do każdego adresu, łańcuch TLS i macierz zaufania."
 lead: "Połączenie może paść w sześciu miejscach. Przebieg patrzy na każde z nich, w kolejności, w jakiej spotyka je połączenie."
 ---
 
@@ -15,7 +15,7 @@ Sama maszyna: jaki system, czy działa w kontenerze i które zmienne środowisko
 
 {{< variables >}}
 
-Są czytane jako rzecz do zdiagnozowania. Żadna nie zmienia tego, co robi sam certdoctor: jedyna zmienna, której słucha, to `NO_COLOR`, a ona zmienia tylko wygląd raportu.
+Są czytane jako rzecz do zdiagnozowania. Żadna nie zmienia tego, co robi sam Cert Doctor: jedyna zmienna, której słucha, to `NO_COLOR`, a ona zmienia tylko wygląd raportu.
 
 W raporcie każda ustawiona zmienna ma własny wiersz ze swoją wartością. Nieustawione idą po nich, wypisane razem za jedną etykietą `not set`. Raport `--json` zachowuje osobny wpis dla każdej zmiennej.
 

@@ -29,7 +29,7 @@ Dodać trzeba certyfikat główny na szczycie łańcucha, a nie certyfikat samej
 
 - **Poproś dział IT** o firmowy certyfikat główny w formacie PEM (Base-64). Pochodzenie takiego certyfikatu nie budzi wątpliwości.
 - **Wyeksportuj go z magazynu Windows**, gdzie dział IT już go zainstalował: otwórz `certmgr.msc`, znajdź certyfikat główny w Zaufanych głównych urzędach certyfikacji i wyeksportuj go jako X.509 kodowany Base-64.
-- **Porównaj odciski palców.** Odcisk palca z raportu certdoctor to to, z czym porównujesz otrzymany plik, zanim mu zaufasz.
+- **Porównaj odciski palców.** Odcisk palca z raportu Cert Doctor to to, z czym porównujesz otrzymany plik, zanim mu zaufasz.
 
 Potem użyj poleceń, które macierz zaufania wypisała dla każdego magazynu z odmową.
 

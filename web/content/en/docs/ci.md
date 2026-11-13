@@ -1,7 +1,7 @@
 ---
 title: Using it in CI
-seoTitle: certdoctor in CI - exit codes and JSON for pipelines
-description: "Check that a build agent can reach a registry or an API: certdoctor exit codes, JSON validated against its schema, and a report kept as an artifact."
+seoTitle: Cert Doctor in CI - exit codes and JSON for pipelines
+description: "Check that a build agent can reach a registry or an API: Cert Doctor exit codes, JSON validated against its schema, and a report kept as an artifact."
 lead: "Can this build agent reach the registry? One step answers it, with an exit code a pipeline can branch on."
 ---
 

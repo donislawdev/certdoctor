@@ -93,7 +93,7 @@ other = "Poradniki"
 other = "Zaufanie"
 
 [picture_alt]
-other = "certdoctor - przeglądarka się łączy, twój program nie: prawdziwy przebieg, w którym magazyn systemowy, git i curl ufają stronie, dwie Javy i Python jej odmawiają, a obok polecenie keytool, które naprawia Javę"
+other = "Cert Doctor - przeglądarka się łączy, twój program nie: prawdziwy przebieg, w którym magazyn systemowy, git i curl ufają stronie, dwie Javy i Python jej odmawiają, a obok polecenie keytool, które naprawia Javę"
 
 [not_found_title]
 other = "Nie ma tu strony"
@@ -241,7 +241,7 @@ other = "sama maszyna - system operacyjny, kontener, VPN, zegar i zmienne środo
 other = "Rozwiązywanie nazw"
 
 [layer_L1_summary]
-other = "na co rozwiązuje się nazwa, widziane tak, jak widzi to system, i tak, jak widzi to certdoctor"
+other = "na co rozwiązuje się nazwa, widziane tak, jak widzi to system, i tak, jak widzi to Cert Doctor"
 
 [layer_L2_name]
 other = "Proxy"

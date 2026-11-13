@@ -22,7 +22,7 @@ Public authorities issue certificates that pass. Certificates made by hand, by a
 certdoctor https://the-url-that-fails/
 ```
 
-Every Python on PATH has its own row in the trust matrix. On a Python whose OpenSSL is version 3, certdoctor applies the same strict rules to the chain OpenSSL would build, and the row names the certificate and the rule it breaks, instead of a bare refusal. The other rows show whether the same root is trusted by everything else, which is usually the case.
+Every Python on PATH has its own row in the trust matrix. On a Python whose OpenSSL is version 3, Cert Doctor applies the same strict rules to the chain OpenSSL would build, and the row names the certificate and the rule it breaks, instead of a bare refusal. The other rows show whether the same root is trusted by everything else, which is usually the case.
 
 ## Fix it
 

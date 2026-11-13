@@ -33,7 +33,7 @@ It does not mean the server is misconfigured with a home-made certificate, altho
 certdoctor https://the-url-that-fails/
 ```
 
-The trust matrix says who signed the certificate and how many stores on this machine hold that authority. A root the Windows store holds while node and git do not is a root that reached part of the machine. When the signer is an inspection product certdoctor recognises, the report names it.
+The trust matrix says who signed the certificate and how many stores on this machine hold that authority. A root the Windows store holds while node and git do not is a root that reached part of the machine. When the signer is an inspection product Cert Doctor recognises, the report names it.
 
 Each node row is judged by the list that `node` binary trusts, and its command depends on what would close the chain: turning on the system's own list where that has the root, or adding the root to the file `NODE_EXTRA_CA_CERTS` names.
 
@@ -46,4 +46,4 @@ Each node row is judged by the list that `node` binary trusts, and its command d
 
 ## What not to do
 
-`npm config set strict-ssl false` and `NODE_TLS_REJECT_UNAUTHORIZED=0` switch off verification for everything that process connects to. certdoctor reads `NODE_TLS_REJECT_UNAUTHORIZED` in `L0`, so a report shows when somebody already did.
+`npm config set strict-ssl false` and `NODE_TLS_REJECT_UNAUTHORIZED=0` switch off verification for everything that process connects to. Cert Doctor reads `NODE_TLS_REJECT_UNAUTHORIZED` in `L0`, so a report shows when somebody already did.

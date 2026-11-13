@@ -2,7 +2,7 @@
 title: Hostname does not match the certificate
 seoTitle: "SSL hostname mismatch: certificate not valid for name"
 description: "no alternative certificate subject name matches target host name, ERR_TLS_CERT_ALTNAME_INVALID and Hostname mismatch: why the name and the certificate differ."
-lead: "The certificate is valid, but not for the name in the URL. No trust store can fix that, and certdoctor says so before it asks any."
+lead: "The certificate is valid, but not for the name in the URL. No trust store can fix that, and Cert Doctor says so before it asks any."
 messages:
   - from: curl, git
     text: "SSL: no alternative certificate subject name matches target host name 'wrong.host.badssl.com'"
