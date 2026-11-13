@@ -25,7 +25,7 @@ import _ "embed"
 // using this tool - that something changed, and how much - and that statement
 // belongs to the owner. A version bumped as tidying up is a promise nobody
 // meant to make.
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 // Name is the command as it is invoked, used in help text and in the report.
 const Name = "certdoctor"

@@ -8,7 +8,7 @@ lead: "The cause first, the numbers after it, the evidence below, and the notes 
 ## The first lines
 
 ```
-certdoctor 0.1.0   https://untrusted-root.badssl.com/
+certdoctor 0.2.0   https://untrusted-root.badssl.com/
 2026-11-12T08:15:13Z   windows/amd64   privilege: elevated   took 20.46s
 ```
 

@@ -15,11 +15,12 @@ body:
     attributes:
       label: Version
       description: >-
-        What `certdoctor --version` prints, all four lines. The window's archive carries the same
+        What `certdoctor --version` prints, all five lines. The window's archive carries the same
         `certdoctor` next to the window, so run it from that folder.
       placeholder: |
-        certdoctor: 0.1.0
+        certdoctor: 0.2.0
         report schema: 2.4
+        tool schema: 1.0
         go: go1.27.4
         platform: windows/amd64
       render: text

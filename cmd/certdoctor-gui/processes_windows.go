@@ -26,5 +26,5 @@ func withoutConsole() *syscall.SysProcAttr {
 // askToStop ends a run on Windows, which has no interrupt to send a process
 // without a console to share with it. Its children finish the fixed script
 // each one runs and end on their own (OBS197); a job object that ends them
-// with it is work after 0.1.0.
+// with it is work after the first release.
 func askToStop(p *os.Process) error { return p.Kill() }

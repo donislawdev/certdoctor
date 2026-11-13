@@ -8,4 +8,6 @@ This file records only what a person would notice by running the program. Intern
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-14
+
 The first release, so there is no earlier version to compare it with. What the program does, and what it does not do yet, is in the [README](README.md).

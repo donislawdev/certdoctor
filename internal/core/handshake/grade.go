@@ -115,7 +115,7 @@ func (in Input) grade(addresses []string, outcomes []outcome) Result {
 	//
 	// ADDRESSES THAT PRESENTED DIFFERENT CHAINS - ADR114, B02. L5 judges one of
 	// them, so a run can pass on the address that happened to come first while
-	// a client sent to another refuses. The matrix per chain is for after 0.1.0,
+	// a client sent to another refuses. The matrix per chain is for after the first release,
 	// because it changes the shape of --json.
 	case !complete, names.commonOnly > 0, others > 0:
 		graded.Status = status.Warn

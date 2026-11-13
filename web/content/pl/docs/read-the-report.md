@@ -9,7 +9,7 @@ lead: "Najpierw przyczyna, za nią liczby, niżej dowody, a na końcu uwagi."
 ## Pierwsze linie
 
 ```
-certdoctor 0.1.0   https://untrusted-root.badssl.com/
+certdoctor 0.2.0   https://untrusted-root.badssl.com/
 2026-11-12T08:15:13Z   windows/amd64   privilege: elevated   took 20.46s
 ```
 

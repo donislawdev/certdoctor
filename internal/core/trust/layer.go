@@ -60,8 +60,8 @@ type Input struct {
 	// OtherChains is how many other addresses did not present the chain this
 	// layer judges - asked at walk time through the same seam - ADR114, B02.
 	//
-	// THE MATRIX STAYS ONE CHAIN, decided by the owner until after 0.1.0, so
-	// the sentence is what carries the difference. A required port, for the
+	// THE MATRIX STAYS ONE CHAIN, decided by the owner until after the first
+	// release, so the sentence is what carries the difference. A required port, for the
 	// reason ChainComplete is one: a layer that cannot be told would otherwise
 	// describe one address's chain as the server's in silence.
 	OtherChains func() int
@@ -193,7 +193,7 @@ func Ask(ctx context.Context, in Input) Result {
 
 // judgedOnOneOf says which chain the matrix judged when other addresses
 // presented others - ADR114, B02, decided by the owner. The matrix stays one
-// chain until after 0.1.0, so the difference is carried by the sentence.
+// chain until after the first release, so the difference is carried by the sentence.
 //
 // ONLY A SENTENCE THAT JUDGED A CHAIN GETS IT. One saying no store could be
 // assessed, or that none was found, judged nothing, and naming a chain there
