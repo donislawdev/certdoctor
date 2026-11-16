@@ -90,6 +90,34 @@ func TestATokenGoesThroughTheCommandLineAndItsAnswerIsShown(t *testing.T) {
 	}
 }
 
+// An empty NO_PROXY list is asked about: Test can be pressed with the address
+// alone, and the list goes over as an empty text, not as nothing - the command
+// line refuses a request that leaves an input out (OBS237).
+func TestAnEmptyListIsAskedAbout(t *testing.T) {
+	win, h, _ := testWindow(t)
+	win.goTo(screens.PlaceTools)
+	win.tools.view.List.Choose("noproxy")
+	p := win.tools.view.Pages["noproxy"]
+	if !p.Run.Disabled() {
+		t.Error("Test can be pressed with no address")
+	}
+	p.Inputs["address"].SetText("localhost")
+	if p.Run.Disabled() {
+		t.Fatal("Test cannot be pressed with an address and an empty list")
+	}
+	p.Run.OnTapped()
+	if len(h.runs) != 1 {
+		t.Fatalf("%d run(s)", len(h.runs))
+	}
+	var sent struct {
+		Inputs map[string]struct{ Text *string } `json:"inputs"`
+	}
+	err := json.Unmarshal(h.runs[0].input, &sent)
+	if list := sent.Inputs["list"].Text; err != nil || list == nil || *list != "" {
+		t.Errorf("the empty list went over as %s (%v)", h.runs[0].input, err)
+	}
+}
+
 func TestARefusalIsShownInTheCommandLinesWords(t *testing.T) {
 	win, h, _ := testWindow(t)
 	win.goTo(screens.PlaceTools)

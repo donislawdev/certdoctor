@@ -75,7 +75,7 @@ func TestALongPasteReachesWholeThroughARealTerminal(t *testing.T) {
 		_, err := emulator.Write([]byte(token + "\nrm -rf " + strings.Repeat("y", 20_000) + "\n"))
 		written <- err
 	}()
-	typed, err := editLine(bufio.NewReader(keys), 256<<10)
+	typed, err := editLine(bufio.NewReader(keys), 256<<10, nil)
 	if err != nil || string(typed.text) != token {
 		t.Errorf("%d of 10000 characters arrived (%v)", len(typed.text), err)
 	}

@@ -128,6 +128,11 @@ func (t Terminal) writeLayers(b *strings.Builder, r report.Report) {
 	}
 }
 
+// Visible is visible for whoever else shows somebody's text on a terminal: the
+// command line showing a line it reads key by key, so what is typed looks the
+// way a report would print it (OBS238).
+func Visible(s string) string { return visible(s) }
+
 // visible turns every byte a terminal would ACT ON into something it merely
 // shows. It is applied to every piece of text that came from the machine being
 // diagnosed, unconditionally.

@@ -478,6 +478,25 @@ certdoctor tool cert --json < server.crt
 A chain has many lines and no single Enter that ends it, so it is piped in or named with `--file`
 rather than pasted at a prompt.
 
+The **NO_PROXY tester** shows which programs go to an address directly and which go through the
+proxy under a `NO_PROXY` list. Each program reads the list its own way - `.example.com` covers
+`example.com` itself for curl and .NET but only the names under it for Go, and Go never sends
+`localhost` to a proxy whatever the list says. The answer groups curl and git, .NET, Go, Python,
+requests and pip, and Node.js by what each of them does, says which releases answer which way when
+a program changed its rules, and warns when the programs disagree. Java does not read `NO_PROXY`,
+and the answer says what it reads instead. Nothing is connected to: the answer comes from each
+program's rules, read in its source and checked against the program itself.
+
+```bash
+certdoctor tool noproxy                 # paste the list, then the address
+printf '%s\n%s\n' "$NO_PROXY" https://api.example.com | certdoctor tool noproxy
+certdoctor tool noproxy --file no_proxy.txt --address-file address.txt --json
+```
+
+It reads the list first and the address second, one line each. An empty list is a question too:
+the answer shows what each program does when `NO_PROXY` is empty or not set. The address is a URL
+or a host name with its port, and without a scheme it is read as `https://`.
+
 The **JWT decoder** shows a token's header and claims in the order the token has
 them, says when the token was issued, from when it is valid and when it expires, and warns about
 what makes libraries disagree: `alg: none`, a stripped or wrongly shaped signature, a name given
@@ -492,9 +511,10 @@ certdoctor tool jwt --json < token.txt
 
 A token is never taken as an argument: an argument stays in your shell's history and in the list
 of running programs. `Bearer` in front and quotes around it are taken off, and the output says so.
-On Linux and macOS nothing appears while you paste: the terminal's own line handling cuts a long
-line or stops taking keys, so the token is read key by key, and after Enter the command says how
-many characters it read.
+On Linux and macOS the token does not appear while you paste it: the terminal's own line handling
+cuts a long line or stops taking keys, so a pasted line is read key by key, and after Enter the
+command says how many characters it read. A `NO_PROXY` list and an address are no secrets, so they
+are shown as you type them.
 Every tool ends with `0` whenever it read its input, whatever it found there, and with `3` when
 what it was given is not something it can read.
 
