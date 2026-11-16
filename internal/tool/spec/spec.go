@@ -70,9 +70,21 @@ type Input struct {
 	// File is the name of a file --help shows it read from, saying what kind
 	// of file it is: token.txt, chain.pem.
 	File string
-	// There is no field saying an input is a secret yet: the first tool taking
-	// a password or a key brings it, with how the window hides it (ADR141 point
+	// MayBeEmpty says an empty input is a question with an answer, so the
+	// window runs the tool with it empty - an empty NO_PROXY list is how a
+	// machine without one is asked about (OBS237). Without it the window waits
+	// for something typed, and the command line hands an empty input to the
+	// tool, which says in its own sentence what it needs.
+	MayBeEmpty bool
+	// Visible says the input is not a credential, so the terminal shows it as
+	// it is typed (OBS238). Without it the command line reads a paste on Linux
+	// and macOS key by key without showing it (ADR143): an input that might be
+	// a credential stays off the screen unless its tool says otherwise. Only a
+	// line is read at a terminal, so only a line can be visible. Windows' line
+	// mode shows what is typed whatever this says, and how the window hides a
+	// password is the decision of the first tool that takes one (ADR141 point
 	// 10). No input of any tool comes back in a message - that holds for all.
+	Visible bool
 }
 
 // Tool is one tool.
@@ -114,10 +126,12 @@ var All = []Tool{
 			"golang", "python", "pip", "requests", "node", "fetch", "undici", "java", "environment", "variable"},
 		// 64 KiB holds any list kept by hand many times over - an ASSESSMENT,
 		// not a source. The address is read for its scheme, host and port only,
-		// and a URL copied from a browser can be long past them.
+		// and a URL copied from a browser can be long past them. An empty list
+		// is NO_PROXY not set, which some programs answer differently from the
+		// rest: Go never sends localhost to the proxy.
 		Inputs: []Input{
-			{Name: "list", Shape: Line, MaxBytes: 64 << 10, File: "no_proxy.txt"},
-			{Name: "address", Shape: Line, MaxBytes: 64 << 10, File: "address.txt"},
+			{Name: "list", Shape: Line, MaxBytes: 64 << 10, File: "no_proxy.txt", MayBeEmpty: true, Visible: true},
+			{Name: "address", Shape: Line, MaxBytes: 64 << 10, File: "address.txt", Visible: true},
 		},
 	},
 	{

@@ -104,8 +104,8 @@ func (win *window) buildTools() {
 	}
 }
 
-// toolReady lets a tool's action be pressed when every input has something
-// in it and the tool is not already reading.
+// toolReady lets a tool's action be pressed when every input it needs filled
+// has something in it and the tool is not already reading.
 func (win *window) toolReady(p *screens.ToolPage) {
 	if p.Ready() && win.tools.runs[p.Tool.ID] == nil {
 		p.Run.Enable()

@@ -152,6 +152,32 @@ func TestAToolsPageIsReadyOnlyWithEveryInput(t *testing.T) {
 	}
 }
 
+// An empty NO_PROXY list is a question - and the address is not (OBS237).
+func TestAnInputThatMayBeEmptyLeavesThePageReady(t *testing.T) {
+	newApp(t)
+	_, v := Tools(icon(t), "0.1.0")
+	p := v.Pages["noproxy"]
+	for _, c := range []struct {
+		list, address string
+		ready         bool
+	}{
+		{"", "", false},
+		{"localhost", "", false},
+		{"", "localhost", true},
+		{"localhost", "localhost", true},
+	} {
+		p.Inputs["list"].SetText(c.list)
+		p.Inputs["address"].SetText(c.address)
+		if p.Ready() != c.ready {
+			t.Errorf("list %q, address %q: ready %v, want %v", c.list, c.address, p.Ready(), c.ready)
+		}
+	}
+	p.Inputs["list"].SetText(strings.Repeat("a", look.ToolInputBytes+1))
+	if p.Ready() {
+		t.Error("a list over what the window takes leaves the page ready")
+	}
+}
+
 // A token over what the window takes is not put in, and the line under the
 // box says so with the command line's way to read it; text over it put in by
 // the program leaves the page not ready; Clear brings the hint back (ADR144).

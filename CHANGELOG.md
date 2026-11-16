@@ -8,6 +8,14 @@ This file records only what a person would notice by running the program. Intern
 
 ## [Unreleased]
 
+### Changed
+
+- The NO_PROXY tester in the window can be run with an empty list. The answer shows what each
+  program does when `NO_PROXY` is empty or not set - Go, for one, never sends `localhost` to a
+  proxy.
+- On Linux and macOS, the NO_PROXY tester shows the list and the address as you paste or type them
+  at a terminal. A token pasted into the JWT decoder still stays hidden.
+
 ## [0.2.0] - 2026-11-14
 
 The first release, so there is no earlier version to compare it with. What the program does, and what it does not do yet, is in the [README](README.md).

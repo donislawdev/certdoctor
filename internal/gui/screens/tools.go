@@ -142,11 +142,13 @@ func (p *ToolPage) Request() map[string]string {
 	return r
 }
 
-// Ready says whether every input has something typed in it, and no more than
-// it takes.
+// Ready says whether every input the tool needs filled has something typed in
+// it, and none holds more than it takes. An input that may be empty is a
+// question as it is (spec.Input.MayBeEmpty, OBS237).
 func (p *ToolPage) Ready() bool {
-	for _, box := range p.Inputs {
-		if box.Text == "" || box.Over() {
+	for _, in := range p.Tool.Inputs {
+		box := p.Inputs[in.Name]
+		if box.Over() || (box.Text == "" && !in.MayBeEmpty) {
 			return false
 		}
 	}

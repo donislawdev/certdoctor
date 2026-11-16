@@ -50,13 +50,14 @@ var tools = map[string]ToolWords{
 			"NO_PROXY list. Each program reads the list its own way, so one list can send curl directly and " +
 			"Node.js through the proxy on the same machine.",
 		Action: "Test",
-		Ready: "Paste a NO_PROXY list and an address and press Test. Nothing is connected to - the answer comes " +
-			"from how each program reads the list.",
+		Ready: "Paste a NO_PROXY list, which may be empty, and an address and press Test. Nothing is connected " +
+			"to - the answer comes from how each program reads the list.",
 		Inputs: map[string]InputWords{
 			"list": {
 				Label: "NO_PROXY list",
 				Hint: "The value of NO_PROXY exactly as it is set, entries separated by commas. NO_PROXY= in " +
-					"front of it is taken off.",
+					"front of it is taken off. Leave it empty to see what each program does when NO_PROXY is " +
+					"empty or not set.",
 				Example: "localhost,127.0.0.1,.corp.example",
 			},
 			"address": {

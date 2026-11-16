@@ -34,6 +34,9 @@ func TestEveryToolIsDescribedCompletely(t *testing.T) {
 				!slices.Contains(Shapes, in.Shape) || !strings.Contains(in.File, ".") {
 				t.Errorf("%s: input %+v", tool.ID, in)
 			}
+			if in.Visible && in.Shape != Line {
+				t.Errorf("%s: %s is visible, and only a line is read at a terminal", tool.ID, in.Name)
+			}
 			names[in.Name] = true
 		}
 		if found, ok := Find(tool.ID); !ok || found.ID != tool.ID {
@@ -42,6 +45,16 @@ func TestEveryToolIsDescribedCompletely(t *testing.T) {
 	}
 	if _, ok := Find("no-such-tool"); ok {
 		t.Error("Find found a tool that is not there")
+	}
+}
+
+// A token is a credential: a terminal on Linux and macOS does not show it as it
+// is pasted (ADR143), and only an input its tool says is no credential is shown
+// there (OBS238).
+func TestATokenIsNotShownAsItIsTyped(t *testing.T) {
+	jwt, _ := Find("jwt")
+	if in, ok := jwt.Input("token"); !ok || in.Visible {
+		t.Errorf("the token of jwt: found %v, visible %v", ok, in.Visible)
 	}
 }
 
