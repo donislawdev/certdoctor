@@ -420,6 +420,10 @@ jobs:
           Refuses 'a destination inside the repository' @('--tag', $env:TAG, '--sums', $sums, '--out', 'rendered') 'inside the repository'
           Refuses 'a destination that holds something' @('--tag', $env:TAG, '--sums', $sums, '--out', $env:RUNNER_TEMP) 'already holds something'
           if ($script:failed -ne 0) { throw "$($script:failed) refusal(s) of the renderer failed" }
+          # Said outright: the runner ends a pwsh step with exit $LASTEXITCODE,
+          # and the last command here is a renderer that refused, on purpose,
+          # with 1 - which failed this step with every refusal ok.
+          exit 0
 
       - name: install both packages, ask the machine, remove them, ask again
         shell: pwsh
