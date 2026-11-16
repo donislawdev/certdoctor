@@ -324,6 +324,7 @@ func TestEveryWayAScriptCanFailGetsItsOwnWord(t *testing.T) {
 		{pac.OutcomeMemoryCeiling, status.ReasonLimitExceeded},
 		{pac.OutcomeStackLimit, status.ReasonLimitExceeded},
 		{pac.OutcomeTooLarge, status.ReasonLimitExceeded},
+		{pac.OutcomeEvaluatorFailed, status.ReasonProbeError},
 		{pac.OutcomeNoAnswer, status.ReasonUndetermined},
 	} {
 		result := askLayer(t, Input{

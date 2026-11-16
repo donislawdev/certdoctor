@@ -15,6 +15,14 @@ This file records only what a person would notice by running the program. Intern
   proxy.
 - On Linux and macOS, the NO_PROXY tester shows the list and the address as you paste or type them
   at a terminal. A token pasted into the JWT decoder still stays hidden.
+- The JSON report is now schema 2.5. A PAC script row can say `evaluator_failed`: the process that
+  runs the script stopped before it answered, and the row shows its exit code.
+
+### Fixed
+
+- A PAC file that asks for a huge amount of memory in one step, such as `"x".repeat(1e10)`, no longer
+  ends Cert Doctor without a report. The script now runs in a separate process. If that process runs
+  out of memory or time, only it stops, and the report says the script was stopped.
 
 ## [0.2.0] - 2026-11-14
 

@@ -189,9 +189,9 @@ func TestADocumentCertdoctorDidNotWriteIsRefusedWithTheReason(t *testing.T) {
 		{"not UTF-8", edit(`"certdoctor"`, "\"cert\xffdoctor\""), "not UTF-8"},
 		{"not JSON", []byte("certdoctor: report written to x"), "not JSON"},
 		{"an array", []byte(`[` + document + `]`), "not an object"},
-		{"no schema version", edit(`"schema_version": "2.4",`, ``), "no schema_version"},
-		{"a schema version that is not text", edit(`"schema_version": "2.4"`, `"schema_version": 2.4`), "no schema_version"},
-		{"another schema version", edit(`"schema_version": "2.4"`, `"schema_version": "2.3"`), `"2.3"`},
+		{"no schema version", edit(`"schema_version": "2.5",`, ``), "no schema_version"},
+		{"a schema version that is not text", edit(`"schema_version": "2.5"`, `"schema_version": 2.5`), "no schema_version"},
+		{"another schema version", edit(`"schema_version": "2.5"`, `"schema_version": "2.4"`), `"2.4"`},
 		{"a field missing", edit(`"redacted": false,`, ``), "shape"},
 		{"a field nobody declared", edit(`"redacted": false,`, `"redacted": false, "extra": 1,`), "shape"},
 		{"a port that is not whole", edit(`"port": 443`, `"port": 443.0`), "wrong kind"},
@@ -225,7 +225,7 @@ func FuzzDecodeEndsInAReportOrAReason(f *testing.F) {
 			f.Add(document)
 		}
 	}
-	f.Add([]byte(`{"schema_version": "2.4"}`))
+	f.Add([]byte(`{"schema_version": "2.5"}`))
 	f.Add([]byte{0xFF, 0xFE, '{', 0})
 	f.Add([]byte("\xEF\xBB\xBF{}"))
 	f.Fuzz(func(t *testing.T, document []byte) {
@@ -249,7 +249,7 @@ func FuzzDecodeEndsInAReportOrAReason(f *testing.F) {
 // TestAFileBreakingEveryRuleIsNotListedRuleByRule holds fewOf: a refusal names
 // a few problems and counts the rest, rather than burying its first sentence.
 func TestAFileBreakingEveryRuleIsNotListedRuleByRule(t *testing.T) {
-	_, err := Decode([]byte(`{"schema_version": "2.4", "tool": {}, "run": {}, "verdict": {}, "layers": [{}], "notes": [{}]}`))
+	_, err := Decode([]byte(`{"schema_version": "2.5", "tool": {}, "run": {}, "verdict": {}, "layers": [{}], "notes": [{}]}`))
 	if err == nil {
 		t.Fatal("an object of empty parts was accepted")
 	}

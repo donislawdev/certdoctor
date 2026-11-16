@@ -19,7 +19,7 @@ import (
 const version = "0.1.0"
 
 // report is the example.com report the model is drawn from: version 0.1.0,
-// schema 2.4, exit code 4, a verdict about L5.
+// schema 2.5, exit code 4, a verdict about L5.
 func report(t *testing.T) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "model", "testdata", "example-com.json"))
@@ -88,9 +88,9 @@ func TestEachEndOfARunIsJudgedAsWhatItIs(t *testing.T) {
 		{"wrote more than the window reads", Process{Out: report(t), OutTooLong: true, Code: 4}, TooLong},
 		{"wrote words", Process{Out: []byte("certdoctor: not a URL"), Code: 4}, NotAReport},
 		{"wrote a document without a head", Process{Out: other(`{"verdict":{}}`), Code: 4}, NoHead},
-		{"wrote another version", Process{Out: other(`{"schema_version":"2.4","tool":{"version":"0.2.0"}}`), Code: 4}, OtherVersion},
+		{"wrote another version", Process{Out: other(`{"schema_version":"2.5","tool":{"version":"0.2.0"}}`), Code: 4}, OtherVersion},
 		{"wrote another schema", Process{Out: other(`{"schema_version":"3.0","tool":{"version":"0.1.0"}}`), Code: 4}, OtherSchema},
-		{"a head the rest does not go with", Process{Out: other(`{"schema_version":"2.4","tool":{"version":"0.1.0"},"verdict":{"exit_code":"four"}}`), Code: 4}, NotAReport},
+		{"a head the rest does not go with", Process{Out: other(`{"schema_version":"2.5","tool":{"version":"0.1.0"},"verdict":{"exit_code":"four"}}`), Code: 4}, NotAReport},
 		{"a report of another exit code", Process{Out: report(t), Code: 5}, OtherExit},
 		{"a report with no layers", Process{Out: document("null", 0), Code: 0}, NoLayers},
 	} {
@@ -149,7 +149,7 @@ func TestEveryTroubleIsSaidInWholeSentences(t *testing.T) {
 		{Trouble{Kind: NotAReport, Said: "invalid character 'c' looking for beginning of value"}, []string{"invalid character"}},
 		{Trouble{Kind: NoHead}, nil},
 		{Trouble{Kind: OtherVersion, Theirs: "0.2.0", Ours: "0.1.0"}, []string{"This window is 0.1.0", "says 0.2.0"}},
-		{Trouble{Kind: OtherSchema, Theirs: "3.0", Ours: "2.4"}, []string{"schema 2.4", "wrote schema 3.0"}},
+		{Trouble{Kind: OtherSchema, Theirs: "3.0", Ours: "2.5"}, []string{"schema 2.5", "wrote schema 3.0"}},
 		{Trouble{Kind: OtherExit, Reported: 4, Code: 5}, []string{"exit code 4", "ended with 5"}},
 		{Trouble{Kind: NoLayers}, nil},
 	} {

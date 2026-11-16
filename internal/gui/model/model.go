@@ -32,7 +32,7 @@ const (
 // both (internal/guard/window_test.go) - the window may not import the
 // renderer (ADR124), and a document of another schema is refused rather than
 // drawn (ADR121 point 1).
-const SchemaVersion = "2.4"
+const SchemaVersion = "2.5"
 
 // Report is one run.
 type Report struct {

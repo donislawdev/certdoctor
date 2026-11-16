@@ -106,6 +106,11 @@ var scriptReasons = map[pac.Outcome]status.Reason{
 	pac.OutcomeMemoryCeiling: status.ReasonLimitExceeded,
 	pac.OutcomeStackLimit:    status.ReasonLimitExceeded,
 	pac.OutcomeTooLarge:      status.ReasonLimitExceeded,
+	// The process the file runs in failed - ADR150. The probe itself broke,
+	// which is what probe_error says: no limit of ours stopped it, so
+	// limit_exceeded would name a ceiling that was not reached, and nothing
+	// about the file was found unreadable.
+	pac.OutcomeEvaluatorFailed: status.ReasonProbeError,
 	// A file that returned null. Mozilla's documentation says that means "no
 	// proxies", equivalent to DIRECT, and that is what a browser does -
 	// testbed/pac/files/null.pac, written before any of this code existed,

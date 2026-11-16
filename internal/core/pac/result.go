@@ -74,6 +74,29 @@ const (
 	// of entries, and everything after the engine - the split, the rows, the
 	// masking, the document - is ours and runs with no stopwatch at all.
 	OutcomeTooLarge Outcome = "too_large"
+
+	// OutcomeEvaluatorFailed - the process this program runs a PAC file in did
+	// not start, or ended before it answered, and neither of this run's limits
+	// stopped it.
+	//
+	// IT EXISTS BECAUSE THE EVALUATION RUNS IN A PROCESS OF ITS OWN - ADR150,
+	// closing OBS199. A built-in of the engine that asks for its whole result at
+	// once is native code no interrupt reaches, so one line of a PAC file could
+	// end the whole run with no report; a process can be ended mid-way, so the
+	// file now runs in one and this program survives it. The child's own watchdog
+	// and the parent's clock turn the ordinary ways of dying into memory_ceiling
+	// and time_limit. What is left is a death neither of them caused: the system
+	// refusing a reservation before the watchdog saw anything, which is how
+	// Windows answers a request larger than it can commit, the Go runtime's own
+	// stack limit, or a fault of ours. None of the seven values above says that
+	// without lying - a file stopped by nothing of ours was not stopped by a
+	// ceiling, and nothing it did was malformed.
+	//
+	// IT SAYS THE EVALUATOR FAILED AND NOT THAT THE FILE IS BROKEN. The detail
+	// carries the exit code and the first line the process wrote, so a reader
+	// can see what ended it without this program reading that line for meaning
+	// - inviolable rule 19.
+	OutcomeEvaluatorFailed Outcome = "evaluator_failed"
 )
 
 // Result is one evaluation's answer.

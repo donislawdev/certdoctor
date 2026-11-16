@@ -259,7 +259,21 @@ import (
 // to look, can take this field instead and stop disagreeing with the sentence.
 // The human surfaces carry no such field: they say the layer in the sentence's
 // own words, and the field is for a program - the owner's decision.
-const SchemaVersion = "2.4"
+//
+// 2.5 ADDS ONE VALUE, evaluator_failed, to pac_script.outcome - ADR150, decided
+// by the owner. A MINOR by rule 2: nothing removed, nothing renamed, no meaning
+// changed. A PAC file now runs in a process of its own, so that one line asking
+// for more memory than a built-in can be stopped from using ends that process
+// instead of the run (OBS199), and the new value says the process running the
+// file failed - did not start, or ended before it answered without any limit of
+// this run stopping it. Its layer reason is probe_error.
+//
+// WHAT CHANGES FOR A CONSUMER THAT ALREADY SHIPPED. A run that used to end with
+// no document at all - such a file killed the whole process - now writes one,
+// with this value or memory_ceiling on the row. A consumer that refused an
+// outcome it does not know refuses this one, which is the reason it is a
+// version and not a quiet addition.
+const SchemaVersion = "2.5"
 
 // JSON renders the machine readable report.
 //

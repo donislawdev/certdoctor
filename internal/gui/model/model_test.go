@@ -9,7 +9,9 @@ import (
 // The three reports in testdata were written by certdoctor 0.1.0 with --json
 // on 2026-11-09 (schema 2.4), against example.com and two hosts of badssl.com,
 // and kept with the parts that named the machine they ran on replaced: the
-// account in profile paths and the address of the local resolver.
+// account in profile paths and the address of the local resolver. Their
+// schema_version reads 2.5 since 2.5 added one value to pac_script.outcome
+// (ADR150) - none of them has a PAC script, so nothing else in them changed.
 
 // TestTheWindowReadsTheReportsItIsDrawnFrom reads each of them and checks the
 // facts the screens are built from.

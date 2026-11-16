@@ -55,6 +55,12 @@ import (
 )
 
 func main() {
+	// THE PROCESS A PAC FILE RUNS IN IS THIS PROGRAM TOO - ADR150. It is
+	// decided before anything else, because that process does nothing a run
+	// does: no signals of its own to arm, no flags, no report.
+	if isPACSandbox(os.Args) {
+		os.Exit(servePACSandbox())
+	}
 	os.Exit(mainCode().Int())
 }
 
@@ -219,9 +225,14 @@ func liveEnvironment() environment {
 		// gained no way to choose a destination.
 		evaluateScript: func(targets *allowed.Targets, resolvers []string, targetURL, targetHost string) proxy.Evaluate {
 			permitted := dial.Permission(targets, nil)
+			// THE FILE RUNS IN A PROCESS OF ITS OWN - ADR150, closing OBS199.
+			// One line of a PAC file could end this whole run with no report,
+			// through a built-in the stopwatch cannot interrupt; now it ends
+			// only the process it runs in. The resolver and the clock below stay
+			// in this process: the child asks for them over the pipe.
 			return pac.Resolver(
 				pac.Fetch(permitted, pacSourceLimit),
-				pac.Sandbox{
+				pac.Isolated{Start: startPACSandbox, Program: toolVersion, Allowance: pacStartAllowance, Sandbox: pac.Sandbox{
 					Ports: corepac.Ports{
 						// THE SAME PAIR L1 IS BUILT FROM: dial.Guarded around
 						// dns.Socket, so a query provoked by somebody else's PAC
@@ -271,7 +282,7 @@ func liveEnvironment() environment {
 					MaxLookups:    pacMaxLookups,
 					MaxAnswer:     pacAnswerLimit,
 					MaxDirectives: pacDirectiveLimit,
-				},
+				}},
 				targetURL, targetHost)
 		},
 		// L2's question to a proxy, and the SIXTH place in this program that can
