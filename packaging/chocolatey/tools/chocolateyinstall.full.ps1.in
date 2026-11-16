@@ -1,0 +1,31 @@
+# Rendered by .github/scripts/build_packages.py - do not edit the generated copy.
+#
+# The whole product is the release's Windows installer (ADR149) - the same file,
+# checksum and all, that the release page publishes, downloaded rather than
+# carried, so the package holds no program and owes no VERIFICATION.txt. It
+# installs for every account on the machine: both programs in Program Files,
+# that folder on the machine's PATH and the window in the Start menu. So
+# Chocolatey makes no shim and no shortcut for this package, and the uninstall
+# goes through Windows Installer (chocolateyuninstall.ps1).
+#
+# 3010 is a success that asks for a restart. The installer ends nothing that is
+# running, so a file in use is replaced at the next restart while the new
+# version is in place at once (ADR148, measured on Windows Server 2025). 1641 is
+# the same success after Windows Installer started the restart itself.
+#
+# Windows PowerShell 5.1 is what Chocolatey runs package scripts with, so this
+# file is ASCII and uses no PowerShell 7 syntax.
+$ErrorActionPreference = 'Stop'
+
+$log = Join-Path $env:TEMP "$($env:ChocolateyPackageName).$($env:ChocolateyPackageVersion).MsiInstall.log"
+Install-ChocolateyPackage `
+    -PackageName '{{CHOCO_ID}}' `
+    -FileType 'msi' `
+    -Url64bit '{{MSI_URL}}' `
+    -Checksum64 '{{MSI_SHA256}}' `
+    -ChecksumType64 'sha256' `
+    -SilentArgs "/qn /norestart /l*v `"$log`"" `
+    -ValidExitCodes @(0, 3010, 1641)
+
+Write-Host ''
+Write-Host 'Start Cert Doctor from the Start menu, or open a new terminal and type certdoctor --help.'

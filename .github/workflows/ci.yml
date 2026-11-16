@@ -340,6 +340,93 @@ jobs:
   # elsewhere, render asks the console for its code page on Windows and nothing
   # anywhere else - and they are exactly the ones a Linux-only build never
   # compiles.
+  # WHAT THE PACKAGES DO, asked on a clean Windows machine rather than read off
+  # their text (ADR149). The guards in internal/guard/packaging_test.go hold the
+  # lines that matter, and a line being there is not the install working. This
+  # renders the packages of the LATEST published release - a package can only
+  # point at a release that exists, so a change that renames the release's files
+  # fails here until a release with the new names is published, and that is the
+  # right answer, because the packages could not be submitted before it either -
+  # then asks the renderer to refuse what looks fine and is wrong, and installs,
+  # uninstalls and installs again both Chocolatey packages with the same script
+  # that runs on Windows Server 2025 before a submission.
+  #
+  # WinGet is not asked here: the runner image carries Chocolatey and no WinGet
+  # (its own inventory, Windows2025-Readme.md), so both WinGet manifests are
+  # validated and installed by hand before every submission.
+  packages:
+    name: the Chocolatey packages install and leave
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: render the packages of the latest release
+        id: render
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = gh release view --json tagName --jq .tagName
+          if ($LASTEXITCODE -ne 0 -or -not $tag) { throw "could not read the latest release" }
+          gh release download $tag --pattern verify-SHA256SUMS.txt --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw "could not download the checksums of $tag" }
+          python .github/scripts/build_packages.py --tag $tag `
+            --sums (Join-Path $env:RUNNER_TEMP 'verify-SHA256SUMS.txt') `
+            --out (Join-Path $env:RUNNER_TEMP 'packages')
+          if ($LASTEXITCODE -ne 0) { throw "the renderer refused $tag" }
+          $feed = Join-Path $env:RUNNER_TEMP 'feed'
+          New-Item -ItemType Directory -Force $feed | Out-Null
+          foreach ($id in 'cert-doctor', 'cert-doctor-cli') {
+            choco.exe pack (Join-Path $env:RUNNER_TEMP "packages\chocolatey\$id\$id.nuspec") --outputdirectory $feed
+            if ($LASTEXITCODE -ne 0) { throw "choco pack $id exited $LASTEXITCODE" }
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$($tag.TrimStart('v'))" >> $env:GITHUB_OUTPUT
+
+      # Each refusal is one sentence that names the input, exit code 1, never a
+      # traceback, and nothing left behind - a working folder of a run that
+      # failed is removed with it.
+      - name: the renderer refuses what looks fine and is wrong
+        shell: pwsh
+        env:
+          TAG: ${{ steps.render.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $sums = Join-Path $env:RUNNER_TEMP 'verify-SHA256SUMS.txt'
+          $out = Join-Path $env:RUNNER_TEMP 'refused'
+          $script:failed = 0
+          function Refuses([string]$what, [string[]]$argv, [string]$want) {
+            $said = (& python .github/scripts/build_packages.py @argv 2>&1 | ForEach-Object { "$_" } | Out-String).Trim()
+            $code = $LASTEXITCODE
+            $left = @(Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter '.packages-*' -Force).Count
+            if ($code -eq 1 -and $said.StartsWith('build_packages: ') -and $said.Contains($want) -and
+                -not $said.Contains('Traceback') -and -not (Test-Path -LiteralPath $out) -and $left -eq 0) {
+              Write-Host "ok      $what"
+            } else {
+              Write-Host "FAILED  $what - exit $code, $left working folder(s) left, said: $said"
+              $script:failed++
+            }
+          }
+          Refuses 'a release candidate' @('--tag', "$env:TAG-rc.1", '--sums', $sums, '--out', $out) 'release candidate'
+          Refuses 'a version that is not a tag' @('--tag', $env:TAG.TrimStart('v'), '--sums', $sums, '--out', $out) 'not a release tag'
+          Refuses 'the checksums of another release' @('--tag', 'v9.9.9', '--sums', $sums, '--out', $out) 'checksum file of another release'
+          Refuses 'a checksum file that is not there' @('--tag', $env:TAG, '--sums', (Join-Path $env:RUNNER_TEMP 'none.txt'), '--out', $out) 'cannot read the checksum file'
+          Refuses 'a file that is not a checksum file' @('--tag', $env:TAG, '--sums', 'README.md', '--out', $out) "is not '<sha256>  <file>'"
+          Refuses 'a destination inside the repository' @('--tag', $env:TAG, '--sums', $sums, '--out', 'rendered') 'inside the repository'
+          Refuses 'a destination that holds something' @('--tag', $env:TAG, '--sums', $sums, '--out', $env:RUNNER_TEMP) 'already holds something'
+          if ($script:failed -ne 0) { throw "$($script:failed) refusal(s) of the renderer failed" }
+
+      - name: install both packages, ask the machine, remove them, ask again
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.render.outputs.version }}
+        run: ./.github/scripts/check_chocolatey_packages.ps1 -Feed (Join-Path $env:RUNNER_TEMP 'feed') -Version $env:VERSION
+
   release-build:
     name: release build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
