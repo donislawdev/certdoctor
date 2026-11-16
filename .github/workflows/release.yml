@@ -15,12 +15,20 @@
 # rehearsed on it, with sign_release.py --rehearsal <run>, which uploads
 # nothing. The publish job is the only one that writes anything, and it is
 # fenced behind the tag.
+#
+# Every pull request runs it too (D25, the owner's decision of 2026-11-16): the
+# window is built only here, on the system it is for, and the installer is
+# installed only here, so a change that breaks either is caught before it is
+# merged rather than when a tag is pushed. The branch protection on main
+# requires the three window builds. The checks that compare the tag with the
+# code and the changelog, and the publish job, stay fenced behind the tag.
 name: release
 
 on:
   push:
     tags:
       - "v*"
+  pull_request:
   workflow_dispatch:
 
 # Read only by default. The one job that needs to write says so itself.
