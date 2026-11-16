@@ -1,0 +1,40 @@
+# Rendered by .github/scripts/build_packages.py - do not edit the generated copy.
+#
+# Chocolatey runs this from the INSTALLED package before an upgrade or an
+# uninstall. It says so when the program is still running from this package,
+# and what will really happen then. It does not fail and it ends nothing: a
+# diagnosis in progress is cut off by no package (ADR149), and this runs BEFORE
+# the operation the person asked for, which a failed check must not stop.
+#
+# What Chocolatey does while certdoctor runs, measured on 2026-11-16 (ADR149)
+# with a run started through the shim, which is how the command is typed: the
+# shim and the program in the package are both open, and
+# Chocolatey cannot remove either. An upgrade puts the new version in place,
+# leaves the running copy in lib-bkp and ends with exit code 1 - and the same
+# upgrade run again later succeeds and leaves that copy where it is. An
+# uninstall stops, leaves the package installed and ends with exit code 1, and
+# the same uninstall run again once the run has finished succeeds and takes the
+# copy in lib-bkp with it. The run itself finishes undisturbed.
+#
+# Windows PowerShell 5.1 is what Chocolatey runs package scripts with, so this
+# file is ASCII and uses no PowerShell 7 syntax.
+$ErrorActionPreference = 'Continue'
+$toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$exe = Join-Path $toolsDir '{{PROGRAM}}\{{EXE}}'
+
+$running = @()
+try {
+    # A process of another account answers with no path, so it cannot be told
+    # apart and is left out. This is a courtesy, not a lock.
+    $running = @(Get-Process -Name '{{PROGRAM}}' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and ($_.Path -ieq $exe) })
+} catch {
+    $running = @()
+}
+
+if ($running.Count -gt 0) {
+    $leftover = Join-Path $env:ChocolateyInstall 'lib-bkp\{{CHOCO_ID}}'
+    Write-Warning '{{PROGRAM}} is running from this package, and Chocolatey cannot remove a program while it runs, so this ends with an error.'
+    Write-Warning "An upgrade still puts the new version in place and leaves the old copy in $leftover - delete that folder once {{PROGRAM}} has finished."
+    Write-Warning 'An uninstall leaves the package installed - run it again once {{PROGRAM}} has finished.'
+}

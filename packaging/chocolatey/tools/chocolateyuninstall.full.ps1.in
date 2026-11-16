@@ -1,0 +1,33 @@
+# Rendered by .github/scripts/build_packages.py - do not edit the generated copy.
+#
+# The installer is found by its UpgradeCode - the product's identity in Windows
+# Installer, the same for every version and pinned for good by a guard - never
+# by the name in Programs and Features, which another program may carry too.
+# Windows Installer lists every installed product of that code, and each one is
+# removed by its own ProductCode. An upgrade leaves one.
+#
+# Nothing installed under that code is not a failure: the program was removed
+# outside Chocolatey, from Settings for instance, and Chocolatey has only its own
+# record of the package left to drop.
+#
+# 1605 is "this product is not installed", from a removal that got there first.
+# 3010 and 1641 are a removal that asks for a restart: a running Cert Doctor is
+# not ended, and its file goes at the next restart.
+#
+# Windows PowerShell 5.1 is what Chocolatey runs package scripts with, so this
+# file is ASCII and uses no PowerShell 7 syntax.
+$ErrorActionPreference = 'Stop'
+
+$installer = New-Object -ComObject WindowsInstaller.Installer
+$products = @($installer.RelatedProducts('{{UPGRADE_CODE}}'))
+if ($products.Count -eq 0) {
+    Write-Warning '{{TITLE}} is not installed any more, so there is nothing for Windows Installer to remove. It was removed outside Chocolatey.'
+    return
+}
+foreach ($product in $products) {
+    Uninstall-ChocolateyPackage `
+        -PackageName '{{CHOCO_ID}}' `
+        -FileType 'msi' `
+        -SilentArgs "$product /qn /norestart" `
+        -ValidExitCodes @(0, 1605, 1614, 1641, 3010)
+}

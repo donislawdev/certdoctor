@@ -1,0 +1,24 @@
+# Rendered by .github/scripts/build_packages.py - do not edit the generated copy.
+#
+# The package DOWNLOADS the release archive instead of carrying it: the archive
+# is the same file, checksum and all, that the release page publishes, and a
+# package with no program inside owes the moderators no VERIFICATION.txt.
+#
+# Into a folder of its own under tools. Chocolatey then makes a shim for the
+# program in its bin folder, which is already on PATH - that is what puts the
+# command there.
+#
+# Windows PowerShell 5.1 is what Chocolatey runs package scripts with, so this
+# file is ASCII and uses no PowerShell 7 syntax.
+$ErrorActionPreference = 'Stop'
+$toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+
+Install-ChocolateyZipPackage `
+    -PackageName '{{CHOCO_ID}}' `
+    -Url64bit '{{URL_AMD64}}' `
+    -Checksum64 '{{SHA256_AMD64}}' `
+    -ChecksumType64 'sha256' `
+    -UnzipLocation (Join-Path $toolsDir '{{PROGRAM}}')
+
+Write-Host ''
+Write-Host 'Type {{PROGRAM}} --help to see what it does.'

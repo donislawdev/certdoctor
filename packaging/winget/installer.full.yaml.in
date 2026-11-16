@@ -1,0 +1,46 @@
+# Rendered by .github/scripts/build_packages.py - do not edit the generated copy.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.{{WINGET_SCHEMA}}.schema.json
+
+PackageIdentifier: {{WINGET_ID}}
+PackageVersion: {{VERSION}}
+ReleaseDate: {{RELEASE_DATE}}
+# Two installers, and their ORDER is load-bearing.
+#
+# Only the Windows installer puts Cert Doctor in the Start menu. A portable
+# package cannot have a Start menu entry at all: the manifest schema has no
+# field for one and WinGet's portable installer makes none
+# (microsoft/winget-cli#2299, open since 2022). The installer comes FIRST
+# because that decides a fresh install: recent clients prefer it over portable
+# when the user has set no preference (microsoft/winget-cli#6123), and older
+# ones take the first installer that applies.
+#
+# The archive comes SECOND, for --scope user: the installer is for the whole
+# machine and asks for administrator rights, the archive needs neither.
+Installers:
+- Architecture: x64
+  InstallerType: wix
+  Scope: machine
+  # Windows Installer asks for elevation itself.
+  ElevationRequirement: elevatesSelf
+  InstallerUrl: {{MSI_URL}}
+  InstallerSha256: {{WINGET_MSI_SHA256}}
+  # How WinGet recognises the installed program from one release to the next:
+  # the UpgradeCode never changes, while every build gets a new ProductCode.
+  AppsAndFeaturesEntries:
+  - UpgradeCode: '{{UPGRADE_CODE}}'
+- Architecture: x64
+  InstallerType: zip
+  NestedInstallerType: portable
+  NestedInstallerFiles:
+  - RelativeFilePath: {{EXE}}
+  # Load-bearing. Without it WinGet reaches the window through a symbolic link
+  # in its links folder, and the window started that way finds neither the
+  # command line it runs nor the software renderer in the opengl folder - it
+  # looks for both beside the path it was started from (os.Executable). With
+  # it, WinGet makes no link and puts this package's own folder on PATH, which
+  # also puts the command line there (PortableInstaller.cpp in winget-cli).
+  ArchiveBinariesDependOnPath: true
+  InstallerUrl: {{URL_AMD64}}
+  InstallerSha256: {{WINGET_SHA256_AMD64}}
+ManifestType: installer
+ManifestVersion: {{WINGET_SCHEMA}}
