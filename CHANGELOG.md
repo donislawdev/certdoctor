@@ -20,6 +20,9 @@ This file records only what a person would notice by running the program. Intern
 
 ### Fixed
 
+- In the window, the answer of a tool no longer waits below the bottom edge after you press Decode
+  or Test. When the answer does not fit in view, the page scrolls so that the answer starts at the
+  top. An answer that fits leaves the page where it was.
 - On Windows, the window no longer loads a system library such as `opengl32.dll` from a file of the
   same name placed next to `certdoctor-gui.exe`, for example in a downloads folder. It takes those
   libraries from the Windows system folder only.
