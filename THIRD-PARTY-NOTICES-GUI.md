@@ -3540,7 +3540,7 @@ Source: <https://www.mingw-w64.org/>
 
 ## GNU C Library
 
-Version `2.39`. LGPL-2.1-or-later WITH GCC-exception-2.0-note AND LGPL-2.1-or-later WITH GCC-exception-2.0 AND LGPL-2.1-or-later.
+Version `2.43`. LGPL-2.1-or-later WITH GCC-exception-2.0-note AND LGPL-2.1-or-later WITH GCC-exception-2.0 AND LGPL-2.1-or-later.
 The start files of the C library: the code that runs before the window's own,
 sets the program up and calls it. They are linked into the build for Linux on
 amd64 and into no other. The rest of the library is not in the window - the
@@ -3556,12 +3556,12 @@ version 2.1 or later, without that permission. The full text of that licence is
 quoted above, under GLFW. The source of the library is at
 <https://sourceware.org/glibc/>, and the source of the window, which is all
 that is needed to link it again against changed copies of these files, is in
-this repository. Below are the headers of the six files as glibc 2.39 has
+this repository. Below are the headers of the six files as glibc 2.43 has
 them, in the order above.
 
 ```
 Startup code compliant to the ELF x86-64 ABI.
-   Copyright (C) 2001-2024 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -3598,7 +3598,7 @@ Startup code compliant to the ELF x86-64 ABI.
 
 ```
 Special .init and .fini section support.
-   Copyright (C) 1997-2024 Free Software Foundation, Inc.
+   Copyright (C) 1997-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -3627,7 +3627,7 @@ Special .init and .fini section support.
 
 ```
 Special startup support.
-   Copyright (C) 1997-2024 Free Software Foundation, Inc.
+   Copyright (C) 1997-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -3647,7 +3647,7 @@ Special startup support.
 
 ```
 Special startup support for non-PIE static executables.
-   Copyright (C) 2017-2024 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -3667,7 +3667,7 @@ Special startup support for non-PIE static executables.
 
 ```
 Special .init and .fini section support for x86-64.
-   Copyright (C) 2012-2024 Free Software Foundation, Inc.
+   Copyright (C) 2012-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -3704,7 +3704,7 @@ Special .init and .fini section support for x86-64.
 
 ```
 Special .init and .fini section support for x86-64.
-   Copyright (C) 2012-2024 Free Software Foundation, Inc.
+   Copyright (C) 2012-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
