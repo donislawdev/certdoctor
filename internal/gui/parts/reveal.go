@@ -2,7 +2,6 @@ package parts
 
 import (
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 )
 
 // Reveal brings o into view in s, after o changed: when o is not wholly in
@@ -22,7 +21,7 @@ import (
 //
 // o is found through the containers under s. A part reached only through a
 // widget, or a scroll not laid out yet, is left where it is.
-func Reveal(s *container.Scroll, o fyne.CanvasObject) {
+func Reveal(s *Scroll, o fyne.CanvasObject) {
 	view := s.Size()
 	if view.Height <= 0 {
 		return

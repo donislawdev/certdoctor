@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 
 	"github.com/donislawdev/certdoctor/internal/gui/look"
@@ -140,7 +139,7 @@ func firstToOpen(o fyne.CanvasObject) *parts.Pressable {
 	if p, ok := o.(*parts.Pressable); ok && !p.Disabled() {
 		return p
 	}
-	if s, ok := o.(*container.Scroll); ok {
+	if s, ok := o.(*parts.Scroll); ok {
 		return firstToOpen(s.Content)
 	}
 	if c, ok := o.(*fyne.Container); ok {

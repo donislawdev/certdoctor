@@ -2,7 +2,6 @@ package catalogue
 
 import (
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 
 	"github.com/donislawdev/certdoctor/internal/gui/model"
 	"github.com/donislawdev/certdoctor/internal/gui/parts"
@@ -14,5 +13,5 @@ import (
 // hold the keyboard, so its focused state is drawn as well.
 func All(icon fyne.Resource, r model.Report) (fyne.CanvasObject, fyne.Focusable) {
 	page, focus := Parts(icon, r)
-	return container.NewVScroll(parts.Stack(0, page, ToolParts(), Palette(), TypeLadder(r))), focus
+	return parts.VScroll(parts.Stack(0, page, ToolParts(), Palette(), TypeLadder(r))), focus
 }

@@ -58,7 +58,7 @@ func Tools(icon fyne.Resource, version string) (fyne.CanvasObject, *ToolsView) {
 		parts.Para(parts.BodyMuted, words.T(words.ToolsLead)),
 	)
 	top := parts.Column(look.PageWidth, parts.Inset(look.InsetPage, look.InsetPage, look.InsetPage, look.GapCard, intro))
-	rail := container.NewVScroll(parts.Inset(0, 0, 0, look.InsetPage, v.List))
+	rail := parts.VScroll(parts.Inset(0, 0, 0, look.InsetPage, v.List))
 	lower := parts.ColumnFill(look.PageWidth, parts.Inset(look.InsetPage, 0, 0, 0,
 		parts.RowTop(look.GapCard, 1, parts.Tall(parts.Width(look.RailWidth, rail)), parts.Tall(v.shown))))
 	bar, links, tabs := head(icon, version, PlaceTools)
@@ -103,7 +103,7 @@ type ToolPage struct {
 	OnEdited func()
 	words    words.ToolWords
 	answer   *fyne.Container
-	scroll   *container.Scroll
+	scroll   *parts.Scroll
 }
 
 // toolPage is the page of t, ready for its input.
@@ -128,7 +128,7 @@ func toolPage(t spec.Tool) *ToolPage {
 	intro := parts.Stack(look.GapRow, parts.Text(parts.Heading, w.Title), parts.Para(parts.BodyMuted, w.Summary))
 	p.answer = parts.Layers()
 	p.ShowReady()
-	p.scroll = container.NewVScroll(parts.Inset(0, 0, look.InsetPage, look.InsetPage,
+	p.scroll = parts.VScroll(parts.Inset(0, 0, look.InsetPage, look.InsetPage,
 		parts.Column(look.ProseWidth, parts.Stack(look.GapCard, intro, form, p.answer))))
 	return p
 }

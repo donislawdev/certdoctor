@@ -4,11 +4,11 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/donislawdev/certdoctor/internal/gui/look"
+	"github.com/donislawdev/certdoctor/internal/gui/parts"
 	"github.com/donislawdev/certdoctor/internal/gui/words"
 )
 
@@ -18,7 +18,7 @@ import (
 func TestTheWindowsCatalogueHoldsEveryPage(t *testing.T) {
 	test.NewTempApp(t).Settings().SetTheme(look.Theme())
 	o, focus := All(appIcon(t), sampleReport(t))
-	if _, ok := o.(*container.Scroll); !ok {
+	if _, ok := o.(*parts.Scroll); !ok {
 		t.Errorf("the catalogue is a %T, want it in a scroll - it is taller than any window", o)
 	}
 	if focus == nil {
@@ -38,7 +38,7 @@ func holds(o fyne.CanvasObject, text string) bool {
 	}
 	var inside []fyne.CanvasObject
 	switch x := o.(type) {
-	case *container.Scroll:
+	case *parts.Scroll:
 		inside = []fyne.CanvasObject{x.Content}
 	case *fyne.Container:
 		inside = x.Objects

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
@@ -198,7 +197,7 @@ func findButton(o fyne.CanvasObject, label string) fyne.CanvasObject {
 		if x.Label == label {
 			return x
 		}
-	case *container.Scroll:
+	case *parts.Scroll:
 		return findButton(x.Content, label)
 	case *fyne.Container:
 		for _, child := range x.Objects {

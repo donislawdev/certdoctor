@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
@@ -312,7 +311,7 @@ func texts(o fyne.CanvasObject) []string {
 			all = append(all, texts(child)...)
 		}
 		return all
-	case *container.Scroll:
+	case *parts.Scroll:
 		return texts(x.Content)
 	case *parts.Button:
 		return []string{x.Label}
