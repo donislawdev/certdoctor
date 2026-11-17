@@ -210,6 +210,15 @@ func (p *ToolPage) set(o fyne.CanvasObject) {
 	p.answer.Refresh()
 }
 
+// answered shows what came of the tool's action and brings it into view: an
+// answer under the form, past the window's bottom edge, reads as no answer,
+// at any size of the window and for any tool (OBS241). Ready and reading
+// leave the page where it is - they are not something to read.
+func (p *ToolPage) answered(o fyne.CanvasObject) {
+	p.set(o)
+	parts.Reveal(p.scroll, p.answer)
+}
+
 // ShowReady is the page before its action was pressed, or after Clear.
 func (p *ToolPage) ShowReady() { p.set(parts.Empty(p.words.Ready)) }
 
@@ -219,12 +228,12 @@ func (p *ToolPage) ShowRunning() { p.set(parts.Empty(words.T(words.ToolRunning))
 // ShowRefusal is the tool saying what it was given is not something it can
 // read, in the command line's own sentence.
 func (p *ToolPage) ShowRefusal(sentence string) {
-	p.set(parts.Problem(words.T(words.ToolRefusedTitle), sentence, words.T(words.ToolRefusedTodo), ""))
+	p.answered(parts.Problem(words.T(words.ToolRefusedTitle), sentence, words.T(words.ToolRefusedTodo), ""))
 }
 
 // ShowProblem is the tool not answering at all, in the window's words.
 func (p *ToolPage) ShowProblem(title, what, todo, printed string) {
-	p.set(parts.Problem(title, what, todo, printed))
+	p.answered(parts.Problem(title, what, todo, printed))
 }
 
 // ShowAnswer is the tool's answer: what it did to the input, its checks,
@@ -248,7 +257,7 @@ func (p *ToolPage) ShowAnswer(d spec.Document) {
 	for _, b := range d.View {
 		cards = append(cards, block(b))
 	}
-	p.set(parts.Stack(look.GapCard, cards...))
+	p.answered(parts.Stack(look.GapCard, cards...))
 }
 
 // block is one block of a tool's view as a card.

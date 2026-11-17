@@ -1,11 +1,14 @@
 package screens
 
 import (
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/donislawdev/certdoctor/internal/gui/look"
@@ -137,6 +140,68 @@ func TestAToolsAnswerIsDrawnWithEveryKindOfBlock(t *testing.T) {
 	if drawn := strings.Join(texts(p.answer), "\n"); !strings.Contains(drawn, p.words.Ready) {
 		t.Errorf("after Clear the page says %q", drawn)
 	}
+}
+
+// TestWhatCameOfAToolsActionComesIntoView is OBS241, measured on where things
+// are drawn: in the window as it opens and in the smallest, an answer, a
+// refusal and a problem are each wholly in view or start at the top of the
+// page's view. Each is also looked at with the page back at its top: the
+// page has to have moved exactly when the answer was cut there by the bottom
+// edge - the long answer has to be cut, or the check proves nothing, and in
+// the window as it opens the short refusal must not be, or nothing proves an
+// answer that fits leaves the form where it was. In the smallest window even
+// that refusal starts under the edge (measured 2026-11-17), so there only
+// the long answer is pinned.
+func TestWhatCameOfAToolsActionComesIntoView(t *testing.T) {
+	answer := longAnswer(t)
+	for _, window := range []struct {
+		size         fyne.Size
+		cutWhenAtTop map[string]bool
+	}{
+		{fyne.NewSize(look.WindowWidth, look.WindowHeight), map[string]bool{"answer": true, "short refusal": false}},
+		{fyne.NewSize(look.WindowMinWidth, look.WindowMinHeight), map[string]bool{"answer": true}},
+	} {
+		size := window.size
+		for _, c := range []struct {
+			name string
+			show func(*ToolPage)
+		}{
+			{"answer", func(p *ToolPage) { p.ShowAnswer(answer) }},
+			{"problem", func(p *ToolPage) { p.ShowProblem("Title", longPrinted, longPrinted, longPrinted) }},
+			{"short refusal", func(p *ToolPage) { p.ShowRefusal("Not a token.") }},
+		} {
+			t.Run(fmt.Sprintf("%s in %vx%v", c.name, size.Width, size.Height), func(t *testing.T) {
+				newApp(t)
+				o, v := Tools(icon(t), "0.1.0")
+				w := test.NewTempWindow(t, o)
+				w.Resize(size)
+				p := v.Pages[v.Shown()]
+				p.ShowRunning()
+				c.show(p)
+				moved := p.scroll.Offset.Y
+				if !answerInView(p) {
+					t.Errorf("the page stands at %v and what came of the action is not in view", moved)
+				}
+				p.scroll.ScrollToTop()
+				cut := !answerInView(p)
+				if want, known := window.cutWhenAtTop[c.name]; known && cut != want {
+					t.Fatalf("at the top of the page the %s is cut: %v, want %v - this case proves nothing", c.name, cut, want)
+				}
+				if cut != (moved > 0) {
+					t.Errorf("the page moved to %v, and at its top the %s is cut: %v", moved, c.name, cut)
+				}
+			})
+		}
+	}
+}
+
+// answerInView says whether the place a tool's answer is shown in is wholly
+// in the view of its page, or starts at the top of that view.
+func answerInView(p *ToolPage) bool {
+	at := fyne.CurrentApp().Driver().AbsolutePositionForObject
+	top, view := at(p.answer).Y, at(p.scroll).Y
+	bottom, edge := top+p.answer.MinSize().Height, view+p.scroll.Size().Height
+	return top >= view-0.5 && (bottom <= edge+0.5 || math.Abs(float64(top-view)) <= 0.5)
 }
 
 func TestAToolsPageIsReadyOnlyWithEveryInput(t *testing.T) {
