@@ -66,8 +66,8 @@ body:
       label: Cert Doctor version
       description: What `certdoctor --version` prints, all five lines.
       placeholder: |
-        certdoctor: 0.2.0
-        report schema: 2.4
+        certdoctor: 0.3.0
+        report schema: 2.5
         tool schema: 1.0
         go: go1.27.4
         platform: linux/amd64

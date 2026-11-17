@@ -8,6 +8,8 @@ This file records only what a person would notice by running the program. Intern
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-18
+
 ### Added
 
 - A CSR decoder: `certdoctor tool csr`, and **CSR decoder** under Tools in the window. It shows what
@@ -24,7 +26,6 @@ This file records only what a person would notice by running the program. Intern
 - The certificate decoder sends a certificate signing request to the CSR decoder instead of saying
   only that it holds no certificate, and names a signature algorithm it does not know by its
   identifier instead of `0`.
-
 - The NO_PROXY tester in the window can be run with an empty list. The answer shows what each
   program does when `NO_PROXY` is empty or not set - Go, for one, never sends `localhost` to a
   proxy.

@@ -22,6 +22,8 @@ Skrypt automatycznej konfiguracji proxy to mały program w JavaScripcie, który 
 
 Cert Doctor pobiera skrypt wskazany przez maszynę i uruchamia go w piaskownicy, żeby zobaczyć, dokąd kieruje ten adres. Odpowiedź jest podawana dla samego skryptu, a nie dla ustawienia, które go wskazało, więc dwa ustawienia wskazujące dwa niezgodne skrypty są pokazane oba.
 
+Skrypt działa w osobnym procesie, oddzielnie od diagnozy. Skrypt, który nigdy nie kończy pracy albo żąda więcej pamięci, niż potrzeba do wyboru proxy, zostaje zatrzymany bez zatrzymywania diagnozy: jego wiersz mówi `UNKNOWN`, a reszta raportu jest kompletna.
+
 Skrypt, który nie odpowiada niczym użytecznym, jest raportowany jako `UNKNOWN`, nigdy jako połączenie bezpośrednie: zgadywanie „bez proxy” kazałoby ci szukać w złym miejscu.
 
 ## Skrypt PAC, którego maszyna nie wskazuje
