@@ -66,8 +66,11 @@ func FingerprintSHA256(der []byte) string {
 // back as not self-signed, and L4 told the reader that the server had withheld
 // an issuer which does not exist (OBS163, 2026-10-19). CheckSignature asks
 // only whether the key verifies the bytes.
+//
+// A KEY TOO LARGE TO CHECK WITH (Checkable) proves nothing, so a certificate
+// with one is not called self-signed: the claim needs the signature.
 func SelfSigned(c *x509.Certificate) bool {
-	if Name(c.Subject) != Name(c.Issuer) {
+	if Name(c.Subject) != Name(c.Issuer) || !Checkable(c.PublicKey) {
 		return false
 	}
 	return c.CheckSignature(c.SignatureAlgorithm, c.RawTBSCertificate, c.Signature) == nil
@@ -84,10 +87,15 @@ func SelfSigned(c *x509.Certificate) bool {
 //
 // A SIGNATURE THAT CANNOT BE CHECKED AT ALL leaves the name to decide. MD5, or
 // an algorithm Go does not know, says nothing about the key, and "this is not
-// its issuer" would be a claim this program cannot make.
+// its issuer" would be a claim this program cannot make. So does a parent's
+// key too large to check with (Checkable) - and asking anyway would cost
+// seconds per pair of an input built to cost them.
 func IssuedBy(child, parent *x509.Certificate) bool {
 	if Name(parent.Subject) != Name(child.Issuer) {
 		return false
+	}
+	if !Checkable(parent.PublicKey) {
+		return true
 	}
 	err := parent.CheckSignature(child.SignatureAlgorithm, child.RawTBSCertificate, child.Signature)
 	var insecure x509.InsecureAlgorithmError

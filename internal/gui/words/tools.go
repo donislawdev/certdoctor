@@ -44,6 +44,21 @@ var tools = map[string]ToolWords{
 			},
 		},
 	},
+	"csr": {
+		Title: "CSR decoder",
+		Summary: "Shows what a certificate signing request asks for - its names, its key and the extensions it " +
+			"requests - and what in it a public certificate authority refuses. Nothing is sent to an authority.",
+		Action: "Decode",
+		Ready:  "Paste a certificate signing request and press Decode. It is read here, on this machine, and sent nowhere.",
+		Inputs: map[string]InputWords{
+			"csr": {
+				Label: "Certificate signing request",
+				Hint: "PEM, as openssl req, certreq or keytool -certreq writes it. Base64 of the request works too. " +
+					"A private key pasted with it is not read.",
+				Example: "-----BEGIN CERTIFICATE REQUEST-----",
+			},
+		},
+	},
 	"noproxy": {
 		Title: "NO_PROXY tester",
 		Summary: "Shows which programs go to an address through the proxy and which go to it directly under a " +

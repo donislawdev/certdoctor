@@ -101,7 +101,7 @@ func TestTheShippedBinaryToolWritesNothing(t *testing.T) {
 	dir := t.TempDir()
 	before := census(t, dir)
 	for _, args := range [][]string{{"tool"}, {"tool", "jwt", "--json"}, {"tool", "jwt", "--file", "missing.txt"},
-		{"tool", "cert", "--json"}} {
+		{"tool", "cert", "--json"}, {"tool", "csr", "--json"}} {
 		startProgram(t, invocation{dir: dir, stdin: testToken}, args...)
 	}
 	if added := appeared(before, census(t, dir)); len(added) != 0 {

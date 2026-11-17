@@ -382,3 +382,33 @@ func TestEveryCertificateHasItsBlockAndEveryJudgementItsRow(t *testing.T) {
 		t.Errorf("thumbprint: %+v", f)
 	}
 }
+
+// TestARequestIsSentToTheToolThatReadsIt holds ADR154: a certificate request
+// handed to this decoder, in any form, is named as one and sent to csr - known
+// by the library reading it as a request, never by its text.
+func TestARequestIsSentToTheToolThatReadsIt(t *testing.T) {
+	request := der(t, fixtureRequest)
+	for _, tc := range []struct {
+		name   string
+		input  []byte
+		saying string
+	}{
+		{"in DER", request, "The input is a certificate request (CSR), not a certificate - certdoctor tool csr reads it."},
+		{"in base64", []byte(base64.StdEncoding.EncodeToString(request)), "certdoctor tool csr reads it"},
+		{"in PEM", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: request}),
+			"certdoctor tool csr reads a certificate request (CSR)."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Decode(tc.input, now)
+			var refusal *spec.Refusal
+			if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, tc.saying) {
+				t.Errorf("%v - want a refusal saying %q", err, tc.saying)
+			}
+		})
+	}
+	// The canary: bytes that are neither are not called a request.
+	_, err := Decode([]byte(base64.StdEncoding.EncodeToString([]byte("not a request at all"))), now)
+	if err == nil || strings.Contains(err.Error(), "csr") {
+		t.Errorf("something that is not a request is sent to csr: %v", err)
+	}
+}

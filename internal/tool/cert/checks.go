@@ -1,15 +1,14 @@
 package cert
 
 import (
-	"crypto/rsa"
 	"crypto/x509"
 	"fmt"
-	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/donislawdev/certdoctor/internal/core/status"
 	"github.com/donislawdev/certdoctor/internal/tool/certfacts"
+	"github.com/donislawdev/certdoctor/internal/tool/derinput"
 	"github.com/donislawdev/certdoctor/internal/tool/prose"
 	"github.com/donislawdev/certdoctor/internal/tool/spec"
 )
@@ -58,19 +57,6 @@ func (j judged) validityOf(e entry) verdict {
 	return pass
 }
 
-// weakSignatures are the signature algorithms a client should not accept a
-// certificate under: MD2 and MD5, which Go's CheckSignature rejects outright,
-// and SHA-1, which Go's Verify does not build a chain through and which the
-// CA/Browser Forum ended in certificates (Baseline Requirements 7.1.3.2,
-// ballot SC097) - crypto/x509 of Go 1.27, read 2026-11-13.
-var weakSignatures = map[x509.SignatureAlgorithm]status.Status{
-	x509.MD2WithRSA:    status.Fail,
-	x509.MD5WithRSA:    status.Fail,
-	x509.SHA1WithRSA:   status.Warn,
-	x509.DSAWithSHA1:   status.Warn,
-	x509.ECDSAWithSHA1: status.Warn,
-}
-
 // signatureOf: a root's own signature is not what a client checks - it trusts
 // the root's name and key as given (RFC 5280 section 6.1.1) - so a
 // certificate that issued itself passes whatever it is signed with. "Issued
@@ -78,28 +64,20 @@ var weakSignatures = map[x509.SignatureAlgorithm]status.Status{
 // signature its key verifies or that cannot be checked at all - an MD5 root
 // names itself and Go will not check what it signed.
 func signatureOf(e entry) verdict {
-	s, weak := weakSignatures[e.cert.SignatureAlgorithm]
+	s, weak := certfacts.WeakSignature(e.cert.SignatureAlgorithm)
 	if !weak || certfacts.IssuedBy(e.cert, e.cert) {
 		return pass
 	}
 	return verdict{s, fmt.Sprintf("%s is signed with %s", label(e), e.cert.SignatureAlgorithm)}
 }
 
-// keyOf: Go refuses to verify with an RSA key under 1024 bits (crypto/rsa of
-// Go 1.27, read 2026-11-13), and the CA/Browser Forum requires 2048 bits of a
-// public authority (Baseline Requirements 6.1.5).
+// keyOf is the shared rule on an RSA key's size (certfacts.RSAKeyStatus).
 func keyOf(e entry) verdict {
-	k, ok := e.cert.PublicKey.(*rsa.PublicKey)
-	if !ok {
+	s, bits := certfacts.RSAKeyStatus(e.cert.PublicKey)
+	if s == status.Pass {
 		return pass
 	}
-	switch bits := k.N.BitLen(); {
-	case bits < 1024:
-		return verdict{status.Fail, fmt.Sprintf("%s has an RSA key of %d bits", label(e), bits)}
-	case bits < 2048:
-		return verdict{status.Warn, fmt.Sprintf("%s has an RSA key of %d bits", label(e), bits)}
-	}
-	return pass
+	return verdict{s, fmt.Sprintf("%s has an RSA key of %d bits", label(e), bits)}
 }
 
 // namesOf judges the names of the first certificate when it may be a TLS
@@ -205,9 +183,9 @@ var signatureWords = sentences{
 }
 
 var keySizeWords = sentences{
-	fail: "Go refuses to verify with an RSA key under 1024 bits (crypto/rsa).",
-	warn: "a public authority issues no RSA key under 2048 bits (CA/Browser Forum Baseline Requirements 6.1.5).",
-	pass: func(judged) string { return "No RSA key is shorter than 2048 bits." },
+	fail: certfacts.KeySizeFailWords,
+	warn: certfacts.KeySizeWarnWords,
+	pass: func(judged) string { return certfacts.KeySizePassWords },
 }
 
 // namesCheck is the verdict on the first certificate's names, with the names.
@@ -229,21 +207,7 @@ func (j judged) namesCheck() (spec.Check, bool) {
 }
 
 // keyCheck warns about a private key in the input, which is never read.
-func (j judged) keyCheck() (spec.Check, bool) {
-	var blocks []string
-	for _, s := range j.in.skipped {
-		if isPrivateKey(s.Type) {
-			blocks = append(blocks, fmt.Sprint(s.Block))
-		}
-	}
-	if len(blocks) == 0 {
-		return spec.Check{}, false
-	}
-	return spec.Check{ID: "private_key", Status: status.Warn, Summary: fmt.Sprintf("%s %s of the input %s a "+
-		"private key. It was not read and is not shown here - a private key belongs on the machine that uses it, "+
-		"and a file that carries one should not be handed around.", pluralWord(len(blocks), "Block", "Blocks"),
-		prose.List(blocks), pluralWord(len(blocks), "is", "are each"))}, true
-}
+func (j judged) keyCheck() (spec.Check, bool) { return derinput.PrivateKeyCheck(j.in.skipped) }
 
 // unreadableCheck names the certificates the library could not read.
 func (j judged) unreadableCheck() (spec.Check, bool) {
@@ -287,26 +251,10 @@ func shortName(c *x509.Certificate) string {
 }
 
 // libraryWords is why the library refused, in its own words, cut short.
-func libraryWords(err error) string {
-	words := err.Error()
-	if utf8.RuneCountInString(words) > 160 {
-		words = string([]rune(words)[:159]) + "..."
-	}
-	return words
-}
+func libraryWords(err error) string { return prose.Cut(err.Error(), 160) }
 
 // capped lists clauses, naming at most a few and counting the rest.
-func capped(clauses []string) string {
-	if len(clauses) <= named {
-		return prose.List(clauses)
-	}
-	return strings.Join(clauses[:named], ", ") + fmt.Sprintf(" and %d more", len(clauses)-named)
-}
+func capped(clauses []string) string { return prose.Capped(clauses, named) }
 
 // upper starts a sentence with a capital.
-func upper(s string) string {
-	if s != "" && 'a' <= s[0] && s[0] <= 'z' {
-		return string(s[0]-'a'+'A') + s[1:]
-	}
-	return s
-}
+func upper(s string) string { return prose.Upper(s) }

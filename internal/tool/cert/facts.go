@@ -1,12 +1,8 @@
 package cert
 
 import (
-	"crypto/ecdsa"
-	"crypto/rsa"
 	"crypto/sha1"
-	"crypto/sha256"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/hex"
 	"time"
 
@@ -51,13 +47,8 @@ type Certificate struct {
 	CRLDistributionPoints []string `json:"crl_distribution_points"`
 }
 
-// PublicKey is a certificate's key: its algorithm, and its size or curve
-// where the algorithm has one.
-type PublicKey struct {
-	Algorithm string  `json:"algorithm"`
-	Bits      *int    `json:"bits"`
-	Curve     *string `json:"curve"`
-}
+// PublicKey is a certificate's key - the shape the tools share.
+type PublicKey = certfacts.PublicKey
 
 // describe is the Data of one certificate the library read.
 func describe(e entry) Certificate {
@@ -76,10 +67,10 @@ func describe(e entry) Certificate {
 		IsCA:                  c.IsCA,
 		MaxPathLength:         pathLength(c),
 		SelfSigned:            certfacts.SelfSigned(c),
-		PublicKey:             publicKey(c),
-		SignatureAlgorithm:    c.SignatureAlgorithm.String(),
-		KeyUsage:              keyUsages(c.KeyUsage),
-		ExtendedKeyUsage:      extendedKeyUsages(c),
+		PublicKey:             certfacts.Key(c.PublicKey, c.PublicKeyAlgorithm),
+		SignatureAlgorithm:    certfacts.SignatureAlgorithm(c.Raw, c.SignatureAlgorithm),
+		KeyUsage:              certfacts.KeyUsages(c.KeyUsage),
+		ExtendedKeyUsage:      certfacts.ExtendedKeyUsages(c.ExtKeyUsage, c.UnknownExtKeyUsage),
 		FingerprintSHA256:     certfacts.FingerprintSHA256(c.Raw),
 		FingerprintSHA1:       thumbprint(c),
 		SPKISHA256:            spkiPin(c),
@@ -101,10 +92,7 @@ func thumbprint(c *x509.Certificate) string {
 
 // spkiPin is the pin of RFC 7469 section 2.4: the SHA-256 of the DER of the
 // SubjectPublicKeyInfo, in base64 - what certificate pinning compares.
-func spkiPin(c *x509.Certificate) string {
-	sum := sha256.Sum256(c.RawSubjectPublicKeyInfo)
-	return base64.StdEncoding.EncodeToString(sum[:])
-}
+func spkiPin(c *x509.Certificate) string { return certfacts.SPKIPin(c.RawSubjectPublicKeyInfo) }
 
 // serialHex is the serial number as the bytes of its magnitude in lower case
 // hex - 01eee6..., with the leading zero Windows and OpenSSL show, where a
@@ -154,93 +142,7 @@ func pathLength(c *x509.Certificate) *int {
 	return &n
 }
 
-// publicKey names a certificate's key. Ed25519 has one size and no curve to
-// name; an algorithm the library does not read is "unknown".
-func publicKey(c *x509.Certificate) PublicKey {
-	switch k := c.PublicKey.(type) {
-	case *rsa.PublicKey:
-		bits := k.N.BitLen()
-		return PublicKey{Algorithm: "RSA", Bits: &bits}
-	case *ecdsa.PublicKey:
-		bits, curve := k.Curve.Params().BitSize, k.Curve.Params().Name
-		return PublicKey{Algorithm: "ECDSA", Bits: &bits, Curve: &curve}
-	}
-	if c.PublicKeyAlgorithm == x509.UnknownPublicKeyAlgorithm {
-		return PublicKey{Algorithm: "unknown"}
-	}
-	return PublicKey{Algorithm: c.PublicKeyAlgorithm.String()}
-}
-
-// keyUsageNames are the bits of RFC 5280 section 4.2.1.3, in its order and by
-// its names.
-var keyUsageNames = []struct {
-	bit  x509.KeyUsage
-	name string
-}{
-	{x509.KeyUsageDigitalSignature, "digitalSignature"},
-	{x509.KeyUsageContentCommitment, "contentCommitment"},
-	{x509.KeyUsageKeyEncipherment, "keyEncipherment"},
-	{x509.KeyUsageDataEncipherment, "dataEncipherment"},
-	{x509.KeyUsageKeyAgreement, "keyAgreement"},
-	{x509.KeyUsageCertSign, "keyCertSign"},
-	{x509.KeyUsageCRLSign, "cRLSign"},
-	{x509.KeyUsageEncipherOnly, "encipherOnly"},
-	{x509.KeyUsageDecipherOnly, "decipherOnly"},
-}
-
-func keyUsages(u x509.KeyUsage) []string {
-	out := []string{}
-	for _, k := range keyUsageNames {
-		if u&k.bit != 0 {
-			out = append(out, k.name)
-		}
-	}
-	return out
-}
-
-// extendedKeyUsageNames are the purposes the library reads, by the names
-// RFC 5280 section 4.2.1.12 gives them. The vendors' purposes Go also reads
-// have no name in an RFC, so they are written as their identifiers.
-var extendedKeyUsageNames = map[x509.ExtKeyUsage]string{
-	x509.ExtKeyUsageAny:                            "anyExtendedKeyUsage",
-	x509.ExtKeyUsageServerAuth:                     "serverAuth",
-	x509.ExtKeyUsageClientAuth:                     "clientAuth",
-	x509.ExtKeyUsageCodeSigning:                    "codeSigning",
-	x509.ExtKeyUsageEmailProtection:                "emailProtection",
-	x509.ExtKeyUsageIPSECEndSystem:                 "ipsecEndSystem",
-	x509.ExtKeyUsageIPSECTunnel:                    "ipsecTunnel",
-	x509.ExtKeyUsageIPSECUser:                      "ipsecUser",
-	x509.ExtKeyUsageTimeStamping:                   "timeStamping",
-	x509.ExtKeyUsageOCSPSigning:                    "OCSPSigning",
-	x509.ExtKeyUsageMicrosoftServerGatedCrypto:     "1.3.6.1.4.1.311.10.3.3",
-	x509.ExtKeyUsageNetscapeServerGatedCrypto:      "2.16.840.1.113730.4.1",
-	x509.ExtKeyUsageMicrosoftCommercialCodeSigning: "1.3.6.1.4.1.311.2.1.22",
-	x509.ExtKeyUsageMicrosoftKernelCodeSigning:     "1.3.6.1.4.1.311.61.1.1",
-}
-
-func extendedKeyUsages(c *x509.Certificate) []string {
-	out := []string{}
-	for _, u := range c.ExtKeyUsage {
-		if name, ok := extendedKeyUsageNames[u]; ok {
-			out = append(out, name)
-		}
-	}
-	for _, oid := range c.UnknownExtKeyUsage {
-		out = append(out, oid.String())
-	}
-	return out
-}
-
-// servesTLS says whether a certificate may be a TLS server's by its purposes:
-// it names none, or names serverAuth or any purpose.
+// servesTLS says whether a certificate may be a TLS server's by its purposes.
 func servesTLS(c *x509.Certificate) bool {
-	if len(c.ExtKeyUsage) == 0 && len(c.UnknownExtKeyUsage) == 0 {
-		return true
-	}
-	for _, u := range c.ExtKeyUsage {
-		if u == x509.ExtKeyUsageServerAuth || u == x509.ExtKeyUsageAny {
-			return true
-		}
-	}
-	return false
+	return certfacts.ServesTLS(c.ExtKeyUsage, c.UnknownExtKeyUsage)
 }

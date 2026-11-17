@@ -75,6 +75,25 @@ func TestNamesAreListedWithAnAndBeforeTheLast(t *testing.T) {
 	}
 }
 
+// TestLongTextIsShortenedAndSaysSo holds the three helpers both decoders
+// write their sentences with.
+func TestLongTextIsShortenedAndSaysSo(t *testing.T) {
+	for _, tc := range []struct{ got, want string }{
+		{Capped([]string{"a", "b"}, 2), "a and b"},
+		{Capped([]string{"a", "b", "c", "d"}, 2), "a, b and 2 more"},
+		{Cut("short", 5), "short"},
+		// Characters, not bytes: two letters of two bytes each stay whole.
+		{Cut(string([]rune{0x142, 0x105, 'k', 'a', 'm', 'i'}), 4), string([]rune{0x142, 0x105, 'k'}) + "..."},
+		{Upper("a sentence"), "A sentence"},
+		{Upper("Already"), "Already"},
+		{Upper(""), ""},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%q, want %q", tc.got, tc.want)
+		}
+	}
+}
+
 // FuzzWords holds that any two times and any names give words in UTF-8 that
 // name a unit, and never fall over - a certificate can say any second from
 // the year 1 to 9999.
