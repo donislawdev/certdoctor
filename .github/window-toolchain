@@ -27,9 +27,13 @@
 # What each build links was read off the linker's map on 2026-11-11: on Windows
 # of the release runner's own build (MinGW-Builds GCC 15.2.0, which unlike
 # other MinGW-w64 builds of GCC links no default manifest), on Linux of a build
-# in ubuntu:24.04, the image of the runner, and on macOS of a build with Xcode,
-# which put nothing of its own in - the system libraries macOS loads at start
-# are not in the binary.
+# in ubuntu:24.04, and on macOS of a build with Xcode, which put nothing of its
+# own in - the system libraries macOS loads at start are not in the binary.
+# On 2026-11-17 the Linux runner moved to ubuntu:26.04, with glibc 2.43 and GCC
+# 15.2, and a build in that image links the same five files. Its six glibc
+# start file headers differ from those of 2.39 in the copyright years alone,
+# and the window asks the system for no newer glibc than before: GLIBC_2.38,
+# from either image.
 
 version windows/amd64 mingw-w64 13.0.0
 link windows/amd64 crt2.o mingw-w64
@@ -44,7 +48,7 @@ link windows/amd64 crtbegin.o gcc
 link windows/amd64 crtend.o gcc
 link windows/amd64 libgcc.a gcc
 
-version linux/amd64 glibc 2.39
+version linux/amd64 glibc 2.43
 link linux/amd64 crt1.o glibc
 link linux/amd64 crti.o glibc
 link linux/amd64 crtn.o glibc
