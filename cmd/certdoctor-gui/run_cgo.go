@@ -32,6 +32,14 @@ const appID = "dev.donislaw.certdoctor"
 // --software-gl, and every other argument is passed on to that second process
 // as it came - see readLaunch.
 func run(args []string, errOut io.Writer) int {
+	// Where a library asked for by name may come from, before anything below
+	// asks for one (OBS214, ADR152) - a check reads that this is the first
+	// statement here. A refusal costs the window that protection and not the
+	// window, so it is said and the window opens, as every OpenGL program on
+	// Windows would.
+	if err := searchSystemOnly(); err != nil {
+		fmt.Fprintf(errOut, words.T(words.LibrariesUnrestricted)+"\n", err)
+	}
 	// The toolkit's own words in English before anything of it is drawn
 	// (OBS206). A failure costs those words their language and not the
 	// window, so it is said and the window opens.

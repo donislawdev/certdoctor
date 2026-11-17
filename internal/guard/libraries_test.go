@@ -28,9 +28,11 @@ import (
 // What it does not see: a load through a procedure found by hand (LoadLibraryW
 // asked of GetProcAddress), and C code. The OpenGL binding in third_party asks
 // for opengl32.dll by name from C (its own go.mod keeps it out of this scan),
-// and so does the toolkit's GLFW - that is how a program finds the system's
-// OpenGL driver, and a name planted beside the window is the same exposure
-// every OpenGL program on Windows has. Written down rather than hidden.
+// and so does the toolkit's GLFW, with dinput8.dll, xinput1_4.dll and
+// dwmapi.dll besides. Those loads are answered from the system directory
+// because the window narrows its search to it before the toolkit starts
+// (searchSystemOnly, OBS214, ADR152) - held by the window's own tests, not by
+// this guard, which reads names and not where the system looks for them.
 
 // knownDLLs are the libraries this program may load by bare name, each with why
 // the loader never searches for it.
