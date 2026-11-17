@@ -20,6 +20,9 @@ This file records only what a person would notice by running the program. Intern
 
 ### Fixed
 
+- On Windows, the window no longer loads a system library such as `opengl32.dll` from a file of the
+  same name placed next to `certdoctor-gui.exe`, for example in a downloads folder. It takes those
+  libraries from the Windows system folder only.
 - On Windows, a git that uses Schannel with `http.schannelUseSSLCAInfo` turned on is now checked
   against the CA file it actually reads. Before, its row sent you to the Windows store, which that
   git does not use. If git cannot use the file at all - larger than 1 MiB, or with a damaged

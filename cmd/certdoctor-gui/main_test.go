@@ -11,14 +11,19 @@ import (
 // a second process that reports what it was started with (childAgain - see
 // TestASecondStartHandsOverTheFlagTheDriverAndTheCode), or, for
 // TestTheCommandLineBesideTheWindowIsRun, a window that runs the command line
-// beside it (childPort) and the command line it runs (childCommandLine).
+// beside it (childPort) and the command line it runs (childCommandLine), or a
+// process that asks for a library by name, without and with the search
+// narrowed (childLibrary and childLibrarySearched - see
+// TestALibraryBesideTheWindowIsNotTakenForTheSystemsOwn).
 const childVariable = "CERTDOCTOR_GUI_TEST_CHILD"
 
 const (
-	childWindow      = "1"
-	childAgain       = "again"
-	childCommandLine = "commandline"
-	childPort        = "port"
+	childWindow          = "1"
+	childAgain           = "again"
+	childCommandLine     = "commandline"
+	childPort            = "port"
+	childLibrary         = "library"
+	childLibrarySearched = "librarysearched"
 )
 
 // The exit codes of a childAgain process: started the way startAgain has to
@@ -48,6 +53,10 @@ func TestMain(m *testing.M) {
 		os.Exit(actAsCommandLine(os.Args[1:]))
 	case childPort:
 		os.Exit(actAsWindow(os.Args[1:]))
+	case childLibrary:
+		os.Exit(actAsLibraryLoader(false))
+	case childLibrarySearched:
+		os.Exit(actAsLibraryLoader(true))
 	}
 	os.Exit(m.Run())
 }

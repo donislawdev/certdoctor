@@ -45,6 +45,11 @@ var externalImportAllowlist = map[string]bool{
 	// directory - a file of its own because it is on unsafeAllowlist too. The
 	// owner's decision (2026-11-10, ADR122).
 	"cmd/certdoctor-gui/titlebar_windows.go": true,
+	// Where the window's libraries may come from, through the same module's
+	// typed SetDefaultDllDirectories: a library asked for by name is then taken
+	// from the system directory only, never from beside the window (OBS214).
+	// The owner's decision (2026-11-17, ADR152).
+	"cmd/certdoctor-gui/libraries_windows.go": true,
 }
 
 // externalImportPlaces names the one module allowed under a directory rather

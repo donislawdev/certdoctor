@@ -186,6 +186,11 @@ const (
 	// opens all the same.
 	ToolkitNotEnglish Key = "toolkit.notenglish"
 
+	// What goes to standard error when Windows would not narrow where the
+	// window looks for a library asked for by name to the system folder
+	// (OBS214, ADR152), with the system's reason. The window opens all the same.
+	LibrariesUnrestricted Key = "libraries.unrestricted"
+
 	// The two places of the window on its bar, and the Tools screen (D23,
 	// ADR141). What each tool is called is in tools.go, by its id.
 	NavDiagnose         Key = "nav.diagnose"
@@ -375,15 +380,16 @@ var english = map[Key]string{
 	WindowRefusedCause:  "The window could not be opened: the graphics toolkit was not given one. The toolkit said: %s. The window draws through OpenGL 2.1, which a virtual machine without 3D acceleration or a remote desktop session may not offer. The certdoctor command line in the same folder needs no graphics and diagnoses the same way - run \"certdoctor --help\". To get the window, use a graphics driver that provides OpenGL 2.1.",
 	NoWindowInThisBuild: "certdoctor-gui: this build has no window in it. It was compiled without cgo, which the graphics toolkit needs to reach OpenGL. The certdoctor command line needs neither and diagnoses the same way - run \"certdoctor --help\". To get the window, use a certdoctor-gui built for this system.",
 
-	SoftwareAgain:       "The first attempt to open the window gave no window - usually a graphics driver without OpenGL 2.1. Starting again with the software renderer from the opengl folder beside the program.",
-	SoftwareDrawing:     "This window is drawn by the software renderer from the opengl folder beside the program (Mesa llvmpipe), not by the graphics driver. Everything works, and drawing is slower than with a driver that provides OpenGL 2.1.",
-	SoftwareNotShipped:  "No software renderer ships for this system, so --software-gl changes nothing here.",
-	SoftwareNotLoaded:   "The software renderer from the opengl folder beside the program could not be loaded: %s.",
-	SoftwareNotBeside:   "The software renderer was not tried: %s is missing. It ships in the opengl folder of the Windows archive - put that folder back next to certdoctor-gui.exe and start the window again.",
-	SoftwareNotReadable: "The software renderer was not tried: a file of it beside the program could not be read (%s). Check who may read the opengl folder next to certdoctor-gui.exe.",
-	SoftwareStartFailed: "The software renderer was not tried: starting the window again did not work (%s).",
-	SoftwareDidNotHelp:  "The software renderer from the opengl folder beside the program was loaded, and the graphics toolkit still could not open a window with it.",
-	ToolkitNotEnglish:   "The menus and dialogs the graphics toolkit draws itself may follow this system's language rather than English: %s",
+	SoftwareAgain:         "The first attempt to open the window gave no window - usually a graphics driver without OpenGL 2.1. Starting again with the software renderer from the opengl folder beside the program.",
+	SoftwareDrawing:       "This window is drawn by the software renderer from the opengl folder beside the program (Mesa llvmpipe), not by the graphics driver. Everything works, and drawing is slower than with a driver that provides OpenGL 2.1.",
+	SoftwareNotShipped:    "No software renderer ships for this system, so --software-gl changes nothing here.",
+	SoftwareNotLoaded:     "The software renderer from the opengl folder beside the program could not be loaded: %s.",
+	SoftwareNotBeside:     "The software renderer was not tried: %s is missing. It ships in the opengl folder of the Windows archive - put that folder back next to certdoctor-gui.exe and start the window again.",
+	SoftwareNotReadable:   "The software renderer was not tried: a file of it beside the program could not be read (%s). Check who may read the opengl folder next to certdoctor-gui.exe.",
+	SoftwareStartFailed:   "The software renderer was not tried: starting the window again did not work (%s).",
+	SoftwareDidNotHelp:    "The software renderer from the opengl folder beside the program was loaded, and the graphics toolkit still could not open a window with it.",
+	ToolkitNotEnglish:     "The menus and dialogs the graphics toolkit draws itself may follow this system's language rather than English: %s",
+	LibrariesUnrestricted: "Windows did not let this window load its system libraries from the system folder only, so a file named like one of them next to certdoctor-gui.exe could be loaded in its place: %s",
 }
 
 // The words of the catalogue screen - the hidden screen that shows every
