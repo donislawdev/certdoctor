@@ -85,6 +85,13 @@ type Settings struct {
 	// all - an empty value is an answer here, because git reads it as false.
 	Verify      string
 	VerifyLevel string
+	// UseCAInfo and CheckRevoke are http.schannelUseSSLCAInfo and
+	// http.schannelCheckRevoke as written, read only when the backend is
+	// schannel - OBS183. Their levels say they were written at all.
+	UseCAInfo        string
+	UseCAInfoLevel   string
+	CheckRevoke      string
+	CheckRevokeLevel string
 	// Unreadable says where git stops reading its configuration, or where this
 	// program cannot follow it - P3-1 and OBS179. A config whose reading stopped
 	// halfway once came out as a config that simply does not set anything: the

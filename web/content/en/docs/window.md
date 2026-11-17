@@ -25,7 +25,7 @@ On Windows, the `opengl` folder holds a software renderer. On a machine whose gr
 
 On macOS, keep the bundle and the links next to it together. The signature and Apple's notarisation belong to the bundle, so a program copied out of it on its own is not the program Apple checked.
 
-On Linux, the window needs a desktop session with OpenGL. It loads `libGL.so.1` and `libwayland-client.so.0`, which a desktop installation has.
+On Linux, the window needs a desktop session with OpenGL. It loads `libGL.so.1` and `libwayland-client.so.0`, which a desktop installation has. It also needs the GNU C library, glibc, 2.38 or newer - `ldd --version` prints the one you have.
 
 ## What it keeps
 

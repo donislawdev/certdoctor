@@ -20,6 +20,10 @@ This file records only what a person would notice by running the program. Intern
 
 ### Fixed
 
+- On Windows, a git that uses Schannel with `http.schannelUseSSLCAInfo` turned on is now checked
+  against the CA file it actually reads. Before, its row sent you to the Windows store, which that
+  git does not use. If git cannot use the file at all - larger than 1 MiB, or with a damaged
+  certificate in it - the row says so.
 - A PAC file that asks for a huge amount of memory in one step, such as `"x".repeat(1e10)`, no longer
   ends Cert Doctor without a report. The script now runs in a separate process. If that process runs
   out of memory or time, only it stops, and the report says the script was stopped.

@@ -30,17 +30,23 @@ const (
 	keyCAInfo  = "sslcainfo"
 	keyCAPath  = "sslcapath"
 	keyVerify  = "sslverify"
+	// The two keys git reads only when the backend is schannel - OBS183, see
+	// schannel.go.
+	keyUseCAInfo   = "schannelusesslcainfo"
+	keyCheckRevoke = "schannelcheckrevoke"
 )
 
 // decisiveKeys are those keys in the order a sentence about one is chosen.
-var decisiveKeys = []string{keyBackend, keyVerify, keyCAInfo, keyCAPath}
+var decisiveKeys = []string{keyBackend, keyVerify, keyCAInfo, keyCAPath, keyUseCAInfo, keyCheckRevoke}
 
 // keyNames are the spellings a person reads, the ones git's documentation uses.
 var keyNames = map[string]string{
-	keyBackend: "http.sslBackend",
-	keyCAInfo:  "http.sslCAInfo",
-	keyCAPath:  "http.sslCAPath",
-	keyVerify:  "http.sslVerify",
+	keyBackend:     "http.sslBackend",
+	keyCAInfo:      "http.sslCAInfo",
+	keyCAPath:      "http.sslCAPath",
+	keyVerify:      "http.sslVerify",
+	keyUseCAInfo:   "http.schannelUseSSLCAInfo",
+	keyCheckRevoke: "http.schannelCheckRevoke",
 }
 
 // maxIncludeDepth is MAX_INCLUDE_DEPTH in config.c - one include deeper and git
@@ -85,8 +91,8 @@ type configReader struct {
 // is no repository in the question. GIT_CONFIG_PARAMETERS, the quoted list git
 // hands the processes it starts from "git -c" - when it is set the row says so.
 // And a condition: an [includeIf] or an [http "<url>"] section that touches one
-// of the four keys leaves the row without a verdict, because which repository or
-// which address it applies to is not something this program evaluates.
+// of the decisive keys leaves the row without a verdict, because which repository
+// or which address it applies to is not something this program evaluates.
 func readSettings(source file.Source, systemConfig string, env Environment) Settings {
 	var s Settings
 	r := &configReader{source: source, env: env, settings: &s}
@@ -363,18 +369,25 @@ func (r *configReader) apply(e entry, where, from, level string, depth int, cond
 
 // set records one decisive key read unconditionally.
 //
-// THE THREE KEYS DO NOT TREAT A MISSING VALUE ALIKE, and each follows http.c of
-// git 2.54.0. sslVerify standing alone is true (git_config_bool). sslBackend
-// standing alone puts the backend back to none (xstrdup_or_null). sslCAInfo and
+// THE KEYS DO NOT TREAT A MISSING VALUE ALIKE, and each follows http.c of git
+// 2.54.0. sslVerify standing alone is true (git_config_bool), and so are the two
+// schannel keys - http.c of Git for Windows 2.56.0.windows.4 hands
+// schannelCheckRevoke with no value to git_config_bool too. sslBackend standing
+// alone puts the backend back to none (xstrdup_or_null). sslCAInfo and
 // sslCAPath standing alone stop git (git_config_pathname) - S26 measured that.
 func (r *configReader) set(name string, e entry, where, level string) {
 	s := r.settings
+	value := e.value
+	if !e.hasValue {
+		value = "true"
+	}
 	switch name {
 	case keyVerify:
-		s.Verify, s.VerifyLevel = e.value, level
-		if !e.hasValue {
-			s.Verify = "true"
-		}
+		s.Verify, s.VerifyLevel = value, level
+	case keyUseCAInfo:
+		s.UseCAInfo, s.UseCAInfoLevel = value, level
+	case keyCheckRevoke:
+		s.CheckRevoke, s.CheckRevokeLevel = value, level
 	case keyBackend:
 		s.Backend, s.BackendLevel = e.value, level
 		if !e.hasValue {

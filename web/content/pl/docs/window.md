@@ -26,7 +26,7 @@ Na Windowsie folder `opengl` zawiera renderer programowy. Na maszynie, której s
 
 Na macOS trzymaj pakiet i dowiązania obok niego razem. Podpis i notaryzacja Apple należą do pakietu, więc program skopiowany z niego osobno nie jest programem, który Apple sprawdził.
 
-Na Linuksie okno potrzebuje sesji pulpitu z OpenGL. Ładuje `libGL.so.1` i `libwayland-client.so.0`, które ma instalacja z pulpitem.
+Na Linuksie okno potrzebuje sesji pulpitu z OpenGL. Ładuje `libGL.so.1` i `libwayland-client.so.0`, które ma instalacja z pulpitem. Potrzebuje też biblioteki GNU C, glibc, w wersji 2.38 lub nowszej - `ldd --version` pokazuje, którą masz.
 
 ## Co zachowuje
 
