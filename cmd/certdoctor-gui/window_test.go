@@ -53,7 +53,7 @@ func testWindow(t *testing.T) (*window, *held, *time.Time) {
 }
 
 // exampleReport is the example.com report of model's test data - 0.1.0,
-// schema 2.4, exit code 4, a verdict about L5.
+// schema 2.5, exit code 4, a verdict about L5.
 func exampleReport(t *testing.T) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", "internal", "gui", "model", "testdata", "example-com.json"))

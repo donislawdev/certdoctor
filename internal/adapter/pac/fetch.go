@@ -242,7 +242,11 @@ func failedFetch(err error) error {
 // A FETCH THAT FAILED IS NOT AN EVALUATION THAT WENT BADLY, and keeping those
 // apart is the whole shape of proxy.ScriptAnswer: a web server nobody can reach
 // and a file that answers badly send a reader to different places.
-func Resolver(fetch Fetcher, sandbox Sandbox, targetURL, targetHost string) proxy.Evaluate {
+//
+// THE EVALUATOR IS AN INTERFACE SINCE ADR150. The program hands it Isolated,
+// which runs the file in a process of its own; a Sandbox still fits, which is
+// how this package's own tests run a file without starting one.
+func Resolver(fetch Fetcher, evaluator Evaluator, targetURL, targetHost string) proxy.Evaluate {
 	return func(ctx context.Context, scriptURL string) proxy.ScriptAnswer {
 		if fetch == nil {
 			return proxy.ScriptAnswer{Detail: "this build has no way to fetch an automatic configuration script, " +
@@ -252,6 +256,6 @@ func Resolver(fetch Fetcher, sandbox Sandbox, targetURL, targetHost string) prox
 		if err != nil {
 			return proxy.ScriptAnswer{Detail: err.Error()}
 		}
-		return proxy.ScriptAnswer{Fetched: true, Result: sandbox.Evaluate(ctx, source, targetURL, targetHost)}
+		return proxy.ScriptAnswer{Fetched: true, Result: evaluator.Evaluate(ctx, source, targetURL, targetHost)}
 	}
 }

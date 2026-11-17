@@ -54,7 +54,7 @@ const (
 
 // echoed is what the window hands the command line on standard input for
 // answerEcho.
-const echoed = `{"schema_version":"2.4"}`
+const echoed = `{"schema_version":"2.5"}`
 
 // actAsCommandLine is the test binary standing in for certdoctor beside the
 // window: it writes what it was asked on standard output, a sentence on

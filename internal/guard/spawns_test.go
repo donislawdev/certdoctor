@@ -50,6 +50,10 @@ var spawnsAllowed = map[string][]approvedSpawn{
 		{call: "os/exec.CommandContext", from: "commandLine", asks: "os.Executable",
 			why: "certdoctor in the window's own folder, by the path os.Executable answers and never the search path (ADR121 point 1) - see commandLine there"},
 	},
+	"cmd/certdoctor/pacsandbox.go": {
+		{call: "os/exec.CommandContext", from: "os.Executable",
+			why: "this program started again by the path os.Executable answers, as the process a PAC file runs in (ADR150) - see startPACSandbox there"},
+	},
 }
 
 // spawnCalls are the calls able to start another program. The ones outside

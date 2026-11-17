@@ -141,6 +141,14 @@ var sandboxAllowlist = map[string]int{
 	// interrupt code we did not write. ADR8 permits executing a PAC file under
 	// five conditions; this file is how the third of them is enforced.
 	"internal/adapter/pac/stopwatch.go": 1,
+	// The watchdog of the process a PAC file runs in (ADR150, decided by the
+	// owner 2026-11-16). The stopwatch interrupts the engine between its own
+	// instructions; this ends the whole process from outside the code running
+	// the file, which is the one thing that stops a built-in deep in native
+	// code (OBS199). Same shape again: a go statement and nothing shared - it
+	// reads the runtime's figures and the clock, and its answer is the
+	// process's exit code, which its parent reads.
+	"internal/adapter/pac/watchdog.go": 1,
 	// The window's three goroutines, each a decision of the owner. The wait for
 	// the command line it runs (2026-11-09, ADR121), the hand-off of a page to
 	// the browser, which the toolkit makes by waiting for a program to end on

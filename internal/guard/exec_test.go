@@ -43,6 +43,13 @@ var execAllowlist = map[string]bool{
 	// so unlike the entry above it is also held to the spawns it may make -
 	// spawnsAllowed in spawns_test.go.
 	"cmd/certdoctor-gui/processes.go": true,
+	// The command line's second place (ADR150, decided by the owner
+	// 2026-11-16): this program started again as the process a PAC file runs
+	// in, so that a built-in the sandbox cannot interrupt ends that process
+	// rather than the run (OBS199). Like the window's file, what it starts is
+	// decided in the file itself, so it is held to that one spawn by
+	// spawnsAllowed in spawns_test.go.
+	"cmd/certdoctor/pacsandbox.go": true,
 }
 
 // execPackages are the imports able to start another program.
