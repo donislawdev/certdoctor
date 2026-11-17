@@ -151,7 +151,7 @@ func Start(icon fyne.Resource, version string, optionsOpen, software bool) (fyne
 	bar, links, tabs := head(icon, version, PlaceDiagnose)
 	form.Links, form.Tabs = links, tabs
 	page := container.NewBorder(bar, nil, nil, nil,
-		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body)))
+		parts.VScroll(parts.PadXY(look.InsetPage, 0, body)))
 	return page, form
 }
 
@@ -192,7 +192,7 @@ type ReportView struct {
 	// pages is each layer's page in its own scroll, made the first time the
 	// layer is chosen and kept, so a command opened in one layer is still
 	// open, and the page still where it was scrolled to, on coming back.
-	pages map[int]*container.Scroll
+	pages map[int]*parts.Scroll
 }
 
 // Chosen is the layer the screen shows.
@@ -213,8 +213,8 @@ func (v *ReportView) show(i int) {
 // last card and right of the cards is inside the scroll, so the page ends
 // clear of the window's edge and the scroll bar stands in that room rather
 // than over a card.
-func layerPage(l model.Layer, open int) *container.Scroll {
-	return container.NewVScroll(parts.Inset(0, 0, look.InsetPage, look.InsetPage, layerDetail(l, open)))
+func layerPage(l model.Layer, open int) *parts.Scroll {
+	return parts.VScroll(parts.Inset(0, 0, look.InsetPage, look.InsetPage, layerDetail(l, open)))
 }
 
 // Report is the screen after a run: what was diagnosed and the actions on
@@ -235,7 +235,7 @@ func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.Ca
 		Again:  parts.NewButton(parts.Primary, words.T(words.RunAgain), theme.ViewRefreshIcon(), nil),
 		rail:   parts.NewRail(words.T(words.LayersHead), r.Layers, selected),
 		report: r,
-		pages:  map[int]*container.Scroll{selected: layerPage(r.Layers[selected], open)},
+		pages:  map[int]*parts.Scroll{selected: layerPage(r.Layers[selected], open)},
 	}
 	v.shown = parts.Layers(v.pages[selected])
 	v.rail.OnChosen = v.show
@@ -249,7 +249,7 @@ func Report(icon fyne.Resource, r model.Report, selected int, open int) (fyne.Ca
 	)
 	top := parts.Column(look.PageWidth, parts.Inset(look.InsetPage, look.InsetPage, look.InsetPage, look.GapCard,
 		parts.Stack(look.GapCard, title, parts.Verdict(r))))
-	rail := container.NewVScroll(parts.Inset(0, 0, 0, look.InsetPage, v.rail))
+	rail := parts.VScroll(parts.Inset(0, 0, 0, look.InsetPage, v.rail))
 	lower := parts.ColumnFill(look.PageWidth, parts.Inset(look.InsetPage, 0, 0, 0,
 		parts.RowTop(look.GapCard, 1, parts.Tall(parts.Width(look.RailWidth, rail)), parts.Tall(v.shown))))
 	bar, links, tabs := head(icon, r.Version, PlaceDiagnose)
@@ -360,7 +360,7 @@ func Running(icon fyne.Resource, version, target string) (fyne.CanvasObject, *Ru
 	bar, links, tabs := head(icon, version, PlaceDiagnose)
 	v.Links, v.Tabs = links, tabs
 	return container.NewBorder(bar, nil, nil, nil,
-		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body))), v
+		parts.VScroll(parts.PadXY(look.InsetPage, 0, body))), v
 }
 
 // TroubleView is what the trouble screen hands to whoever runs the window:
@@ -379,5 +379,5 @@ func Trouble(icon fyne.Resource, version, title, what, todo, printed string) (fy
 	bar, links, tabs := head(icon, version, PlaceDiagnose)
 	v.Links, v.Tabs = links, tabs
 	return container.NewBorder(bar, nil, nil, nil,
-		container.NewVScroll(parts.PadXY(look.InsetPage, 0, body))), v
+		parts.VScroll(parts.PadXY(look.InsetPage, 0, body))), v
 }

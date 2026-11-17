@@ -6,7 +6,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 )
 
@@ -42,7 +41,7 @@ func TestAPartThatChangedIsBroughtIntoView(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			newApp(t)
 			part := Layers(block(c.part))
-			s := container.NewVScroll(Stack(0, block(c.above), part, block(c.below)))
+			s := VScroll(Stack(0, block(c.above), part, block(c.below)))
 			w := test.NewTempWindow(t, s)
 			w.SetPadded(false)
 			w.Resize(fyne.NewSize(revealView, revealView))
@@ -65,7 +64,7 @@ func TestAPartThatChangedIsBroughtIntoView(t *testing.T) {
 func TestAPartThatGrewThisMomentIsBroughtIntoView(t *testing.T) {
 	newApp(t)
 	part := Layers(block(50))
-	s := container.NewVScroll(Stack(0, block(100), part))
+	s := VScroll(Stack(0, block(100), part))
 	w := test.NewTempWindow(t, s)
 	w.SetPadded(false)
 	w.Resize(fyne.NewSize(revealView, revealView))
@@ -85,14 +84,14 @@ func TestAPartThatGrewThisMomentIsBroughtIntoView(t *testing.T) {
 func TestRevealLeavesWhatItCannotPlace(t *testing.T) {
 	newApp(t)
 	part := Layers(block(50))
-	never := container.NewVScroll(Stack(0, block(1000), part))
+	never := VScroll(Stack(0, block(1000), part))
 	Reveal(never, part)
 	if never.Offset.Y != 0 {
 		t.Errorf("a scroll never laid out moved to %v", never.Offset.Y)
 	}
 	// Scrolled down first: a part taken to stand at the page's very top
 	// would move the page there.
-	s := container.NewVScroll(Stack(0, block(1000), Layers(block(50))))
+	s := VScroll(Stack(0, block(1000), Layers(block(50))))
 	w := test.NewTempWindow(t, s)
 	w.SetPadded(false)
 	w.Resize(fyne.NewSize(revealView, revealView))

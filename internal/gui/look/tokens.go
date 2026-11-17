@@ -138,6 +138,11 @@ const (
 	LabelWidth = 168
 	// FieldWidthShort is the width of a box holding a number.
 	FieldWidthShort = 120
+	// WheelLines is how many lines of the window's text one notch of a mouse
+	// wheel moves a scrolling area on Windows and Linux: the default of
+	// Windows, "The default value is 3" for SPI_GETWHEELSCROLLLINES
+	// (https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-systemparametersinfow).
+	WheelLines = 3
 	// ToolInputRows is how many lines a tool's input box shows before it
 	// scrolls: a token of a kilobyte, broken at the box's width, at a glance.
 	ToolInputRows = 5

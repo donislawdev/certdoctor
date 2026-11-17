@@ -30,6 +30,8 @@ This file records only what a person would notice by running the program. Intern
   proxy.
 - On Linux and macOS, the NO_PROXY tester shows the list and the address as you paste or type them
   at a terminal. A token pasted into the JWT decoder still stays hidden.
+- On Windows and Linux, one notch of the mouse wheel scrolls the window by three lines of text, as
+  other programs do, instead of by about one. On macOS the wheel works as before.
 - The JSON report is now schema 2.5. A PAC script row can say `evaluator_failed`: the process that
   runs the script stopped before it answered, and the row shows its exit code.
 
