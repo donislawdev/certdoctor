@@ -127,8 +127,9 @@ var descriptors = []Descriptor{
 	{
 		ID:      "git",
 		Runtime: "git",
-		TrustSource: "http.sslBackend decides: schannel uses the Windows store, openssl the file GIT_SSL_CAINFO or " +
-			"http.sslCAInfo names - and on Linux a git naming no backend reads that file too, and may read " +
+		TrustSource: "http.sslBackend decides: schannel uses the Windows store - or, with " +
+			"http.schannelUseSSLCAInfo true, only the file GIT_SSL_CAINFO or http.sslCAInfo names - openssl that " +
+			"file - and on Linux a git naming no backend reads that file too, and may read " +
 			"/etc/ssl/certs beside it, and the distribution's own git naming nothing takes the answer of the platform " +
 			"store's row",
 		Source: Measured,
@@ -154,11 +155,16 @@ var descriptors = []Descriptor{
 			"wins over it, GIT_CONFIG_GLOBAL replaces both, GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM name and skip " +
 			"the system file, GIT_CONFIG_COUNT pairs win over every file, an include applies where it stands, a " +
 			"section for one URL beats the general key, and a syntax error stops git before it connects. Not " +
-			"followed, and the row says so: an [includeIf] or a URL section that sets one of the four keys, because " +
+			"followed, and the row says so: an [includeIf] or a URL section that sets one of the decisive keys, because " +
 			"which repository or address it applies to is not this probe's question, GIT_CONFIG_PARAMETERS, and on " +
 			"Windows a home directory that HOMEDRIVE and HOMEPATH put somewhere other than USERPROFILE, because " +
 			"telling which one git takes means looking at what may be a network share. " +
-			"Measured 2026-10-20 with probe S26 and with this program's own binary in Debian 13, Alpine 3.24 and RHEL 9.7 images: with nothing named, a root appended to the first bundle on Go's list - the file the system-store row judges - was trusted by curl from the package and by git from the Debian and Alpine ones, and the command printed for that row fixed them too. So a binary the distribution's own package installed, on a distribution whose recipe for libcurl names that file, takes the answer of the system-store row, and each condition that does not hold is said on its own - the recipes are cited beside the table in internal/adapter/probe/deferral.go.",
+			"Measured 2026-10-20 with probe S26 and with this program's own binary in Debian 13, Alpine 3.24 and RHEL 9.7 images: with nothing named, a root appended to the first bundle on Go's list - the file the system-store row judges - was trusted by curl from the package and by git from the Debian and Alpine ones, and the command printed for that row fixed them too. So a binary the distribution's own package installed, on a distribution whose recipe for libcurl names that file, takes the answer of the system-store row, and each condition that does not hold is said on its own - the recipes are cited beside the table in internal/adapter/probe/deferral.go. " +
+			"Measured 2026-11-17 with probe S35, git 2.56.0.windows.4 on libcurl 8.23.0 on Schannel: with " +
+			"http.schannelUseSSLCAInfo true and a file holding one private root, every chain under it was trusted and " +
+			"github.com was refused, so the Windows store does not count beside the file - and with the key unset, " +
+			"the file was not read. Revocation is tolerated unless http.schannelCheckRevoke is true, and a file over " +
+			"1 MiB, an unreadable block or a begin line with no end stops every connection.",
 		FixSource: Documentation,
 		FixEvidence: "git-config, Documentation/config/http.adoc, read 2026-08-19 at " +
 			"https://git-scm.com/docs/git-config - http.sslCAInfo is \"File containing the certificates to verify the " +

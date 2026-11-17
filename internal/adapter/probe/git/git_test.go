@@ -466,7 +466,7 @@ func TestABundleWithNoCertificatesSaysSo(t *testing.T) {
 func TestSchannelDefersToTheSystemStoreProbe(t *testing.T) {
 	_, leafDER := anchorAndLeaf(t)
 	settings := Settings{Backend: "schannel", BackendLevel: "system"}
-	store := storeFor(t.Context(), probe.Ports{Source: sourceOf(nil)}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{}, [][]byte{leafDER}, atNoon())
+	store := storeFor(t.Context(), probe.Ports{Source: sourceOf(nil)}, noFiles, Install{Instance: "/usr/bin/git", Root: "/usr/bin"}, settings, Environment{Platform: "windows"}, [][]byte{leafDER}, atNoon())
 
 	if store.TrustsPresentedChain != nil {
 		t.Fatal("the git probe answered a question about the platform store")

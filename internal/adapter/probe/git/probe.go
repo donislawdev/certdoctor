@@ -72,6 +72,10 @@ func storeFor(ctx context.Context, ports probe.Ports, files file.List, install I
 		store.NotAssessed = why
 		return store
 	}
+	if why := schannelKeyUnread(settings, env.Platform); why != "" {
+		store.NotAssessed = why
+		return store
+	}
 	// A GIT THAT DOES NOT VERIFY ASKS NO STORE, whichever backend it names -
 	// ADR110 part 1. Any store's answer here would be about a check git skips.
 	if why := verificationOff(settings, env); why != "" {
@@ -88,11 +92,7 @@ func storeFor(ctx context.Context, ports probe.Ports, files file.List, install I
 		}
 		return judgedByAFile(store, ports.Source, files, settings, env, chain, now)
 	case settings.Backend == "schannel":
-		// THE ANSWER BELONGS TO ANOTHER PROBE AND SAYING SO IS THE HONEST ROW.
-		// Reporting "trusted" here would mean this probe silently answered a
-		// question about the Windows store, which is system-store's job. Claiming
-		// failure would be worse.
-		store.NotAssessed = "this install is configured to use the platform store, which the system-store probe answers"
+		return schannelRow(store, ports.Source, settings, env, chain, now)
 	case settings.BackendLevel == "":
 		return noBackendNamed(ctx, store, ports, files, install, settings, env, chain, now)
 	default:
@@ -158,7 +158,12 @@ func conditional(settings Settings, env Environment) string {
 	if env.NoVerify || len(settings.Conditional) == 0 {
 		return ""
 	}
-	overridden := map[string]bool{keyCAInfo: env.CAInfo.Set, keyCAPath: env.CAPath.Set}
+	// THE SCHANNEL KEYS DECIDE NOTHING UNDER ANOTHER BACKEND - http.c reads them
+	// only when http.sslBackend is "schannel", and a conditional backend has
+	// already been named by the time the loop reaches them.
+	notSchannel := settings.Backend != "schannel"
+	overridden := map[string]bool{keyCAInfo: env.CAInfo.Set, keyCAPath: env.CAPath.Set,
+		keyUseCAInfo: notSchannel, keyCheckRevoke: notSchannel}
 	for _, key := range decisiveKeys {
 		if why, present := settings.Conditional[key]; present && !overridden[key] {
 			return why
@@ -219,12 +224,24 @@ func judgedByAFile(store report.TrustStore, source file.Source, files file.List,
 		return store
 	}
 	named, path := caFile(settings, env)
+	bundle, read := openBundle(&store, source, named, path)
+	if !read {
+		return store
+	}
+	probe.Verify(&store, bundle, chain, now)
+	probe.WeighDirectories(&store, source, files, probe.CADirectoriesOn(env.Platform), bundle, chain, now,
+		probe.LibcurlDirectorySentences(named, "git"))
+	return store
+}
+
+// openBundle points the row at the file named and reads it, or says in the row
+// why it could not - one sentence for every backend that reads a file.
+func openBundle(store *report.TrustStore, source file.Source, named, path string) ([]byte, bool) {
 	if path == "" {
 		store.NotAssessed = fmt.Sprintf("%s is set and empty, which git hands its libcurl as the name of a file, and "+
 			"what the library then reads was not established", named)
-		return store
+		return nil, false
 	}
-
 	store.StoreForm = report.StoreFile
 	store.StorePath = filepath.Clean(path)
 	bundle, err := readAll(source, store.StorePath)
@@ -234,13 +251,10 @@ func judgedByAFile(store report.TrustStore, source file.Source, files file.List,
 		// the file port refuses a path that would leave this machine, so "your
 		// bundle is on a file server" arrives here as this sentence.
 		store.NotAssessed = fmt.Sprintf("the bundle named by %s could not be read: %v", named, err)
-		return store
+		return nil, false
 	}
 	store.FileEnd = probe.EndOf(bundle)
-	probe.Verify(&store, bundle, chain, now)
-	probe.WeighDirectories(&store, source, files, probe.CADirectoriesOn(env.Platform), bundle, chain, now,
-		probe.LibcurlDirectorySentences(named, "git"))
-	return store
+	return bundle, true
 }
 
 // caFile is the file git hands its libcurl, and what named it. A key written

@@ -185,7 +185,8 @@ program Apple checked.
 **On Linux, the command line needs no C library**, so the same file runs in Alpine, in Ubuntu and in
 an image with nothing else in it. `certdoctor --license` prints the notices that travel with it. The
 window is different: it needs a desktop session with OpenGL, and loads `libGL.so.1` and
-`libwayland-client.so.0`, which a desktop installation has.
+`libwayland-client.so.0`, which a desktop installation has. It also needs the GNU C library,
+glibc, 2.38 or newer - `ldd --version` prints the one you have.
 
 ### Install it on Windows
 
