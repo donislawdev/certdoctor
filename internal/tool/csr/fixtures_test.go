@@ -115,6 +115,25 @@ func derOf(t *testing.T, fixture string) []byte {
 	return b.Bytes
 }
 
+// signedMessage is a CMS ContentInfo that holds SignedData (RFC 5652 section
+// 5.1) - the outside of a CMC request as certreq writes it - around content
+// that is no request at all.
+func signedMessage(t *testing.T) []byte {
+	t.Helper()
+	inner, err := asn1.Marshal(struct{ Version int }{3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := asn1.Marshal(struct {
+		Type    asn1.ObjectIdentifier
+		Content asn1.RawValue
+	}{oidSignedData, asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: inner}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return der
+}
+
 // asPEM wraps DER in a PEM block of the given type.
 func asPEM(blockType string, der []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der})

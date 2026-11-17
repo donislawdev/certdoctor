@@ -145,6 +145,11 @@ func read(raw []byte) (input, error) {
 // mistake gets that far too. A certificate handed over instead is sent to the
 // tool that reads it - known by the library reading it as one, never by text.
 func unreadable(in input, err error) error {
+	if isSignedMessage(in.der) {
+		return derinput.Refuse("The input is a CMS (PKCS #7) signed message, not a PKCS #10 certificate request. " +
+			"certreq writes such a message for RequestType = CMC or PKCS7, and a PKCS #10 request for " +
+			"RequestType = PKCS10.")
+	}
 	if in.form != derinput.FormPEM {
 		if _, certErr := x509.ParseCertificate(in.der); certErr == nil {
 			return derinput.Refuse("The input is a certificate, not a certificate request - certdoctor tool cert " +
