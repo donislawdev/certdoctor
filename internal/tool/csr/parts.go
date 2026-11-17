@@ -17,12 +17,41 @@ var (
 	oidMSExtensionRequest = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 1, 14}
 )
 
-// attributeNames are those attributes in words.
+// oidSignedData is CMS SignedData (RFC 5652 section 5.1). certreq writes a CMC
+// request (RFC 5272) as one, under the same PEM header as a PKCS #10 request -
+// NEW CERTIFICATE REQUEST (measured 2026-11-17).
+var oidSignedData = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}
+
+// isSignedMessage says der is a CMS ContentInfo that holds SignedData, known
+// by its structure whatever header it came under: the type, then the content
+// under the context tag [0] (RFC 5652 section 3).
+func isSignedMessage(der []byte) bool {
+	var info struct {
+		Type    asn1.ObjectIdentifier
+		Content asn1.RawValue
+	}
+	rest, err := asn1.Unmarshal(der, &info)
+	return err == nil && len(rest) == 0 && info.Type.Equal(oidSignedData) &&
+		info.Content.Class == asn1.ClassContextSpecific && info.Content.Tag == 0 && info.Content.IsCompound
+}
+
+// attributeNames are those attributes in words, and the ones Windows adds.
+//
+// certreq 10.0.26100.32684 on Windows Server 2025 put the first three of
+// Microsoft's below in every request it wrote, and the [RequestAttributes]
+// of its INF file in the name-value pairs (measured 2026-11-17). The names
+// are Microsoft's, from "Supported Attributes" of the Certificate Enrollment
+// API: https://learn.microsoft.com/windows/win32/seccertenroll/supported-attributes
 var attributeNames = map[string]string{
 	oidChallengePassword.String():  "challengePassword",
 	oidUnstructuredName.String():   "unstructuredName",
 	oidExtensionRequest.String():   "extensionRequest",
 	oidMSExtensionRequest.String(): "Microsoft extension request (msExtReq)",
+	"1.3.6.1.4.1.311.13.2.3":       "OS version (Microsoft)",
+	"1.3.6.1.4.1.311.21.20":        "client information (Microsoft)",
+	"1.3.6.1.4.1.311.13.2.2":       "key provider (Microsoft)",
+	"1.3.6.1.4.1.311.13.2.1":       "name-value pairs (Microsoft)",
+	"1.3.6.1.4.1.311.13.1":         "certificate being renewed (Microsoft)",
 }
 
 // The extensions this tool reads out of a request itself (RFC 5280 section
@@ -38,7 +67,10 @@ var (
 )
 
 // extensionNames are the extensions a request commonly asks for, in the
-// words of RFC 5280 section 4.2.1.
+// words of RFC 5280 section 4.2.1, S/MIME capabilities (RFC 4262), which
+// certreq asks for with an RSA key that may encipher, and Microsoft's two
+// template extensions ("Supported Extensions" of the Certificate Enrollment
+// API: https://learn.microsoft.com/windows/win32/seccertenroll/supported-extensions).
 var extensionNames = map[string]string{
 	oidSubjectAltName.String():    "subject alternative name",
 	oidKeyUsage.String():          "key usage",
@@ -46,6 +78,9 @@ var extensionNames = map[string]string{
 	oidBasicConstraints.String():  "basic constraints",
 	oidSubjectKeyID.String():      "subject key identifier",
 	oidCertificatePolicy.String(): "certificate policies",
+	"1.2.840.113549.1.9.15":       "S/MIME capabilities",
+	"1.3.6.1.4.1.311.21.7":        "certificate template (Microsoft)",
+	"1.3.6.1.4.1.311.20.2":        "certificate template name (Microsoft)",
 }
 
 // attributes is what the request's attributes say, read from its raw bytes.

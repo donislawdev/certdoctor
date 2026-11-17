@@ -406,6 +406,8 @@ func TestWhatHoldsNoRequestIsRefusedWithoutBeingQuoted(t *testing.T) {
 	certificate := derOf(t, fixtureCertificate)
 	duplicated := server(t)
 	duplicated.extensions = append(duplicated.extensions, keyUsage(t))
+	signed := signedMessage(t)
+	const cms = "is a CMS (PKCS #7) signed message, not a PKCS #10 certificate request"
 	for _, tc := range []struct {
 		name   string
 		input  []byte
@@ -421,6 +423,9 @@ func TestWhatHoldsNoRequestIsRefusedWithoutBeingQuoted(t *testing.T) {
 		{"a word starting with the byte DER starts with", []byte("0." + marker), "starts like DER, but is not"},
 		{"a request the library refuses", asPEM("CERTIFICATE REQUEST", duplicated.der(t)),
 			"cannot read: x509: certificate request contains duplicate requested extensions"},
+		{"a CMC request under the header certreq gives it", asPEM("NEW CERTIFICATE REQUEST", signed), cms},
+		{"a signed message in DER", signed, cms},
+		{"a signed message in base64", []byte(base64.StdEncoding.EncodeToString(signed)), cms},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Decode(tc.input)
@@ -442,7 +447,8 @@ func TestTheViewSaysWhatTheChecksFound(t *testing.T) {
 	r.extensions = []pkix.Extension{san(t, dns("www.example.test")), extension(t, oidBasicConstraints, struct {
 		IsCA bool `asn1:"optional"`
 	}{false})}
-	r.attributes = []asn1.RawValue{attribute(t, oidChallengePassword, "x")}
+	r.attributes = []asn1.RawValue{attribute(t, oidChallengePassword, "x"),
+		attribute(t, asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 13, 2, 3}, "10.0.26100.2")}
 	out := decoded(t, r.der(t))
 	rows := map[string]spec.Field{}
 	for _, block := range out.View {
@@ -452,7 +458,7 @@ func TestTheViewSaysWhatTheChecksFound(t *testing.T) {
 	}
 	for label, want := range map[string]string{
 		"Signature":            "ECDSA-SHA256",
-		"Attributes":           "extensionRequest, challengePassword (present, not shown)",
+		"Attributes":           "extensionRequest, challengePassword (present, not shown), OS version (Microsoft)",
 		"Extensions asked for": "subject alternative name, basic constraints",
 		"Authority":            "asks not to be one",
 		"Host names":           "www.example.test",

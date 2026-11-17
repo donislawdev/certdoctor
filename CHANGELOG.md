@@ -14,7 +14,10 @@ This file records only what a person would notice by running the program. Intern
   a certificate signing request asks for, checks that its signature is intact, and warns about what
   a public certificate authority will not issue - no subject alternative name, a host name such as
   `localhost` or an address written as a host name, a common name outside those names, a key it
-  does not accept. A challenge password in the request is reported and never shown.
+  does not accept. A challenge password in the request is reported and never shown. Requests from
+  `openssl req`, `keytool -certreq` and Windows `certreq` are read, and the attributes Windows adds
+  to a request are named. A CMC request, which `certreq` writes for `RequestType = CMC`, is named as
+  one, with the setting that makes `certreq` write a request the decoder reads.
 
 ### Changed
 
