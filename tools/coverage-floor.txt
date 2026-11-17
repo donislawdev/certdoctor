@@ -326,3 +326,9 @@ github.com/donislawdev/certdoctor/internal/tool/prose 100
 # noproxy 99.5 - the one statement unrun is a reading that does not answer,
 # which the inputs the tester takes cannot reach. Pure code, as above.
 github.com/donislawdev/certdoctor/internal/tool/noproxy 99
+
+# The CSR decoder and the reader of PEM, base64 and DER it shares with the
+# certificate decoder (ADR154). Measured 2026-11-17 on Windows, go1.27.4: csr
+# 97.8, derinput 100.0. Pure code, as above.
+github.com/donislawdev/certdoctor/internal/tool/csr 97
+github.com/donislawdev/certdoctor/internal/tool/derinput 100

@@ -7,6 +7,7 @@ import (
 
 	"github.com/donislawdev/certdoctor/internal/core/status"
 	"github.com/donislawdev/certdoctor/internal/tool/certfacts"
+	"github.com/donislawdev/certdoctor/internal/tool/derinput"
 	"github.com/donislawdev/certdoctor/internal/tool/prose"
 	"github.com/donislawdev/certdoctor/internal/tool/spec"
 )
@@ -53,7 +54,7 @@ func (j judged) inputBlock() spec.Block {
 	if len(j.in.skipped) > 0 {
 		var left []string
 		for _, s := range j.in.skipped {
-			left = append(left, fmt.Sprintf("block %d, %s", s.Block, kindOf(s.Type)))
+			left = append(left, fmt.Sprintf("block %d, %s", s.Block, derinput.KindOf(s.Type)))
 		}
 		fields = append(fields, spec.Field{Label: "Not read", Value: strings.Join(left, "; ")})
 	}
@@ -152,15 +153,16 @@ func (j judged) dates(e entry) []spec.Field {
 func (j judged) key(e entry) []spec.Field {
 	c := e.cert
 	fields := []spec.Field{
-		{Label: "Key", Value: keyWords(publicKey(c)), Status: notPass(keyOf(e))},
-		{Label: "Signature", Value: c.SignatureAlgorithm.String(), Status: notPass(signatureOf(e))},
+		{Label: "Key", Value: certfacts.Key(c.PublicKey, c.PublicKeyAlgorithm).Words(), Status: notPass(keyOf(e))},
+		{Label: "Signature", Value: certfacts.SignatureAlgorithm(c.Raw, c.SignatureAlgorithm),
+			Status: notPass(signatureOf(e))},
 		{Label: "Authority", Value: authorityWords(c.IsCA, pathLength(c))},
 		{Label: "Serial number", Value: serialHex(c)},
 	}
-	if u := keyUsages(c.KeyUsage); len(u) > 0 {
+	if u := certfacts.KeyUsages(c.KeyUsage); len(u) > 0 {
 		fields = append(fields, spec.Field{Label: "Key usage", Value: strings.Join(u, ", ")})
 	}
-	if u := extendedKeyUsages(c); len(u) > 0 {
+	if u := certfacts.ExtendedKeyUsages(c.ExtKeyUsage, c.UnknownExtKeyUsage); len(u) > 0 {
 		fields = append(fields, spec.Field{Label: "Extended key usage", Value: strings.Join(u, ", ")})
 	}
 	return fields
@@ -171,17 +173,6 @@ func notPass(v verdict) status.Status {
 		return ""
 	}
 	return v.status
-}
-
-// keyWords names a key: "RSA, 2048 bits", "ECDSA, P-256", "Ed25519".
-func keyWords(k PublicKey) string {
-	switch {
-	case k.Curve != nil:
-		return k.Algorithm + ", " + *k.Curve
-	case k.Bits != nil:
-		return fmt.Sprintf("%s, %d bits", k.Algorithm, *k.Bits)
-	}
-	return k.Algorithm
 }
 
 // authorityWords says whether the certificate may issue others (RFC 5280

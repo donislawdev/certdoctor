@@ -6,7 +6,9 @@ package prose
 
 import (
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Clock writes a time for a person, in UTC, to the second.
@@ -71,4 +73,30 @@ func List(names []string) string {
 		}
 		return out + " and " + names[len(names)-1]
 	}
+}
+
+// Capped lists clauses like List, naming at most named of them and counting
+// the rest: "a, b and 4 more".
+func Capped(clauses []string, named int) string {
+	if len(clauses) <= named {
+		return List(clauses)
+	}
+	return strings.Join(clauses[:named], ", ") + fmt.Sprintf(" and %d more", len(clauses)-named)
+}
+
+// Cut shortens text to at most limit characters, ending what was cut with
+// three dots - a library's words, a long name.
+func Cut(text string, limit int) string {
+	if utf8.RuneCountInString(text) > limit {
+		return string([]rune(text)[:limit-1]) + "..."
+	}
+	return text
+}
+
+// Upper starts a sentence with a capital.
+func Upper(s string) string {
+	if s != "" && 'a' <= s[0] && s[0] <= 'z' {
+		return string(s[0]-'a'+'A') + s[1:]
+	}
+	return s
 }

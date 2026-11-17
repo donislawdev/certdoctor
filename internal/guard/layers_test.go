@@ -405,7 +405,16 @@ var intraLayerEdges = map[string][]string{
 	// The cert tool reads a certificate by the rules it shares with L4
 	// (ADR146) and speaks of time in the words the JWT decoder does - one
 	// sentence for "expired 3 days ago" across the tools.
-	"internal/tool/cert": {"internal/tool/spec", "internal/tool/certfacts", "internal/tool/prose"},
+	"internal/tool/cert": {"internal/tool/spec", "internal/tool/certfacts", "internal/tool/derinput",
+		"internal/tool/prose"},
+	// The CSR decoder reads its input the way the cert tool does and names a
+	// key by the same rules (ADR154), so a request and the certificate issued
+	// for it are described alike.
+	"internal/tool/csr": {"internal/tool/spec", "internal/tool/certfacts", "internal/tool/derinput",
+		"internal/tool/prose"},
+	// The shared reader of PEM, base64 and DER hands back the contract's
+	// refusal and check, and says a count in the tools' words.
+	"internal/tool/derinput": {"internal/tool/spec", "internal/tool/prose"},
 	// The NO_PROXY tester hands back the contract's shape. The readings it
 	// asks stand below its layer, through its door in packageDoors.
 	"internal/tool/noproxy": {"internal/tool/spec"},

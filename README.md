@@ -479,6 +479,24 @@ certdoctor tool cert --json < server.crt
 A chain has many lines and no single Enter that ends it, so it is piped in or named with `--file`
 rather than pasted at a prompt.
 
+The **CSR decoder** reads a certificate signing request - from `openssl req`, from `certreq` on
+Windows, from `keytool -certreq`, in PEM, base64 or DER - and shows what it asks for: the subject,
+the host names and addresses, the key, the key usage and purposes, and the other extensions and
+attributes it carries. It checks that the request's own key verifies its signature, so the request
+was not changed after it was signed, and warns about what a public certificate authority will not
+issue: no subject alternative name, a host name it cannot issue for - a single label like
+`localhost`, an underscore, an address written as a host name, a dot at the end - a common name that
+is not one of those names, and a key it does not accept. A private authority may accept what a
+public one does not, and each warning says so. A challenge password in the request is reported and
+never shown, and a private key pasted with it is not read. The SPKI pin it shows is the one the
+certificate decoder shows for the certificate issued for the request, so the two can be matched.
+
+```bash
+certdoctor tool csr --file request.csr
+openssl req -new -key server.key -subj "/CN=www.example.com" | certdoctor tool csr
+certdoctor tool csr --json < request.csr
+```
+
 The **NO_PROXY tester** shows which programs go to an address directly and which go through the
 proxy under a `NO_PROXY` list. Each program reads the list its own way - `.example.com` covers
 `example.com` itself for curl and .NET but only the names under it for Go, and Go never sends

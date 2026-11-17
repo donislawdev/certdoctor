@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/donislawdev/certdoctor/internal/tool/derinput"
 	"github.com/donislawdev/certdoctor/internal/tool/spec"
 )
 
@@ -44,11 +45,8 @@ type Unreadable struct {
 }
 
 // Skipped is a PEM block that was not read, by its number among the blocks
-// and its type.
-type Skipped struct {
-	Block int    `json:"block"`
-	Type  string `json:"type"`
-}
+// and its type - the shared reader's, so the two decoders say it alike.
+type Skipped = derinput.Skipped
 
 // Decode reads raw as certificates and judges them at now. A refusal is a
 // *spec.Refusal and means raw holds no certificate this can read.
@@ -81,6 +79,8 @@ func Decode(raw []byte, now time.Time) (spec.Outcome, error) {
 func noneReadable(in input) error {
 	words := libraryWords(in.entries[0].err)
 	switch {
+	case len(in.entries) == 1 && in.form != formPEM && isRequest(in.entries[0].der):
+		return refuse("The input is a certificate request (CSR), not a certificate - certdoctor tool csr reads it.")
 	case len(in.entries) > 1:
 		return refuse(fmt.Sprintf("The input holds %d certificates and this program's X.509 library can read "+
 			"none of them - the first: %s.", len(in.entries), words))

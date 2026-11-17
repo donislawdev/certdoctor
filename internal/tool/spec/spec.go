@@ -117,6 +117,18 @@ var All = []Tool{
 		Inputs: []Input{{Name: "certificates", Shape: Bytes, MaxBytes: 256 << 10, File: "chain.pem"}},
 	},
 	{
+		ID:       "csr",
+		Category: Certificates,
+		Title:    "CSR decoder",
+		Summary: "Shows what a certificate signing request asks for - names, key, extensions - and what in it a " +
+			"public certificate authority refuses, without connecting anywhere.",
+		Keywords: []string{"csr", "certificate request", "signing request", "pkcs10", "req", "certreq", "keytool",
+			"san", "subject", "challenge password"},
+		// 64 KiB holds any request many times over - an ASSESSMENT, not a
+		// source: one is 1 to 10 KB, with an ML-DSA key too (ADR154).
+		Inputs: []Input{{Name: "csr", Shape: Bytes, MaxBytes: 64 << 10, File: "request.csr"}},
+	},
+	{
 		ID:       "noproxy",
 		Category: Proxy,
 		Title:    "NO_PROXY tester",

@@ -8,7 +8,19 @@ This file records only what a person would notice by running the program. Intern
 
 ## [Unreleased]
 
+### Added
+
+- A CSR decoder: `certdoctor tool csr`, and **CSR decoder** under Tools in the window. It shows what
+  a certificate signing request asks for, checks that its signature is intact, and warns about what
+  a public certificate authority will not issue - no subject alternative name, a host name such as
+  `localhost` or an address written as a host name, a common name outside those names, a key it
+  does not accept. A challenge password in the request is reported and never shown.
+
 ### Changed
+
+- The certificate decoder sends a certificate signing request to the CSR decoder instead of saying
+  only that it holds no certificate, and names a signature algorithm it does not know by its
+  identifier instead of `0`.
 
 - The NO_PROXY tester in the window can be run with an empty list. The answer shows what each
   program does when `NO_PROXY` is empty or not set - Go, for one, never sends `localhost` to a
@@ -20,6 +32,9 @@ This file records only what a person would notice by running the program. Intern
 
 ### Fixed
 
+- The certificate decoder no longer spends many seconds on a certificate with an RSA key far larger
+  than any in use. A signature made with an RSA key of more than 16384 bits is not checked, as
+  OpenSSL does not check one either.
 - In the window, the answer of a tool no longer waits below the bottom edge after you press Decode
   or Test. When the answer does not fit in view, the page scrolls so that the answer starts at the
   top. An answer that fits leaves the page where it was.
