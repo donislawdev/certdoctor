@@ -1,0 +1,27 @@
+{{- /*
+  The switches of one tool, as its --help lists them, from
+  web/data/facts/certdoctor.json, which cmd/sitefacts writes from the program.
+  Takes the tool's id, and an id the program does not have stops the build.
+
+  --help itself is left out: its words are "this text", which on a page would
+  say something else, and the page says in its own words that --help prints
+  the same.
+*/ -}}
+{{- $id := .Get 0 }}
+{{- $tool := false }}
+{{- range where hugo.Data.facts.certdoctor.tools.list "id" $id }}{{ $tool = . }}{{ end }}
+{{- if not $tool }}
+  {{- errorf "%s names the tool %q, which the program does not have" .Page.File.Path $id }}
+{{- end }}
+<div class="options">
+  {{- range $tool.options }}
+  {{- if ne .name "help" }}
+  {{- $key := printf "tool_switch_%s" .name }}
+  {{- with .input }}{{ $key = printf "tool_file_%s" . }}{{ end }}
+  <div class="option">
+    <div class="flag">{{ .spelled }}</div>
+    <div class="about"><p>{{ partial "program-words.html" (dict "en" .summary "key" $key) }}</p></div>
+  </div>
+  {{- end }}
+  {{- end }}
+</div>

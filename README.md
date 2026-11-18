@@ -68,15 +68,21 @@ staring at `PKIX path building failed` finds out it exists.
 - **Show the same report in a window** - `certdoctor-gui`, for Windows, Linux and macOS: type the
   address, press Diagnose, read the report and save it as HTML, Markdown or JSON. The window runs the
   command line next to it, so it knows nothing the command line does not.
+- **Decode and test offline** - a [JWT decoder](https://certdoctor.donislawdev.com/tools/jwt-decoder/),
+  a [certificate decoder](https://certdoctor.donislawdev.com/tools/certificate-decoder/) for PEM, CRT
+  and DER files and whole chains, a [CSR decoder](https://certdoctor.donislawdev.com/tools/csr-decoder/)
+  that says what a public certificate authority will refuse, and a
+  [NO_PROXY tester](https://certdoctor.donislawdev.com/tools/no-proxy/) that shows which programs go
+  through the proxy for an address. Each reads only what you give it and connects to nothing -
+  `certdoctor tool` in a terminal, **Tools** in the window. More in [Tools](#tools) below.
 
-![Cert Doctor run against untrusted-root.badssl.com, paged through less: the verdict at the top names
-the BadSSL root that the Java stores lack, then the trust matrix shows the system store trusting the
-site, both Java runtimes refusing it, and a keytool command for each](.github/certdoctor-in-action.gif)
+<p align="center">
+  <img src=".github/certdoctor-in-action.webp" width="860" alt="The Cert Doctor window diagnosing a website on Windows: the verdict on top, the layers on the left, then the trust matrix with every store on the machine trusting the site. Then the Tools tab, where the certificate decoder reads an expired self-signed certificate and the JWT decoder reads a token.">
+</p>
 
-*A real run, recorded from the binary in a Linux container and paged through `less` - the verdict
-first, then a search for `L5`, the trust matrix. The few seconds the run takes are cut. BadSSL's
-public test root was added to the container's system store - the way a company root usually arrives -
-and the two Java runtimes in it were never told.*
+<p align="center">
+  <img src=".github/certdoctor-star.gif" width="860" alt="The Star button on the page of this repository, clicked, turning into Starred.">
+</p>
 
 <!-- The star GIF goes here, recorded on this repository now that it is public. -->
 

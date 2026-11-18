@@ -68,6 +68,38 @@ func TestTheFirstInputIsReadWithFileAndEveryOtherByItsName(t *testing.T) {
 	}
 }
 
+// TestTheOptionsAreTheFileSwitchesThenTheSharedOnes holds the list --help and
+// the website print: each input's file switch first, naming its input, then
+// every shared switch, with a placeholder only where the switch takes a value.
+func TestTheOptionsAreTheFileSwitchesThenTheSharedOnes(t *testing.T) {
+	tool := Tool{Inputs: []Input{{Name: "list"}, {Name: "address"}}}
+	got := tool.Options()
+	want := []Option{
+		{Name: "file", Input: "list", Spelled: "--file <path>", Summary: "read the list from this file"},
+		{Name: "address-file", Input: "address", Spelled: "--address-file <path>",
+			Summary: "read the address from this file"},
+	}
+	for _, s := range Switches {
+		spelled := "--" + s.Name
+		if s.Arg != "" {
+			spelled += " <" + s.Arg + ">"
+		}
+		want = append(want, Option{Name: s.Name, Spelled: spelled, Summary: s.Summary})
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Options() =\n%+v\nwant\n%+v", got, want)
+	}
+	for _, o := range got[len(tool.Inputs):] {
+		if o.Input != "" {
+			t.Errorf("--%s is shared by every tool and names the input %q", o.Name, o.Input)
+		}
+	}
+	if !slices.ContainsFunc(got, func(o Option) bool { return o.Spelled == "--json" }) ||
+		!slices.ContainsFunc(got, func(o Option) bool { return o.Spelled == "--request <path>" }) {
+		t.Error("a switch without a value and one with a value are not both spelled as --help prints them")
+	}
+}
+
 func TestAToolIsFoundByAnyOfItsWords(t *testing.T) {
 	jwt, _ := Find("jwt")
 	for query, want := range map[string]bool{

@@ -263,5 +263,974 @@
     "node",
     "python",
     "pip"
+  ],
+  "tools": {
+    "categories": [
+      "certificates",
+      "proxy",
+      "tokens"
+    ],
+    "exitCodes": [
+      {
+        "code": 0,
+        "meaning": "the input was read and shown, whatever the checks say"
+      },
+      {
+        "code": 2,
+        "meaning": "the command line could not be understood"
+      },
+      {
+        "code": 3,
+        "meaning": "the input could not be used - not what the tool reads, too large, or unreadable"
+      }
+    ],
+    "list": [
+      {
+        "id": "cert",
+        "category": "certificates",
+        "title": "Certificate decoder",
+        "summary": "Shows what a certificate or a chain says - names, dates, key, fingerprints - and whether the chain is complete and in order, without connecting anywhere.",
+        "inputs": [
+          {
+            "name": "certificates",
+            "shape": "bytes",
+            "file": "chain.pem",
+            "switch": "file",
+            "maxBytes": 262144
+          }
+        ],
+        "options": [
+          {
+            "name": "file",
+            "input": "certificates",
+            "spelled": "--file <path>",
+            "summary": "read the certificates from this file"
+          },
+          {
+            "name": "request",
+            "input": "",
+            "spelled": "--request <path>",
+            "summary": "read every input from a request document, - for standard input"
+          },
+          {
+            "name": "json",
+            "input": "",
+            "spelled": "--json",
+            "summary": "write the document for programs instead of the page for people"
+          },
+          {
+            "name": "format",
+            "input": "",
+            "spelled": "--format <name>",
+            "summary": "terminal (the default) or json"
+          },
+          {
+            "name": "no-color",
+            "input": "",
+            "spelled": "--no-color",
+            "summary": "no colour, as NO_COLOR asks too"
+          },
+          {
+            "name": "help",
+            "input": "",
+            "spelled": "--help",
+            "summary": "this text"
+          }
+        ]
+      },
+      {
+        "id": "csr",
+        "category": "certificates",
+        "title": "CSR decoder",
+        "summary": "Shows what a certificate signing request asks for - names, key, extensions - and what in it a public certificate authority refuses, without connecting anywhere.",
+        "inputs": [
+          {
+            "name": "csr",
+            "shape": "bytes",
+            "file": "request.csr",
+            "switch": "file",
+            "maxBytes": 65536
+          }
+        ],
+        "options": [
+          {
+            "name": "file",
+            "input": "csr",
+            "spelled": "--file <path>",
+            "summary": "read the csr from this file"
+          },
+          {
+            "name": "request",
+            "input": "",
+            "spelled": "--request <path>",
+            "summary": "read every input from a request document, - for standard input"
+          },
+          {
+            "name": "json",
+            "input": "",
+            "spelled": "--json",
+            "summary": "write the document for programs instead of the page for people"
+          },
+          {
+            "name": "format",
+            "input": "",
+            "spelled": "--format <name>",
+            "summary": "terminal (the default) or json"
+          },
+          {
+            "name": "no-color",
+            "input": "",
+            "spelled": "--no-color",
+            "summary": "no colour, as NO_COLOR asks too"
+          },
+          {
+            "name": "help",
+            "input": "",
+            "spelled": "--help",
+            "summary": "this text"
+          }
+        ]
+      },
+      {
+        "id": "noproxy",
+        "category": "proxy",
+        "title": "NO_PROXY tester",
+        "summary": "Shows which programs send an address through the proxy and which go to it directly under a NO_PROXY list - curl, .NET, Go, Python, requests and pip, Node.js - since each reads the list its own way.",
+        "inputs": [
+          {
+            "name": "list",
+            "shape": "line",
+            "file": "no_proxy.txt",
+            "switch": "file",
+            "maxBytes": 65536
+          },
+          {
+            "name": "address",
+            "shape": "line",
+            "file": "address.txt",
+            "switch": "address-file",
+            "maxBytes": 65536
+          }
+        ],
+        "options": [
+          {
+            "name": "file",
+            "input": "list",
+            "spelled": "--file <path>",
+            "summary": "read the list from this file"
+          },
+          {
+            "name": "address-file",
+            "input": "address",
+            "spelled": "--address-file <path>",
+            "summary": "read the address from this file"
+          },
+          {
+            "name": "request",
+            "input": "",
+            "spelled": "--request <path>",
+            "summary": "read every input from a request document, - for standard input"
+          },
+          {
+            "name": "json",
+            "input": "",
+            "spelled": "--json",
+            "summary": "write the document for programs instead of the page for people"
+          },
+          {
+            "name": "format",
+            "input": "",
+            "spelled": "--format <name>",
+            "summary": "terminal (the default) or json"
+          },
+          {
+            "name": "no-color",
+            "input": "",
+            "spelled": "--no-color",
+            "summary": "no colour, as NO_COLOR asks too"
+          },
+          {
+            "name": "help",
+            "input": "",
+            "spelled": "--help",
+            "summary": "this text"
+          }
+        ]
+      },
+      {
+        "id": "jwt",
+        "category": "tokens",
+        "title": "JWT decoder",
+        "summary": "Shows what a JSON Web Token says - its header, its claims and its times - without checking its signature.",
+        "inputs": [
+          {
+            "name": "token",
+            "shape": "line",
+            "file": "token.txt",
+            "switch": "file",
+            "maxBytes": 262144
+          }
+        ],
+        "options": [
+          {
+            "name": "file",
+            "input": "token",
+            "spelled": "--file <path>",
+            "summary": "read the token from this file"
+          },
+          {
+            "name": "request",
+            "input": "",
+            "spelled": "--request <path>",
+            "summary": "read every input from a request document, - for standard input"
+          },
+          {
+            "name": "json",
+            "input": "",
+            "spelled": "--json",
+            "summary": "write the document for programs instead of the page for people"
+          },
+          {
+            "name": "format",
+            "input": "",
+            "spelled": "--format <name>",
+            "summary": "terminal (the default) or json"
+          },
+          {
+            "name": "no-color",
+            "input": "",
+            "spelled": "--no-color",
+            "summary": "no colour, as NO_COLOR asks too"
+          },
+          {
+            "name": "help",
+            "input": "",
+            "spelled": "--help",
+            "summary": "this text"
+          }
+        ]
+      }
+    ]
+  },
+  "noProxy": [
+    {
+      "list": ".example.com",
+      "address": "https://example.com/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "releases",
+          "condition": "NODE_USE_ENV_PROXY=1",
+          "directIn": [
+            "24.14.1 and later 24, 26.0 to 26.7",
+            "26.8.0 to 26.8.1",
+            "26.8.2 to 26.10",
+            "26.11 and later"
+          ],
+          "proxyIn": [
+            "22.21 and later 22, 24.0 to 24.14.0"
+          ]
+        }
+      ]
+    },
+    {
+      "list": ".example.com",
+      "address": "https://api.example.com/",
+      "agreement": "PASS",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "example.com",
+      "address": "https://api.example.com/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "releases",
+          "condition": "NODE_USE_ENV_PROXY=1",
+          "directIn": [
+            "24.14.1 and later 24, 26.0 to 26.7",
+            "26.8.0 to 26.8.1",
+            "26.8.2 to 26.10",
+            "26.11 and later"
+          ],
+          "proxyIn": [
+            "22.21 and later 22, 24.0 to 24.14.0"
+          ]
+        }
+      ]
+    },
+    {
+      "list": "*.example.com",
+      "address": "https://api.example.com/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "*",
+      "address": "https://api.example.com/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "example.com:8443",
+      "address": "https://example.com:8443/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "10.0.0.0/8",
+      "address": "https://10.1.2.3/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "releases",
+          "condition": "",
+          "directIn": [
+            "11 and later"
+          ],
+          "proxyIn": [
+            "10 and earlier"
+          ]
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "10.*",
+      "address": "https://10.1.2.3/",
+      "agreement": "PASS",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "169.254.169.254",
+      "address": "http://169.254.169.254/",
+      "agreement": "PASS",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "localhost",
+      "address": "http://127.0.0.1:8080/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "127.0.0.1",
+      "address": "http://localhost:8080/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "example.com",
+      "address": "http://localhost:8080/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    },
+    {
+      "list": "::1",
+      "address": "http://[::1]:8080/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "releases",
+          "condition": "NODE_USE_ENV_PROXY=1",
+          "directIn": [
+            "26.8.0 to 26.8.1",
+            "26.8.2 to 26.10",
+            "26.11 and later"
+          ],
+          "proxyIn": [
+            "22.21 and later 22, 24.0 to 24.14.0",
+            "24.14.1 and later 24, 26.0 to 26.7"
+          ]
+        }
+      ]
+    },
+    {
+      "list": "[::1]",
+      "address": "http://[::1]:8080/",
+      "agreement": "WARN",
+      "programs": [
+        {
+          "key": "curl",
+          "name": "curl and git",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "dotnet",
+          "name": ".NET",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "go",
+          "name": "Go",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "python",
+          "name": "Python urllib",
+          "answer": "direct",
+          "condition": ""
+        },
+        {
+          "key": "requests",
+          "name": "requests and pip",
+          "answer": "proxy",
+          "condition": ""
+        },
+        {
+          "key": "node_http",
+          "name": "Node.js http and https",
+          "answer": "proxy",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        },
+        {
+          "key": "node_fetch",
+          "name": "Node.js fetch",
+          "answer": "direct",
+          "condition": "NODE_USE_ENV_PROXY=1"
+        }
+      ]
+    }
   ]
 }

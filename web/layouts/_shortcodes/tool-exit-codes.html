@@ -1,0 +1,12 @@
+{{- /*
+  How a tool's run ends, by exit code, as every tool's --help says it, from
+  web/data/facts/certdoctor.json, which cmd/sitefacts writes from the program.
+*/ -}}
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ T "code" }}</th><th>{{ T "meaning" }}</th></tr></thead>
+  <tbody>
+    {{- range hugo.Data.facts.certdoctor.tools.exitCodes }}
+    <tr><td><code>{{ .code }}</code></td><td>{{ partial "program-words.html" (dict "en" .meaning "key" (printf "tool_exit_%v" .code)) }}</td></tr>
+    {{- end }}
+  </tbody>
+</table></div>

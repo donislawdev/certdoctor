@@ -18,6 +18,10 @@ key = "nav_guides"
 page = "/guides"
 
 [[main]]
+key = "nav_tools"
+page = "/tools"
+
+[[main]]
 key = "nav_download"
 page = "/download"
 
@@ -70,6 +74,17 @@ pages = [
 ]
 
 [[sidebar]]
+key = "side_tools"
+pages = [
+  "/tools",
+  "/tools/jwt-decoder",
+  "/tools/certificate-decoder",
+  "/tools/csr-decoder",
+  "/tools/no-proxy",
+  "/tools/ksef-certificate-fingerprint",
+]
+
+[[sidebar]]
 key = "side_trust"
 pages = ["/security", "/faq"]
 
@@ -93,6 +108,15 @@ pages = [
   "/guides/node-extra-ca-certs",
   "/guides/python-pip-certificates",
   "/guides/tls-inspection-corporate-proxy",
+]
+
+[[footer]]
+key = "footer_tools"
+pages = [
+  "/tools/jwt-decoder",
+  "/tools/certificate-decoder",
+  "/tools/csr-decoder",
+  "/tools/no-proxy",
 ]
 
 # Addresses outside the site. The repository is the only place they point,

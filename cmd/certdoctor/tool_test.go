@@ -186,6 +186,49 @@ func TestTheToolPageShowsWhatTheTokenSays(t *testing.T) {
 	}
 }
 
+// TestTheHelpNamesTheSwitchesAToolTakes holds the switches --help and the
+// website name for every tool, spec.Switches, to the ones the command line
+// parses: each is taken, with a value when it names one. A switch no tool
+// takes is refused, so the loop is known to ask the parser something.
+func TestTheHelpNamesTheSwitchesAToolTakes(t *testing.T) {
+	tool, _ := spec.Find("jwt")
+	values := map[string]string{"path": "-", "name": "json"}
+	for _, s := range spec.Switches {
+		args := []string{"--" + s.Name}
+		if s.Arg != "" {
+			value, ok := values[s.Arg]
+			if !ok {
+				t.Errorf("--%s takes a <%s>, and this test has no value of that kind to give it", s.Name, s.Arg)
+				continue
+			}
+			args = append(args, value)
+		}
+		if _, f := parseTool(tool, args); f != nil {
+			t.Errorf("--help names --%s, and the command line refused %q: %s", s.Name, args, f.message)
+		}
+	}
+	if _, f := parseTool(tool, []string{"--key", "k"}); f == nil || f.code != exitcode.Usage {
+		t.Error("a switch no tool takes was not refused, so the loop above proves nothing")
+	}
+}
+
+// TestTheToolEndingsAreTheCommandLinesExitCodes holds the exit codes --help
+// and the website name for a tool, spec.Endings, to the command line's own:
+// read and shown is OK, not understood is USAGE, an input it cannot use is
+// CONFIG. The tools' contract cannot see the exit codes, so this holds the two.
+func TestTheToolEndingsAreTheCommandLinesExitCodes(t *testing.T) {
+	want := []exitcode.Code{exitcode.OK, exitcode.Usage, exitcode.Config}
+	if len(spec.Endings) != len(want) {
+		t.Fatalf("spec.Endings names %d exit codes and a tool ends in %d ways", len(spec.Endings), len(want))
+	}
+	for i, e := range spec.Endings {
+		if e.Code != want[i].Int() {
+			t.Errorf("spec.Endings says %d (%s) where the command line ends with %d (%s)", e.Code, e.Meaning,
+				want[i].Int(), want[i].Name())
+		}
+	}
+}
+
 // TestTheToolTextsFitThePage holds the list and every tool's help to the
 // width of a page (ADR109), with the main help naming the tools.
 func TestTheToolTextsFitThePage(t *testing.T) {

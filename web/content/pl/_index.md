@@ -82,6 +82,19 @@ guides:
   link:
     text: Wszystkie poradniki
     page: /guides
+tools:
+  eyebrow: Narzędzia
+  title: Zdekoduj to na swoim komputerze
+  text: "Token, certyfikat albo żądanie podpisania certyfikatu odczytane na twoim komputerze i lista NO_PROXY sprawdzona we wszystkich programach naraz. Nic nie jest wysyłane i nic się nie łączy."
+  pages:
+    - /tools/jwt-decoder
+    - /tools/certificate-decoder
+    - /tools/csr-decoder
+    - /tools/no-proxy
+    - /tools/ksef-certificate-fingerprint
+  link:
+    text: Wszystkie narzędzia
+    page: /tools
 pipeline:
   eyebrow: Zgłoszenia i pipeline'y
   title: Raport do zgłoszenia, kod wyjścia dla CI

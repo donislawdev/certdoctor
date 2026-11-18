@@ -12,6 +12,8 @@ program or from the files the release reads, and never writes by hand:
 | What | From | Kept true by |
 |---|---|---|
 | every switch, its group and its summary as `--help` prints it, every exit code with its name and meaning, the six layers, the four statuses, every variable L0 reads, every family of trust store L5 asks, and the version | `data/facts/certdoctor.json` | `go test ./cmd/sitefacts`, in CI |
+| every tool, its switches and the exit codes a tool ends with, as `certdoctor tool <name> --help` prints them | `data/facts/certdoctor.json`, `tools` | `go test ./cmd/sitefacts`, in CI |
+| how each program reads a `NO_PROXY` list, in the table of the NO_PROXY page | `data/facts/certdoctor.json`, `noProxy`: the NO_PROXY tester's own answers to the examples listed in `cmd/sitefacts/tools.go` | `go test ./cmd/sitefacts`, in CI |
 | the archives of a release | the download tables of `../README.md`, mounted | `internal/guard` holds the README to the release scripts |
 | the commands that check a download | the section of `../README.md` that shows them | the release note and the guards read the same section |
 | the oldest Go a build from source takes | `../go.mod`, mounted | the module itself |
@@ -27,7 +29,12 @@ Then look at the site's diff before committing it. In Windows PowerShell 5.1, `>
 run it from another shell there.
 
 The excerpt of a real run on the home page, `assets/runs/untrusted-root-windows.txt`, is cut line for
-line from what the program printed, with `...` where lines were left out.
+line from what the program printed, with `...` where lines were left out. So are the runs on the
+tool pages, each with the date it was printed.
+
+When the NO_PROXY tester's answers change, the facts change with them and the table follows, but the
+paragraphs under it on the NO_PROXY page are prose: read them against the new table before
+committing the facts.
 
 ## The picture a shared link shows
 
