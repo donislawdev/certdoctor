@@ -2,8 +2,10 @@
 // as one JSON document on standard output.
 //
 // It is a build tool and never ships. The website under web/ shows every
-// switch, exit code, layer, status and variable of the program, and the
-// picture a shared link shows names every trust store it asks. Both read them
+// switch, exit code, layer, status and variable of the program, every tool
+// with what it takes, and how each program reads NO_PROXY as the tester
+// answers it, and the picture a shared link shows names every trust store it
+// asks. Both read them
 // from web/data/facts/certdoctor.json instead of saying them again by hand, so
 // a page cannot name a switch the program no longer has. This writes
 // that file, and its test fails when the file says something the program no
@@ -52,6 +54,12 @@ type facts struct {
 	// Stores are the families of trust store the trust matrix asks, by the
 	// name a report gives them, in the order it asks them.
 	Stores []string `json:"stores"`
+	// Tools are the small tools beside the diagnosis (ADR141): what each
+	// takes, and the switches and exit codes every one of them shares.
+	Tools toolFacts `json:"tools"`
+	// NoProxy is the NO_PROXY tester's answer to every example the website
+	// shows, asked of the tool itself.
+	NoProxy []noProxyExample `json:"noProxy"`
 }
 
 type group struct {
@@ -86,18 +94,28 @@ type layerFact struct {
 // as <url> kept as they are typed, because the file is read in a diff as often
 // as by Hugo.
 func write(w io.Writer) error {
+	f, err := collect()
+	if err != nil {
+		return err
+	}
 	encoder := json.NewEncoder(w)
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(collect())
+	return encoder.Encode(f)
 }
 
-func collect() facts {
+func collect() (facts, error) {
 	f := facts{
 		Name:      certdoctor.Name,
 		Version:   certdoctor.Version,
 		Variables: machine.Variables(),
+		Tools:     collectTools(),
 	}
+	noProxy, err := askNoProxy(noProxyExamples)
+	if err != nil {
+		return facts{}, err
+	}
+	f.NoProxy = noProxy
 	for _, s := range status.All {
 		f.Statuses = append(f.Statuses, s.String())
 	}
@@ -113,7 +131,7 @@ func collect() facts {
 	for _, d := range trust.All() {
 		f.Stores = append(f.Stores, d.Runtime)
 	}
-	return f
+	return f, nil
 }
 
 // switchesOf is every switch of one group, in the order the help prints them.

@@ -20,6 +20,9 @@ other = "Błędy"
 [nav_guides]
 other = "Poradniki"
 
+[nav_tools]
+other = "Narzędzia"
+
 [nav_download]
 other = "Pobierz"
 
@@ -59,6 +62,9 @@ other = "Błędy"
 [footer_guides]
 other = "Poradniki"
 
+[footer_tools]
+other = "Narzędzia"
+
 [footer_project]
 other = "Projekt"
 
@@ -88,6 +94,9 @@ other = "Błędy"
 
 [side_guides]
 other = "Poradniki"
+
+[side_tools]
+other = "Narzędzia"
 
 [side_trust]
 other = "Zaufanie"
@@ -207,6 +216,26 @@ other = "Budżet czasu"
 [group_meta]
 other = "Informacje"
 
+# ---- the tools ----------------------------------------------------------------
+
+[noproxy_address]
+other = "Adres"
+
+[noproxy_agreement]
+other = "Programy zgodne"
+
+[noproxy_direct]
+other = "bezpośrednio"
+
+[noproxy_proxy]
+other = "przez proxy"
+
+[noproxy_only_with]
+other = "czyta NO_PROXY tylko z"
+
+[noproxy_by_release]
+other = "zależy od wydania"
+
 # ---- what the program prints, translated ------------------------------------
 # The English pages show these in the program's own words, from the facts.
 
@@ -236,6 +265,63 @@ other = "przerwany przez użytkownika"
 
 [exit_TERMINATED]
 other = "zakończony przez system"
+
+[tool_exit_0]
+other = "wejście zostało odczytane i pokazane, cokolwiek mówią sprawdzenia"
+
+[tool_exit_2]
+other = "nie dało się zrozumieć wiersza poleceń"
+
+[tool_exit_3]
+other = "wejścia nie dało się użyć - to nie to, co narzędzie czyta, jest za duże albo nieczytelne"
+
+[tool_file_token]
+other = "czyta token z tego pliku"
+
+[tool_file_certificates]
+other = "czyta certyfikaty z tego pliku"
+
+[tool_file_csr]
+other = "czyta żądanie CSR z tego pliku"
+
+[tool_file_list]
+other = "czyta listę z tego pliku"
+
+[tool_file_address]
+other = "czyta adres z tego pliku"
+
+[tool_switch_request]
+other = "czyta wszystkie wejścia z dokumentu żądania, - oznacza standardowe wejście"
+
+[tool_switch_json]
+other = "zapisuje dokument dla programów zamiast strony dla ludzi"
+
+[tool_switch_format]
+other = "terminal (domyślnie) albo json"
+
+[tool_switch_no-color]
+other = "bez kolorów, o co prosi też NO_COLOR"
+
+[noproxy_program_curl]
+other = "curl i git"
+
+[noproxy_program_dotnet]
+other = ".NET"
+
+[noproxy_program_go]
+other = "Go"
+
+[noproxy_program_python]
+other = "Python urllib"
+
+[noproxy_program_requests]
+other = "requests i pip"
+
+[noproxy_program_node_http]
+other = "Node.js http i https"
+
+[noproxy_program_node_fetch]
+other = "Node.js fetch"
 
 [layer_L0_name]
 other = "Kontekst"

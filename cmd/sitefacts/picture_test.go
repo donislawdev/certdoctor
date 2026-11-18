@@ -43,7 +43,11 @@ func TestThePictureIsDrawnFromTodaysProgram(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := checkPicture(png, script, collect().Stores); err != nil {
+	said, err := collect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkPicture(png, script, said.Stores); err != nil {
 		t.Errorf("%v\nDraw it again, look at it, commit it and upload it to GitHub under Settings, General, "+
 			"Social preview:\n  go run ./cmd/sitefacts > web/data/facts/certdoctor.json\n"+
 			"  python assets/social-preview/social_preview.py", err)

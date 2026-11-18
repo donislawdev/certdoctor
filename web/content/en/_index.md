@@ -82,6 +82,19 @@ guides:
   link:
     text: All fix guides
     page: /guides
+tools:
+  eyebrow: Tools
+  title: Decode it on your own machine
+  text: "A token, a certificate or a signing request read on your own machine, and a NO_PROXY list asked of every program at once. Nothing is uploaded and nothing connects."
+  pages:
+    - /tools/jwt-decoder
+    - /tools/certificate-decoder
+    - /tools/csr-decoder
+    - /tools/no-proxy
+    - /tools/ksef-certificate-fingerprint
+  link:
+    text: All tools
+    page: /tools
 pipeline:
   eyebrow: Tickets and pipelines
   title: A report for the ticket, an exit code for CI

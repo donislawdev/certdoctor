@@ -24,6 +24,9 @@ other = "Errors"
 [nav_guides]
 other = "Fix guides"
 
+[nav_tools]
+other = "Tools"
+
 [nav_download]
 other = "Download"
 
@@ -63,6 +66,9 @@ other = "Errors"
 [footer_guides]
 other = "Fix guides"
 
+[footer_tools]
+other = "Tools"
+
 [footer_project]
 other = "Project"
 
@@ -92,6 +98,9 @@ other = "Errors"
 
 [side_guides]
 other = "Fix guides"
+
+[side_tools]
+other = "Tools"
 
 [side_trust]
 other = "Trust"
@@ -210,3 +219,23 @@ other = "Budget"
 
 [group_meta]
 other = "Meta"
+
+# ---- the tools ----------------------------------------------------------------
+
+[noproxy_address]
+other = "Address"
+
+[noproxy_agreement]
+other = "Programs agree"
+
+[noproxy_direct]
+other = "direct"
+
+[noproxy_proxy]
+other = "proxy"
+
+[noproxy_only_with]
+other = "reads NO_PROXY only with"
+
+[noproxy_by_release]
+other = "by release"

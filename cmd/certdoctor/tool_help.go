@@ -54,13 +54,13 @@ func toolHelpText(t spec.Tool) string {
 		writeUsageOfOne(&b, t)
 	}
 	b.WriteString("\nOPTIONS\n")
-	for _, line := range toolSwitches(t) {
-		fmt.Fprintf(&b, "  %-18s  %s\n", line[0], line[1])
+	for _, o := range t.Options() {
+		fmt.Fprintf(&b, "  %-18s  %s\n", o.Spelled, o.Summary)
 	}
 	b.WriteString("\nEXIT CODES\n")
-	b.WriteString("  0  the input was read and shown, whatever the checks say\n")
-	b.WriteString("  2  the command line could not be understood\n")
-	b.WriteString("  3  the input could not be used - not what the tool reads, too large, or unreadable\n")
+	for _, e := range spec.Endings {
+		fmt.Fprintf(&b, "  %d  %s\n", e.Code, e.Meaning)
+	}
 	return b.String()
 }
 
@@ -120,20 +120,4 @@ func writeIndented(b *strings.Builder, sentence string, indent int) {
 	for _, line := range render.Wrap(sentence, indent) {
 		fmt.Fprintf(b, "%s%s\n", strings.Repeat(" ", indent), line)
 	}
-}
-
-// toolSwitches are a tool's switches with what each does, the file switches
-// read from its inputs.
-func toolSwitches(t spec.Tool) [][2]string {
-	var lines [][2]string
-	for i, in := range t.Inputs {
-		lines = append(lines, [2]string{"--" + t.FileSwitch(i) + " <path>", "read the " + in.Name + " from this file"})
-	}
-	return append(lines,
-		[2]string{"--request <path>", "read every input from a request document, - for standard input"},
-		[2]string{"--json", "write the document for programs instead of the page for people"},
-		[2]string{"--format <name>", "terminal (the default) or json"},
-		[2]string{"--no-color", "no colour, as NO_COLOR asks too"},
-		[2]string{"--help", "this text"},
-	)
 }

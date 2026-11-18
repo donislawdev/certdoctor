@@ -1,0 +1,75 @@
+{{- /*
+  How each program reads a NO_PROXY list, one row per example: the NO_PROXY
+  tester's own answers, from web/data/facts/certdoctor.json, which
+  cmd/sitefacts writes by asking the tool. A cell says direct, proxy, or which
+  releases go which way when a program changed its rules. Under the table, what
+  a program needs before it reads the list at all.
+
+  The columns are the programs of the first example, and every example has to
+  name the same programs in the same order, or the build stops - a table whose
+  cells sit under the wrong heading would say something the tool did not.
+*/ -}}
+{{- $examples := hugo.Data.facts.certdoctor.noProxy }}
+{{- /* The releases of a program that answer differently are long, so a cell
+  names a note under the table instead of holding them. */}}
+{{- $notes := slice }}
+{{- $first := index $examples 0 }}
+{{- $keys := slice }}
+{{- range $first.programs }}{{ $keys = $keys | append .key }}{{ end }}
+<div class="table-wrap"><table>
+  <thead>
+    <tr>
+      <th><code>NO_PROXY</code></th>
+      <th>{{ T "noproxy_address" }}</th>
+      <th>{{ T "noproxy_agreement" }}</th>
+      {{- range $first.programs }}
+      <th>{{ partial "program-words.html" (dict "en" .name "key" (printf "noproxy_program_%s" .key)) }}</th>
+      {{- end }}
+    </tr>
+  </thead>
+  <tbody>
+    {{- range $examples }}
+    {{- $these := slice }}
+    {{- range .programs }}{{ $these = $these | append .key }}{{ end }}
+    {{- if ne (delimit $these ",") (delimit $keys ",") }}
+      {{- errorf "the NO_PROXY example %q for %s names the programs %v, and the table's columns are %v" .list .address $these $keys }}
+    {{- end }}
+    <tr>
+      <td><code>{{ .list }}</code></td>
+      <td><code>{{ .address }}</code></td>
+      <td>{{ partial "status.html" .agreement }}</td>
+      {{- $example := . }}
+    {{- range .programs }}
+      <td>
+        {{- if eq .answer "direct" }}{{ T "noproxy_direct" }}
+        {{- else if eq .answer "proxy" }}{{ T "noproxy_proxy" }}
+        {{- else if eq .answer "releases" }}
+          {{- $notes = $notes | append (dict "list" $example.list "address" $example.address "program" . ) }}
+          {{- T "noproxy_by_release" }} <a href="#noproxy-note-{{ len $notes }}">({{ len $notes }})</a>
+        {{- else }}{{ errorf "the NO_PROXY tester answered %q, which the table does not know" .answer }}
+        {{- end -}}
+      </td>
+      {{- end }}
+    </tr>
+    {{- end }}
+  </tbody>
+</table></div>
+{{- with $notes }}
+<ol>
+  {{- range $i, $n := . }}
+  {{- $name := partial "program-words.html" (dict "en" $n.program.name "key" (printf "noproxy_program_%s" $n.program.key)) }}
+  <li id="noproxy-note-{{ add $i 1 }}"><code>{{ $n.list }}</code>, <code>{{ $n.address }}</code>, {{ $name }} - {{ T "noproxy_direct" }}: {{ delimit $n.program.directIn "; " }}. {{ T "noproxy_proxy" }}: {{ delimit $n.program.proxyIn "; " }}.</li>
+  {{- end }}
+</ol>
+{{- end }}
+{{- $needs := slice }}
+{{- range $first.programs }}
+  {{- if .condition }}{{ $needs = $needs | append . }}{{ end }}
+{{- end }}
+{{- with $needs }}
+<ul>
+  {{- range . }}
+  <li>{{ partial "program-words.html" (dict "en" .name "key" (printf "noproxy_program_%s" .key)) }}: {{ T "noproxy_only_with" }} <code>{{ .condition }}</code></li>
+  {{- end }}
+</ul>
+{{- end }}

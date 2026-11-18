@@ -128,14 +128,20 @@ var layerMap = []layerRule{
 	{
 		// The writer of the website's facts. It prints what the program says
 		// about itself - switches, exit codes, layers, statuses, the
-		// variables L0 reads and the trust stores L5 asks - and runs none of
-		// it, so it sees those six registries and the module root for the
-		// version, and nothing that connects, reads the machine or renders.
-		// The trust layer is a registry here only: it asks a store through
-		// a probe the caller hands it, and this hands it none.
+		// variables L0 reads, the trust stores L5 asks and the tools - and runs
+		// none of the diagnosis, so it sees those six registries, the tools'
+		// contract and the module root for the version, and nothing that
+		// connects, reads the machine or renders. The trust layer is a registry
+		// here only: it asks a store through a probe the caller hands it, and
+		// this hands it none. The one tool it runs is the NO_PROXY tester, on
+		// lists and addresses written in it: the tester reads no environment
+		// and connects to nothing (ADR147), and its answers are the website's
+		// table of how each program reads NO_PROXY - the owner's decision of
+		// 2026-11-18 that the table comes from the program, not by hand.
 		location: "cmd/sitefacts/",
 		mayImportBelow: []string{"internal/core/switches/", "internal/core/exitcode/", "internal/core/layer/",
-			"internal/core/status/", "internal/core/machine/", "internal/core/trust/"},
+			"internal/core/status/", "internal/core/machine/", "internal/core/trust/", "internal/tool/spec/",
+			"internal/tool/noproxy/"},
 		mayImportRoot: true,
 	},
 	{

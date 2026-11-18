@@ -157,6 +157,77 @@ var All = []Tool{
 	},
 }
 
+// Switch is a switch every tool takes beside the file switches of its inputs.
+type Switch struct {
+	// Name is the switch without its dashes. Public: a script passes it.
+	Name string
+	// Arg names the value it takes, empty when it takes none.
+	Arg string
+	// Summary is what --help says it does.
+	Summary string
+}
+
+// Switches are the switches every tool takes, in the order --help lists them
+// after the file switches. The command line's --help and the website both read
+// them here, and a test in cmd/certdoctor holds every one to the switches the
+// command line parses.
+var Switches = []Switch{
+	{Name: "request", Arg: "path", Summary: "read every input from a request document, - for standard input"},
+	{Name: "json", Summary: "write the document for programs instead of the page for people"},
+	{Name: "format", Arg: "name", Summary: "terminal (the default) or json"},
+	{Name: "no-color", Summary: "no colour, as NO_COLOR asks too"},
+	{Name: "help", Summary: "this text"},
+}
+
+// Option is one switch of a tool as --help prints it.
+type Option struct {
+	// Name is the switch without its dashes.
+	Name string
+	// Input is the name of the input a file switch reads, empty for a switch
+	// every tool takes.
+	Input string
+	// Spelled is the switch as it is typed, with a placeholder for its value:
+	// --file <path>.
+	Spelled string
+	// Summary is what it does.
+	Summary string
+}
+
+// Options are the switches t takes, as --help lists them: the file switch of
+// each input, then the switches every tool takes.
+func (t Tool) Options() []Option {
+	var out []Option
+	for i, in := range t.Inputs {
+		out = append(out, Option{Name: t.FileSwitch(i), Input: in.Name, Spelled: "--" + t.FileSwitch(i) + " <path>",
+			Summary: "read the " + in.Name + " from this file"})
+	}
+	for _, s := range Switches {
+		spelled := "--" + s.Name
+		if s.Arg != "" {
+			spelled += " <" + s.Arg + ">"
+		}
+		out = append(out, Option{Name: s.Name, Spelled: spelled, Summary: s.Summary})
+	}
+	return out
+}
+
+// Ending is one way a tool's run ends, by its exit code (ADR141 point 6).
+type Ending struct {
+	// Code is the exit code. Public: a script branches on it.
+	Code int
+	// Meaning is what --help says it means.
+	Meaning string
+}
+
+// Endings are the exit codes --help names for a tool, in its order. A test in
+// cmd/certdoctor holds each code to the command line's own exit codes, which
+// this package does not see.
+var Endings = []Ending{
+	{Code: 0, Meaning: "the input was read and shown, whatever the checks say"},
+	{Code: 2, Meaning: "the command line could not be understood"},
+	{Code: 3, Meaning: "the input could not be used - not what the tool reads, too large, or unreadable"},
+}
+
 // FileSwitch is the switch, without its dashes, that names a file for the
 // input at index i: file for the first, <name>-file for every other (ADR141
 // point 2). Public - the command line takes it, and the window names it when

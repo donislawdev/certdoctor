@@ -31,6 +31,7 @@ testbed/**/expected/**  text eol=lf
 # Binary, never normalized.
 *.png       binary
 *.gif       binary
+*.webp      binary
 *.ico       binary
 *.icns      binary
 *.syso      binary
