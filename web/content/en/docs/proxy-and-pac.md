@@ -21,6 +21,8 @@ A proxy auto-configuration script is a small JavaScript program that decides, UR
 
 Cert Doctor fetches the script your machine names and runs it in a sandbox to see where it sends this URL. The answer is reported for the script itself, not for the setting that named it, so two settings naming two scripts that disagree are both shown.
 
+The script runs in a process of its own, apart from the diagnosis. A script that never finishes or asks for more memory than a proxy decision needs is stopped without stopping the diagnosis: its row says `UNKNOWN` and the rest of the report is complete.
+
 A script that answers nothing usable is reported as `UNKNOWN`, never as a direct connection: guessing "no proxy" would send you looking in the wrong place.
 
 ## A PAC script your machine does not name
