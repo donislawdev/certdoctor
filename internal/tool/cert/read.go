@@ -143,10 +143,3 @@ func isRequest(der []byte) bool {
 }
 
 func refuse(reason string) error { return derinput.Refuse(reason) }
-
-func pluralWord(n int, one, more string) string {
-	if n == 1 {
-		return one
-	}
-	return more
-}

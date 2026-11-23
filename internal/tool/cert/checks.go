@@ -222,7 +222,7 @@ func (j judged) unreadableCheck() (spec.Check, bool) {
 	}
 	return spec.Check{ID: "unreadable", Status: status.Unknown, Summary: fmt.Sprintf("This program's X.509 "+
 		"library could not read %s, so nothing is said about %s.", prose.List(clauses),
-		pluralWord(len(clauses), "it", "them"))}, true
+		prose.Word(len(clauses), "it", "them"))}, true
 }
 
 // label names a certificate in a sentence: "certificate 2 (leaf.example.test)".

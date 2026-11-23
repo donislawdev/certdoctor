@@ -178,6 +178,27 @@ func TestASubjectAltNameWithoutAHostIsNamedForWhatItIs(t *testing.T) {
 	}
 }
 
+// TestTheAuthorityRowCountsTheAuthoritiesBelow holds every answer of the
+// Authority row - a root of a public chain allows two authorities below it.
+func TestTheAuthorityRowCountsTheAuthoritiesBelow(t *testing.T) {
+	limit := func(n int) *int { return &n }
+	for _, tc := range []struct {
+		isCA  bool
+		below *int
+		want  string
+	}{
+		{false, nil, "no"},
+		{true, nil, "yes - may issue certificates, with no limit on authorities below it"},
+		{true, limit(0), "yes - may issue certificates, but no authority below it"},
+		{true, limit(1), "yes - may issue certificates, with at most 1 authority below it"},
+		{true, limit(2), "yes - may issue certificates, with at most 2 authorities below it"},
+	} {
+		if got := authorityWords(tc.isCA, tc.below); got != tc.want {
+			t.Errorf("%q, want %q", got, tc.want)
+		}
+	}
+}
+
 // TestEveryFormOfACertificateIsRead holds the forms a certificate is pasted
 // in: PEM as a file has it, PEM copied out of JSON, the output of openssl
 // s_client, OpenSSL's TRUSTED CERTIFICATE, base64 alone, an x5c array, DER.

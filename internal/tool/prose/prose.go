@@ -50,13 +50,38 @@ func Distance(now, at time.Time) string {
 	}
 }
 
-// Plural writes a count with its unit, the unit taking an s unless the count
-// is one.
+// Plural writes a count with its unit, the unit in its plural unless the count
+// is one. The plural follows the regular English rules - "authority" gives
+// "authorities", "address" gives "addresses", "byte" gives "bytes" - so a unit
+// whose plural breaks them is counted with Word instead.
 func Plural(n int64, unit string) string {
 	if n == 1 {
 		return "1 " + unit
 	}
-	return fmt.Sprintf("%d %ss", n, unit)
+	return fmt.Sprintf("%d %s", n, plural(unit))
+}
+
+// plural is the regular English plural of a word: "ies" for a y after a
+// consonant, "es" after s, x, z, ch and sh, and an s after anything else.
+func plural(word string) string {
+	if n := len(word); n > 1 && word[n-1] == 'y' && !strings.ContainsRune("aeiou", rune(word[n-2])) {
+		return word[:n-1] + "ies"
+	}
+	for _, end := range []string{"s", "x", "z", "ch", "sh"} {
+		if strings.HasSuffix(word, end) {
+			return word + "es"
+		}
+	}
+	return word + "s"
+}
+
+// Word picks the word for a count: one for exactly one, more for any other -
+// a verb that agrees with the count, or a unit Plural cannot spell.
+func Word(n int, one, more string) string {
+	if n == 1 {
+		return one
+	}
+	return more
 }
 
 // List writes names as "a", "a and b" or "a, b and c".

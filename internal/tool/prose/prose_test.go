@@ -1,6 +1,7 @@
 package prose
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -70,8 +71,38 @@ func TestNamesAreListedWithAnAndBeforeTheLast(t *testing.T) {
 			t.Errorf("List(%q) = %q, want %q", tc.names, got, tc.want)
 		}
 	}
-	if Plural(1, "byte") != "1 byte" || Plural(0, "byte") != "0 bytes" || Plural(2, "byte") != "2 bytes" {
-		t.Error("Plural takes an s unless the count is one")
+}
+
+// TestACountTakesTheRegularPluralOfItsUnit holds the plural of every unit the
+// tools count, and a word for each rule beyond them.
+func TestACountTakesTheRegularPluralOfItsUnit(t *testing.T) {
+	for _, tc := range []struct {
+		n          int64
+		unit, want string
+	}{
+		{1, "authority", "1 authority"},
+		{0, "authority", "0 authorities"},
+		{2, "authority", "2 authorities"},
+		{2, "e-mail address", "2 e-mail addresses"},
+		{2, "URI", "2 URIs"},
+		{2, "certificate", "2 certificates"},
+		{2, "block", "2 blocks"},
+		{2, "character", "2 characters"},
+		{1, "byte", "1 byte"},
+		{0, "byte", "0 bytes"},
+		{2, "day", "2 days"},
+		{2, "box", "2 boxes"},
+		{2, "buzz", "2 buzzes"},
+		{2, "match", "2 matches"},
+		{2, "wish", "2 wishes"},
+		{2, "y", "2 ys"},
+	} {
+		if got := Plural(tc.n, tc.unit); got != tc.want {
+			t.Errorf("Plural(%d, %q) = %q, want %q", tc.n, tc.unit, got, tc.want)
+		}
+	}
+	if Word(1, "is", "are") != "is" || Word(0, "is", "are") != "are" || Word(2, "is", "are") != "are" {
+		t.Error("Word picks the first word for one and the second for any other count")
 	}
 }
 
@@ -96,11 +127,15 @@ func TestLongTextIsShortenedAndSaysSo(t *testing.T) {
 
 // FuzzWords holds that any two times and any names give words in UTF-8 that
 // name a unit, and never fall over - a certificate can say any second from
-// the year 1 to 9999.
+// the year 1 to 9999 - and that any count of any unit starts with the count.
 func FuzzWords(f *testing.F) {
 	f.Add(int64(0), int64(253402300799), "a", "b")
 	f.Add(int64(-62135596800), int64(0), "", "\xff")
+	f.Add(int64(2), int64(1), "y", "\xffy")
 	f.Fuzz(func(t *testing.T, a, b int64, x, y string) {
+		if got := Plural(a, x); !strings.HasPrefix(got, strconv.FormatInt(a, 10)+" ") {
+			t.Fatalf("Plural(%d, %q) = %q", a, x, got)
+		}
 		const first, last = -62135596800, 253402300799
 		if a < first || a > last || b < first || b > last {
 			return

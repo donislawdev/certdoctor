@@ -228,6 +228,9 @@ func TestTheNameRulesSpeak(t *testing.T) {
 		{"an e-mail address and a URI", with(func(r *request) {
 			r.extensions[0] = san(t, dns("www.example.test"), mail("someone@example.test"), uri("https://example.test/x"))
 		}), "names", status.Warn, "1 e-mail address and 1 URI, which a public authority does not put"},
+		{"two e-mail addresses", with(func(r *request) {
+			r.extensions[0] = san(t, dns("www.example.test"), mail("a@example.test"), mail("b@example.test"))
+		}), "names", status.Warn, "2 e-mail addresses, which a public authority does not put"},
 		{"two common names", with(func(r *request) {
 			r.subject = pkix.Name{ExtraNames: []pkix.AttributeTypeAndValue{
 				{Type: oidCommonName, Value: "www.example.test"}, {Type: oidCommonName, Value: "example.test"}}}
@@ -301,6 +304,25 @@ func TestARequestForSomethingElseIsNotJudgedAsAServers(t *testing.T) {
 	r := dataOf(t, decoded(t, ca.der(t)))
 	if !r.IsCA || r.MaxPathLength == nil || *r.MaxPathLength != 0 {
 		t.Errorf("an authority with no authority below it: %+v", r)
+	}
+}
+
+// TestTheAuthorityRowCountsTheAuthoritiesBelow holds every answer of the
+// Authority row, in the words the certificate decoder uses.
+func TestTheAuthorityRowCountsTheAuthoritiesBelow(t *testing.T) {
+	for _, tc := range []struct {
+		asked requested
+		want  string
+	}{
+		{requested{}, "asks not to be one"},
+		{requested{isCA: true, maxPathLen: -1}, "asks to be one, with no limit on authorities below it"},
+		{requested{isCA: true}, "asks to be one, with no authority below it"},
+		{requested{isCA: true, maxPathLen: 1}, "asks to be one, with at most 1 authority below it"},
+		{requested{isCA: true, maxPathLen: 2}, "asks to be one, with at most 2 authorities below it"},
+	} {
+		if got := authorityWords(tc.asked); got != tc.want {
+			t.Errorf("%q, want %q", got, tc.want)
+		}
 	}
 }
 

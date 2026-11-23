@@ -248,14 +248,7 @@ func (k Kind) nothingToRead(in Input, broken int) error {
 		}
 	}
 	return Refuse(fmt.Sprintf("The input holds no %s - its PEM %s %s.%s", k.Thing,
-		pluralWord(len(kinds), "block is", "blocks are"), prose.List(kinds), strings.Join(sent, "")))
-}
-
-func pluralWord(n int, one, more string) string {
-	if n == 1 {
-		return one
-	}
-	return more
+		prose.Word(len(kinds), "block is", "blocks are"), prose.List(kinds), strings.Join(sent, "")))
 }
 
 // IsBase64 says text is made of base64 characters and line breaks alone, in
@@ -317,8 +310,8 @@ func PrivateKeyCheck(skipped []Skipped) (spec.Check, bool) {
 	}
 	return spec.Check{ID: "private_key", Status: status.Warn, Summary: fmt.Sprintf("%s %s of the input %s a "+
 		"private key. It was not read and is not shown here - a private key belongs on the machine that uses it, "+
-		"and a file that carries one should not be handed around.", pluralWord(len(blocks), "Block", "Blocks"),
-		prose.List(blocks), pluralWord(len(blocks), "is", "are each"))}, true
+		"and a file that carries one should not be handed around.", prose.Word(len(blocks), "Block", "Blocks"),
+		prose.List(blocks), prose.Word(len(blocks), "is", "are each"))}, true
 }
 
 // Refuse is a tool's refusal of its input.
