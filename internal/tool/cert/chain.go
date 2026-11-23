@@ -199,8 +199,8 @@ func (ch chained) unrelatedCheck() (spec.Check, bool) {
 	return spec.Check{ID: "chain_unrelated", Status: status.Warn, Summary: fmt.Sprintf("%s %s not part of "+
 		"the chain that starts with certificate %d. A client should ignore %s (RFC 8446 section 4.4.2), so a "+
 		"server sending %s sends bytes nobody uses.", upper(certificates(ch.Outside)),
-		pluralWord(len(ch.Outside), "is", "are"), ch.Path[0], pluralWord(len(ch.Outside), "it", "them"),
-		pluralWord(len(ch.Outside), "it", "them"))}, true
+		prose.Word(len(ch.Outside), "is", "are"), ch.Path[0], prose.Word(len(ch.Outside), "it", "them"),
+		prose.Word(len(ch.Outside), "it", "them"))}, true
 }
 
 // duplicateCheck names the certificates given more than once.
@@ -227,5 +227,5 @@ func numbers(ns []int) string {
 
 // certificates writes "certificate 4" or "certificates 2 and 4".
 func certificates(ns []int) string {
-	return pluralWord(len(ns), "certificate ", "certificates ") + numbers(slices.Clone(ns))
+	return prose.Word(len(ns), "certificate ", "certificates ") + numbers(slices.Clone(ns))
 }
