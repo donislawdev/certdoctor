@@ -21,13 +21,20 @@ const pacSandboxArgument = "--pac-sandbox"
 // pacStartAllowance is the time on top of the evaluation budget a sandbox
 // process gets to start and to say its result, before it is ended.
 //
-// AN ASSESSMENT ON A MEASUREMENT. Probe S33, 2026-11-16, twenty starts each: a
-// median of 9.6 ms on Windows, 7.3 ms on Linux and 4.4 ms on macOS, and 23 ms
-// at worst. Half a second leaves twenty times that for a busy machine. What it
-// costs is said plainly: a file stuck in native code - which the stopwatch
-// cannot interrupt and only the end of its process stops - runs this much past
-// pacEvaluationBudget.
-const pacStartAllowance = 500 * time.Millisecond
+// AN ASSESSMENT ON A MEASUREMENT. On an idle machine a start takes milliseconds -
+// probe S33, 2026-11-16, twenty starts each: a median of 9.6 ms on Windows,
+// 7.3 ms on Linux and 4.4 ms on macOS, and 23 ms at worst. The allowance is for
+// a busy machine, where the whole process waits for the processor, not only its
+// start: on 2026-11-24, with every core of sixteen kept busy on Windows, an
+// honest file answered in a median of 991 ms, 2.9 s at the 90th percentile and
+// 4.4 s at the 99th, over two hundred runs. With this allowance 7 of them would
+// have missed the window, with half a second 88. So a machine that busy can
+// still see time_limit, as the honest word for a file this program could not
+// finish in time. What it costs is said plainly: a file stuck in native code -
+// which the stopwatch cannot interrupt and only the end of its process stops -
+// runs this much past pacEvaluationBudget, still well inside the layer's own
+// deadline.
+const pacStartAllowance = 3 * time.Second
 
 // pacWaitDelay is how long the end of a sandbox process may wait for its
 // standard error to close. Nothing it starts holds the pipe, so this is a bound
