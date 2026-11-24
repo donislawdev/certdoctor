@@ -55,7 +55,7 @@ func Socket(ctx context.Context, address string) (io.ReadWriteCloser, error) {
 		// one gets a socket that can block, which is worse than a refusal - so it
 		// is refused, and the socket that was already open is closed on the way
 		// out rather than left behind.
-		conn.Close()
+		_ = conn.Close()
 		return nil, errNoDeadline
 	}
 	if err := conn.SetDeadline(deadline); err != nil {
@@ -63,7 +63,7 @@ func Socket(ctx context.Context, address string) (io.ReadWriteCloser, error) {
 		// caller never sees it, and without this close it stays open until the
 		// process ends - docs/22 section 6a, point (a): the easiest place to leak
 		// is the one where something already went wrong.
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	return conn, nil

@@ -17,6 +17,7 @@ Lg==
 -----END CERTIFICATE-----
 `
 	// fixtureBigCA is Big CA with an RSA key of 16392 bits, over the ceiling - it signed nothing.
+	//nolint:misspell // base64 of a certificate, not words
 	fixtureBigCA = `-----BEGIN CERTIFICATE-----
 MIIJEDCCCLWgAwIBAgIBATAKBggqhkjOPQQDAjARMQ8wDQYDVQQDEwZCaWcgQ0Ew
 HhcNMjAwMTAxMDAwMDAwWhcNNDAwMTAxMDAwMDAwWjARMQ8wDQYDVQQDEwZCaWcg

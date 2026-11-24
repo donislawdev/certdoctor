@@ -189,7 +189,7 @@ func readInputFile(env environment, tool spec.Tool, in spec.Input, by, path stri
 	if err != nil {
 		return nil, unreadableNamed(words, path, err)
 	}
-	defer handle.Close()
+	defer func() { _ = handle.Close() }()
 	data, err := io.ReadAll(handle)
 	if err != nil {
 		return nil, unreadableNamed(words, path, err)

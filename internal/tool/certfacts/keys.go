@@ -103,7 +103,7 @@ const (
 	KeySizeFailWords = "Go refuses to verify with an RSA key under 1024 bits (crypto/rsa)."
 	KeySizeWarnWords = "a public authority issues no RSA key under 2048 bits (CA/Browser Forum Baseline " +
 		"Requirements 6.1.5)."
-	KeySizePassWords = "No RSA key is shorter than 2048 bits."
+	KeySizePassWords = "No RSA key is shorter than 2048 bits." //nolint:gosec // G101: the words for a key size that passes
 )
 
 // weakSignatures are the signature algorithms a client should not accept a

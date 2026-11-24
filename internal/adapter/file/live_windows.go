@@ -28,7 +28,7 @@ func liveAppAlias(path string) (string, error) {
 	defer func() { _ = syscall.CloseHandle(handle) }()
 	data := make([]byte, syscall.MAXIMUM_REPARSE_DATA_BUFFER_SIZE)
 	var n uint32
-	err = syscall.DeviceIoControl(handle, syscall.FSCTL_GET_REPARSE_POINT, nil, 0, &data[0], uint32(len(data)), &n, nil)
+	err = syscall.DeviceIoControl(handle, syscall.FSCTL_GET_REPARSE_POINT, nil, 0, &data[0], uint32(len(data)), &n, nil) //nolint:gosec // G115: MAXIMUM_REPARSE_DATA_BUFFER_SIZE, 16 KiB
 	if err != nil {
 		return "", err
 	}

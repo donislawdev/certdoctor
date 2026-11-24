@@ -31,7 +31,7 @@ func ask() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer token.Close()
+	defer func() { _ = token.Close() }()
 
 	var elevated uint32
 	var returned uint32

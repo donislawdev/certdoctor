@@ -153,7 +153,7 @@ func punycode(runes []rune) (string, error) {
 	basic := 0
 	for _, r := range runes {
 		if r < initialN {
-			out = append(out, byte(r))
+			out = append(out, byte(r)) //nolint:gosec // G115: r is below initialN, so it is ASCII
 			basic++
 		}
 	}
@@ -239,9 +239,9 @@ func adapt(delta, numPoints int, firstTime bool) int {
 // 26..35, RFC 3492 section 5.
 func digit(d int) byte {
 	if d < 26 {
-		return byte('a' + d)
+		return byte('a' + d) //nolint:gosec // G115: d is a Punycode digit, 0 to 35
 	}
-	return byte('0' + d - 26)
+	return byte('0' + d - 26) //nolint:gosec // G115: d is a Punycode digit, 0 to 35
 }
 
 // isASCII reports whether s is entirely code points below 0x80.

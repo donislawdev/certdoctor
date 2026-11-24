@@ -121,6 +121,8 @@ func TrustTone(t model.Trust) (look.Tone, words.Key) {
 		return look.TonePass, words.TrustsYes
 	case model.TrustNo:
 		return look.ToneFail, words.TrustsNo
+	case model.TrustNotAssessed:
+		// below
 	}
 	return look.ToneUnknown, words.TrustsNot
 }

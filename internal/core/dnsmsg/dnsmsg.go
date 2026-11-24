@@ -463,7 +463,7 @@ func encodeName(name string) ([]byte, error) {
 		case len(label) > 63:
 			return nil, fmt.Errorf("%q has a label of %d bytes and 63 is the most a name may carry", name, len(label))
 		}
-		out = append(out, byte(len(label)))
+		out = append(out, byte(len(label))) //nolint:gosec // G115: a label is at most 63 bytes, checked above
 		out = append(out, label...)
 	}
 	out = append(out, 0)
@@ -474,4 +474,4 @@ func encodeName(name string) ([]byte, error) {
 	return out, nil
 }
 
-func appendUint16(b []byte, v uint16) []byte { return append(b, byte(v>>8), byte(v)) }
+func appendUint16(b []byte, v uint16) []byte { return append(b, byte(v>>8), byte(v)) } //nolint:gosec // G115: cutting a number into its two bytes is the point

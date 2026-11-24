@@ -184,7 +184,7 @@ func Fetch(mayReach func(address string) error, max int) Fetcher {
 			}
 			return "", failedFetch(err)
 		}
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 
 		if response.StatusCode != http.StatusOK {
 			// THE CODE AND NOT THE SERVER'S SENTENCE - inviolable rule 19. A

@@ -96,7 +96,7 @@ func peMachine(head []byte) string {
 		return ""
 	}
 	at := binary.LittleEndian.Uint32(head[0x3c:])
-	if at > uint32(len(head)-6) || string(head[at:at+4]) != "PE\x00\x00" {
+	if at > uint32(len(head)-6) || string(head[at:at+4]) != "PE\x00\x00" { //nolint:gosec // G115: head is at least 0x40 bytes, checked above
 		return ""
 	}
 	switch binary.LittleEndian.Uint16(head[at+4:]) {

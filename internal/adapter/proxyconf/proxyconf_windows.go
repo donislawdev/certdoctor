@@ -3,6 +3,7 @@
 package proxyconf
 
 import (
+	"errors"
 	"fmt"
 	"syscall"
 	"unsafe"
@@ -180,14 +181,15 @@ func globalFree(p *uint16) {
 	if p == nil {
 		return
 	}
-	syscall.NewLazyDLL("kernel32.dll").NewProc("GlobalFree").Call(uintptr(unsafe.Pointer(p)))
+	_, _, _ = syscall.NewLazyDLL("kernel32.dll").NewProc("GlobalFree").Call(uintptr(unsafe.Pointer(p)))
 }
 
 // errnoOf pulls the number out of what LazyProc.Call returns. It is the number
 // and never the wording - inviolable rule 19, and the wording here is in the
 // language of the machine being diagnosed.
 func errnoOf(err error) syscall.Errno {
-	if errno, ok := err.(syscall.Errno); ok {
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
 		return errno
 	}
 	return 0

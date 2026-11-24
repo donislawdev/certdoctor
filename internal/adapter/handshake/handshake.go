@@ -66,7 +66,7 @@ func Shake(mayReach func(address string) error) core.Shake {
 		}
 		// The connection is closed whatever happens next. Nothing is ever sent
 		// over it beyond the handshake itself.
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		return negotiate(ctx, conn, serverName)
 	}
@@ -129,7 +129,7 @@ func negotiate(ctx context.Context, conn net.Conn, serverName string) (core.Pres
 		// connection, which is closed as soon as the handshake finishes.
 		//
 		// A guard refuses this field in every other file of this program.
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, //nolint:gosec // G402: ADR46, the reason is above and verification_test.go holds it to this file
 
 		// PINNED TO WHAT THE LIBRARY DOES TODAY, SO THAT A VERDICT NEVER CHANGES
 		// BECAUSE A TOOLCHAIN DID. Leaving this unset takes crypto/tls's own
@@ -170,7 +170,7 @@ func negotiate(ctx context.Context, conn net.Conn, serverName string) (core.Pres
 		// is WHERE a failed handshake stopped: past this point the library had
 		// read the server's certificates, so a failure after it is about what
 		// the server did next - ADR129.
-		VerifyPeerCertificate: func([][]byte, [][]*x509.Certificate) error {
+		VerifyPeerCertificate: func([][]byte, [][]*x509.Certificate) error { //nolint:gosec // G123: no session cache is set, so nothing resumes, and this hook decides nothing
 			read = true
 			return nil
 		},

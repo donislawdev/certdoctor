@@ -199,7 +199,7 @@ func readComponent(s section) (component, []string, error) {
 	}
 	expr, err := parseExpression(m[2])
 	if err != nil {
-		return component{}, nil, fmt.Errorf("the section %q opens with the licence expression %q, and %v", s.heading, m[2], err)
+		return component{}, nil, fmt.Errorf("the section %q opens with the licence expression %q, and %w", s.heading, m[2], err)
 	}
 	c := component{path: s.heading, version: m[1], licences: expr.terms()}
 	if s.heading == stdHeading {

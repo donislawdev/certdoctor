@@ -67,7 +67,7 @@ func (commandLinePort) Run(ctx context.Context, args []string, input []byte) flo
 	// The program is the command line beside this binary and the switches come
 	// from one table (ADR121), so nothing a person typed chooses what runs.
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-	cmd := exec.CommandContext(ctx, program, args...)
+	cmd := exec.CommandContext(ctx, program, args...) //nolint:gosec // G702: as above, and the arguments go as a list, never through a shell
 	cmd.Stdout, cmd.Stderr = out, printed
 	if input != nil {
 		// Through a pipe the toolchain fills and closes, so the command line

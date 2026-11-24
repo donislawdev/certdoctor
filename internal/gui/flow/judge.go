@@ -92,6 +92,9 @@ func withoutReport(code int) Kind {
 	switch exitcode.Code(code) {
 	case exitcode.Usage, exitcode.Config:
 		return Refused
+	case exitcode.OK, exitcode.Runtime, exitcode.Diagnosis, exitcode.Inconclusive, exitcode.IO, exitcode.Interrupted,
+		exitcode.Terminated:
+		// without a report any other code is a run that broke, below
 	}
 	return Crashed
 }

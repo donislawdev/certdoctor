@@ -239,6 +239,8 @@ func (n *nameTally) count(presented Presented) {
 			n.first = &presented.Chain[0]
 		}
 		n.commonOnly++
+	case NameUnchecked, NameCovered:
+		// neither is counted against the name nor quoted
 	}
 }
 
@@ -320,6 +322,8 @@ func nameClause(match NameMatch, host string) string {
 		return ", and its certificate does not cover " + host
 	case NameInCommonNameOnly:
 		return ", and its certificate names " + host + " only in its common name"
+	case NameUnchecked, NameCovered:
+		// nothing to add about the name
 	}
 	return ""
 }

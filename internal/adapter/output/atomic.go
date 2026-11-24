@@ -169,15 +169,15 @@ func removeTemporary(name string) error {
 // empty - the one outcome atomicity was supposed to rule out.
 func finish(file *os.File, data []byte) error {
 	if err := file.Chmod(reportPermissions); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if _, err := file.Write(data); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err := file.Sync(); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	return file.Close()

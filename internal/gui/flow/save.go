@@ -79,6 +79,8 @@ func (s *Save) Changed() {
 	switch s.step {
 	case SaveUnusable, SaveTaken, SaveFailed:
 		s.step, s.said = SaveAsking, ""
+	case SaveAsking, SaveWriting, SaveDone:
+		// asking already, or a copy under way or written - an edit leaves these
 	}
 }
 

@@ -112,6 +112,8 @@ func foldHead(title, closedLine string, s State, open bool) fyne.CanvasObject {
 	case Focused:
 		band.StrokeColor = look.Colour(look.Focus)
 		band.StrokeWidth = look.StrokeFocus
+	case Rest, Disabled:
+		// no band
 	}
 	// Rounded where the card is: all four corners when the band is the whole
 	// card, the top two when the body hangs under it.
@@ -182,6 +184,8 @@ func menuRow(it MenuItem) func(State, bool) (fyne.CanvasObject, fyne.CanvasObjec
 		case Focused:
 			face.StrokeColor = look.Colour(look.Focus)
 			face.StrokeWidth = look.StrokeFocus
+		case Rest, Disabled:
+			// no face
 		}
 		return face, PadXY(look.InsetCell, look.GapInline, Stack(0, Text(Strong, it.Name), Para(CaptionMuted, it.Note)))
 	}

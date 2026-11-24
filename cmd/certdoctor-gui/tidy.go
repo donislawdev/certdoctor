@@ -209,6 +209,8 @@ func (k *tidyClock) tick() {
 		k.frame()
 	case stepRelease:
 		k.release()
+	case stepNothing:
+		// nothing is due at this look
 	}
 }
 

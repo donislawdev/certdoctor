@@ -222,7 +222,7 @@ func (e *echo) add(b byte, over bool) {
 		_, size := utf8.DecodeRune(e.pending)
 		text := render.Visible(string(e.pending[:size]))
 		_, _ = e.out.WriteString(text)
-		e.pieces = append(e.pieces, echoPiece{uint8(size), uint8(utf8.RuneCountInString(text))})
+		e.pieces = append(e.pieces, echoPiece{uint8(size), uint8(utf8.RuneCountInString(text))}) //nolint:gosec // G115: a rune is at most 4 bytes and is shown as a few characters
 		e.pending = append(e.pending[:0], e.pending[size:]...)
 	}
 }

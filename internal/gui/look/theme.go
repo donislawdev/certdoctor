@@ -139,5 +139,5 @@ func (o ours) Icon(name fyne.ThemeIconName) fyne.Resource { return o.base.Icon(n
 
 func translucent(c color.Color, alpha uint8) color.NRGBA {
 	r, g, b, _ := c.RGBA()
-	return color.NRGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: alpha}
+	return color.NRGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: alpha} //nolint:gosec // G115: RGBA answers 16 bit channels, so the top 8 bits fit
 }

@@ -2,6 +2,7 @@ package tcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -232,7 +233,7 @@ func TestDegenerateButLegalAddressesAreAnswered(t *testing.T) {
 			}
 			// A refusal by our own rule is a fact about us, never about their
 			// network, and the layer above tells the two apart by this sentinel.
-			if err != coretcp.ErrRefusedByRule {
+			if !errors.Is(err, coretcp.ErrRefusedByRule) {
 				t.Errorf("%q was refused as %v rather than by our own rule", address, err)
 			}
 		})

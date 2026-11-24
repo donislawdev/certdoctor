@@ -195,6 +195,8 @@ func TestAListIsEscapedEntryByEntry(t *testing.T) {
 			shake.Chain[0].DNSNames = []string{hostileText, hostileText}
 			carrier.TLSHandshake = &shake
 			r.Layers[i].Findings[0] = carrier
+		case layer.Context, layer.Resolution, layer.Proxy, layer.TCP:
+			// left as the fixture has them
 		}
 	}
 	page := renderPage(t, r)
