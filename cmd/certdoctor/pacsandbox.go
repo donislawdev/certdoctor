@@ -56,6 +56,8 @@ func startPACSandbox(ctx context.Context, stderr io.Writer) (pac.Child, error) {
 	if err != nil {
 		return pac.Child{}, err
 	}
+	// This binary itself with one fixed switch (ADR150).
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(ctx, exe, pacSandboxArgument)
 	cmd.SysProcAttr = sandboxProcess()
 	cmd.Stderr = stderr

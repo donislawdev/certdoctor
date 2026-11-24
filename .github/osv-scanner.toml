@@ -1,0 +1,75 @@
+# Exceptions for the OSV scan of the files in this directory. OSV-Scanner reads
+# this file for the lockfiles beside it and for no other directory. One advisory
+# per entry, and every entry has a date it stops working on.
+#
+# An entry belongs here only when no version anybody can install has the fix.
+# Every one below is a package in requirements-semgrep.txt, which the semgrep
+# job installs to read the tree and which is never part of anything this
+# project ships. semgrep 1.185.0 and 1.186.0, the newest on PyPI on 2026-11-23,
+# both ask for mcp==1.29.0, opentelemetry-api~=1.37.0 and wcmatch~=8.3, read
+# from their metadata that day, so no set pip can install holds the fixed
+# versions.
+#
+# When semgrep moves its pins, Dependabot brings that release as a pull request
+# against requirements-semgrep.in, and the entries it fixes have nothing left to
+# hide - remove them then. If that has not happened by the date below, the
+# weekly scan goes red again, which is the reminder. One date for all of them
+# on purpose: they all wait on the same release and come back on one reminder.
+
+# mcp 1.29.0. Five advisories, all fixed in 1.30.0, all about the MCP client or
+# server: sessions of a Streamable HTTP server kept without bound, the client
+# following a redirect to another host with its headers, the client fetching
+# $ref addresses a server names, a server accepting a bearer token issued for
+# another resource server, and the OAuth client sending credentials where a
+# server points it. The job runs `semgrep scan` and nothing else, which starts
+# neither an MCP client nor a server, on a runner that lives for one scan. The
+# package cannot be left out of the install either: semgrep imports it when it
+# starts.
+[[IgnoredVulns]]
+id = "GHSA-84m7-p3x7-pcfv"
+ignoreUntil = 2026-12-21
+reason = "semgrep pins mcp==1.29.0, and the advisory is about an MCP HTTP server keeping sessions, which semgrep scan never starts"
+
+[[IgnoredVulns]]
+id = "GHSA-5h93-6whr-6q8j"
+ignoreUntil = 2026-12-21
+reason = "semgrep pins mcp==1.29.0, and the advisory is about the MCP client following cross-origin redirects, which semgrep scan never starts"
+
+[[IgnoredVulns]]
+id = "GHSA-rwrf-2pqf-9j8j"
+ignoreUntil = 2026-12-21
+reason = "semgrep pins mcp==1.29.0, and the advisory is about the MCP client fetching server-chosen $ref addresses, which semgrep scan never starts"
+
+[[IgnoredVulns]]
+id = "GHSA-w4fh-qvv9-3v23"
+ignoreUntil = 2026-12-21
+reason = "semgrep pins mcp==1.29.0, and the advisory is about an MCP server checking bearer tokens, which semgrep scan never starts"
+
+[[IgnoredVulns]]
+id = "GHSA-qx49-fqc8-xw99"
+ignoreUntil = 2026-12-21
+reason = "semgrep pins mcp==1.29.0, and the advisory is about the MCP OAuth client sending credentials to a server-chosen endpoint, which semgrep scan never starts"
+
+# opentelemetry-api 1.37.0. Two advisories, fixed in 1.45.1 and 1.45.2, both
+# about parsing an inbound tracestate or traceparent header in quadratic time,
+# reached through the instrumentation of a server receiving requests. semgrep
+# scan sends no telemetry here (--metrics=off) and receives no request.
+[[IgnoredVulns]]
+id = "GHSA-xcq7-p3pf-p88h"
+ignoreUntil = 2026-12-21
+reason = "semgrep pins opentelemetry-api~=1.37.0, and the advisory is about parsing an inbound tracestate header in a server, which semgrep scan never runs"
+
+[[IgnoredVulns]]
+id = "GHSA-mf5v-w3w3-f6cg"
+ignoreUntil = 2026-12-21
+reason = "semgrep pins opentelemetry-api~=1.37.0, and the advisory is about parsing an inbound traceparent header in a server, which semgrep scan never runs"
+
+# wcmatch 8.5.2, fixed in 11.2. A pattern with several stars takes polynomial
+# time to reject a crafted file name. The names semgrep matches here are the
+# files of this repository, and the worst a crafted one in a pull request can
+# do is hold the job until its timeout, which turns the check red rather than
+# green.
+[[IgnoredVulns]]
+id = "GHSA-53pm-wgxf-c6qf"
+ignoreUntil = 2026-12-21
+reason = "semgrep pins wcmatch~=8.3, and a slow match of a crafted file name in this repository can only hold the job until its timeout"

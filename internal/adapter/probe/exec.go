@@ -167,6 +167,9 @@ func start(ctx context.Context, env []string, executable string, args ...string)
 		return Output{}, fmt.Errorf("%w: %q", ErrNotAbsolute, executable)
 	}
 
+	// The runtimes this package asks are found on this machine by the probes,
+	// and each one runs a fixed script of ours - the rules are on Run.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	command := exec.CommandContext(ctx, executable, args...)
 	command.Env = env
 	var stdout, stderr cappedWriter

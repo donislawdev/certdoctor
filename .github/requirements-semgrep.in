@@ -1,0 +1,35 @@
+# The scanner the semgrep job in ci.yml installs, pinned, in a file Dependabot
+# reads.
+#
+# A version written inside a workflow step is watched by nothing: Dependabot
+# reads go.mod for Go modules and `uses:` for actions, and it does not read
+# shell commands. A requirements file is an ecosystem it does read, so a new
+# semgrep release arrives as a pull request against this file.
+#
+# Pinned rather than floating, because an unpinned analyser turns somebody
+# else's release into a red build on a commit that changed nothing.
+#
+# LGPL-2.1-or-later, read from the wheel metadata of 1.185.0 on PyPI on
+# 2026-11-23. It reads the tree in CI and is never part of anything this
+# project ships, so its licence is recorded rather than sieved.
+#
+# This is the one line a person writes. requirements-semgrep.txt beside it is
+# every package that line installs, pinned, compiled from this file by
+# pip-compile rather than written by hand. With this line alone a
+# vulnerability scanner would have to guess what pip picks. And with an .in
+# file present Dependabot runs pip-compile itself, so what it proposes is a set
+# pip can install rather than every line raised on its own.
+#
+# Every package is pinned to a version AND to the bytes of its files, and the
+# job installs with --require-hashes and wheels only, the way every pip install
+# in these workflows does - building a source archive runs its setup code.
+#
+# To compile it by hand, from the root of the repository, with the Python the
+# job uses:
+#
+#   docker run --rm -v "$PWD/.github:/w" -w /w python:3.14-slim sh -c "pip install -q pip==26.1.1 pip-tools==7.5.3 && pip-compile --generate-hashes --strip-extras --no-emit-index-url --pip-args '--uploaded-prior-to=<a week ago, for example 2026-11-16T00:00:00Z>' --output-file=requirements-semgrep.txt requirements-semgrep.in"
+#
+# The date holds back what is younger than a week, the way the cooldown in
+# .github/dependabot.yml does. A security fix is the exception, as it is for
+# Dependabot.
+semgrep==1.185.0

@@ -1,0 +1,66 @@
+# Stops a pull request that adds a dependency with a known vulnerability.
+#
+# A workflow of its own rather than a job in ci.yml, because the action compares
+# the dependency manifests of the base and the head of a pull request. A push
+# has nothing to compare against, so in ci.yml it would run, and be skipped, on
+# every push for nothing.
+#
+# It looks only at what the pull request adds, and only through GitHub's
+# advisories. The other two gates over the same go.mod answer other questions:
+# "known vulnerabilities" in ci.yml is govulncheck, which counts what our code
+# can reach, and "new vulnerabilities (OSV)" reads OSV, which counts a
+# vulnerable package whether or not anything calls it.
+#
+# The licence of a new module is not asked here. tools/expected-modules.txt
+# names every module of the graph with its licence, and the test job fails on a
+# module that is not there, so a dependency cannot arrive without somebody
+# writing its licence down first.
+name: dependency review
+
+on:
+  pull_request:
+
+# Read only. The action can post a summary comment on the pull request, which
+# would need pull-requests: write, and that is not granted: a red check and the
+# log already say everything the comment would.
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: review new dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # MIT, read at the v5.0.0 tag on 2026-11-23. v5.0.1 of 2026-11-17 was
+      # younger than the week every update waits in .github/dependabot.yml, so
+      # it arrives from there like any other.
+      - name: review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Anything at or above moderate fails the pull request rather than
+          # warning in a log nobody reads. This program runs where people
+          # diagnose their own network, and its releases are built by these
+          # same workflows.
+          fail-on-severity: moderate
+          # Advisories against mcp 1.29.0, opentelemetry-api 1.37.0 and wcmatch
+          # 8.5.2, which semgrep pins in every release and which the semgrep
+          # job installs to read the tree. Each one is in
+          # .github/osv-scanner.toml with the reason it does not reach a
+          # semgrep scan and the date it stops working on, and a guard holds
+          # every id here to an entry there, so this list cannot outlive its
+          # reasons. The action has no way to leave out one manifest.
+          allow-ghsas: >-
+            GHSA-84m7-p3x7-pcfv,
+            GHSA-5h93-6whr-6q8j,
+            GHSA-rwrf-2pqf-9j8j,
+            GHSA-w4fh-qvv9-3v23,
+            GHSA-qx49-fqc8-xw99,
+            GHSA-xcq7-p3pf-p88h,
+            GHSA-mf5v-w3w3-f6cg,
+            GHSA-53pm-wgxf-c6qf

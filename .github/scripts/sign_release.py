@@ -590,6 +590,9 @@ def tagged_tree(ref):
                 "sign_release: git archive %s failed, so there is no tree to build the installer "
                 "from. Fetch it first (git fetch --tags origin) and run this again.\n%s"
                 % (ref, out.stderr.decode(errors="replace").strip()))
+        # filter="data" below is the refusal the rule asks for, and the rule
+        # does not read the argument.
+        # nosemgrep: trailofbits.python.tarfile-extractall-traversal.tarfile-extractall-traversal
         with tarfile.open(fileobj=io.BytesIO(out.stdout)) as archive:
             archive.extractall(where, filter="data")
         print("  the tree of %s, exported for the installer" % ref)

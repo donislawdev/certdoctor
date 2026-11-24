@@ -1,0 +1,82 @@
+version: 2
+
+# Keeps dependencies current without a human polling release pages.
+#
+# cooldown holds a newly published version back for a week before it is
+# proposed here. It closes the window a poisoned release uses, pulled in within
+# hours of publication, and it costs a week of latency on updates nobody is
+# waiting for. It does not delay security fixes: Dependabot security updates
+# are a separate mechanism, switched on for this repository.
+#
+# Nothing here is merged on a green tick alone, and several of these are meant
+# to go red until somebody does the part a bot cannot:
+#
+#   1. gomod. tools/expected-modules.txt names every module of the graph with
+#      its licence, so a new or renamed module fails the test job until the
+#      list is updated in the same pull request, with the licence read from
+#      the pinned version. A module the window links also changes
+#      THIRD-PARTY-NOTICES-GUI.md and the licence files beside it, byte for
+#      byte. A dependency arriving as somebody's transitive import cannot land
+#      quietly, and that is the point.
+#
+#   2. github.com/dop251/goja stands one commit before its newest on purpose -
+#      the newer commits let a PAC script grow a string past the memory ceiling
+#      of the sandbox. A pull request moving it is a question for the owner,
+#      and TestAStringBuiltByDoublingStopsAtTheCeiling has to be green on it.
+#
+#   3. google/osv-scanner-action goes red in "new vulnerabilities (OSV)" until
+#      the digest of its new Docker image is written to
+#      .github/osv-scanner-digest in the same pull request. The action is
+#      pinned by commit but runs an image named by a tag, so the digest is what
+#      holds the image still. Read what the release changed, then take the
+#      digest from the Set up job section of that red run and check it against
+#      the release before writing it.
+#
+#   4. A new semgrep release can move the packages it pins, and the entries in
+#      .github/osv-scanner.toml it fixes are removed then.
+#
+# Grouped for actions and for the Python tools, ungrouped for Go. An action
+# bump is one decision about the build, and the Python tools move together. A
+# Go module bump is a licence question per module, and a group would hide
+# several of those behind one review.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    ignore:
+      # Not taken from any registry: go.mod replaces it with the copy in
+      # third_party/go-gl-gl, which is the published module plus one patch
+      # (ADR125). Moving the requirement line would change nothing that is
+      # built, and moving the copy is done by hand.
+      - dependency-name: github.com/go-gl/gl
+
+  # The Python tools CI installs: semgrep in ci.yml and the SPDX validator in
+  # release.yml, each in a requirements file pinned to versions and hashes.
+  # requirements-semgrep.in beside them makes Dependabot run pip-compile, so
+  # what it proposes for semgrep is a set pip resolved rather than every line
+  # raised on its own past what semgrep allows.
+  - package-ecosystem: pip
+    directory: "/.github"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      python-tools:
+        patterns:
+          - "*"
