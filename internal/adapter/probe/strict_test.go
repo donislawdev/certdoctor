@@ -509,7 +509,7 @@ func TestMoreThanOneChainIsJudgedOnlyWhereTheyAgree(t *testing.T) {
 
 	// TRUSTED FIRST: the intermediate on the list is taken before the one the
 	// server sent, so the chain through the server's never gets built.
-	rootOne, rootTwo, interOne, interTwo, leaf = crossSigned(t, keep, noKeyID)
+	_, rootTwo, interOne, interTwo, leaf = crossSigned(t, keep, noKeyID)
 	if got := verdictOf(strictly(t, [][]byte{interOne, rootTwo}, [][]byte{leaf, interTwo}, python313)); got != "trusted" {
 		t.Errorf("an intermediate on the list beside one the server sent: %s", got)
 	}

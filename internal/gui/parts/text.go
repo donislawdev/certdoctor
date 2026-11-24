@@ -194,7 +194,7 @@ func rich(s Style, words string, ink look.Role, wrap fyne.TextWrap, cut fyne.Tex
 // that much larger and that much up and to the left draws the same pixels with
 // one cache entry for the whole window.
 func tight(o fyne.CanvasObject) fyne.CanvasObject {
-	return fyne.NewContainerWithLayout(tightLayout{}, o)
+	return laidOut(tightLayout{}, o)
 }
 
 // tightLayout lays out its one text with the toolkit's inner padding outside

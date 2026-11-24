@@ -8,7 +8,25 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 )
+
+// laidOut is a container that starts at its minimum size with its objects
+// already laid out at that size, which is what fyne.NewContainerWithLayout
+// did before the toolkit deprecated it for container.New. container.New
+// starts at no size and lays nothing out, and pieces here measure what they
+// hold before a window ever sizes them, so every container of this package
+// is made here and starts the way it always has. Resize lays out only when
+// the size changes, so a minimum size of zero is laid out by hand.
+func laidOut(l fyne.Layout, objects ...fyne.CanvasObject) *fyne.Container {
+	c := container.New(l, objects...)
+	size := l.MinSize(objects)
+	c.Resize(size)
+	if size.IsZero() {
+		l.Layout(objects, size)
+	}
+	return c
+}
 
 // The toolkit's stock boxes put ONE distance, the theme's padding, between
 // everything they hold. A design has several, so these layouts take the
@@ -19,7 +37,7 @@ type stack struct{ gap float32 }
 
 // Stack lays objects top to bottom, gap apart.
 func Stack(gap float32, objects ...fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(stack{gap: gap}, objects...)
+	return laidOut(stack{gap: gap}, objects...)
 }
 
 func (s stack) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -66,19 +84,19 @@ type row struct {
 
 // Row lays objects left to right, gap apart, each at its own width.
 func Row(gap float32, objects ...fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(row{gap: gap, grow: -1}, objects...)
+	return laidOut(row{gap: gap, grow: -1}, objects...)
 }
 
 // RowGrow is Row with the object at index grow taking the width left over -
 // a name that pushes what follows it to the far edge.
 func RowGrow(gap float32, grow int, objects ...fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(row{gap: gap, grow: grow}, objects...)
+	return laidOut(row{gap: gap, grow: grow}, objects...)
 }
 
 // RowTop is RowGrow with every child standing at the top of the line rather
 // than centred on it - for a line whose growing part wraps.
 func RowTop(gap float32, grow int, objects ...fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(row{gap: gap, grow: grow, top: true}, objects...)
+	return laidOut(row{gap: gap, grow: grow, top: true}, objects...)
 }
 
 func (r row) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -134,7 +152,7 @@ type tall struct{ layers }
 
 // Tall makes an object as tall as the row it stands in.
 func Tall(o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(tall{}, o)
+	return laidOut(tall{}, o)
 }
 
 func isTall(o fyne.CanvasObject) bool {
@@ -149,7 +167,7 @@ func isTall(o fyne.CanvasObject) bool {
 // Own keeps an object at its own width at the leading edge of the room it
 // is given, centred up and down - a pill in a table cell wider than it.
 func Own(o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(own{}, o)
+	return laidOut(own{}, o)
 }
 
 type own struct{}
@@ -176,7 +194,7 @@ type inset struct{ left, top, right, bottom float32 }
 
 // Inset keeps the given room round an object.
 func Inset(left, top, right, bottom float32, o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(inset{left, top, right, bottom}, o)
+	return laidOut(inset{left, top, right, bottom}, o)
 }
 
 // Pad keeps the same room on every side, PadXY one room across and another
@@ -211,13 +229,13 @@ type column struct {
 
 // Column centres an object across and stops it growing past limit.
 func Column(limit float32, o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(column{limit: limit}, o)
+	return laidOut(column{limit: limit}, o)
 }
 
 // ColumnFill is Column taking all the height it is given - for a part of a
 // screen that scrolls inside the window instead of with it.
 func ColumnFill(limit float32, o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(column{limit: limit, fill: true}, o)
+	return laidOut(column{limit: limit, fill: true}, o)
 }
 
 func (c column) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -250,7 +268,7 @@ type limit struct{ width float32 }
 // Limit stops an object growing past a width - a paragraph past the width
 // that still reads easily - and keeps it at the leading edge.
 func Limit(w float32, o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(limit{width: w}, o)
+	return laidOut(limit{width: w}, o)
 }
 
 func (l limit) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -275,17 +293,17 @@ type fixed struct{ width, height float32 }
 
 // Width holds an object at exactly this width.
 func Width(w float32, o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(fixed{width: w}, o)
+	return laidOut(fixed{width: w}, o)
 }
 
 // Height holds an object at exactly this height, centred up and down.
 func Height(h float32, o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(fixed{height: h}, o)
+	return laidOut(fixed{height: h}, o)
 }
 
 // Box holds an object at exactly this width and height.
 func Box(w, h float32, o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(fixed{width: w, height: h}, o)
+	return laidOut(fixed{width: w, height: h}, o)
 }
 
 func (f fixed) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -320,7 +338,7 @@ type floor struct{ width, height float32 }
 // asks for more - the size a window may not be made smaller than, because the
 // toolkit keeps a window no smaller than what it holds (GUI rule 21).
 func AtLeast(w, h float32, o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(floor{width: w, height: h}, o)
+	return laidOut(floor{width: w, height: h}, o)
 }
 
 func (f floor) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -339,7 +357,7 @@ type middle struct{}
 
 // Middle centres an object up and down at its own height.
 func Middle(o fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(middle{}, o)
+	return laidOut(middle{}, o)
 }
 
 func (middle) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -364,7 +382,7 @@ type layers struct{}
 
 // Layers puts objects over one another, the first at the bottom.
 func Layers(objects ...fyne.CanvasObject) *fyne.Container {
-	return fyne.NewContainerWithLayout(layers{}, objects...)
+	return laidOut(layers{}, objects...)
 }
 
 func (layers) MinSize(objects []fyne.CanvasObject) fyne.Size {
