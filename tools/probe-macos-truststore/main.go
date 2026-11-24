@@ -153,6 +153,8 @@ func countPEM(text string) (int, string) {
 }
 
 func run(name string, args ...string) string {
+	// Every caller names a system tool and its arguments in this file.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	output, err := exec.Command(name, args...).Output()
 	if err != nil {
 		return fmt.Sprintf("FAILED: %s %s: %v", name, strings.Join(args, " "), err)

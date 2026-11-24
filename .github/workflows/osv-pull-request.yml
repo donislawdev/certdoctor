@@ -1,0 +1,147 @@
+# Stops a pull request that brings in a vulnerability the main branch does not
+# already have, in any package manifest of the tree - go.mod and the pinned
+# Python packages the release and semgrep jobs install.
+#
+# A pull request is stopped only for what it adds. What main already carries
+# is reported once a week to the Security tab by osv-weekly.yml, and does not
+# hold up a change that did not cause it.
+#
+# How it tells the two apart. The tree is scanned twice, first as the branch it
+# merges into and then as the merge itself, and the reporter compares the two
+# results - the method of the action's own pull request workflow. That workflow
+# is not called as it is, because it keeps the job token in the checkout to
+# switch branches and asks for security-events: write to upload. Neither is
+# needed here: the base is the first parent of the merge commit, which a fetch
+# depth of two already holds, and a pull request has nothing to upload.
+#
+# Beside the two gates that read the same go.mod. "review new dependencies"
+# looks only at what the diff adds and only through GitHub's advisories.
+# "known vulnerabilities" is govulncheck, which counts only what our code can
+# reach. This one reads OSV, which also covers the Python packages, and counts
+# a vulnerable package whether or not anything calls it.
+name: OSV pull request
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A push to the pull request makes the run before it pointless, and each run
+# scans the tree twice.
+concurrency:
+  group: osv-pull-request-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: new vulnerabilities (OSV)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge commit and its two parents, the first of which is the
+          # branch this pull request merges into.
+          fetch-depth: 2
+          persist-credentials: false
+
+      # The two OSV actions below are pinned by commit, but they run a Docker
+      # image named by a tag, and a tag can be pushed again. The runner has
+      # already pulled that image while setting this job up, so this compares
+      # it with the digest in .github/osv-scanner-digest before anything runs
+      # it. Here, before the checkout of the branch this merges into, so the
+      # digest read is the pull request's own: a Dependabot update that writes
+      # the new one would otherwise be held to the old one for ever.
+      - name: the scanner image is the one recorded
+        run: bash .github/scripts/osv_scanner_image.sh
+
+      # Asserted rather than assumed: with a commit of one parent here, HEAD^1
+      # would be the pull request's own previous commit, and the comparison
+      # would find nothing new for the wrong reason.
+      - name: the branch this merges into
+        run: |
+          parents=$(git rev-list --parents -n 1 HEAD | wc -w)
+          if [ "$parents" -ne 3 ]; then
+            echo "::error::The checkout is not the merge commit of this pull request ($((parents - 1)) parent(s)), so there is no base to compare against."
+            exit 1
+          fi
+          git checkout --quiet --detach HEAD^1
+
+      # The scanner exits 1 when it finds something and with another code when
+      # it cannot scan at all, and the step cannot tell the two apart. The
+      # results file can, and the check further down reads it.
+      #
+      # --no-call-analysis=go, because the call analysis compiles the tree,
+      # and the window's packages do not compile without the headers of its
+      # toolkit, which the scanner's image does not carry. Whether a vulnerable
+      # function is reachable is what the govulncheck job answers.
+      #
+      # --x-exclude=g:**/testdata, because a testdata folder is never built
+      # into anything. Measured 2026-11-23 on v2.7.1: the two bills of
+      # materials the SBOM tests compare against name Go 1.27.3, and the
+      # scanner read them as the Go this project ships with and reported
+      # GO-2026-6859 against them. Excluded by the glob, because the plain
+      # folder name excluded nothing on that version.
+      #
+      # Apache-2.0, read at the v2.7.1 tag on 2026-11-23. It runs in CI and is
+      # never part of anything this project ships.
+      - name: scan the branch this merges into
+        id: old
+        uses: google/osv-scanner-action/osv-scanner-action@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --format=json
+            --output-file=osv-old.json
+            --no-call-analysis=go
+            --x-exclude=g:**/testdata
+            --recursive
+            ./
+
+      - name: the merge of this pull request
+        env:
+          MERGE: ${{ github.sha }}
+        run: git checkout --quiet --force --detach "$MERGE"
+
+      - name: scan the merge of this pull request
+        id: new
+        uses: google/osv-scanner-action/osv-scanner-action@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --format=json
+            --output-file=osv-new.json
+            --no-call-analysis=go
+            --x-exclude=g:**/testdata
+            --recursive
+            ./
+
+      # Both files, whatever the scan steps returned. The reporter reads a file
+      # it cannot parse as one with no findings, so only a whole result goes on
+      # to be compared.
+      - name: both scans wrote a whole result
+        run: |
+          status=0
+          for f in osv-old.json osv-new.json; do
+            if ! jq -e '.results | type == "array"' "$f" > /dev/null 2>&1; then
+              echo "::error::$f is missing or is not a whole scan result, so the scan did not complete. Read the scan steps above for the cause."
+              status=1
+            fi
+          done
+          exit "$status"
+
+      # Fails the job on anything in the second scan that is not in the first.
+      # The log of this step is the list: every finding with its package, the
+      # advisory and the version that fixes it. table:#stdout has to be named,
+      # because once anything else goes to a terminal stream the reporter stops
+      # printing the table on its own.
+      - name: what this pull request adds
+        uses: google/osv-scanner-action/osv-reporter-action@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
+        with:
+          scan-args: |-
+            --old=osv-old.json
+            --new=osv-new.json
+            --output-files=sarif:osv-new.sarif,gh-annotations:#stderr,table:#stdout
+            --fail-on-vuln=true

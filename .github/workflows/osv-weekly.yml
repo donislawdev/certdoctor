@@ -1,0 +1,105 @@
+# Once a week, every known vulnerability in what the main branch depends on,
+# into the Security tab of the repository.
+#
+# The other half of osv-pull-request.yml. A pull request is stopped only for
+# what it adds, so a vulnerability published against something main already
+# uses has to show up somewhere else - and that place is here. Weekly because an
+# advisory is published on its own schedule, not on ours: a tree nobody touches
+# for a month still gets new findings.
+#
+# The run is red while anything is found, and the results go up either way. A
+# clean upload is what closes the alerts of the week before, so an upload that
+# happened only on findings would leave fixed alerts open for ever.
+#
+# The same scanner and the same arguments as the pull request workflow, so the
+# two cannot come to disagree about what counts. The reasons for each argument
+# are written there.
+name: OSV weekly
+
+on:
+  schedule:
+    # Monday 05:17 UTC.
+    - cron: "17 5 * * 1"
+  # By hand, from the Actions tab, after a fix is merged and before the next
+  # Monday - the alerts it closes close on the next upload.
+  workflow_dispatch:
+
+# A run by hand while the Monday one is going waits for it rather than
+# uploading beside it.
+concurrency:
+  group: osv-weekly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: vulnerabilities in main (OSV)
+    # By hand from another branch it would scan and upload that branch, and
+    # this workflow is about main.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # The upload to the Security tab. Granted to this job only and to nothing
+      # a pull request runs.
+      security-events: write
+      # Read by the upload to name the run it belongs to.
+      actions: read
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The image the OSV actions run, against the digest recorded in
+      # .github/osv-scanner-digest, before anything runs it. When it fails,
+      # nothing is scanned and no SARIF is written, so the upload below finds
+      # no file and the alerts of the week before stay as they were.
+      - name: the scanner image is the one recorded
+        run: bash .github/scripts/osv_scanner_image.sh
+
+      - name: scan
+        id: scan
+        uses: google/osv-scanner-action/osv-scanner-action@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --format=json
+            --output-file=osv-results.json
+            --no-call-analysis=go
+            --x-exclude=g:**/testdata
+            --recursive
+            ./
+
+      # Whatever the scan step returned. The reporter reads a file it cannot
+      # parse as one with no findings and writes a clean SARIF from it, and a
+      # clean upload closes every alert.
+      - name: the scan wrote a whole result
+        run: |
+          if ! jq -e '.results | type == "array"' osv-results.json > /dev/null 2>&1; then
+            echo "::error::osv-results.json is missing or is not a whole scan result, so the scan did not complete and nothing is uploaded. Read the scan step above for the cause."
+            exit 1
+          fi
+
+      # Writes the results for the Security tab and fails the job when there is
+      # any, which is after the file is written - the upload below runs either
+      # way.
+      - name: results for the Security tab
+        uses: google/osv-scanner-action/osv-reporter-action@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
+        with:
+          scan-args: |-
+            --new=osv-results.json
+            --output-files=sarif:osv-results.sarif,table:#stdout
+            --fail-on-vuln=true
+
+      # MIT, read at the v4.39.3 tag on 2026-11-23. v4.39.4 of 2026-11-20 was
+      # younger than the week every update waits in .github/dependabot.yml.
+      - name: upload to the Security tab
+        if: ${{ !cancelled() && hashFiles('osv-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: osv-results.sarif
+          category: osv-scanner

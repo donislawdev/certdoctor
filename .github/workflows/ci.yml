@@ -288,6 +288,52 @@ jobs:
         shell: bash
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
+  # Semgrep with its public rule set over the whole tree - Go, the release
+  # scripts, the workflows and the site. The other analysers here read Go only.
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The Python requirements-semgrep.txt was compiled with. MIT, read at the
+      # v7.1.0 tag on 2026-11-23.
+      - name: set up python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      # The version and the reason it lives in a requirements file rather than
+      # on this line are in .github/requirements-semgrep.in. Held to the bytes
+      # of every file and to wheels only, like the validator in release.yml.
+      - name: the scanner, pinned
+        run: pip install --disable-pip-version-check --require-hashes --only-binary :all: -r .github/requirements-semgrep.txt
+      # No account and no token. p/default is fetched anonymously from the
+      # registry, used here, and never carried in this repository, because the
+      # Semgrep Rules License allows the first and forbids the second.
+      #
+      # No --error and no --severity: the scan reports and the gate decides.
+      # --severity knows INFO, WARNING and ERROR only, while registry rules also
+      # carry HIGH and CRITICAL, so a gate built on that flag would ignore
+      # exactly the severities it was asked to block.
+      #
+      # Metrics are off. This repository sends no telemetry about its own
+      # source anywhere, which is the promise the program itself makes.
+      #
+      # A finding settled once carries a nosemgrep comment at its line with the
+      # reason beside it, rather than an exclusion here, so the rule keeps
+      # watching every line nobody has read yet. Measured on 2026-11-23 with
+      # 1.185.0: 579 files, six findings at ERROR and all six settled that way.
+      - name: scan
+        run: semgrep scan --config p/default --metrics=off --oss-only --json --output semgrep.json --quiet
+      # Separate from the scan on purpose: a semgrep whose core fails can print
+      # its errors, exit 0 and write a file that is not JSON. Reading the exit
+      # code would call that a clean tree. The gate reads the report.
+      - name: decide
+        run: python .github/scripts/semgrep_gate.py semgrep.json
+
   # THE ONE PROBE THAT HAS TO BE PUBLIC, and it is worth saying why since every
   # other one lives outside this repository.
   #

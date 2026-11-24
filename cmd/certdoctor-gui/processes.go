@@ -64,6 +64,9 @@ func (commandLinePort) Run(ctx context.Context, args []string, input []byte) flo
 		return flow.Process{Program: commandLineFile, StartFailed: err}
 	}
 	out, printed := flow.NewCapped(flow.MaxDocument), flow.NewCapped(flow.MaxPrinted)
+	// The program is the command line beside this binary and the switches come
+	// from one table (ADR121), so nothing a person typed chooses what runs.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(ctx, program, args...)
 	cmd.Stdout, cmd.Stderr = out, printed
 	if input != nil {
@@ -143,6 +146,8 @@ func ourselves(args []string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
+	// This binary itself, with the arguments above.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.Command(exe, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd, nil
