@@ -3210,7 +3210,7 @@ Source: <https://go.googlesource.com/net>
 
 ## golang.org/x/sys
 
-Version `v0.49.0`. BSD-3-Clause. Calls into the operating system - among
+Version `v0.50.0`. BSD-3-Clause. Calls into the operating system - among
 them the one the window makes on Windows to show a message box when it cannot
 open. It carries a `PATENTS` file too.
 
