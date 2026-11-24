@@ -240,10 +240,11 @@ github.com/yuin/goldmark v1.8.7
 # "Copyright 2009 The Go Authors", read at
 # https://raw.githubusercontent.com/golang/image/v0.47.0/LICENSE,
 # https://raw.githubusercontent.com/golang/net/v0.62.0/LICENSE and
-# https://raw.githubusercontent.com/golang/sys/v0.49.0/LICENSE
+# https://raw.githubusercontent.com/golang/sys/v0.50.0/LICENSE - for v0.50.0
+# LICENSE and PATENTS are the same bytes as v0.49.0's, compared 2026-11-24.
 golang.org/x/image v0.47.0
 golang.org/x/net v0.62.0
-golang.org/x/sys v0.49.0
+golang.org/x/sys v0.50.0
 
 # THE DESKTOP DRIVER, linked since 2026-11-03 by cmd/certdoctor-gui, which
 # imports the toolkit's app package. Every licence file compared that day with
@@ -368,13 +369,17 @@ github.com/rymdport/portal v0.4.2
 # github.com/FyshOS/fancyfs left this group for the one above on 2026-11-10,
 # and its go.mod brought github.com/fredbi/uri here the same day: named there,
 # imported by nothing that is built.
+#
+# github.com/creack/pty left the graph on 2026-11-24 with golang.org/x/sys
+# v0.50.0. go mod tidy dropped this module's own line for github.com/kr/text,
+# whose go.mod is what names it, and kr/text is now reached only through
+# fancyfs, so its own requirements are no longer loaded.
 
 github.com/HugoSmits86/nativewebp v1.3.0
 github.com/Masterminds/semver/v3 v3.5.0
 github.com/akavel/rsrc v0.10.2
 github.com/chzyer/readline v1.5.1
 github.com/cpuguy83/go-md2man/v2 v2.0.7
-github.com/creack/pty v1.1.9
 github.com/davecgh/go-spew v1.1.1
 github.com/dop251/goja_nodejs v0.0.0-20211022123610-8dd9abb0616d
 github.com/fogleman/gg v1.3.0
