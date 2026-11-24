@@ -48,3 +48,15 @@ jobs:
           # diagnose their own network, and its releases are built by these
           # same workflows.
           fail-on-severity: moderate
+          # Advisories against mcp 1.29.0, which semgrep pins in every release
+          # and which the semgrep job installs to read the tree. Each one is in
+          # .github/osv-scanner.toml with the reason it does not reach a
+          # semgrep scan and the date it stops working on, and a guard holds
+          # every id here to an entry there, so this list cannot outlive its
+          # reasons. The action has no way to leave out one manifest.
+          allow-ghsas: >-
+            GHSA-84m7-p3x7-pcfv,
+            GHSA-5h93-6whr-6q8j,
+            GHSA-rwrf-2pqf-9j8j,
+            GHSA-w4fh-qvv9-3v23,
+            GHSA-qx49-fqc8-xw99

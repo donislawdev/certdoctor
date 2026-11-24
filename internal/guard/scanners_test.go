@@ -3,9 +3,11 @@ package guard
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -25,6 +27,7 @@ const (
 	osvWeekly        = ".github/workflows/osv-weekly.yml"
 	dependencyReview = ".github/workflows/dependency-review.yml"
 	dependabotConfig = ".github/dependabot.yml"
+	osvExceptions    = ".github/osv-scanner.toml"
 )
 
 // interpreter finds a program a script needs. Every CI runner carries python
@@ -220,7 +223,7 @@ func TestTheScannerImageScriptRunsOnlyTheRecordedImage(t *testing.T) {
 func TestTheScannersAreWiredAsDecided(t *testing.T) {
 	root := moduleRoot(t)
 	files := map[string]string{}
-	for _, rel := range []string{ciWorkflow, osvPullRequest, osvWeekly, dependencyReview, dependabotConfig} {
+	for _, rel := range []string{ciWorkflow, osvPullRequest, osvWeekly, dependencyReview, dependabotConfig, osvExceptions} {
 		files[rel] = readRel(t, root, rel)
 	}
 	requireNoViolations(t, checkScannerWiring(files), "the scanners as decided")
@@ -231,23 +234,38 @@ func TestTheScannerWiringGuardCanFail(t *testing.T) {
 		"        uses: google/osv-scanner-action/osv-scanner-action@abc\n" +
 		"            --no-call-analysis=go\n"
 	violations := checkScannerWiring(map[string]string{
-		ciWorkflow: "jobs:\n  semgrep:\n    steps:\n" +
+		ciWorkflow: "on: push\njobs:\n  semgrep:\n    steps:\n" +
 			"      # --metrics=off\n" +
+			"      - run: pip install -r .github/requirements-semgrep.txt\n" +
 			"      - run: semgrep scan --config p/default --json\n",
 		osvPullRequest: "jobs:\n  scan:\n    steps:\n" +
 			"      - uses: google/osv-scanner-action/osv-scanner-action@abc\n" +
 			"      - run: bash .github/scripts/osv_scanner_image.sh\n",
-		osvWeekly:        "jobs:\n  scan:\n    steps:\n" + scanned,
-		dependencyReview: "jobs:\n  review:\n    steps:\n      - uses: actions/dependency-review-action@abc\n",
+		osvWeekly: "jobs:\n  scan:\n    steps:\n" + scanned,
+		dependencyReview: "jobs:\n  review:\n    steps:\n      - uses: actions/dependency-review-action@abc\n" +
+			"        with:\n          allow-ghsas: GHSA-aaaa-bbbb-cccc, GHSA-dddd-eeee-ffff\n",
 		dependabotConfig: "updates:\n  - package-ecosystem: gomod\n    cooldown:\n      default-days: 7\n  - package-ecosystem: pip\n",
+		osvExceptions:    "[[IgnoredVulns]]\nid = \"GHSA-dddd-eeee-ffff\"\n",
 	})
 	requireViolation(t, violations, "never says --metrics=off")
 	requireViolation(t, violations, "never says .github/scripts/semgrep_gate.py")
+	if strings.Contains(fmt.Sprint(violations), "never says --config p/default") {
+		t.Error("the semgrep job of the fixture was not read at all, so the two lines above prove nothing")
+	}
+	requireViolation(t, violations, "GHSA-aaaa-bbbb-cccc is let through here and has no entry")
+	if strings.Contains(fmt.Sprint(violations), "GHSA-dddd-eeee-ffff") {
+		t.Error("an advisory with an entry in the exceptions file was reported as having none")
+	}
 	requireViolation(t, violations, "runs the scanner before osv_scanner_image.sh")
 	requireViolation(t, violations, "scans 1 time(s) and leaves testdata in 0")
 	requireViolation(t, violations, "never says fail-on-severity: moderate")
 	requireViolation(t, violations, "2 ecosystem(s) and 1 cooldown(s) of a week")
 }
+
+var (
+	advisoryID  = regexp.MustCompile(`GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}`)
+	exceptionID = regexp.MustCompile(`(?m)^id\s*=\s*"(GHSA-[0-9a-z-]+)"`)
+)
 
 // uncommented drops the lines of a YAML file that are comments, so a word in
 // a comment cannot pass for the argument it names.
@@ -293,8 +311,22 @@ func checkScannerWiring(files map[string]string) []Violation {
 		}
 	}
 
-	says(dependencyReview, uncommented(files[dependencyReview]), "fail-on-severity: moderate",
+	review := uncommented(files[dependencyReview])
+	says(dependencyReview, review, "fail-on-severity: moderate",
 		"a vulnerable dependency has to fail the pull request rather than warn")
+	// An advisory the review lets through has its reason and the date it stops
+	// working on in the OSV exceptions file, so the two lists cannot drift and
+	// this one cannot outlive its reasons.
+	excepted := map[string]bool{}
+	for _, m := range exceptionID.FindAllStringSubmatch(files[osvExceptions], -1) {
+		excepted[m[1]] = true
+	}
+	for _, id := range advisoryID.FindAllString(review, -1) {
+		if !excepted[id] {
+			at(dependencyReview, id+" is let through here and has no entry in "+osvExceptions+
+				", where its reason and the date it stops working on are written")
+		}
+	}
 
 	bot := uncommented(files[dependabotConfig])
 	ecosystems := strings.Count(bot, "package-ecosystem:")
