@@ -5,15 +5,6 @@ import (
 	"testing"
 )
 
-func fixtureNoticesRead(t *testing.T) notices {
-	t.Helper()
-	n, err := parseNotices(fixtureNotices)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return n
-}
-
 // fixtureNotes is the notices of both programs of the fixture tree.
 func fixtureNotes(t *testing.T) map[string]notices {
 	t.Helper()

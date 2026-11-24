@@ -154,18 +154,11 @@ jobs:
         shell: bash
         run: bash tools/acceptance.sh
 
-  # WHY THE CHECK SET IS NARROW, and this is measured rather than cautious.
-  #
-  # The default set was run over the whole tree on 2026-08-03 and produced
-  # exactly one finding: a suggestion to convert one struct to another instead
-  # of writing the fields out. That is a simplification, not a defect - and the
-  # rule this project follows is to enable the checks that catch a SILENT
-  # ERROR and skip the ones with an opinion about style, because a guard that
-  # shouts about correct code is switched off within a week.
-  #
-  # SA is "outright wrong or pointless", U is unused code. Both classes were
-  # measured over the tree and reported nothing, so this enters CI without a
-  # backlog of pre-existing noise to grandfather in.
+  # WHICH CHECKS RUN is staticcheck.conf at the root, and nothing is passed on
+  # the command line, because -checks would replace that file without a word.
+  # A check list on the command line is how this job came to run no check at
+  # all: -checks=SA,U names no check, since a family is SA* and a bare SA
+  # matches nothing. The file says what was measured when that was found.
   #
   # Pinned to a version rather than @latest. A tool that changes under us turns
   # an unrelated commit red, which teaches people that red means nothing.
@@ -208,7 +201,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
       - name: staticcheck
         shell: bash
-        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks=SA,U ./...
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 ./...
 
       # The release scripts run on a tag, on the maintainer's machine and on a
       # Mac, so a syntax error in one is otherwise found with a tag spent and a

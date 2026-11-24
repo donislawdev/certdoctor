@@ -93,7 +93,7 @@ func (l columnsLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 }
 
 func matrixLine(cells []fyne.CanvasObject) fyne.CanvasObject {
-	return PadXY(look.InsetCell, 0, fyne.NewContainerWithLayout(columnsLayout{}, cells...))
+	return PadXY(look.InsetCell, 0, laidOut(columnsLayout{}, cells...))
 }
 
 // MatrixHead is the line naming the columns.

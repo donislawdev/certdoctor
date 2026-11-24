@@ -1089,8 +1089,7 @@ func renderReport(o *options, env environment, finished report.Report) ([]byte, 
 		// Colour and glyphs are for a person at a console. A report going into a
 		// file gets neither, whatever the console behind this process can do.
 		if o.out == "-" {
-			capability := env.capability(o.noColor)
-			terminal = render.Terminal{Color: capability.Color, Glyph: capability.Glyph}
+			terminal = render.Terminal(env.capability(o.noColor))
 		}
 		page = terminal
 	}

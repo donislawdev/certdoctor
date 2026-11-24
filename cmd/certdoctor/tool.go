@@ -193,8 +193,7 @@ func renderTool(o *toolOptions, env environment, now time.Time, out spec.Outcome
 		}
 		return nil, &fault{exitcode.Runtime, fmt.Sprintf("the %s document could not be encoded: %v", o.tool.ID, err)}
 	}
-	capability := env.capability(o.noColor)
-	terminal := render.Terminal{Color: capability.Color, Glyph: capability.Glyph}
+	terminal := render.Terminal(env.capability(o.noColor))
 	var b bytes.Buffer
 	page := render.ToolPage{Tool: o.tool, Version: certdoctor.Version, EvaluatedAt: now, Outcome: out}
 	if err := terminal.RenderTool(&b, page); err != nil {

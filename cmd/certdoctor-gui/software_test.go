@@ -54,11 +54,14 @@ type attemptCase struct {
 // The errors the cases answer with, two of them ending in the full stop the
 // system's own words carry, so a sentence that adds its own is seen to drop it.
 var (
-	attemptMissing    = filepath.Join("C:", "somewhere", "opengl", "libgallium_wgl.dll")
-	attemptNoDir      = errors.New("no executable path")
-	attemptNoStart    = errors.New("access denied.")
-	attemptNoLoad     = errors.New("the renderer did not load.")
-	attemptUnreadable = errors.New("CreateFile C:/somewhere/opengl/opengl32.dll: Access is denied.")
+	attemptMissing = filepath.Join("C:", "somewhere", "opengl", "libgallium_wgl.dll")
+	errNoDir       = errors.New("no executable path")
+	//lint:ignore ST1005 the system's own words end in a full stop, and that is what this case is about
+	errNoStart = errors.New("access denied.")
+	//lint:ignore ST1005 the system's own words end in a full stop, and that is what this case is about
+	errNoLoad = errors.New("the renderer did not load.")
+	//lint:ignore ST1005 the system's own words end in a full stop, and that is what this case is about
+	errUnreadable = errors.New("CreateFile C:/somewhere/opengl/opengl32.dll: Access is denied.")
 )
 
 var attemptCases = []attemptCase{
@@ -69,16 +72,16 @@ var attemptCases = []attemptCase{
 		launch: readLaunch(nil), goos: "windows", startCode: 1,
 		wantCode: 1, wantTried: true, wantSaid: true, wantWorked: true},
 	{name: "windows, renderer beside, the second process could not be started",
-		launch: readLaunch(nil), goos: "windows", startErr: attemptNoStart,
+		launch: readLaunch(nil), goos: "windows", startErr: errNoStart,
 		wantTried: true, wantSaid: true, wantAdd: "starting the window again did not work (access denied)."},
 	{name: "windows, renderer not beside",
 		launch: readLaunch(nil), goos: "windows", missing: attemptMissing,
 		wantAdd: attemptMissing + " is missing."},
 	{name: "windows, renderer beside but not readable",
-		launch: readLaunch(nil), goos: "windows", besideErr: attemptUnreadable,
+		launch: readLaunch(nil), goos: "windows", besideErr: errUnreadable,
 		wantAdd: "could not be read (CreateFile C:/somewhere/opengl/opengl32.dll: Access is denied)."},
 	{name: "windows, the executable's directory unknown",
-		launch: readLaunch(nil), goos: "windows", dirErr: attemptNoDir,
+		launch: readLaunch(nil), goos: "windows", dirErr: errNoDir,
 		wantAdd: "starting the window again did not work (no executable path)."},
 	{name: "linux, nothing ships", launch: readLaunch(nil), goos: "linux"},
 	{name: "darwin, nothing ships", launch: readLaunch(nil), goos: "darwin"},
@@ -86,7 +89,7 @@ var attemptCases = []attemptCase{
 		launch: readLaunch([]string{softwareFlag}), goos: "windows",
 		wantAdd: words.T(words.SoftwareDidNotHelp)},
 	{name: "already the second process, the renderer did not load",
-		launch: readLaunch([]string{softwareFlag}), goos: "windows", loaded: attemptNoLoad,
+		launch: readLaunch([]string{softwareFlag}), goos: "windows", loaded: errNoLoad,
 		wantAdd: "could not be loaded: the renderer did not load."},
 	{name: "asked for by flag on a system nothing ships for, and refused by the driver",
 		launch: readLaunch([]string{softwareFlag}), goos: "linux", loaded: notShipped{"linux"}},

@@ -53,6 +53,7 @@ var proseFiles = []string{
 	"THIRD-PARTY-NOTICES.md",
 	".gitignore",
 	".gitattributes",
+	"staticcheck.conf",
 	"go.mod",
 	".github/CODEOWNERS",
 	".github/FUNDING.yml",
