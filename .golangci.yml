@@ -16,9 +16,9 @@
 # builds the tree and 269 as Windows does, of which 95 and 117 in code that
 # ships. Every one in shipped code was read. The CI job runs both, because 32
 # of those in shipped code sit in files only Windows compiles - the registry,
-# the certificate stores, the processes. macOS is not run: without cgo the toolkit's own widget package does
-# not type-check there (measured the same day), and the three files that are
-# macOS only are small.
+# the certificate stores, the processes. macOS is not run: without cgo the
+# toolkit's own widget package does not type-check there (measured the same
+# day), and the three files that are macOS only are small.
 
 version: "2"
 
