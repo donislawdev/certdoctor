@@ -129,7 +129,12 @@ func negotiate(ctx context.Context, conn net.Conn, serverName string) (core.Pres
 		// connection, which is closed as soon as the handshake finishes.
 		//
 		// A guard refuses this field in every other file of this program.
-		InsecureSkipVerify: true, //nolint:gosec // G402: ADR46, the reason is above and verification_test.go holds it to this file
+		//
+		// The linter's note stands on a line of its own so that the field's own
+		// line stays as it was: code scanning knows an alert by the text of its
+		// line, and the one here is dismissed by design.
+		//nolint:gosec // G402: ADR46, the reason is above and verification_test.go holds it to this file
+		InsecureSkipVerify: true,
 
 		// PINNED TO WHAT THE LIBRARY DOES TODAY, SO THAT A VERDICT NEVER CHANGES
 		// BECAUSE A TOOLCHAIN DID. Leaving this unset takes crypto/tls's own

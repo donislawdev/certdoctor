@@ -313,22 +313,35 @@ func walk(ctx context.Context, o *options, env environment, shown targetReductio
 
 // answerMetaSwitch handles the switches that describe the tool rather than a
 // machine. Each of them is a complete answer, so each writes to standard output
-// and ends successfully.
+// and ends successfully - unless that write fails, which say reports.
 func answerMetaSwitch(o *options, env environment) (exitcode.Code, bool) {
+	var text string
 	switch {
 	case o.showHelp:
-		fmt.Fprint(env.stdout, helpText())
+		text = helpText()
 	case o.showVersion:
-		fmt.Fprint(env.stdout, versionText())
+		text = versionText()
 	case o.showLicense:
 		// The GPL first, because it is the licence of this program, and then
 		// the notices that the third party code in it asks to travel with
 		// every copy.
-		fmt.Fprint(env.stdout, certdoctor.License, "\n", certdoctor.Notices)
+		text = certdoctor.License + "\n" + certdoctor.Notices
 	default:
 		return exitcode.OK, false
 	}
-	return exitcode.OK, true
+	return say(env, text), true
+}
+
+// say writes a text about this program - help, version, licence, the list of
+// tools - to standard output. A write that fails is said on standard error and
+// ends with IO, the way a report that could not be delivered does: otherwise
+// `certdoctor --license > file` on a full disk ends 0 with half a file
+// (OBS255).
+func say(env environment, text string) exitcode.Code {
+	if _, err := io.WriteString(env.stdout, text); err != nil {
+		return complain(env, &fault{exitcode.IO, fmt.Sprintf("standard output could not be written: %v", err)})
+	}
+	return exitcode.OK
 }
 
 // complain writes the reason to the log channel and returns its code. It never
