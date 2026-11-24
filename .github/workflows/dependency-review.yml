@@ -48,8 +48,9 @@ jobs:
           # diagnose their own network, and its releases are built by these
           # same workflows.
           fail-on-severity: moderate
-          # Advisories against mcp 1.29.0, which semgrep pins in every release
-          # and which the semgrep job installs to read the tree. Each one is in
+          # Advisories against mcp 1.29.0, opentelemetry-api 1.37.0 and wcmatch
+          # 8.5.2, which semgrep pins in every release and which the semgrep
+          # job installs to read the tree. Each one is in
           # .github/osv-scanner.toml with the reason it does not reach a
           # semgrep scan and the date it stops working on, and a guard holds
           # every id here to an entry there, so this list cannot outlive its
@@ -59,4 +60,7 @@ jobs:
             GHSA-5h93-6whr-6q8j,
             GHSA-rwrf-2pqf-9j8j,
             GHSA-w4fh-qvv9-3v23,
-            GHSA-qx49-fqc8-xw99
+            GHSA-qx49-fqc8-xw99,
+            GHSA-xcq7-p3pf-p88h,
+            GHSA-mf5v-w3w3-f6cg,
+            GHSA-53pm-wgxf-c6qf
