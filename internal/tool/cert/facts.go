@@ -1,7 +1,7 @@
 package cert
 
 import (
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: the thumbprint Windows shows is SHA-1
 	"crypto/x509"
 	"encoding/hex"
 	"time"
@@ -86,7 +86,7 @@ func describe(e entry) Certificate {
 // its thumbprint (X509Certificate2.Thumbprint is "generated using the SHA1
 // algorithm", Microsoft, read 2026-11-13).
 func thumbprint(c *x509.Certificate) string {
-	sum := sha1.Sum(c.Raw)
+	sum := sha1.Sum(c.Raw) //nolint:gosec // G401: the thumbprint Windows shows is SHA-1
 	return hex.EncodeToString(sum[:])
 }
 

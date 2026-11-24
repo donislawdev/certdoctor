@@ -563,7 +563,7 @@ func Reason(code string) string {
 	return code
 }
 
-var reasons = map[string]string{
+var reasons = map[string]string{ //nolint:gosec // G101: labels for the reasons UNKNOWN gives, no secret
 	"unrecognized_output":  "Unrecognised output",
 	"timeout":              "Time limit reached",
 	"access_denied":        "Access denied",

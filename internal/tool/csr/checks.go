@@ -132,7 +132,7 @@ func (j judged) signatureCheck() (spec.Check, *bool) {
 // keySizeCheck is the rule the certificate decoder keeps for an RSA key.
 func (j judged) keySizeCheck() spec.Check {
 	s, bits := certfacts.RSAKeyStatus(j.c.PublicKey)
-	switch s {
+	switch s { //nolint:exhaustive // RSAKeyStatus answers pass, warn or fail, never unknown
 	case status.Fail:
 		return spec.Check{ID: "key_size", Status: s, Summary: fmt.Sprintf("The request has an RSA key of %d bits - %s",
 			bits, certfacts.KeySizeFailWords)}

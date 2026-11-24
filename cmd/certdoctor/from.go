@@ -130,7 +130,7 @@ func readSaved(o *options, env environment) ([]byte, *fault) {
 	}
 	handle, err := env.openFile(switches.MaxReport)(o.from)
 	if err == nil {
-		defer handle.Close()
+		defer func() { _ = handle.Close() }()
 		var document []byte
 		if document, err = io.ReadAll(handle); err == nil {
 			return document, nil

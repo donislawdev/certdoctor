@@ -1,0 +1,140 @@
+# The mechanical reviewer, in the shape TestingFilesGenerator arrived at and
+# measured against this tree.
+#
+# The set is narrow on purpose. A linter that reports two hundred things gets
+# switched off within a month, and the day it goes quiet nobody notices. Every
+# entry below answers a failure this program can have, and every entry was run
+# against this tree before it went in. internal/guard/lintconfig_test.go holds
+# the set, and the lists of what is switched off, to what is written here.
+#
+# A FINDING THAT IS WRONG IS ANSWERED AT ITS LINE, with //nolint, the linter's
+# name and the reason - the way staticcheck gets lint:ignore and Semgrep gets
+# nosemgrep here. A rule in this file would switch the finding off for a whole
+# file or more, and the reason would sit far from the code it is about.
+#
+# Measured 2026-11-24 with v2.15.0 and nothing excluded: 241 findings as Linux
+# builds the tree and 269 as Windows does, of which 95 and 117 in code that
+# ships. Every one in shipped code was read. The CI job runs both, because 32
+# of those in shipped code sit in files only Windows compiles - the registry,
+# the certificate stores, the processes. macOS is not run: without cgo the
+# toolkit's own widget package does not type-check there (measured the same
+# day), and the three files that are macOS only are small.
+
+version: "2"
+
+linters:
+  # Nothing runs unless it is named. The default set moves between releases,
+  # and a gate whose contents change with somebody else's release reports
+  # something different every year for no reason of ours.
+  default: none
+
+  enable:
+    # An ignored error is the quietest defect there is, and silence is what
+    # this program exists to refuse. Measured: 44 findings in shipped code on
+    # Linux, 31 of them writes with fmt (excluded below). The other 13 and the
+    # 8 Windows adds were closes on a path that already failed or only read,
+    # and each now says so with _ =.
+    - errcheck
+
+    # Wrapping an error with %v throws away the kind it carried, and the kind
+    # is what a layer reads to choose its reason. Measured: 2 on Linux, 2 more
+    # on Windows. One is deliberate and says so at its line.
+    - errorlint
+
+    # A closed set with a switch that forgot one is how a new status, outcome
+    # or reason arrives halfway. Measured: 22 in shipped code, 4 of them about
+    # somebody else's enum (ignored below). The rest name the values they leave
+    # alone, so the next value added is reported.
+    - exhaustive
+
+    # Measured: 27 findings in shipped code on Linux and 47 on Windows, none a
+    # defect. The rules switched off below are each answered elsewhere for
+    # every file. What is left watches conversions of numbers read from the
+    # network, weak hashes, hardcoded secrets and TLS settings, and each finding
+    # that was wrong says why at its line.
+    - gosec
+
+    # An assignment nobody reads is a typo or a leftover. Measured: 1, in a
+    # test.
+    - ineffassign
+
+    # Prose reaches the user through help text and failure messages. Measured:
+    # 1, base64 in a test fixture.
+    - misspell
+
+    # A disabling comment without the linter's name and a reason is the shape
+    # every other suppression in this project refuses.
+    - nolintlint
+
+  # What is NOT enabled, and why - internal/guard/lintconfig_test.go keeps
+  # these out:
+  #
+  #   staticcheck, govet, unused - each already runs, and here each would be a
+  #   different question under the same name. staticcheck under this tool does
+  #   not read staticcheck.conf. govet here carries analysers go vet does not.
+  #   unused is inside staticcheck as U1000.
+
+  settings:
+    errcheck:
+      # Writes with fmt go to standard error or carry help text, and a failed
+      # write to standard error cannot be announced anywhere. What this program
+      # promises to deliver - a report, a tool's page - is written with Write,
+      # and that error is checked.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+    exhaustive:
+      # A switch with a default has said what it does about everything else.
+      default-signifies-exhaustive: true
+      # Somebody else's enums, and not ones this program can be complete
+      # about: a switch on a machine type in a binary header, on a CPU type, on
+      # the kind of a value and on a key would have to list hundreds of members.
+      ignore-types:
+        - "^debug/elf\\.Machine$"
+        - "^debug/macho\\.Cpu$"
+        - "^reflect\\.Kind$"
+        - "^fyne\\.io/fyne/v2\\.KeyName$"
+
+    gosec:
+      # Each rule here is answered for every file by something else, and two
+      # lists of the same files drift apart.
+      excludes:
+        # Unsafe pointers - unsafeAllowlist in internal/guard names every file
+        # that may, with the reason beside each.
+        - G103
+        # Unhandled errors - errcheck's question, and errcheck is enabled.
+        - G104
+        # A process started from a variable - execAllowlist in internal/guard
+        # names every file that may start one.
+        - G204
+        # A file read from a variable path - what the probes do, and
+        # fileReadAllowlist in internal/guard names every file that may.
+        - G304
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    rules:
+      # A test reports through t rather than through a returned error, and
+      # gosec there is about the files and processes a test makes for itself.
+      # Measured: 140 such findings in tests as Linux builds them and 147 as
+      # Windows does, none of them about code that ships.
+      - path: _test[.]go
+        linters: [errcheck, gosec]
+
+issues:
+  # Both caps default to something other than zero, and then a run reports a
+  # number that is not the number - TestingFilesGenerator measured 55 shown of
+  # 225. Somebody fixes the 55 and the next run brings back the next 55.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    # Already a step of the test job, kept here so a run by hand gives the
+    # answer CI gives.
+    - gofmt

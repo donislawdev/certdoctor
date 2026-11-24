@@ -39,7 +39,7 @@ func Enumerate(open file.Source) (Nameservers, error) {
 	if err != nil {
 		return Nameservers{}, fmt.Errorf("reading %s: %w", ResolverConfPath, err)
 	}
-	defer handle.Close()
+	defer func() { _ = handle.Close() }()
 
 	data, err := io.ReadAll(handle)
 	if err != nil {
@@ -101,7 +101,7 @@ func NameSources(open file.Source) (resolve.NameSources, error) {
 		// file "absent" is the common case rather than the broken one.
 		return resolve.NameSources{}, err
 	}
-	defer handle.Close()
+	defer func() { _ = handle.Close() }()
 
 	data, err := io.ReadAll(handle)
 	if err != nil {

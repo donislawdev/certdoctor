@@ -120,6 +120,8 @@ func paint(k Kind, s State) (face, edge, ink look.Role) {
 			return look.AccentPressed, "", look.OnAccent
 		case Disabled:
 			return look.Raised, "", look.InkDisabled
+		case Rest, Focused:
+			// the resting face, below
 		}
 		return look.Accent, "", look.OnAccent
 	case Secondary:
@@ -130,8 +132,12 @@ func paint(k Kind, s State) (face, edge, ink look.Role) {
 			return look.Surface, look.EdgeControl, look.Ink
 		case Disabled:
 			return look.Surface, look.EdgeCard, look.InkDisabled
+		case Rest, Focused:
+			// the resting face, below
 		}
 		return look.Raised, look.EdgeControl, look.Ink
+	case Quiet:
+		// after this switch
 	}
 	switch s {
 	case Hover:
@@ -140,6 +146,8 @@ func paint(k Kind, s State) (face, edge, ink look.Role) {
 		return look.Hovered, "", look.Ink
 	case Disabled:
 		return "", "", look.InkDisabled
+	case Rest, Focused:
+		// the resting ink, below
 	}
 	return "", "", look.InkMuted
 }

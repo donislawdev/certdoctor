@@ -51,6 +51,8 @@ func TestTheWindowReadsTheReportsItIsDrawnFrom(t *testing.T) {
 				yes++
 			case TrustNo:
 				no++
+			case TrustNotAssessed:
+				// counted by neither
 			}
 			if s.Command != "" {
 				fixes++

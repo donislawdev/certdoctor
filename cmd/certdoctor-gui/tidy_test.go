@@ -25,6 +25,8 @@ func quietRun(length time.Duration, alloc func(at time.Duration) uint64) (frames
 			frames = append(frames, at)
 		case stepRelease:
 			releases = append(releases, at)
+		case stepNothing:
+			// neither, so nothing is recorded
 		}
 	}
 	return frames, releases

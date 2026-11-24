@@ -3,6 +3,7 @@
 package dns
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"syscall"
@@ -76,7 +77,7 @@ func registryResolvers() ([]string, error) {
 			continue
 		}
 		guids, err := subKeys(root)
-		syscall.RegCloseKey(root)
+		_ = syscall.RegCloseKey(root)
 		if err != nil {
 			return found, fmt.Errorf("listing adapters under %s: %w", base, err)
 		}
@@ -97,7 +98,7 @@ func valuesUnder(path string) []string {
 	if err != nil {
 		return nil
 	}
-	defer syscall.RegCloseKey(key)
+	defer func() { _ = syscall.RegCloseKey(key) }()
 
 	var out []string
 	for _, name := range []string{"NameServer", "DhcpNameServer"} {
@@ -192,9 +193,9 @@ func subKeys(key syscall.Handle) ([]string, error) {
 	var out []string
 	buffer := make([]uint16, 256)
 	for index := uint32(0); ; index++ {
-		length := uint32(len(buffer))
+		length := uint32(len(buffer)) //nolint:gosec // G115: the buffer is 256 long
 		err := syscall.RegEnumKeyEx(key, index, &buffer[0], &length, nil, nil, nil, nil)
-		if err == errNoMoreItems {
+		if errors.Is(err, errNoMoreItems) {
 			return out, nil
 		}
 		if err != nil {
@@ -291,7 +292,7 @@ func networkParamsResolvers() ([]string, error) {
 	var size uint32
 	// The first call is SUPPOSED to fail and hand back the buffer size. Code 111
 	// is ERROR_BUFFER_OVERFLOW and it is the normal path here, not a failure.
-	proc.Call(0, uintptr(unsafe.Pointer(&size)))
+	_, _, _ = proc.Call(0, uintptr(unsafe.Pointer(&size)))
 	if size == 0 {
 		return nil, fmt.Errorf("GetNetworkParams did not report a buffer size")
 	}

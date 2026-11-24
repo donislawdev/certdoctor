@@ -51,10 +51,10 @@ const endPasses = 3
 // half. The leader's own id cannot be reused meanwhile: exec still holds its
 // handle, because Cancel runs before Wait.
 func endGroup(leader *os.Process) error {
-	born, ok := bornAt(uint32(leader.Pid))
+	born, ok := bornAt(uint32(leader.Pid)) //nolint:gosec // G115: a Windows process ID is a DWORD
 	err := leader.Kill()
 	if ok {
-		endDescendants(member{pid: uint32(leader.Pid), born: born, ended: time.Now().UnixNano()})
+		endDescendants(member{pid: uint32(leader.Pid), born: born, ended: time.Now().UnixNano()}) //nolint:gosec // G115: a Windows process ID is a DWORD
 	}
 	return err
 }
@@ -109,7 +109,7 @@ func endIfBornOf(pid uint32, parent member) (member, bool) {
 		// Not ours to end - another account's, or already gone.
 		return member{}, false
 	}
-	defer syscall.CloseHandle(handle)
+	defer func() { _ = syscall.CloseHandle(handle) }()
 	born, ok := creationOf(handle)
 	if !ok || !bornOf(born, parent) {
 		return member{}, false
@@ -130,7 +130,7 @@ func bornAt(pid uint32) (int64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	defer syscall.CloseHandle(handle)
+	defer func() { _ = syscall.CloseHandle(handle) }()
 	return creationOf(handle)
 }
 
@@ -158,8 +158,8 @@ func listed(take func(flags, pid uint32) (syscall.Handle, error)) []syscall.Proc
 	if err != nil {
 		return nil
 	}
-	defer syscall.CloseHandle(handle)
-	entry := syscall.ProcessEntry32{Size: uint32(reflect.TypeFor[syscall.ProcessEntry32]().Size())}
+	defer func() { _ = syscall.CloseHandle(handle) }()
+	entry := syscall.ProcessEntry32{Size: uint32(reflect.TypeFor[syscall.ProcessEntry32]().Size())} //nolint:gosec // G115: the size of one fixed struct
 	var all []syscall.ProcessEntry32
 	for err := syscall.Process32First(handle, &entry); err == nil; err = syscall.Process32Next(handle, &entry) {
 		all = append(all, entry)

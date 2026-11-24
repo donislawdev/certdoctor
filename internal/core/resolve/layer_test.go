@@ -1373,10 +1373,9 @@ func answeringWith(addresses []string) Exchange {
 		}
 		raw := make([][]byte, 0, len(addresses))
 		for _, address := range addresses {
-			parts := [4]byte{}
 			var n1, n2, n3, n4 int
 			_, _ = fmt.Sscanf(address, "%d.%d.%d.%d", &n1, &n2, &n3, &n4)
-			parts = [4]byte{byte(n1), byte(n2), byte(n3), byte(n4)}
+			parts := [4]byte{byte(n1), byte(n2), byte(n3), byte(n4)}
 			raw = append(raw, parts[:])
 		}
 		return replyWith(id, asked, 0, raw...), nil

@@ -205,7 +205,7 @@ func build(engine syscall.Handle, chain [][]byte, at time.Time) (built, error) {
 	var para syscall.CertChainPara
 	para.Size = uint32(unsafe.Sizeof(para))
 	para.RequestedUsage.Type = syscall.USAGE_MATCH_TYPE_OR
-	para.RequestedUsage.Usage.Length = uint32(len(identifiers))
+	para.RequestedUsage.Usage.Length = uint32(len(identifiers)) //nolint:gosec // G115: one usage identifier
 	para.RequestedUsage.Usage.UsageIdentifiers = &identifiers[0]
 
 	when := syscall.NsecToFiletime(at.UnixNano())
@@ -233,7 +233,7 @@ func add(store syscall.Handle, chain [][]byte) (*syscall.CertContext, error) {
 			continue
 		}
 		created, err := syscall.CertCreateCertificateContext(
-			syscall.X509_ASN_ENCODING|syscall.PKCS_7_ASN_ENCODING, &der[0], uint32(len(der)))
+			syscall.X509_ASN_ENCODING|syscall.PKCS_7_ASN_ENCODING, &der[0], uint32(len(der))) //nolint:gosec // G115: one certificate, far below 4 GiB
 		if err != nil {
 			if i == 0 {
 				return nil, fmt.Errorf("the presented leaf could not be read by Windows: %w", err)

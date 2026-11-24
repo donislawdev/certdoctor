@@ -214,6 +214,8 @@ func Ask(ctx context.Context, in Input) Result {
 			skipped++
 		case report.OutcomeRefusedByRule:
 			refused++
+		case report.OutcomeRefused, report.OutcomeTimeout, report.OutcomeReset, report.OutcomeUnreachable:
+			// their side answered, which none of the three counts is about
 		}
 	}
 	reached := len(connected)

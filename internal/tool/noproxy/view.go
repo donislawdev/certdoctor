@@ -199,6 +199,8 @@ func (a asked) because(d proxy.Decision) string {
 			return "a loopback address is never proxied"
 		}
 		return "localhost is never proxied"
+	case proxy.BasisNoEntry:
+		// below
 	}
 	return "no entry applies"
 }

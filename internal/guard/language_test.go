@@ -54,6 +54,7 @@ var proseFiles = []string{
 	".gitignore",
 	".gitattributes",
 	"staticcheck.conf",
+	".golangci.yml",
 	"go.mod",
 	".github/CODEOWNERS",
 	".github/FUNDING.yml",

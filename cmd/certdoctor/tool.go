@@ -55,8 +55,7 @@ type toolOptions struct {
 // a command line it cannot parse is USAGE.
 func runTool(args []string, env environment) exitcode.Code {
 	if len(args) == 0 || isHelp(args[0]) {
-		fmt.Fprint(env.stdout, toolListText())
-		return exitcode.OK
+		return say(env, toolListText())
 	}
 	tool, ok := spec.Find(args[0])
 	if !ok {
@@ -67,8 +66,7 @@ func runTool(args []string, env environment) exitcode.Code {
 		return complain(env, f)
 	}
 	if o.help {
-		fmt.Fprint(env.stdout, toolHelpText(tool))
-		return exitcode.OK
+		return say(env, toolHelpText(tool))
 	}
 	inputs, f := readToolInputs(o, env)
 	if f != nil {
@@ -90,10 +88,7 @@ func runTool(args []string, env environment) exitcode.Code {
 	if f != nil {
 		return complain(env, f)
 	}
-	if _, err := env.stdout.Write(page); err != nil {
-		return complain(env, &fault{exitcode.IO, fmt.Sprintf("standard output could not be written: %v", err)})
-	}
-	return exitcode.OK
+	return say(env, string(page))
 }
 
 func isHelp(arg string) bool { return arg == "--help" || arg == "-help" || arg == "-h" }

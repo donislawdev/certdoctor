@@ -444,6 +444,8 @@ func (in Input) verdictFor(findings []report.Finding, counted tallies, seen map[
 		return Result{Status: status.Fail, Detail: in.divergenceDetail(counted), Findings: findings}
 	case report.DivergenceDisjoint:
 		return Result{Status: status.Warn, Detail: in.divergenceDetail(counted), Findings: findings}
+	case report.DivergenceAgree, report.DivergenceSuperset, report.DivergenceOneSided, report.DivergenceOverlap:
+		// named and left alone, as the comment above this switch says
 	}
 
 	// A NAME THAT RESOLVES NOWHERE IS A FAILURE WITH ONE LENS TOO - P2-8.

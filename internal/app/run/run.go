@@ -218,7 +218,7 @@ func (o Options) mask(results []report.LayerResult, notes []report.Note) {
 	for i := range results {
 		results[i].Detail = o.Redaction.Text(results[i].Detail)
 		for j := range results[i].Findings {
-			o.maskFinding(&results[i].Findings[j])
+			o.maskFinding(&results[i].Findings[j]) //nolint:gosec // G602: j ranges over this same slice
 		}
 	}
 	// Notes carry no evidence today - they are written here and by the entry

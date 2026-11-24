@@ -221,6 +221,58 @@ jobs:
             echo "$script parses"
           done
 
+  # WHICH LINTERS RUN, and what was measured before each went in, is
+  # .golangci.yml at the root. Nothing on the command line changes the set,
+  # because a switch there replaces the file in silence.
+  #
+  # Installed once, pinned, and run twice: as Linux builds the tree, with cgo
+  # and the window's headers, and as Windows builds it, where the probes of
+  # the registry, the certificate stores and the processes live. GOOS on the
+  # run and not on the install, so the linter itself is built for the runner.
+  #
+  # Pinned for the reason staticcheck is: a tool that changes under us turns
+  # an unrelated commit red. v2.15.0, released 2026-10-16 per the project's
+  # release page and the newest that day. Licence read at
+  # https://github.com/golangci/golangci-lint/blob/v2.15.0/LICENSE on
+  # 2026-11-24: GPL-3.0. A CI tool that never reaches a user, so the lightest of
+  # the three sieves in docs/22 section 7a - and still read rather than
+  # assumed.
+  linters:
+    name: linters
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: set up go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # The window's packages compile with cgo here - see the same step in the
+      # test job.
+      - name: the graphics headers the window needs
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+      - name: the linter, pinned
+        shell: bash
+        run: GOBIN="$RUNNER_TEMP/bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+      # Run first and on its own, because a plain run ACCEPTS a configuration
+      # this refuses: a key that does not exist, or a value the schema does not
+      # allow, is otherwise ignored without a word.
+      - name: the configuration is valid
+        shell: bash
+        run: '"$RUNNER_TEMP/bin/golangci-lint" config verify'
+      - name: golangci-lint as Linux builds the tree
+        shell: bash
+        run: '"$RUNNER_TEMP/bin/golangci-lint" run ./...'
+      - name: golangci-lint as Windows builds the tree
+        shell: bash
+        env:
+          GOOS: windows
+        run: '"$RUNNER_TEMP/bin/golangci-lint" run ./...'
+
   # A security-adjacent tool with no dependencies still runs on a standard
   # library that gets advisories of its own, and the Go version is pinned in
   # go.mod - so the thing most likely to carry a known vulnerability here is

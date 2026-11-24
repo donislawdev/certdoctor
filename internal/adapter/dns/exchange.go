@@ -39,7 +39,7 @@ func Exchange(dialer dial.Dialer) resolve.Exchange {
 		if err != nil {
 			return nil, translate(err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		if _, err := conn.Write(query); err != nil {
 			return nil, translate(err)
@@ -142,7 +142,7 @@ func translate(err error) error {
 		// produces exactly this and nothing else - measured on the coredns bench,
 		// docs/17 section 6d - and it sends a person to a different place than a
 		// resolver that answered badly.
-		return fmt.Errorf("%w: %v", resolve.ErrTimeout, err)
+		return fmt.Errorf("%w: %v", resolve.ErrTimeout, err) //nolint:errorlint // only the layer's own sentinel crosses the boundary, as above
 	}
 	return err
 }

@@ -143,6 +143,8 @@ func ToneRole(t Tone) Role {
 		return StatusFail
 	case ToneUnknown:
 		return StatusUnknown
+	case ToneNeutral:
+		// no status, so the muted ink below
 	}
 	return InkMuted
 }

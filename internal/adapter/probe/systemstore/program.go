@@ -1,8 +1,8 @@
 package systemstore
 
 import (
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/md5"  //nolint:gosec // G501: the program list indexes an issuer by an MD5 of its name, a name and not a protection
+	"crypto/sha1" //nolint:gosec // G505: the program list names a root by its SHA-1 thumbprint
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/hex"
@@ -68,7 +68,7 @@ func (l programList) available() bool { return l.unreadable == "" }
 
 // holdsRoot reports whether this exact certificate is a root on the list.
 func (l programList) holdsRoot(der []byte) bool {
-	sum := sha1.Sum(der)
+	sum := sha1.Sum(der) //nolint:gosec // G401: the SHA-1 thumbprint is how the list names a root
 	return l.subjects[hex.EncodeToString(sum[:])]
 }
 
@@ -83,7 +83,7 @@ func (l programList) namesIssuerOf(c *x509.Certificate) bool {
 	if len(c.AuthorityKeyId) > 0 && l.keys[hex.EncodeToString(c.AuthorityKeyId)] {
 		return true
 	}
-	sum := md5.Sum(c.RawIssuer)
+	sum := md5.Sum(c.RawIssuer) //nolint:gosec // G401: the MD5 of an issuer name is how the list indexes it
 	return l.names[hex.EncodeToString(sum[:])]
 }
 

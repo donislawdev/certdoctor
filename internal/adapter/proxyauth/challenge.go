@@ -96,7 +96,7 @@ func exchange(ctx context.Context, request proxy.ChallengeRequest, perEndpoint t
 	if err != nil {
 		return proxy.ChallengeAnswer{Detail: whyNotReached(err), Unreached: unreachedBy(ctx, err, proxy.UnreachedRefused)}
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	// A DEADLINE ON THE SOCKET AND NOT ONLY ON THE CONTEXT. A context bounds the
 	// dial; only this bounds a proxy that accepts the connection and then never
 	// answers, which is the failure this exchange is most likely to meet.

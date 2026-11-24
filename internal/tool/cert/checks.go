@@ -144,7 +144,7 @@ func (j judged) collect(id string, rule func(entry) verdict, words sentences) sp
 			worst, clauses = v.status, append(clauses, v.clause)
 		}
 	}
-	switch worst {
+	switch worst { //nolint:exhaustive // the rules here answer pass, warn or fail, never unknown
 	case status.Fail:
 		return spec.Check{ID: id, Status: worst, Summary: upper(capped(clauses)) + " - " + words.fail}
 	case status.Warn:
